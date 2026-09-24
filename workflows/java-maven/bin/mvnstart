@@ -1,0 +1,692 @@
+#!/usr/bin/env bash
+# mvnstart —— 在当前目录下按命令选定目标，勾选后执行对应的 Maven 命令。
+# 单选时用 exec 把当前进程整个换成 mvn，输出、颜色与 Ctrl+C 全按原样。
+# 多选时全部后台执行，输出仍直连本终端，按一次 Ctrl+C 送到整个前台进程组。
+#
+# 要加新指令，只需要在 COMMANDS 里加一行，再写一个遍历 POM_LIST 吐六列记录的
+# 收集函数。记录各列的含义见 emit_record 上方的说明。
+#
+# 性能上两条硬约束，改代码时别破坏：
+#   一、这台机器 fork 一次约 10 毫秒，pom 解析必须一次搞定一个文件，不能每个
+#       问题各跑一遍 grep 或 awk。POM_AWK 一次调用把 id、打包方式、是否引
+#       spring-boot、子模块全部取出来。
+#   二、bash 在大字符串上做模式匹配同样很慢，14KB 的文本匹配一次要 1 毫秒出头，
+#       所以整份 pom 的文本处理交给 awk，bash 只碰短字符串。
+
+set -uo pipefail
+
+readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mvnstart"
+readonly SKIP_DIRS=(target .svn .git node_modules .idea .settings)
+
+# 记录内部用 ASCII 单元分隔符分列，不能用制表符。
+# 制表符算 IFS 空白，read 会把连续两个并成一个，空字段（比如不走 -pl 的目标）会丢，
+# 后面的字段跟着整体错位，表现为工作目录被当成 mvn 参数。
+readonly FS=$'\x1f'
+
+# 注册表每行四列，用竖线隔开，各列内容里不能出现竖线：
+#   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）
+readonly COMMANDS=(
+  'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块'
+  'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目'
+)
+readonly DEFAULT_COMMAND='run'
+
+# 快速装依赖用。带了 maven.resources.skip，装出来的 jar 里没有 application.yml 这类资源，
+# 只适合给本地仓库补齐依赖，不适合拿去部署。
+readonly INSTALL_ARGS='clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true'
+
+# 一次调用把一个 pom 需要的信息全部取出来，输出带前缀的行：
+#   ID  <artifactId>  项目自身的 id，<parent> 里的不算
+#   PKG pom           打包方式是 pom
+#   SB  1             引了 spring-boot-maven-plugin
+#   MOD <entry>       <modules> 里声明的子模块，一行一个
+readonly POM_AWK='
+BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
+{
+  line = $0
+  while (1) {
+    if (open) {
+      i = index(line, "-->")
+      if (i == 0) { line = ""; break }
+      line = substr(line, i + 3)
+      open = 0
+      continue
+    }
+    i = index(line, "<!--")
+    if (i == 0) break
+    rest = substr(line, i + 4)
+    j = index(rest, "-->")
+    if (j == 0) { line = substr(line, 1, i - 1); open = 1; break }
+    line = substr(line, 1, i - 1) substr(rest, j + 3)
+  }
+
+  # 只摘掉行内的 parent 片段，不能整行 next：
+  # pom 若把 <parent> 与项目自身坐标写在同一行，整行跳掉会把 artifactId 也一起丢掉。
+  while (1) {
+    if (inparent) {
+      q = index(line, "</parent>")
+      if (q == 0) { line = ""; break }
+      line = substr(line, q + 9)
+      inparent = 0
+      continue
+    }
+    p = index(line, "<parent>")
+    if (p == 0) break
+    head = substr(line, 1, p - 1)
+    tail = substr(line, p + 8)
+    q = index(tail, "</parent>")
+    if (q == 0) { line = head; inparent = 1; break }
+    line = head substr(tail, q + 9)
+  }
+
+  if (idval == "" && match(line, /<artifactId>[^<]*<\/artifactId>/)) {
+    idval = substr(line, RSTART + 12, RLENGTH - 25)
+  }
+  if (line ~ /<packaging>[ \t]*pom[ \t]*<\/packaging>/) print "PKG pom"
+  if (line ~ /spring-boot-maven-plugin/) print "SB 1"
+
+  if (line ~ /<modules>/) inmodules = 1
+  if (inmodules) {
+    s = line
+    while (match(s, /<module>[^<]*<\/module>/)) {
+      m = substr(s, RSTART + 8, RLENGTH - 17)
+      gsub(/^[ \t\r\n]+/, "", m)
+      gsub(/[ \t\r\n]+$/, "", m)
+      if (m != "") print "MOD " m
+      s = substr(s, RSTART + RLENGTH)
+    }
+    if (line ~ /<\/modules>/) inmodules = 0
+  }
+}
+END { print "ID " idval }
+'
+
+die() {
+  printf 'mvnstart: %s\n' "$*" >&2
+  exit 1
+}
+
+command_exists() {
+  local row
+  for row in "${COMMANDS[@]}"; do
+    [[ "${row%%|*}" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+# 取注册表某行的第 idx 列，1 是命令名。纯 bash 拆，不调 cut。
+command_field() {
+  local name=$1 idx=$2 row rest
+  for row in "${COMMANDS[@]}"; do
+    [[ "${row%%|*}" == "$name" ]] || continue
+    rest="${row#*|}"
+    if ((idx == 2)); then
+      printf '%s\n' "${rest%%|*}"
+      return 0
+    fi
+    rest="${rest#*|}"
+    if ((idx == 3)); then
+      printf '%s\n' "${rest%%|*}"
+      return 0
+    fi
+    rest="${rest#*|}"
+    printf '%s\n' "${rest%%|*}"
+    return 0
+  done
+  return 1
+}
+
+usage() {
+  cat <<'EOF'
+用法: mvnstart [命令] [选项] [关键词]
+
+在当前目录下递归查找目标，勾选后执行对应命令。
+
+不写命令时用 run。首个非选项参数命中命令名就按命令处理，否则当作关键词。
+例如 mvnstart admin 是启动匹配 admin 的模块，mvnstart install 是构建顶层项目。
+
+命令:
+EOF
+  local row
+  for row in "${COMMANDS[@]}"; do
+    printf '  %-10s %s\n' "${row%%|*}" "$(command_field "${row%%|*}" 2)"
+  done
+
+  cat <<'EOF'
+
+选项:
+  -l, --list     只列出目标，不执行
+      --refresh  清掉当前命令上次的勾选记录，重新开始
+  -h, --help     显示本帮助
+
+带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
+后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
+例如 mvnstart run install。
+EOF
+}
+
+# 记录六列，按顺序是：
+#   标签、工作目录、-pl 的值（不走 -pl 时为空）、mvn 参数、展示用相对路径、展示用命令
+# -pl 的值单独占一列而不是先拼进参数字符串，是为了执行时能加引号，
+# 路径里带空格时才不会被词拆分成两个参数。
+emit_record() {
+  local i out=''
+  for ((i = 1; i <= $#; i++)); do
+    ((i > 1)) && out+="$FS"
+    out+="${!i}"
+  done
+  printf '%s\n' "$out"
+}
+
+# 取父目录。用参数展开算，不派生 dirname 子进程。
+parent_dir() {
+  local p="${1%/}"
+  [[ "$p" == */* ]] || { printf '/\n'; return 0; }
+  p="${p%/*}"
+  printf '%s\n' "${p:-/}"
+}
+
+# 路径规整：展开 . 与 ..，就地算，不派生 realpath 子进程。
+normalize_path() {
+  local -a parts=() out=()
+  local part
+  IFS='/' read -r -a parts <<< "$1"
+  for part in "${parts[@]}"; do
+    case "$part" in
+      ''|.) ;;
+      ..) ((${#out[@]})) && unset 'out[-1]' ;;
+      *) out+=("$part") ;;
+    esac
+  done
+  local IFS='/'
+  printf '/%s\n' "${out[*]}"
+}
+
+# 从当前目录算到目标目录的相对路径，同样不派生 realpath。
+relative_to_pwd() {
+  local target=$1
+  [[ "$target" == "$PWD" ]] && { printf '.\n'; return 0; }
+
+  local -a tb=() bb=()
+  IFS='/' read -r -a tb <<< "$target"
+  IFS='/' read -r -a bb <<< "$PWD"
+  local tn=${#tb[@]} bn=${#bb[@]}
+
+  local i=0
+  while ((i < tn && i < bn)) && [[ "${tb[$i]}" == "${bb[$i]}" ]]; do
+    i=$((i + 1))
+  done
+
+  local -a out=()
+  local j
+  for ((j = i; j < bn; j++)); do out+=(..); done
+  for ((j = i; j < tn; j++)); do out+=("${tb[$j]}"); done
+  ((${#out[@]})) || { printf '.\n'; return 0; }
+
+  local IFS='/'
+  printf '%s\n' "${out[*]}"
+}
+
+scan_poms() {
+  local expr=() d
+  for d in "${SKIP_DIRS[@]}"; do expr+=(-name "$d" -o); done
+  expr+=(-false)
+  find "$1" \( "${expr[@]}" \) -prune -o -type f -name pom.xml -print 2>/dev/null
+}
+
+# 每个 pom 在一次扫描里会被反复问「你声明了哪些子模块」「你叫什么」「能不能跑」，
+# 所以先统一解析一遍填进数组，之后只读不写。
+#
+# 这一步必须在主 shell 里做：can_reach 之类是在命令替换与进程替换的子 shell 里跑的，
+# 子 shell 里对数组的写入会随子 shell 一起丢掉，缓存在里面等于没建。
+declare -a POM_LIST=()
+
+declare -A POM_MODULES_VAL=()
+declare -A POM_ARTIFACT_VAL=()
+declare -A POM_PKG_VAL=()
+declare -A POM_SB_VAL=()
+declare -A HAS_MAIN_CLASS=()
+
+prepare_scan() {
+  local root=$1 pom dump line mods
+  mapfile -t POM_LIST < <(scan_poms "$root" | sort)
+
+  POM_MODULES_VAL=()
+  POM_ARTIFACT_VAL=()
+  POM_PKG_VAL=()
+  POM_SB_VAL=()
+  HAS_MAIN_CLASS=()
+
+  for pom in "${POM_LIST[@]}"; do
+    dump=$(awk "$POM_AWK" "$pom")
+    mods=''
+    while IFS= read -r line; do
+      case "$line" in
+        'ID '*) POM_ARTIFACT_VAL[$pom]="${line#ID }" ;;
+        'MOD '*) mods+="${line#MOD }"$'\n' ;;
+        'PKG '*) POM_PKG_VAL[$pom]=1 ;;
+        'SB '*) POM_SB_VAL[$pom]=1 ;;
+      esac
+    done <<< "$dump"
+    POM_MODULES_VAL[$pom]="${mods%$'\n'}"
+  done
+
+  # 入口类检查按模块各自的源码目录来跑，只对已经通过前两道检查的 pom 跑。
+  # 不要图省事改成对整个扫描根跑一次 grep：从家目录或 projs 根扫时，底下压着
+  # .vscode-server、node_modules 这类大目录，实测比逐个模块查还慢。
+  local dir
+  for pom in "${POM_LIST[@]}"; do
+    [[ -n "${POM_SB_VAL[$pom]:-}" ]] || continue
+    [[ -n "${POM_PKG_VAL[$pom]:-}" ]] && continue
+    dir=$(parent_dir "$pom")
+    [[ -d "$dir/src/main/java" ]] || continue
+    grep -rql --include='*.java' '@SpringBootApplication' "$dir/src/main/java" 2>/dev/null &&
+      HAS_MAIN_CLASS[$dir]=1
+  done
+  return 0
+}
+
+pom_modules() {
+  [[ -n "${POM_MODULES_VAL[$1]:-}" ]] && printf '%s\n' "${POM_MODULES_VAL[$1]}"
+  return 0
+}
+
+project_artifact_id() {
+  printf '%s\n' "${POM_ARTIFACT_VAL[$1]:-}"
+  return 0
+}
+
+# 从某个聚合 pom 出发，沿 <modules> 一层层往下走，看能不能走到目标目录。
+# -pl 接收的是从当前目录算起的路径，嵌套的模块即便没有直接声明也能寻址，
+# 所以要递归往下找，只看一层不够。
+can_reach() {
+  local agg=$1 target=$2 depth=${3:-0}
+  ((depth > 8)) && return 1
+  local entry sub
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    sub=$(normalize_path "$agg/$entry")
+    if [[ "$sub" == "$target" ]]; then
+      return 0
+    elif [[ -f "$sub/pom.xml" && "$target" == "$sub"/* ]]; then
+      can_reach "$sub" "$target" $((depth + 1)) && return 0
+    fi
+  done < <(pom_modules "$agg/pom.xml")
+  return 1
+}
+
+# 取最外层那个能走到模块的聚合 pom。从最外层跑，命令更接近手敲的样子。
+# 都走不到就说明只能进模块目录里跑。
+find_aggregator() {
+  local target
+  target=$(normalize_path "$1")
+  local ancestor agg=''
+  ancestor=$(parent_dir "$target")
+  while [[ -n "$ancestor" && "$ancestor" != "/" ]]; do
+    if [[ -f "$ancestor/pom.xml" ]] && can_reach "$ancestor" "$target"; then
+      agg=$ancestor
+    fi
+    ancestor=$(parent_dir "$ancestor")
+  done
+  [[ -n "$agg" ]] || return 1
+  printf '%s\n' "$agg"
+}
+
+# run 命令的目标：不是 pom 打包，引了 spring-boot-maven-plugin，
+# 并且带 @SpringBootApplication 的入口类确实在它自己的源码目录里。
+collect_runnable() {
+  local pom dir id agg rel
+  for pom in "${POM_LIST[@]}"; do
+    [[ -n "${POM_SB_VAL[$pom]:-}" ]] || continue
+    [[ -n "${POM_PKG_VAL[$pom]:-}" ]] && continue
+
+    dir=$(parent_dir "$pom")
+    [[ -n "${HAS_MAIN_CLASS[$dir]:-}" ]] || continue
+
+    id=$(project_artifact_id "$pom")
+    [[ -n "$id" ]] || id=$(basename "$dir")
+
+    if agg=$(find_aggregator "$dir"); then
+      rel="${dir#"$agg"/}"
+      emit_record "$id" "$agg" "$rel" 'spring-boot:run' \
+        "$(relative_to_pwd "$dir")" "mvn -pl $rel spring-boot:run"
+    else
+      emit_record "$id" "$dir" '' 'spring-boot:run' \
+        "$(relative_to_pwd "$dir")" 'mvn spring-boot:run'
+    fi
+  done
+  return 0
+}
+
+# install 命令的目标：没有被上层聚合 pom 收录的 pom，也就是一个能独立构建的项目。
+collect_toplevel() {
+  local pom dir id
+  for pom in "${POM_LIST[@]}"; do
+    dir=$(parent_dir "$pom")
+    find_aggregator "$dir" >/dev/null && continue
+
+    id=$(project_artifact_id "$pom")
+    [[ -n "$id" ]] || id=$(basename "$dir")
+
+    emit_record "$id" "$dir" '' "$INSTALL_ARGS" \
+      "$(relative_to_pwd "$dir")" "mvn $INSTALL_ARGS"
+  done
+  return 0
+}
+
+# 取路径末尾 k 段。
+tail_segments() {
+  local -a parts=()
+  IFS='/' read -r -a parts <<< "$1"
+  local n=${#parts[@]} k=$2
+  ((k > n)) && k=$n
+  local i out=''
+  for ((i = n - k; i < n; i++)); do
+    out+="${out:+/}${parts[$i]}"
+  done
+  printf '%s\n' "$out"
+}
+
+# 同一份工作副本里可能共存好几个同名目标（比如各地域项目的 runnet-admin-service），
+# 标签重了勾选界面就分不清，勾选记录也会互相覆盖。
+# id 只要重名就得加尾巴，跟两条记录的尾巴是否相同无关：尾巴不同只说明取一段就够区分，
+# 而不是不需要区分。尾巴不够用时再逐段加长。
+assign_tags() {
+  local -a recs=() ids=() displays=()
+  local rec id workdir plpath mvnargs display cmdtext
+  while IFS= read -r rec; do
+    IFS=$FS read -r id workdir plpath mvnargs display cmdtext <<< "$rec"
+    recs+=("$rec")
+    ids+=("$id")
+    displays+=("$display")
+  done
+
+  # 第一步：给每个重名的 id 求一个统一的尾巴段数，让这一组内两两可分。
+  # 段数按组统一，免得同一批记录里有的加两段有的加三段，读起来乱。
+  # 记 0 表示这个 id 没重名，原样使用。
+  local -A tail_k=()
+  local i j k ok dup tail
+  for i in "${!recs[@]}"; do
+    [[ -n "${tail_k[${ids[$i]}]:-}" ]] && continue
+
+    dup=0
+    for j in "${!recs[@]}"; do
+      [[ $j -eq $i ]] && continue
+      [[ "${ids[$j]}" == "${ids[$i]}" ]] && { dup=1; break; }
+    done
+    if ((dup == 0)); then
+      tail_k["${ids[$i]}"]=0
+      continue
+    fi
+
+    local -A seen=()
+    for ((k = 1; k <= 20; k++)); do
+      seen=()
+      ok=1
+      for j in "${!recs[@]}"; do
+        [[ "${ids[$j]}" == "${ids[$i]}" ]] || continue
+        tail=$(tail_segments "${displays[$j]}" "$k")
+        # 尾巴跟 id 一字不差等于没加；同一组里两段尾巴撞了也不行
+        if [[ "$tail" == "${ids[$i]}" || -n "${seen[$tail]:-}" ]]; then
+          ok=0
+          break
+        fi
+        seen[$tail]=1
+      done
+      ((ok == 1)) && break
+    done
+    tail_k["${ids[$i]}"]=$k
+  done
+
+  local -a tags=()
+  local candidate
+  for i in "${!recs[@]}"; do
+    k=${tail_k[${ids[$i]}]}
+    if ((k == 0)); then
+      tags+=("${ids[$i]}")
+      continue
+    fi
+
+    candidate="${ids[$i]}@$(tail_segments "${displays[$i]}" "$k")"
+    # 段数取满仍分不开的极端情况，补一段展示路径的哈希兜底
+    for j in "${!tags[@]}"; do
+      [[ "${tags[$j]}" == "$candidate" ]] || continue
+      candidate="${candidate}#$(printf '%s' "${displays[$i]}" | md5sum | cut -c1-4)"
+      break
+    done
+    tags+=("$candidate")
+  done
+
+  for i in "${!recs[@]}"; do
+    IFS=$FS read -r id workdir plpath mvnargs display cmdtext <<< "${recs[$i]}"
+    emit_record "${tags[$i]}" "$workdir" "$plpath" "$mvnargs" "$display" "$cmdtext"
+  done
+  return 0
+}
+
+# 进工作目录后把当前进程换成 mvn。放在子 shell 里调用即可得到后台执行，
+# 因为 exec 只替换那个子 shell。
+launch_one() {
+  local workdir=$1 plpath=$2 mvnargs=$3
+  cd "$workdir" || return 1
+
+  local -a argv=()
+  [[ -n "$plpath" ]] && argv+=(-pl "$plpath")
+  if [[ -n "$mvnargs" ]]; then
+    local -a extra=()
+    read -r -a extra <<< "$mvnargs"
+    argv+=("${extra[@]}")
+  fi
+
+  exec mvn "${argv[@]}"
+}
+
+launch_records() {
+  local -a recs=("$@")
+  local rec tag workdir plpath mvnargs display cmdtext
+
+  if [[ ${#recs[@]} -eq 1 ]]; then
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "${recs[0]}"
+    printf '正在 %s 执行 %s\n' "$workdir" "$cmdtext" >&2
+    launch_one "$workdir" "$plpath" "$mvnargs"
+    return 1
+  fi
+
+  local -a pids=()
+  # 中断只收掉等待，子进程照常收到内核发出的 SIGINT 并优雅退出。
+  trap ':' INT TERM
+  for rec in "${recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+    printf '后台执行 %s\n' "$cmdtext" >&2
+    ( launch_one "$workdir" "$plpath" "$mvnargs" ) &
+    pids+=($!)
+  done
+  printf '共 %d 个已在后台执行，输出直接打在本终端，按一次 Ctrl+C 全部停止。\n' "${#pids[@]}" >&2
+
+  local p
+  for p in "${pids[@]}"; do wait "$p" 2>/dev/null; done
+  printf '全部已退出。\n' >&2
+  return 0
+}
+
+whiptail_choose() {
+  local -a recs=("$@") items=() picked=()
+  local rec tag workdir plpath mvnargs display cmdtext
+
+  # 上次勾过的预选中。勾选记录读进数组比对，别用 grep 逐条开进程。
+  local -A selected=()
+  if [[ -f $SEL_FILE ]]; then
+    local line
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && selected[$line]=1
+    done < "$SEL_FILE"
+  fi
+
+  for rec in "${recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+    if [[ -n "${selected[$tag]:-}" ]]; then
+      items+=("$tag" "$display" ON)
+    else
+      items+=("$tag" "$display" OFF)
+    fi
+  done
+
+  local lines cols listh boxh
+  lines=$(tput lines 2>/dev/null || printf '24')
+  cols=$(tput cols 2>/dev/null || printf '100')
+  ((cols < 60)) && cols=60
+  listh=${#recs[@]}
+  ((listh > lines - 8)) && listh=$((lines - 8))
+  ((listh < 1)) && listh=1
+  boxh=$((listh + 8))
+  ((boxh > lines)) && boxh=$lines
+
+  # 界面画在 stderr，勾选结果也写在 stderr（见 man whiptail 的 --checklist 一节），
+  # 所以要用 3>&1 1>&2 2>&3 把两边调换，把结果捞进命令替换里。
+  # 返回 1 表示取消，返回 2 表示确认了但一个都没勾。
+  local out
+  out=$(whiptail --separate-output --title 'mvnstart' --checklist \
+    '空格勾选，回车确认；上次勾过的已经预先选中' \
+    "$boxh" "$cols" "$listh" "${items[@]}" 3>&1 1>&2 2>&3) || return 1
+
+  [[ -n "$out" ]] || return 2
+  mapfile -t picked <<< "$out"
+
+  local r p
+  for r in "${recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$r"
+    for p in "${picked[@]}"; do
+      [[ "$p" == "$tag" ]] && { printf '%s\n' "$r"; break; }
+    done
+  done
+  # 循环最后一轮里内层 [[ ]] 判假会短路出状态 1，不显式返回 0 的话
+  # 调用方会把成功当成取消。
+  return 0
+}
+
+plain_choose() {
+  local noun=$1
+  shift
+  local -a recs=("$@")
+  local rec tag workdir plpath mvnargs display cmdtext i n
+  printf '发现 %d 个%s:\n\n' "${#recs[@]}" "$noun" >&2
+  for i in "${!recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "${recs[$i]}"
+    printf '  %2d) %s\n      %s\n' "$((i + 1))" "$tag" "$display" >&2
+  done
+  printf '\n输入编号（如 1 3），回车后执行: ' >&2
+  local answer
+  read -r answer || return 1
+  [[ -n "$answer" ]] || return 2
+
+  local -a picked=()
+  for n in $answer; do
+    [[ "$n" =~ ^[0-9]+$ ]] || continue
+    ((n >= 1 && n <= ${#recs[@]})) || continue
+    picked+=("${recs[$((n - 1))]}")
+  done
+  [[ ${#picked[@]} -gt 0 ]] || return 2
+  printf '%s\n' "${picked[@]}"
+  return 0
+}
+
+save_selection() {
+  local -a recs=("$@")
+  mkdir -p "$CACHE_DIR"
+  : > "$SEL_FILE"
+  local rec tag workdir plpath mvnargs display cmdtext
+  for rec in "${recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+    printf '%s\n' "$tag" >> "$SEL_FILE"
+  done
+}
+
+main() {
+  local -a rest=()
+  local refresh=0 list_only=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help) usage; exit 0 ;;
+      -l|--list) list_only=1 ;;
+      --refresh) refresh=1 ;;
+      -*) die "未知选项 $arg，用 mvnstart --help 看用法" ;;
+      *) rest+=("$arg") ;;
+    esac
+  done
+
+  local cmd="$DEFAULT_COMMAND"
+  if [[ ${#rest[@]} -gt 0 ]] && command_exists "${rest[0]}"; then
+    cmd="${rest[0]}"
+    rest=("${rest[@]:1}")
+  fi
+  local kw="${rest[0]:-}"
+
+  local noun collector
+  noun=$(command_field "$cmd" 4)
+  collector=$(command_field "$cmd" 3)
+
+  command -v mvn >/dev/null || die '找不到 mvn，先确认 Maven 在 PATH 里'
+
+  mkdir -p "$CACHE_DIR"
+  local key
+  key=$(printf '%s' "$PWD" | md5sum | cut -c1-16)
+  SEL_FILE="$CACHE_DIR/$key.$cmd.selected"
+  [[ $refresh -eq 1 ]] && rm -f "$SEL_FILE"
+
+  # 解析在主 shell 里做，收集函数在子 shell 里只读这些数组。
+  prepare_scan "$PWD"
+
+  local -a recs=()
+  mapfile -t recs < <("$collector" | assign_tags)
+  [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
+
+  local rec tag workdir plpath mvnargs display cmdtext
+  if [[ $list_only -eq 1 ]]; then
+    for rec in "${recs[@]}"; do
+      IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+      printf '%-40s %s\n' "$tag" "$cmdtext"
+    done
+    return 0
+  fi
+
+  local -a chosen=()
+  local out
+  if [[ -n "$kw" ]]; then
+    local lower="${kw,,}"
+    for rec in "${recs[@]}"; do
+      IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+      # 一并拿工作目录的绝对路径来匹配。就在项目目录里执行时，展示路径会退化成
+      # 「.」，只按它匹配的话关键词根本落不到项目名上。
+      if [[ "${tag,,}" == *"$lower"* ]] ||
+         [[ "${display,,}" == *"$lower"* ]] ||
+         [[ "${workdir,,}" == *"$lower"* ]]; then
+        chosen+=("$rec")
+      fi
+    done
+    [[ ${#chosen[@]} -gt 0 ]] || die "没有$noun匹配关键词 $kw"
+  else
+    local rc=0
+    if command -v whiptail >/dev/null 2>&1 && [[ -t 0 && -t 1 && -t 2 ]]; then
+      out=$(whiptail_choose "${recs[@]}") || rc=$?
+    else
+      out=$(plain_choose "$noun" "${recs[@]}") || rc=$?
+    fi
+    case "$rc" in
+      0) : ;;
+      1) die '已取消' ;;
+      *) die "一个$noun都没勾" ;;
+    esac
+    mapfile -t chosen <<< "$out"
+  fi
+
+  save_selection "${chosen[@]}"
+  # 单条记录会 exec 成 mvn，正常情况下回不来；能回来只可能是工作目录进不去。
+  launch_records "${chosen[@]}" || die '执行失败，检查工作目录是否存在'
+}
+
+SEL_FILE=''
+
+# 直接执行时跑主流程；被 source 进来时只加载函数，便于单独调试某一步。
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
