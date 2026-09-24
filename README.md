@@ -27,7 +27,7 @@ workflows/
 一行装完：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/install.sh | bash
+curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/install.sh | bash
 ```
 
 装完重开 shell，或执行 `source ~/.bashrc` 让 PATH 生效。
@@ -40,10 +40,22 @@ cd bash-scripts
 ./install.sh
 ```
 
+### 安装地址说明
+
+用 jsDelivr 的 CDN 地址，是因为某些网络（含国内多数宽带）访问不到 `raw.githubusercontent.com`，直连会超时。仓库里文件的规范地址是：
+
+```
+https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/install.sh
+```
+
+网络通的话用哪条都行。jsDelivr 对分支引用有缓存，想固定到某个版本可以把 `@main` 换成具体的提交哈希。
+
+安装脚本内部下载仓库归档走的是 `codeload.github.com`，与上面两条是不同域名；要是这个域名也不通，用环境变量 `BASH_SCRIPTS_TARBALL_URL` 换成别的地址，或者直接 clone 后本地安装。
+
 ## 卸载
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/uninstall.sh | bash
+curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/uninstall.sh | bash
 ```
 
 clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
