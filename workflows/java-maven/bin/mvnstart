@@ -12,6 +12,10 @@
 #       spring-boot、子模块全部取出来。
 #   二、bash 在大字符串上做模式匹配同样很慢，14KB 的文本匹配一次要 1 毫秒出头，
 #       所以整份 pom 的文本处理交给 awk，bash 只碰短字符串。
+#
+# 启动方式见 usage。默认会先判一遍这一条记录要不要编译，判据是「有没有文件比
+# target/classes 里最新的 class 新」。整份被注释掉这类源文件不产出 class，Maven 会
+# 因此每次都判「有改动」并把整个模块重编一遍，判定不跟着它走，只看时间戳。
 
 set -uo pipefail
 
@@ -23,17 +27,24 @@ readonly SKIP_DIRS=(target .svn .git node_modules .idea .settings)
 # 后面的字段跟着整体错位，表现为工作目录被当成 mvn 参数。
 readonly FS=$'\x1f'
 
-# 注册表每行四列，用竖线隔开，各列内容里不能出现竖线：
-#   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）
+# 注册表每行五列，用竖线隔开，各列内容里不能出现竖线：
+#   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）| 是否参与编译判定（1 参与）
 readonly COMMANDS=(
-  'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块'
-  'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目'
+  'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块|1'
+  'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目|0'
 )
 readonly DEFAULT_COMMAND='run'
 
 # 快速装依赖用。带了 maven.resources.skip，装出来的 jar 里没有 application.yml 这类资源，
 # 只适合给本地仓库补齐依赖，不适合拿去部署。
 readonly INSTALL_ARGS='clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true'
+
+# 跳过编译直接跑已有的 class。maven.main.skip 是 maven-compiler-plugin 的参数，
+# 3.8.1 上实测有效：compile 阶段照跑，但不产出 class，模块没编过时不要用。
+readonly SKIP_ARGS='-Dmaven.main.skip=true -Dmaven.test.skip=true'
+
+# 启动方式。auto 由脚本判定，其余三个由命令行指定，见 usage。
+readonly MODE_AUTO='auto' MODE_COMPILE='compile' MODE_NO_COMPILE='no-compile' MODE_REBUILD='rebuild'
 
 # 一次调用把一个 pom 需要的信息全部取出来，输出带前缀的行：
 #   ID  <artifactId>  项目自身的 id，<parent> 里的不算
@@ -103,7 +114,12 @@ END { print "ID " idval }
 
 die() {
   printf 'mvnstart: %s\n' "$*" >&2
-  exit 1
+  exit "${2:-1}"
+}
+
+# 用法错误按惯例退 2，与「找到了目标但执行失败」的 1 分开。
+usage_error() {
+  die "$*，用 mvnstart --help 看用法" 2
 }
 
 command_exists() {
@@ -116,20 +132,13 @@ command_exists() {
 
 # 取注册表某行的第 idx 列，1 是命令名。纯 bash 拆，不调 cut。
 command_field() {
-  local name=$1 idx=$2 row rest
+  local name=$1 idx=$2 row rest i
   for row in "${COMMANDS[@]}"; do
     [[ "${row%%|*}" == "$name" ]] || continue
     rest="${row#*|}"
-    if ((idx == 2)); then
-      printf '%s\n' "${rest%%|*}"
-      return 0
-    fi
-    rest="${rest#*|}"
-    if ((idx == 3)); then
-      printf '%s\n' "${rest%%|*}"
-      return 0
-    fi
-    rest="${rest#*|}"
+    for ((i = 2; i < idx; i++)); do
+      rest="${rest#*|}"
+    done
     printf '%s\n' "${rest%%|*}"
     return 0
   done
@@ -158,6 +167,16 @@ EOF
   -l, --list     只列出目标，不执行
       --refresh  清掉当前命令上次的勾选记录，重新开始
   -h, --help     显示本帮助
+      --         终止选项解析，后面的词一律当关键词
+
+启动方式（只对 run 有效，命令行里后面写的覆盖前面的）:
+  （不写）       自动：源码与各级 pom 都没比 target/classes 新就跳过编译
+  -c, --compile  强制编译，就是手工敲 mvn 的效果
+      --no-compile  跳过编译直接跑已有的 class，模块没编过时会报错退出
+      --rebuild  先 clean 再编译后启动，改动大或判定猜错时用
+
+跳过编译省下的是整个模块的重编时间。Maven 只要发现任何一个源文件没有对应的
+class 文件，就会把整个模块重编一遍，整份被注释掉的源文件正好会一直触发它。
 
 带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
 后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
@@ -464,6 +483,101 @@ assign_tags() {
   return 0
 }
 
+# 模块目录下最新的 class 文件路径，给 find -newer 当参照。
+# 一次 find 加一次排序取头部，不给每个 class 派生 stat。
+newest_class_file() {
+  local classes=$1/target/classes
+  [[ -d "$classes" ]] || return 1
+  local newest
+  newest=$(find "$classes" -name '*.class' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1)
+  [[ -n "$newest" ]] || return 1
+  printf '%s\n' "${newest#* }"
+}
+
+# 模块要不要重新编译：0 需要，1 可以跳过。
+# 判据只有一条：源码、各级 pom、生成的源里，有文件比 target/classes 下最新的 class 新。
+# 源文件比最新 class 旧却没有同名 class，说明它本来就不产出 class（整份被注释掉、只有包
+# 声明之类），Maven 会因此每次都判「有改动」并把整个模块重编一遍，判定不跟着它走。
+# 资源不在比较范围：拷贝归 resources 插件管，跳过编译不影响它，改了 application.yml
+# 这类配置照样进 target/classes。
+# 拿不准一律返回「需要」，多编一次只是慢，漏编一次就是跑到旧代码。
+needs_compile() {
+  local dir=$1 newest d depth=0
+  newest=$(newest_class_file "$dir") || return 0
+
+  local -a roots=()
+  local r
+  for r in "$dir/src/main/java" "$dir/target/generated-sources"; do
+    [[ -e "$r" ]] && roots+=("$r")
+  done
+
+  # 模块自身与各级父 pom 都算：父 pom 改了依赖或插件版本，等于源码得重编。
+  d=$dir
+  while [[ -f "$d/pom.xml" && $depth -lt 8 ]]; do
+    roots+=("$d/pom.xml")
+    d=$(parent_dir "$d")
+    [[ "$d" == '/' ]] && break
+    depth=$((depth + 1))
+  done
+
+  ((${#roots[@]})) || return 0
+  # -type f 不能省：目录的 mtime 在建目录、增删文件时都会变，拿它当判据会次次判成
+  # 「有改动」。文件的 mtime 才是编辑动作留下的痕迹。
+  # -print -quit：找到第一个就收工，目录大时不用扫完。
+  [[ -n $(find "${roots[@]}" -type f -newer "$newest" -print -quit 2>/dev/null) ]]
+}
+
+# 数一遍不产出 class 的源文件。只在跳过编译时用来提示，跳过编译多半就是它们引起的。
+count_classless_sources() {
+  local dir=$1 classes=$1/target/classes n=0 f rel
+  [[ -d "$classes" && -d "$dir/src/main/java" ]] || { printf '0\n'; return 0; }
+  while IFS= read -r f; do
+    rel="${f#"$dir"/src/main/java/}"
+    rel="${rel%.java}.class"
+    [[ -f "$classes/$rel" ]] || n=$((n + 1))
+  done < <(find "$dir/src/main/java" -name '*.java' 2>/dev/null)
+  printf '%s\n' "$n"
+}
+
+# 按启动方式把记录里传给 mvn 的参数换掉，其余各列原样带回。
+# 参数变了就把展示用的命令一起改掉，让提示行印出来的就是真正要跑的东西。
+apply_start_mode() {
+  local allow_skip=$1 rec tag workdir plpath mvnargs display cmdtext dir n before
+  while IFS= read -r rec; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+    dir=$workdir
+    [[ -n "$plpath" ]] && dir="$workdir/$plpath"
+    before=$mvnargs
+
+    case "$START_MODE" in
+      "$MODE_NO_COMPILE")
+        mvnargs+=" $SKIP_ARGS"
+        ;;
+      "$MODE_REBUILD")
+        mvnargs="clean $mvnargs"
+        ;;
+      "$MODE_AUTO")
+        if [[ $allow_skip -eq 1 ]] && ! needs_compile "$dir"; then
+          mvnargs+=" $SKIP_ARGS"
+          n=$(count_classless_sources "$dir")
+          printf '跳过编译「%s」：源码与各级 pom 都没比 target/classes 新（-c 可强制编译）\n' "$tag" >&2
+          if ((n > 0)); then
+            printf '  另有 %d 个源文件不产出 class，Maven 会因此每次全量重编，把它们移出源码根即可根治\n' "$n" >&2
+          fi
+        fi
+        ;;
+    esac
+
+    if [[ "$mvnargs" != "$before" ]]; then
+      cmdtext='mvn'
+      [[ -n "$plpath" ]] && cmdtext+=" -pl $plpath"
+      cmdtext+=" $mvnargs"
+    fi
+    emit_record "$tag" "$workdir" "$plpath" "$mvnargs" "$display" "$cmdtext"
+  done
+  return 0
+}
+
 # 进工作目录后把当前进程换成 mvn。放在子 shell 里调用即可得到后台执行，
 # 因为 exec 只替换那个子 shell。
 launch_one() {
@@ -602,14 +716,25 @@ save_selection() {
 }
 
 main() {
-  local -a rest=()
-  local refresh=0 list_only=0 arg
-  for arg in "$@"; do
+  local -a rest=() args=("$@")
+  local refresh=0 list_only=0 end_opts=0 i=0 arg
+  while ((i < ${#args[@]})); do
+    arg=${args[$i]}
+    i=$((i + 1))
+    # -- 之后的词一律当关键词，关键词里带减号也不怕
+    if ((end_opts == 1)); then
+      rest+=("$arg")
+      continue
+    fi
     case "$arg" in
+      --) end_opts=1 ;;
       -h|--help) usage; exit 0 ;;
       -l|--list) list_only=1 ;;
       --refresh) refresh=1 ;;
-      -*) die "未知选项 $arg，用 mvnstart --help 看用法" ;;
+      -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$arg ;;
+      --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$arg ;;
+      --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$arg ;;
+      -*) usage_error "未知选项 $arg" ;;
       *) rest+=("$arg") ;;
     esac
   done
@@ -621,9 +746,15 @@ main() {
   fi
   local kw="${rest[0]:-}"
 
-  local noun collector
+  local noun collector allow_skip
   noun=$(command_field "$cmd" 4)
   collector=$(command_field "$cmd" 3)
+  allow_skip=$(command_field "$cmd" 5)
+
+  # 跳过编译与 clean 只对能直接启动的命令有意义，install 必须真编译。
+  if [[ $allow_skip -eq 0 && $START_MODE != "$MODE_AUTO" && $START_MODE != "$MODE_COMPILE" ]]; then
+    usage_error "「$cmd」命令不支持 $MODE_FLAG"
+  fi
 
   command -v mvn >/dev/null || die '找不到 mvn，先确认 Maven 在 PATH 里'
 
@@ -680,11 +811,29 @@ main() {
   fi
 
   save_selection "${chosen[@]}"
+
+  # 明说跳过编译时得有东西可跑，模块没编过就报错，不硬起一个空壳。
+  if [[ $START_MODE == "$MODE_NO_COMPILE" ]]; then
+    local r wd pl dir
+    for r in "${chosen[@]}"; do
+      IFS=$FS read -r _ wd pl _ _ _ <<< "$r"
+      dir=$wd
+      [[ -n "$pl" ]] && dir="$wd/$pl"
+      [[ -d "$dir/target/classes" ]] ||
+        die "「$(relative_to_pwd "$dir")」下没有 target/classes，跳过编译没有可跑的东西；先编译一次，或去掉 $MODE_FLAG" 2
+    done
+  fi
+
+  # 启动方式只改传给 mvn 的参数，目标本身照旧。
+  mapfile -t chosen < <(printf '%s\n' "${chosen[@]}" | apply_start_mode "$allow_skip")
+
   # 单条记录会 exec 成 mvn，正常情况下回不来；能回来只可能是工作目录进不去。
   launch_records "${chosen[@]}" || die '执行失败，检查工作目录是否存在'
 }
 
 SEL_FILE=''
+START_MODE="$MODE_AUTO"
+MODE_FLAG=''
 
 # 直接执行时跑主流程；被 source 进来时只加载函数，便于单独调试某一步。
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

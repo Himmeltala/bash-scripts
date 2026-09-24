@@ -14,6 +14,9 @@ mvnstart run            同上，显式写命令名
 mvnstart install        找顶层项目，勾选后执行构建
 mvnstart admin          带关键词时跳过界面，按子串匹配标签或路径后直接执行
 mvnstart install 人影   先写命令名，再写关键词
+mvnstart admin -c       强制编译后启动
+mvnstart --no-compile   跳过编译，直接跑已有的 class
+mvnstart --rebuild      先 clean 再编译后启动
 mvnstart --list         只列出目标，不执行
 mvnstart --refresh      清掉当前命令上次的勾选记录，重新开始
 mvnstart --help         显示帮助，命令清单从注册表生成
@@ -25,11 +28,30 @@ mvnstart --help         显示帮助，命令清单从注册表生成
 
 非交互环境（管道、脚本、CI）下探不到终端，自动退回编号输入，避免 whiptail 卡住。
 
+### 启动方式
+
+默认会自动判一遍这一条记录要不要编译，另外三条由命令行指定。模式参数只对 `run` 有效，`install` 收到 `--no-compile` 或 `--rebuild` 直接报用法错误退出，装上本地仓库必须真编译。命令行里后面写的覆盖前面的。
+
+| 方式 | 行为 |
+| --- | --- |
+| 不写 | 源码与各级 pom 都没比 `target/classes` 里最新的 class 新时跳过编译 |
+| `-c`, `--compile` | 强制编译，等价于手工敲 `mvn` |
+| `--no-compile` | 跳过编译直接跑已有的 class，模块没编过时报错退出（退出码 2） |
+| `--rebuild` | 先 `clean` 再编译后启动 |
+
+跳过编译省下的是整个模块的重编时间。Maven 只要发现任何一个源文件没有对应的 class 文件，就会把整个模块重编一遍；整份被注释掉的源文件永远不产出 class，正好一直触发它。实测一个 539 个源文件的模块，一次启动 44.5 秒对 7.8 秒，而源码其实一个字都没改。
+
+判定不跟着 Maven 走，只看时间戳：源码、`target/generated-sources`、模块自身与各级父 pom 里有文件比最新的 class 新，就照常编译。资源不参与判定，拷贝是 `resources` 插件的事，改了 `application.yml` 照样进 `target/classes`。
+
+判定拿不准（没有 `target/classes`、里面一个 class 都没有、路径不存在）一律返回「需要编译」，交给 Maven 自己判：多编一次只是慢，漏编一次就是跑到旧代码。判定猜错时用 `-c` 或 `--rebuild`。
+
+已知盲点一条：删掉源文件后，`target/classes` 里那个旧 class 会留下，光看时间戳看不出变化。这不是跳过编译独有的问题，`mvn compile` 本身也不删残留 class，删类之后都得 `clean`，也就是 `--rebuild`。
+
 ### 两条命令
 
 | 命令 | 目标 | 执行的 Maven 命令 |
 | --- | --- | --- |
-| `run` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> spring-boot:run` |
+| `run` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> spring-boot:run`，尾部参数受启动方式影响 |
 | `install` | 顶层项目 | `mvn clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true` |
 
 `install` 带 `maven.resources.skip`，装出来的 jar 里没有 `application.yml` 这类资源，用途是快速把依赖补齐进本地仓库，让 `run` 能解析到兄弟模块，不适合拿去部署。
@@ -70,10 +92,10 @@ runnet-admin-service@backend/runnet-admin/runnet-admin-service
 
 ### 加新命令
 
-脚本顶部有一张注册表，每行四列，用竖线隔开：
+脚本顶部有一张注册表，每行五列，用竖线隔开：
 
 ```
-命令名 | 说明 | 收集函数 | 目标的名词
+命令名 | 说明 | 收集函数 | 目标的名词 | 是否参与编译判定
 ```
 
 加一条命令要做两件事：在 `COMMANDS` 里加一行，再写一个收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。记录六列，顺序是：
@@ -95,6 +117,7 @@ runnet-admin-service@backend/runnet-admin/runnet-admin-service
 - **awk 遇到含 `<parent>` 的行不能整行 `next`。** pom 若把 `<parent>` 与项目自身坐标写在同一行，整行跳掉会把 `artifactId` 一起丢掉。要只摘掉行内的 parent 片段。
 - **机器性能决定写法。** 在开发这台机器上，fork 一次约 10 毫秒，bash 对 14KB 文本做一次模式匹配约 1 毫秒。所以整份 pom 的文本处理全部交给 awk、一次调用取全所需信息，bash 只碰短字符串。任何「每个 pom 多跑一遍 grep」的写法都会累积成秒级开销。
 - **别把入口类检查改成对整个扫描根跑一次 grep。** 从家目录或项目根扫描时，底下压着 `.vscode-server`、`node_modules` 这类大目录，实测比逐个模块查各自的源码目录还慢。
+- **判定「要不要编译」时只认文件，不认目录。** 目录的 mtime 在建目录、增删文件时都会变，`find -newer` 不限定 `-type f` 的话，刚 checkout 出来的源码目录会被判成「有改动」，跳过编译永远不生效。
 
 ### 已知限制
 

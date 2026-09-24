@@ -86,7 +86,7 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 | 命令 | 工作流 | 说明 |
 | --- | --- | --- |
-| `mvnstart` | java-maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run` 或 `clean install` |
+| `mvnstart` | java-maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run` 或 `clean install`；启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
 
 各工具的详细用法见对应工作流目录下的 README。
 
