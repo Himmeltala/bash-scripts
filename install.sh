@@ -20,6 +20,10 @@ readonly REPO_SLUG='Himmeltala/bash-scripts'
 readonly BRANCH='main'
 readonly TARBALL_URL="${BASH_SCRIPTS_TARBALL_URL:-https://codeload.github.com/${REPO_SLUG}/tar.gz/refs/heads/${BRANCH}}"
 
+# 卸载脚本的地址，只用来在结尾提示用户。
+# 走 jsDelivr 而不是 raw.githubusercontent.com：后者在国内多数网络下直连超时。
+readonly UNINSTALL_URL="https://cdn.jsdelivr.net/gh/${REPO_SLUG}@${BRANCH}/uninstall.sh"
+
 readonly INSTALL_DIR="${BASH_SCRIPTS_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-scripts}"
 readonly BIN_DIR="${BASH_SCRIPTS_BIN_DIR:-$HOME/.local/bin}"
 
@@ -190,8 +194,8 @@ main() {
   info '装好了。'
   info "源码: $INSTALL_DIR"
   info "入口: $BIN_DIR"
-  info '卸载: 用仓库里的 uninstall.sh，clone 过的也可以直接跑 ./uninstall.sh'
-  info '      curl -fsSL https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/uninstall.sh | bash'
+  info '卸载: clone 过的直接跑 ./uninstall.sh，没 clone 的用下面这条'
+  info "      curl -fsSL ${UNINSTALL_URL} | bash"
 }
 
 main "$@"
