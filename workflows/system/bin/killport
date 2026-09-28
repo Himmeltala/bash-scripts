@@ -1,0 +1,372 @@
+#!/usr/bin/env bash
+# killport —— 杀掉占用指定端口的进程。
+#
+# 默认只查 TCP 监听端口，加 -u 连 UDP 一起查。系统级端口默认拒绝执行：
+# 0 到 1023 这段特权端口，加上下面 PROTECTED_PORTS 名单里的常见服务端口，
+# 都要显式加 --force 才肯动。
+#
+# 查占用进程先试 ss，ss 没有就退回 lsof，两个都没有直接报错。非 root 时
+# ss 看不到别人进程的 pid，这种情况只报告不动手，不做任何猜测。
+#
+# 改这个脚本之前注意两条：
+#   一、ss 的过滤条件是作为单个参数传进去的，端口号必须跟着冒号拼成
+#       "sport = :<端口>"，拆成多个参数会被当成两段过滤条件。
+#   二、拿到的 pid 必须排除 1 和本脚本自身。脚本可能被子 shell 调起，
+#       猜错一次就是杀掉 init 或自己所在的进程组。
+
+set -uo pipefail
+
+# 特权端口段。内核只允许 root 绑定这一段，普通用户能占上多半说明系统在跑东西。
+readonly PRIVILEGED_MAX=1023
+
+# 名单里的端口同样受保护。这里放的是系统服务与常见中间件的默认端口，
+# 8080 这类开发常用的端口故意不列，免得挡住自己 spring-boot:run。
+readonly PROTECTED_PORTS=(
+  21 22 23 25 53 80 111 123 137 138 139 161 162 389 443 445 465 514 587
+  631 636 873 993 995 1521 2049 2181 3306 5432 5672 6379 6443 9200 11211 27017
+)
+
+readonly DEFAULT_TIMEOUT=5
+
+declare -A PROTECTED_SET=()
+for _p in "${PROTECTED_PORTS[@]}"; do PROTECTED_SET[$_p]=1; done
+unset _p
+
+SIGNAL='TERM'
+SIGNAL_NAME='TERM'
+FORCE=0
+ASSUME_YES=0
+DRY_RUN=0
+UDP=0
+TIMEOUT=$DEFAULT_TIMEOUT
+PORTS=()
+
+info() { printf '%s\n' "$*"; }
+warn() { printf 'killport: %s\n' "$*" >&2; }
+die() {
+  printf 'killport: %s\n' "$*" >&2
+  exit "${2:-1}"
+}
+
+# 用法错误按惯例退 2，与「找到了进程但没处理成」的 1 分开。
+usage_error() { die "$*，用 killport --help 看用法" 2; }
+
+usage() {
+  cat <<'EOF'
+用法: killport [选项] <端口>...
+
+杀掉占用指定端口的进程。一次可以给多个端口。
+
+默认先发 SIGTERM 让进程自己收尾，等 --timeout 秒仍未退出时再问一次要不要补
+发 SIGKILL。stdin 不是终端时（管道、脚本、CI）不追问，直接报告进程仍在。
+
+默认只查 TCP 监听端口，加 -u 连 UDP 一起查。
+
+系统级端口默认拒绝执行：0 到 1023 这段特权端口，加上脚本顶部名单里的常见服务
+端口（ssh、dns、http、mysql、redis、mongo 这些）。确要动它们就显式加 --force。
+
+选项:
+  -s, --signal <信号>  发送的信号，名字或编号都行，默认 TERM
+  -9                   等价于 -s KILL，直接强杀
+  -f, --force          允许操作受保护端口
+  -y, --yes            跳过确认，超时后是否补发 SIGKILL 也不再追问
+  -n, --dry-run        只列出占用进程，不发信号
+  -u, --udp            连 UDP 端口一起查
+  -t, --timeout <秒>   发出信号后等多少秒，默认 5，0 表示不等
+  -h, --help           显示本帮助
+
+退出码:
+  0  全部处理成功
+  1  有端口没处理成：没人监听、拿不到 pid、信号没送到、进程没退出
+  2  用法错误
+  3  撞上受保护端口，且没有 --force
+EOF
+}
+
+# 校验端口并把归一化的结果写进全局 NORM_PORT。
+# 结果不能靠「函数打印、调用方命令替换接」的写法传出来：命令替换会开子 shell，
+# usage_error 里的 exit 只退掉子 shell，主流程会带着空端口继续往下跑，
+# 表现为报完错又照常去查 0 号端口。
+NORM_PORT=''
+
+parse_port() {
+  local p=$1 n
+  [[ $p =~ ^[0-9]+$ ]] || usage_error "端口 $p 不是数字"
+  # 位数先卡一道：交给 $((10#$p)) 处理超长数字会直接报错退出
+  ((${#p} > 5)) && usage_error "端口 $p 超出 1 到 65535"
+  # 10# 前缀按十进制解析，否则 080 这类前导零会被当成八进制
+  n=$((10#$p))
+  ((n >= 1 && n <= 65535)) || usage_error "端口 $p 超出 1 到 65535"
+  NORM_PORT=$n
+}
+
+add_port() {
+  local n p
+  parse_port "$1"
+  n=$NORM_PORT
+  for p in "${PORTS[@]}"; do
+    [[ $p == "$n" ]] && return 0
+  done
+  PORTS+=("$n")
+}
+
+set_signal() {
+  local s=${1^^} n
+  if [[ $s =~ ^[0-9]+$ ]]; then
+    ((s >= 1 && s <= 64)) || usage_error "信号编号 $1 超出 1 到 64"
+    n=$s
+  else
+    s=${s#SIG}
+    # kill -l 认信号名就把编号吐出来，不认则报错退出
+    n=$(kill -l "$s" 2>/dev/null) || usage_error "未知信号 $1，用 kill -l 看可用信号"
+  fi
+  # 编号是准的，名字只用来显示：编号写进命令，名字写进提示语
+  SIGNAL_NAME=$(kill -l "$n" 2>/dev/null) || SIGNAL_NAME=$n
+  SIGNAL=$n
+}
+
+set_timeout() {
+  [[ $1 =~ ^[0-9]+$ ]] || usage_error "超时 $1 不是秒数"
+  TIMEOUT=$((10#$1))
+}
+
+parse_args() {
+  local arg
+  while (($#)); do
+    arg=$1
+    case $arg in
+      -s|--signal)
+        (($# >= 2)) || usage_error "$arg 后面要跟信号名或编号"
+        set_signal "$2"
+        shift 2
+        ;;
+      --signal=*) set_signal "${arg#*=}"; shift ;;
+      -9) set_signal KILL; shift ;;
+      -t|--timeout)
+        (($# >= 2)) || usage_error "$arg 后面要跟秒数"
+        set_timeout "$2"
+        shift 2
+        ;;
+      --timeout=*) set_timeout "${arg#*=}"; shift ;;
+      -f|--force) FORCE=1; shift ;;
+      -y|--yes) ASSUME_YES=1; shift ;;
+      -n|--dry-run) DRY_RUN=1; shift ;;
+      -u|--udp) UDP=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      --)
+        shift
+        while (($#)); do
+          add_port "$1"
+          shift
+        done
+        ;;
+      -*) usage_error "未知选项 $arg" ;;
+      *) add_port "$arg"; shift ;;
+    esac
+  done
+}
+
+is_protected() {
+  local port=$1
+  ((port <= PRIVILEGED_MAX)) && return 0
+  [[ -n ${PROTECTED_SET[$port]:-} ]] && return 0
+  return 1
+}
+
+protect_reason() {
+  if (($1 <= PRIVILEGED_MAX)); then
+    printf '特权端口段 0 到 %d' "$PRIVILEGED_MAX"
+  else
+    printf '在受保护名单里'
+  fi
+}
+
+# 输出占用端口的 pid，一行一个。
+# 返回 0 是拿到了 pid，1 是没人监听，2 是有监听但对不上进程。
+find_pids() {
+  local port=$1 lines=() extra=() pids
+  if command -v ss >/dev/null 2>&1; then
+    mapfile -t lines < <(ss -H -ltnp "sport = :$port" 2>/dev/null)
+    if ((UDP)); then
+      mapfile -t extra < <(ss -H -lunp "sport = :$port" 2>/dev/null)
+      lines+=("${extra[@]}")
+    fi
+    ((${#lines[@]})) || return 1
+    pids=$(printf '%s\n' "${lines[@]}" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u)
+    [[ -n $pids ]] || return 2
+    printf '%s\n' "$pids"
+    return 0
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    mapfile -t lines < <(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null)
+    if ((UDP)); then
+      mapfile -t extra < <(lsof -nP -t -iUDP:"$port" 2>/dev/null)
+      lines+=("${extra[@]}")
+    fi
+    pids=$(printf '%s\n' "${lines[@]}" | grep -E '^[0-9]+$' | sort -u)
+    ((${#pids})) || return 1
+    printf '%s\n' "$pids"
+    return 0
+  fi
+
+  die 'ss 与 lsof 都没有，先装 iproute2 或 lsof'
+}
+
+describe_pid() {
+  local pid=$1 user name cmd
+  user=$(stat -c %U "/proc/$pid" 2>/dev/null) || user='?'
+  name=$(cat "/proc/$pid/comm" 2>/dev/null) || name='?'
+  # 命令行参数里可能带换行（python3 -c 这类），不压平会把输出的表格冲散
+  cmd=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | tr -s '[:space:]' ' ')
+  cmd=${cmd% }
+  # 内核线程的 cmdline 是空的，退回 comm
+  [[ -n $cmd ]] || cmd=$name
+  printf '  PID %-8s %-10s %s\n' "$pid" "$user" "$cmd"
+}
+
+alive_pids() {
+  local pid
+  for pid in "$@"; do
+    kill -0 "$pid" 2>/dev/null && printf '%s\n' "$pid"
+  done
+  return 0
+}
+
+confirm() {
+  local reply
+  ((ASSUME_YES)) && return 0
+  # 非交互环境没人可问，按否处理，调用方自己决定提示语
+  [[ -t 0 ]] || return 1
+  printf '%s [y/N] ' "$1" >&2
+  read -r reply || return 1
+  [[ $reply == [yY] || $reply == [yY][eE][sS] ]]
+}
+
+# 处理一个端口。返回 0 是处理干净了，1 是没处理成，3 是受保护端口被拒。
+handle_port() {
+  local port=$1
+  local -a targets=() alive=()
+  local found pid
+
+  if is_protected "$port" && ((!FORCE)); then
+    warn "端口 $port 受保护（$(protect_reason "$port")），拒绝执行。确要干掉就加 --force。"
+    return 3
+  fi
+  if is_protected "$port"; then
+    warn "端口 $port 受保护（$(protect_reason "$port")），--force 已指定，继续。"
+  fi
+
+  found=$(find_pids "$port")
+  case $? in
+    1)
+      info "端口 $port 没有被监听。"
+      return 1
+      ;;
+    2)
+      warn "端口 $port 有监听但对不上进程，可能是别人的进程而当前不是 root，"
+      warn "也可能是这个端口在别的网络命名空间里（容器映射的端口）。不加猜测，跳过。"
+      return 1
+      ;;
+  esac
+
+  while read -r pid; do
+    [[ -n $pid ]] || continue
+    if ((pid == 1 || pid == $$ || pid == PPID)); then
+      warn "跳过 PID $pid，它是 init 或本脚本自身。"
+      continue
+    fi
+    targets+=("$pid")
+  done <<<"$found"
+  ((${#targets[@]})) || {
+    warn "端口 $port 的占用进程都不能动，跳过。"
+    return 1
+  }
+
+  info "端口 $port 被以下进程占用:"
+  for pid in "${targets[@]}"; do describe_pid "$pid"; done
+
+  if ((DRY_RUN)); then
+    info "干跑，未发信号。"
+    return 0
+  fi
+  if ! confirm "向上面这些进程发送 SIG${SIGNAL_NAME}?"; then
+    if [[ ! -t 0 ]]; then
+      warn "非交互环境不做确认，跳过端口 $port。"
+    else
+      info "已取消。"
+    fi
+    return 1
+  fi
+
+  for pid in "${targets[@]}"; do
+    if kill -s "$SIGNAL" "$pid" 2>/dev/null; then
+      info "已向 PID $pid 发送 SIG${SIGNAL_NAME}。"
+    else
+      warn "向 PID $pid 发送 SIG${SIGNAL_NAME} 失败，进程可能已退出或权限不足。"
+    fi
+  done
+
+  if ((TIMEOUT > 0)); then
+    local deadline=$((SECONDS + TIMEOUT))
+    while :; do
+      mapfile -t alive < <(alive_pids "${targets[@]}")
+      ((${#alive[@]})) || break
+      ((SECONDS >= deadline)) && break
+      sleep 0.2
+    done
+  else
+    mapfile -t alive < <(alive_pids "${targets[@]}")
+  fi
+
+  if ((${#alive[@]} == 0)); then
+    info "端口 $port 已释放。"
+    return 0
+  fi
+
+  # SIGKILL 送不动就没别的招了，剩下的都是权限或内核线程问题
+  if [[ $SIGNAL_NAME == KILL ]]; then
+    warn "PID ${alive[*]} 仍在运行，SIGKILL 也送不动，多半是权限不足。"
+    return 1
+  fi
+
+  info "以下进程在 ${TIMEOUT} 秒内没有退出: ${alive[*]}"
+  if [[ ! -t 0 && $ASSUME_YES == 0 ]]; then
+    warn "非交互环境不再追问，要杀干净请直接加 -9，或先给 --yes。"
+    return 1
+  fi
+  if ! confirm "补发 SIGKILL 强制杀掉吗?"; then
+    warn "保持原样，PID ${alive[*]} 仍在运行。"
+    return 1
+  fi
+
+  for pid in "${alive[@]}"; do
+    kill -s KILL "$pid" 2>/dev/null || warn "向 PID $pid 发送 SIGKILL 失败，权限不足。"
+  done
+  sleep 0.5
+  mapfile -t alive < <(alive_pids "${targets[@]}")
+  if ((${#alive[@]} == 0)); then
+    info "端口 $port 已释放。"
+    return 0
+  fi
+  warn "PID ${alive[*]} 仍在运行，SIGKILL 也送不动，多半是权限不足。"
+  return 1
+}
+
+main() {
+  parse_args "$@"
+  ((${#PORTS[@]})) || usage_error '没给端口'
+
+  # 撞上保护端口比一般的没杀成更值得让调用方看见，整体退出码里以 3 优先
+  local rc=0 r p
+  for p in "${PORTS[@]}"; do
+    handle_port "$p" || {
+      r=$?
+      ((rc == 0)) && rc=$r
+      ((r == 3)) && rc=3
+    }
+  done
+  return $rc
+}
+
+main "$@"
