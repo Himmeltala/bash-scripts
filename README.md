@@ -7,10 +7,14 @@ bash-scripts/
 ├── install.sh                    安装
 ├── uninstall.sh                  卸载
 └── workflows/
-    └── java-maven/               Java Maven 工作流
+    ├── java-maven/               Java Maven 工作流
+    │   ├── README.md
+    │   └── bin/
+    │       └── mvnstart
+    └── system/                   系统运维工作流
         ├── README.md
         └── bin/
-            └── mvnstart
+            └── killport
 ```
 
 `workflows/` 下每一层目录代表一类工作流，`bin/` 里放该工作流的可执行文件；以后加别的领域的工具，另起一个目录即可：
@@ -87,9 +91,10 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 | 命令 | 工作流 | 说明 |
 | --- | --- | --- |
 | `mvnstart` | java-maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run` 或 `clean install`；启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
+| `killport` | system | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
 
 各工具的详细用法见对应工作流目录下的 README。
 
 ## 环境要求
 
-bash 4 以上。`mvnstart` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。
+bash 4 以上。`mvnstart` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。
