@@ -1,41 +1,34 @@
 # bash-scripts
 
-自用 bash 工具集合，按工作流分层存放。
+自用 bash 工具集合，按用途分目录存放。
 
 ```
 bash-scripts/
 ├── install.sh                    安装
 ├── uninstall.sh                  卸载
-└── workflows/
-    ├── maven/                    Maven 工作流
-    │   ├── README.md
-    │   ├── bin/
-    │   │   └── mvnstart
-    │   └── lib/
-    │       ├── mvnstart-core.sh   加载器
-    │       └── mvnstart/          按职责拆的模块，commands/ 下每条命令一个文件
-    ├── archive/                  归档工作流
-    │   ├── README.md
-    │   ├── bin/
-    │   │   └── zipx
-    │   └── lib/
-    │       ├── zipx-core.sh       加载器
-    │       └── zipx/              按职责拆的模块
-    └── system/                   系统运维工作流
-        ├── README.md
-        └── bin/
-            └── killport
+├── archive/                      归档类工具
+│   ├── README.md
+│   ├── bin/
+│   │   └── zipx
+│   └── lib/
+│       ├── zipx-core.sh          加载器
+│       └── zipx/                 按职责拆的模块
+├── maven/                        Maven 类工具
+│   ├── README.md
+│   ├── bin/
+│   │   └── mvnstart
+│   └── lib/
+│       ├── mvnstart-core.sh      加载器
+│       └── mvnstart/             按职责拆的模块，commands/ 下每条命令一个文件
+├── mysql/                        以后放数据库相关的
+├── svn/                          以后放版本控制相关的
+└── system/                       系统运维类工具
+    ├── README.md
+    └── bin/
+        └── killport
 ```
 
-`workflows/` 下每一层目录代表一类工作流，`bin/` 里放该工作流的可执行文件，`lib/` 放被入口共用的库，不会被软链成命令；以后加别的领域的工具，另起一个目录即可：
-
-```
-workflows/
-├── archive/
-├── maven/
-├── mysql/          以后放数据库相关的
-└── svn/            以后放版本控制相关的
-```
+根下每个目录代表一类工具，`bin/` 里放可执行文件，`lib/` 放被入口共用的库，不会被软链成命令。工具的划分按用途走，不按语言或技术：`archive` 管归档，`maven` 管 Maven 项目，`system` 管系统运维。加新工具就是新建一个这样的目录。
 
 ## 安装
 
@@ -86,10 +79,10 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ```
 ~/.local/share/bash-scripts/     源码，目录结构与仓库一致
-~/.local/bin/mvnstart            软链，指向上面的 workflows/*/bin/ 下的入口文件
+~/.local/bin/mvnstart            软链，指向上面的 maven/bin/ 里的可执行文件
 ```
 
-`workflows/*/bin/` 下的每个可执行文件都会软链到链接目录，各工作流的 `lib/` 不链。
+源码树里每个 `*/bin/` 下的可执行文件都会软链到链接目录，各工具目录的 `lib/` 不链。
 
 两个位置都遵循 XDG 规范，可用环境变量覆盖：
 
@@ -101,13 +94,13 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ## 工具清单
 
-| 命令 | 工作流 | 说明 |
+| 命令 | 所属目录 | 说明 |
 | --- | --- | --- |
 | `mvnstart` | maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数先选命令再选目标，启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
 | `killport` | system | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
 | `zipx` | archive | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
 
-各工具的详细用法见对应工作流目录下的 README。
+各工具的详细用法见对应目录下的 README。
 
 ## 环境要求
 

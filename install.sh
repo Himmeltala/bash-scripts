@@ -6,15 +6,18 @@
 #   二、从 curl 管道里跑：curl -fsSL <install.sh 的地址> | bash
 # 第二种情况下没有本地源码，脚本会去下载仓库归档再解开。
 #
-# 安装后的目录层级与仓库保持一致：
+# 安装后的目录层级与仓库保持一致：仓库根下每个目录是一类工具，各自的 bin 里放
+# 可执行文件，lib 里放入口共用的库。
 #   ~/.local/share/bash-scripts/
-#   └── workflows/
-#       └── maven/
-#           ├── bin/
-#           │   └── mvnstart
-#           └── lib/
-#               ├── mvnstart-core.sh
-#               └── mvnstart/
+#   ├── maven/
+#   │   ├── bin/
+#   │   │   └── mvnstart
+#   │   └── lib/
+#   │       ├── mvnstart-core.sh
+#   │       └── mvnstart/
+#   └── system/
+#       └── bin/
+#           └── killport
 # 可执行文件软链到 ~/.local/bin；lib 下是入口共用的库，不链。
 
 set -euo pipefail
@@ -64,6 +67,16 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "找不到 $1，先装上再用"
 }
 
+# 一个目录像个源码树，判据是它底下有工具目录带 bin。
+# 用来区分「脚本就在检出里」与「脚本是管道进来的、源码要去下载」。
+has_bin_dirs() {
+  local d
+  for d in "$1"/*/bin; do
+    [[ -d "$d" ]] && return 0
+  done
+  return 1
+}
+
 # 找出源码在哪里：优先用脚本所在的检出目录，管道进来的话就下载归档。
 # 结果写进全局 SRC_DIR；走下载这条路时临时目录记在 DOWNLOAD_TMP 里给调用方清理。
 # 这里不能用「函数打印、调用方 command substitution 接」的写法：
@@ -77,7 +90,7 @@ resolve_source() {
     self=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   fi
 
-  if [[ -n "$self" && -d "$self/workflows" ]]; then
+  if [[ -n "$self" && -d "$self" ]] && has_bin_dirs "$self"; then
     info "用本地检出作为来源: $self"
     SRC_DIR=$self
     return 0
@@ -102,7 +115,7 @@ resolve_source() {
   # 归档解开后是一层 repo-branch 目录，取里面那个
   local extracted
   extracted=$(find "$tmp" -maxdepth 1 -mindepth 1 -type d | head -1)
-  [[ -n "$extracted" && -d "$extracted/workflows" ]] || die '归档里没找到 workflows 目录'
+  [[ -n "$extracted" ]] && has_bin_dirs "$extracted" || die '归档里没找到任何 */bin 目录'
   SRC_DIR=$extracted
 }
 
@@ -123,13 +136,13 @@ install_tree() {
   copy_tree "$src" "$INSTALL_DIR"
 }
 
-# 把 workflows 下各个 bin 目录里的可执行文件软链到 BIN_DIR。
+# 把各工具目录下 bin 里的可执行文件软链到 BIN_DIR。
 # 这里只认链接，不解引用，重复执行也不会叠出备份文件。
 link_bins() {
   local found=0 f name target stamp
   mkdir -p "$BIN_DIR"
   shopt -s nullglob
-  for f in "$INSTALL_DIR"/workflows/*/bin/*; do
+  for f in "$INSTALL_DIR"/*/bin/*; do
     [[ -f "$f" ]] || continue
     name=$(basename "$f")
     target="$BIN_DIR/$name"
@@ -148,7 +161,7 @@ link_bins() {
     fi
   done
   shopt -u nullglob
-  ((found > 0)) || warn "在 $INSTALL_DIR/workflows/*/bin 下没找到可执行文件"
+  ((found > 0)) || warn "在 $INSTALL_DIR/*/bin 下没找到可执行文件"
 }
 
 # 保证 BIN_DIR 在 PATH 里。已经生效就不重复写，避免 .bashrc 越堆越长。
