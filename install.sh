@@ -9,10 +9,16 @@
 # 安装后的目录层级与仓库保持一致：
 #   ~/.local/share/bash-scripts/
 #   └── workflows/
-#       └── java-maven/
-#           └── bin/
-#               └── mvnstart
-# 可执行文件软链到 ~/.local/bin。
+#       └── maven/
+#           ├── bin/
+#           │   ├── mvnstart
+#           │   ├── mvnstart-run
+#           │   ├── mvnstart-install
+#           │   └── mvnstart-package
+#           └── lib/
+#               ├── mvnstart-core.sh
+#               └── mvnstart/
+# 可执行文件软链到 ~/.local/bin；lib 下是入口共用的库，不链。
 
 set -euo pipefail
 

@@ -7,21 +7,27 @@ bash-scripts/
 ├── install.sh                    安装
 ├── uninstall.sh                  卸载
 └── workflows/
-    ├── java-maven/               Java Maven 工作流
+    ├── maven/                    Maven 工作流
     │   ├── README.md
-    │   └── bin/
-    │       └── mvnstart
+    │   ├── bin/
+    │   │   ├── mvnstart
+    │   │   ├── mvnstart-run
+    │   │   ├── mvnstart-install
+    │   │   └── mvnstart-package
+    │   └── lib/
+    │       ├── mvnstart-core.sh   加载器
+    │       └── mvnstart/          按职责拆的模块，commands/ 下每条命令一个文件
     └── system/                   系统运维工作流
         ├── README.md
         └── bin/
             └── killport
 ```
 
-`workflows/` 下每一层目录代表一类工作流，`bin/` 里放该工作流的可执行文件；以后加别的领域的工具，另起一个目录即可：
+`workflows/` 下每一层目录代表一类工作流，`bin/` 里放该工作流的可执行文件，`lib/` 放被入口共用的库，不会被软链成命令；以后加别的领域的工具，另起一个目录即可：
 
 ```
 workflows/
-├── java-maven/
+├── maven/
 ├── mysql/          以后放数据库相关的
 └── svn/            以后放版本控制相关的
 ```
@@ -75,8 +81,10 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ```
 ~/.local/share/bash-scripts/     源码，目录结构与仓库一致
-~/.local/bin/mvnstart            软链，指向上面的 bin/mvnstart
+~/.local/bin/mvnstart            软链，指向上面的 workflows/*/bin/ 下的入口文件
 ```
+
+`workflows/*/bin/` 下的每个可执行文件都会软链到链接目录，各工作流的 `lib/` 不链。
 
 两个位置都遵循 XDG 规范，可用环境变量覆盖：
 
@@ -90,7 +98,7 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 | 命令 | 工作流 | 说明 |
 | --- | --- | --- |
-| `mvnstart` | java-maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run` 或 `clean install`；启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
+| `mvnstart` | maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种。另有 `mvnstart-run`、`mvnstart-install`、`mvnstart-package` 三个按命令命名的入口 |
 | `killport` | system | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
 
 各工具的详细用法见对应工作流目录下的 README。

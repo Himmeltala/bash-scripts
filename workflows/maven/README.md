@@ -22,6 +22,11 @@ mvnstart --rebuild      先 clean 再编译后启动
 mvnstart --list         只列出目标，不执行
 mvnstart --refresh      清掉当前命令上次的勾选记录，重新开始
 mvnstart --help         显示帮助，命令清单从注册表生成
+
+mvnstart-run            按命令命名的入口，等价于 mvnstart run
+mvnstart-install        等价于 mvnstart install
+mvnstart-package        等价于 mvnstart package
+mvnstart-package --no-am  入口与命令名可以混着用
 ```
 
 界面用方向键移动、空格勾选、回车确认。上次勾过的目标下次自动预勾选。
@@ -105,23 +110,55 @@ runnet-admin-service@backend/runnet-admin/runnet-admin-service
 
 ### 勾选记录
 
-存在 `~/.cache/mvnstart/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。
+存在 `~/.cache/mvnstart/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。记录按命令名存，`mvnstart-run` 与 `mvnstart run` 共用同一份。
+
+### 文件结构
+
+```
+workflows/java-maven/
+├── README.md
+├── bin/                     入口，每个只负责定位核心、转发参数
+│   ├── mvnstart             默认 run
+│   ├── mvnstart-run
+│   ├── mvnstart-install
+│   └── mvnstart-package
+└── lib/
+    ├── mvnstart-core.sh     加载器，按顺序 source 下面各文件
+    └── mvnstart/
+        ├── util.sh          报错、记录分列、路径计算
+        ├── pom.sh           pom 扫描与解析、可运行模块判定、聚合根寻址
+        ├── ui.sh            勾选界面、勾选记录、同名标签去重
+        ├── exec.sh          启动方式与编译判定、起进程
+        ├── cli.sh           注册表、帮助、参数解析与主流程
+        └── commands/        每条命令一个文件
+            ├── run.sh
+            ├── install.sh
+            └── package.sh
+```
+
+`mvnstart run admin` 与 `mvnstart-run admin` 完全等价。加载器直接执行也行，等价于 `mvnstart`，调试某一步时方便。
+
+安装脚本只把 `bin` 下的文件软链成命令，`lib` 不会出现在 PATH 里。
+
+拆分按职责走，不按命令走：三条命令各自专有的代码加起来不到 90 行，剩下的是扫描、解析、勾选、启动这些三条共用的机制。bash 没有模块机制，各文件共用的是全局数组与变量，加载顺序由加载器固定，改哪个功能就看哪个文件。
 
 ### 加新命令
 
-脚本顶部有一张注册表，每行五列，用竖线隔开：
+`lib/mvnstart/cli.sh` 顶部有一张注册表，每行五列，用竖线隔开：
 
 ```
 命令名 | 说明 | 收集函数 | 目标的名词 | 是否参与编译判定
 ```
 
-加一条命令要做两件事：在 `COMMANDS` 里加一行，再写一个收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。记录六列，顺序是：
+加一条命令要做两件事：在 `COMMANDS` 里加一行，再在 `lib/mvnstart/commands/` 下加一个文件写收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，其余文件都不用动。记录六列，顺序是：
 
 ```
 标签、工作目录、-pl 的值（不走 -pl 时为空）、mvn 参数、展示用相对路径、展示用命令
 ```
 
 `-pl` 的值单独占一列而不是先拼进参数字符串，是为了执行时能加引号，路径含空格时才不会被拆成两个参数。
+
+想让新命令也有独立入口名，在 `bin` 下照抄一个入口文件即可，里面只做三件事：定位 `../lib/mvnstart-core.sh`、把命令名写进 `MVNSTART_DEFAULT_COMMAND`、`source` 之后调 `main "$@"`。入口里不写别的逻辑，默认命令必须在注册表里，写错了脚本会直接报出来。
 
 ### 实现上要注意的坑
 
