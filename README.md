@@ -17,6 +17,13 @@ bash-scripts/
     │   └── lib/
     │       ├── mvnstart-core.sh   加载器
     │       └── mvnstart/          按职责拆的模块，commands/ 下每条命令一个文件
+    ├── archive/                  归档工作流
+    │   ├── README.md
+    │   ├── bin/
+    │   │   └── zipx
+    │   └── lib/
+    │       ├── zipx-core.sh       加载器
+    │       └── zipx/              按职责拆的模块
     └── system/                   系统运维工作流
         ├── README.md
         └── bin/
@@ -27,6 +34,7 @@ bash-scripts/
 
 ```
 workflows/
+├── archive/
 ├── maven/
 ├── mysql/          以后放数据库相关的
 └── svn/            以后放版本控制相关的
@@ -100,9 +108,10 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 | --- | --- | --- |
 | `mvnstart` | maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种。另有 `mvnstart-run`、`mvnstart-install`、`mvnstart-package` 三个按命令命名的入口 |
 | `killport` | system | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
+| `zipx` | archive | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
 
 各工具的详细用法见对应工作流目录下的 README。
 
 ## 环境要求
 
-bash 4 以上。`mvnstart` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。
+bash 4 以上。`mvnstart` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。
