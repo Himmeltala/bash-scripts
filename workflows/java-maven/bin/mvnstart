@@ -32,6 +32,7 @@ readonly FS=$'\x1f'
 readonly COMMANDS=(
   'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块|1'
   'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目|0'
+  'package|把可运行模块打成可部署的 jar|collect_packable|可运行模块|0'
 )
 readonly DEFAULT_COMMAND='run'
 
@@ -45,6 +46,10 @@ readonly SKIP_ARGS='-Dmaven.main.skip=true -Dmaven.test.skip=true'
 
 # 启动方式。auto 由脚本判定，其余三个由命令行指定，见 usage。
 readonly MODE_AUTO='auto' MODE_COMPILE='compile' MODE_NO_COMPILE='no-compile' MODE_REBUILD='rebuild'
+
+# 打包参数的两个开关只对 package 命令有效，默认都关着。
+# PACK_FLAG 记下最后写的是哪一个，只用来在别的命令带上时报出名字。
+readonly PACKAGE_COMMAND='package'
 
 # 一次调用把一个 pom 需要的信息全部取出来，输出带前缀的行：
 #   ID  <artifactId>  项目自身的 id，<parent> 里的不算
@@ -152,7 +157,8 @@ usage() {
 在当前目录下递归查找目标，勾选后执行对应命令。
 
 不写命令时用 run。首个非选项参数命中命令名就按命令处理，否则当作关键词。
-例如 mvnstart admin 是启动匹配 admin 的模块，mvnstart install 是构建顶层项目。
+例如 mvnstart admin 是启动匹配 admin 的模块，mvnstart install 是构建顶层项目，
+mvnstart package 是把勾选的模块打成 jar。
 
 命令:
 EOF
@@ -177,6 +183,11 @@ EOF
 
 跳过编译省下的是整个模块的重编时间。Maven 只要发现任何一个源文件没有对应的
 class 文件，就会把整个模块重编一遍，整份被注释掉的源文件正好会一直触发它。
+
+打包参数（只对 package 有效）:
+  （不写）       默认 clean package -Dmaven.test.skip=true -am，兄弟模块一起构建
+      --no-am    去掉 -am，兄弟模块必须在本地仓库里，省下拉起它们的时间
+      --no-clean 去掉 clean，增量打包最快，代价是残留的旧 class 会进 jar
 
 带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
 后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
@@ -351,10 +362,13 @@ find_aggregator() {
   printf '%s\n' "$agg"
 }
 
-# run 命令的目标：不是 pom 打包，引了 spring-boot-maven-plugin，
+# 可运行模块的判定：不是 pom 打包，引了 spring-boot-maven-plugin，
 # 并且带 @SpringBootApplication 的入口类确实在它自己的源码目录里。
-collect_runnable() {
-  local pom dir id agg rel
+# run 与 package 用的是同一批目标，判定只写这一遍，各自只管拼自己那条记录。
+# 每命中一个模块调用一次 $1，参数依次是模块目录、id、聚合根、-pl 的值；
+# 模块走不到任何聚合根时后两个参数为空。
+each_runnable_module() {
+  local cb=$1 pom dir id agg rel
   for pom in "${POM_LIST[@]}"; do
     [[ -n "${POM_SB_VAL[$pom]:-}" ]] || continue
     [[ -n "${POM_PKG_VAL[$pom]:-}" ]] && continue
@@ -367,14 +381,55 @@ collect_runnable() {
 
     if agg=$(find_aggregator "$dir"); then
       rel="${dir#"$agg"/}"
-      emit_record "$id" "$agg" "$rel" 'spring-boot:run' \
-        "$(relative_to_pwd "$dir")" "mvn -pl $rel spring-boot:run"
+      "$cb" "$dir" "$id" "$agg" "$rel"
     else
-      emit_record "$id" "$dir" '' 'spring-boot:run' \
-        "$(relative_to_pwd "$dir")" 'mvn spring-boot:run'
+      "$cb" "$dir" "$id" '' ''
     fi
   done
   return 0
+}
+
+emit_run_record() {
+  local dir=$1 id=$2 agg=$3 rel=$4
+  if [[ -n "$rel" ]]; then
+    emit_record "$id" "$agg" "$rel" 'spring-boot:run' \
+      "$(relative_to_pwd "$dir")" "mvn -pl $rel spring-boot:run"
+  else
+    emit_record "$id" "$dir" '' 'spring-boot:run' \
+      "$(relative_to_pwd "$dir")" 'mvn spring-boot:run'
+  fi
+}
+
+collect_runnable() {
+  each_runnable_module emit_run_record
+}
+
+# package 的参数按开关现拼，见 usage。
+# -am 让 Maven 连模块依赖的兄弟模块一起构建，兄弟模块还没装进本地仓库时也能一次打包成功。
+# 跳过测试省下的是编译测试类与跑测试的时间，打出来的是能跑的东西，不是验证过的版本。
+package_args() {
+  local args=''
+  [[ $PACK_NO_CLEAN -eq 0 ]] && args='clean '
+  args+='package -Dmaven.test.skip=true'
+  [[ $PACK_NO_AM -eq 0 ]] && args+=' -am'
+  printf '%s\n' "$args"
+}
+
+emit_package_record() {
+  local dir=$1 id=$2 agg=$3 rel=$4
+  local args
+  args=$(package_args)
+  if [[ -n "$rel" ]]; then
+    emit_record "$id" "$agg" "$rel" "$args" \
+      "$(relative_to_pwd "$dir")" "mvn -pl $rel $args"
+  else
+    emit_record "$id" "$dir" '' "$args" \
+      "$(relative_to_pwd "$dir")" "mvn $args"
+  fi
+}
+
+collect_packable() {
+  each_runnable_module emit_package_record
 }
 
 # install 命令的目标：没有被上层聚合 pom 收录的 pom，也就是一个能独立构建的项目。
@@ -734,6 +789,8 @@ main() {
       -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$arg ;;
       --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$arg ;;
       --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$arg ;;
+      --no-am) PACK_NO_AM=1; PACK_FLAG=$arg ;;
+      --no-clean) PACK_NO_CLEAN=1; PACK_FLAG=$arg ;;
       -*) usage_error "未知选项 $arg" ;;
       *) rest+=("$arg") ;;
     esac
@@ -751,9 +808,14 @@ main() {
   collector=$(command_field "$cmd" 3)
   allow_skip=$(command_field "$cmd" 5)
 
-  # 跳过编译与 clean 只对能直接启动的命令有意义，install 必须真编译。
+  # 跳过编译与 clean 只对能直接启动的命令有意义，install 与 package 必须真编译。
   if [[ $allow_skip -eq 0 && $START_MODE != "$MODE_AUTO" && $START_MODE != "$MODE_COMPILE" ]]; then
     usage_error "「$cmd」命令不支持 $MODE_FLAG"
+  fi
+
+  # 这两个开关拼的是 package 自己的参数，别的命令带上没有意义。
+  if [[ -n "$PACK_FLAG" && "$cmd" != "$PACKAGE_COMMAND" ]]; then
+    usage_error "「$cmd」命令不支持 $PACK_FLAG"
   fi
 
   command -v mvn >/dev/null || die '找不到 mvn，先确认 Maven 在 PATH 里'
@@ -834,6 +896,9 @@ main() {
 SEL_FILE=''
 START_MODE="$MODE_AUTO"
 MODE_FLAG=''
+PACK_NO_AM=0
+PACK_NO_CLEAN=0
+PACK_FLAG=''
 
 # 直接执行时跑主流程；被 source 进来时只加载函数，便于单独调试某一步。
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
