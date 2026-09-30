@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# zipx 入口。核心在 ../lib/zipx-core.sh，这里只负责定位它、转发参数、调 main。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+lib="${self%/bin/*}/lib/zipx-core.sh"
+[[ -f "$lib" ]] || { printf 'zipx: 找不到 %s\n' "$lib" >&2; exit 1; }
+
+# shellcheck source=../lib/zipx-core.sh
+source "$lib"
+main "$@"
