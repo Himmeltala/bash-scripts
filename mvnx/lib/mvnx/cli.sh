@@ -34,7 +34,7 @@ command_field() {
 
 usage() {
   cat <<'EOF'
-用法: mvnstart [命令] [选项] [关键词]
+用法: mvnx [命令] [选项] [关键词]
 
 在当前目录下递归查找目标，勾选后执行对应命令。不带参数时先选命令再选目标。
 
@@ -69,7 +69,7 @@ class 文件，就会把整个模块重编一遍，整份被注释掉的源文�
 
 带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
 后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
-例如 mvnstart run install。
+例如 mvnx run install。
 
 退出码: 0 成功，1 找到了目标但执行失败，2 用法错误，3 用户取消。
 EOF
@@ -226,7 +226,7 @@ run_action() {
 ui_main() {
   local action
   while :; do
-    action=$(ui_menu 'mvnstart' '选一个动作' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
+    action=$(ui_menu 'mvnx' '选一个动作' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
     [[ "$action" == 'quit' ]] && break
     run_action "$action"
   done

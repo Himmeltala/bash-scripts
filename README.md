@@ -6,29 +6,28 @@
 bash-scripts/
 ├── install.sh                    安装
 ├── uninstall.sh                  卸载
-├── archive/                      归档类工具
+├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
+│   ├── README.md
+│   ├── bin/
+│   │   └── mvnx
+│   └── lib/
+│       ├── mvnx-core.sh      加载器
+│       └── mvnx/             按职责拆的模块，commands/ 下每条命令一个文件
+├── zipx/                         归档：压缩、解压、查看、包内增删
 │   ├── README.md
 │   ├── bin/
 │   │   └── zipx
 │   └── lib/
 │       ├── zipx-core.sh          加载器
 │       └── zipx/                 按职责拆的模块
-├── maven/                        Maven 类工具
+├── killport/                     系统运维：按端口结束进程
 │   ├── README.md
-│   ├── bin/
-│   │   └── mvnstart
-│   └── lib/
-│       ├── mvnstart-core.sh      加载器
-│       └── mvnstart/             按职责拆的模块，commands/ 下每条命令一个文件
-├── mysql/                        以后放数据库相关的
-├── svn/                          以后放版本控制相关的
-└── system/                       系统运维类工具
-    ├── README.md
-    └── bin/
-        └── killport
+│   └── bin/
+│       └── killport
+└── mysql/                        以后放数据库相关的
 ```
 
-根下每个目录代表一类工具，`bin/` 里放可执行文件，`lib/` 放被入口共用的库，不会被软链成命令。工具的划分按用途走，不按语言或技术：`archive` 管归档，`maven` 管 Maven 项目，`system` 管系统运维。加新工具就是新建一个这样的目录。
+根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`zipx`、`killport`。`bin/` 里放可执行文件，`lib/` 放被入口共用的库，不会被软链成命令。加新工具就是新建一个同名目录。
 
 ## 安装
 
@@ -47,6 +46,17 @@ git clone git@github.com:Himmeltala/bash-scripts.git
 cd bash-scripts
 ./install.sh
 ```
+
+### 重复安装
+
+再跑一次 `install.sh` 等价于「先卸载再安装」：先删掉链接目录里指向安装目录的软链、删掉安装目录、摘掉 `.bashrc` 里那段 PATH 设置，然后重新拷一份、重新链接、重新写 PATH 设置。
+
+这么做是因为安装脚本只加不删：工具改名或换目录结构之后，旧目录会一直留在安装目录里，链接目录里还会留下指向已删路径的死链。卸载脚本的逻辑与这里一致，区别只是那边多一个 `--dry-run` 与 `--keep-path`。
+
+两条注意：
+
+- 安装目录是仓库的镜像，不要在那边直接改，下次安装会整个清掉。
+- 安装目录可以由 `BASH_SCRIPTS_INSTALL_DIR` 指到别处，清之前脚本会确认那个目录里装的确实是本项目的东西（目录名是 `bash-scripts`，或者里面有带 `bin` 的工具目录），对不上就报错退出，不会删。
 
 ### 安装地址说明
 
@@ -79,7 +89,7 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ```
 ~/.local/share/bash-scripts/     源码，目录结构与仓库一致
-~/.local/bin/mvnstart            软链，指向上面的 maven/bin/ 里的可执行文件
+~/.local/bin/mvnx            软链，指向上面的 mvnx/bin/ 里的可执行文件
 ```
 
 源码树里每个 `*/bin/` 下的可执行文件都会软链到链接目录，各工具目录的 `lib/` 不链。
@@ -94,14 +104,14 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ## 工具清单
 
-| 命令 | 所属目录 | 说明 |
+| 命令 | 目录 | 说明 |
 | --- | --- | --- |
-| `mvnstart` | maven | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数先选命令再选目标，启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
-| `killport` | system | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
-| `zipx` | archive | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
+| `mvnx` | mvnx | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数先选命令再选目标，启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
+| `zipx` | zipx | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
+| `killport` | killport | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
 
 各工具的详细用法见对应目录下的 README。
 
 ## 环境要求
 
-bash 4 以上。`mvnstart` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。
+bash 4 以上。`mvnx` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。
