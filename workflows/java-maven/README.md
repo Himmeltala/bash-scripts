@@ -12,6 +12,8 @@ Java Maven 工作流下的工具。
 mvnstart                 在当前目录下递归找可运行模块，弹出复选清单
 mvnstart run            同上，显式写命令名
 mvnstart install        找顶层项目，勾选后执行构建
+mvnstart package        找可运行模块，勾选后打成可部署的 jar
+mvnstart package --no-am  打包时不构建依赖的兄弟模块
 mvnstart admin          带关键词时跳过界面，按子串匹配标签或路径后直接执行
 mvnstart install 人影   先写命令名，再写关键词
 mvnstart admin -c       强制编译后启动
@@ -30,7 +32,7 @@ mvnstart --help         显示帮助，命令清单从注册表生成
 
 ### 启动方式
 
-默认会自动判一遍这一条记录要不要编译，另外三条由命令行指定。模式参数只对 `run` 有效，`install` 收到 `--no-compile` 或 `--rebuild` 直接报用法错误退出，装上本地仓库必须真编译。命令行里后面写的覆盖前面的。
+默认会自动判一遍这一条记录要不要编译，另外三条由命令行指定。模式参数只对 `run` 有效，`install` 与 `package` 收到 `--no-compile` 或 `--rebuild` 直接报用法错误退出，装本地仓库与打包都必须真编译。命令行里后面写的覆盖前面的。
 
 | 方式 | 行为 |
 | --- | --- |
@@ -47,18 +49,31 @@ mvnstart --help         显示帮助，命令清单从注册表生成
 
 已知盲点一条：删掉源文件后，`target/classes` 里那个旧 class 会留下，光看时间戳看不出变化。这不是跳过编译独有的问题，`mvn compile` 本身也不删残留 class，删类之后都得 `clean`，也就是 `--rebuild`。
 
-### 两条命令
+### 三条命令
 
 | 命令 | 目标 | 执行的 Maven 命令 |
 | --- | --- | --- |
 | `run` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> spring-boot:run`，尾部参数受启动方式影响 |
 | `install` | 顶层项目 | `mvn clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true` |
+| `package` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> clean package -Dmaven.test.skip=true -am` |
 
 `install` 带 `maven.resources.skip`，装出来的 jar 里没有 `application.yml` 这类资源，用途是快速把依赖补齐进本地仓库，让 `run` 能解析到兄弟模块，不适合拿去部署。
+
+`package` 打的是能拿去部署的 jar，参数有两个开关：
+
+| 开关 | 行为 |
+| --- | --- |
+| 不写 | `clean package -Dmaven.test.skip=true -am` |
+| `--no-am` | 去掉 `-am`，兄弟模块必须已经装进本地仓库，省下拉起它们的时间 |
+| `--no-clean` | 去掉 `clean`，增量打包最快，代价是残留的旧 class 会进 jar |
+
+`-am` 让 Maven 连这个模块依赖的兄弟模块一起构建，兄弟模块还没装进本地仓库时也能一次打包成功。跳过测试省下的是编译测试类与跑测试的时间，打出来的是能跑的东西，不是验证过的版本。这两个开关只对 `package` 有效，别的命令带上直接报用法错误退出。
 
 ### 目标的判定
 
 `run` 三条同时满足：自己的 pom 里引了 `spring-boot-maven-plugin`、打包方式不是 `pom`、`src/main/java` 下确实存在带 `@SpringBootApplication` 的类。父 pom 与 common 这类纯依赖模块会被滤掉。
+
+`package` 与 `run` 是同一批目标，判定只写一遍，两条命令各自只负责拼自己那条 Maven 命令。
 
 `install` 判定顶层项目：没有被任何上层聚合 pom 的 `<modules>` 收录的 pom。
 
@@ -76,6 +91,8 @@ mvn -pl runnet-admin/runnet-admin-service spring-boot:run
 ```
 
 与手工在项目根目录下敲的形式一致。Maven 的 `-pl` 接受指向嵌套模块的路径，即便该模块没有被根 pom 直接声明。
+
+`package` 拼路径的方式与 `run` 相同，只是把 `spring-boot:run` 换成打包参数。
 
 ### 同名目标
 
