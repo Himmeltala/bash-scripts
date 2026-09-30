@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# mvnx 入口。默认跑 run，共用机制在 ../lib/mvnx-core.sh。
+# 入口只做三件事：定位核心、转参数、交给 main。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+lib="${self%/bin/*}/lib/mvnx-core.sh"
+[[ -f "$lib" ]] || { printf 'mvnx: 找不到 %s\n' "$lib" >&2; exit 1; }
+
+# shellcheck source=../lib/mvnx-core.sh
+source "$lib"
+main "$@"

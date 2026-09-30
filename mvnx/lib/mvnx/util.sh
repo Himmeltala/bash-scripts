@@ -4,20 +4,20 @@
 # 退出码：0 成功，1 找到了目标但执行失败，2 用法错误，3 用户取消。
 readonly EXIT_FAIL=1 EXIT_USAGE=2 EXIT_CANCEL=3
 
-readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mvnstart"
+readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mvnx"
 # 记录内部用 ASCII 单元分隔符分列，不能用制表符。
 # 制表符算 IFS 空白，read 会把连续两个并成一个，空字段（比如不走 -pl 的目标）会丢，
 # 后面的字段跟着整体错位，表现为工作目录被当成 mvn 参数。
 readonly FS=$'\x1f'
 # 只打第一条参数：第二个参数是退出码，用 $* 会把码也打进消息里。
 die() {
-  printf 'mvnstart: %s\n' "$1" >&2
+  printf 'mvnx: %s\n' "$1" >&2
   exit "${2:-$EXIT_FAIL}"
 }
 
 # 用法错误按惯例退 2，与「找到了目标但执行失败」的 1、用户取消的 3 分开。
 usage_error() {
-  die "$*，用 mvnstart --help 看用法" "$EXIT_USAGE"
+  die "$*，用 mvnx --help 看用法" "$EXIT_USAGE"
 }
 
 # 能不能画界面。这个判断必须在任何命令替换之外做，而且只做一次。

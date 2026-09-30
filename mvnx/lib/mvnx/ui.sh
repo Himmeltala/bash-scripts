@@ -156,7 +156,7 @@ ui_checklist() {
 
   # 返回 1 表示取消，返回 2 表示确认了但一个都没勾。
   local out
-  out=$(whiptail --separate-output --title 'mvnstart' --checklist \
+  out=$(whiptail --separate-output --title 'mvnx' --checklist \
     '空格勾选，回车确认；上次勾过的已经预先选中' \
     "$boxh" "$cols" "$listh" "${items[@]}" 3>&1 1>&2 2>&3) || return 1
 

@@ -1,27 +1,23 @@
-# maven
-
-Maven 类工具。
-
-## mvnstart
+# mvnx
 
 省掉手敲 `mvn -pl <模块> spring-boot:run` 那一长串。从当前目录递归找出可运行的模块或可构建的项目，勾选后执行。
 
-### 用法
+## 用法
 
 ```
-mvnstart                 先选命令，再勾目标
-mvnstart run             同上，显式写命令名
-mvnstart install         找顶层项目，勾选后执行构建
-mvnstart package         找可运行模块，勾选后打成可部署的 jar
-mvnstart package --no-am  打包时不构建依赖的兄弟模块
-mvnstart admin           带关键词时跳过界面，按子串匹配标签或路径后直接执行
-mvnstart install 人影    先写命令名，再写关键词
-mvnstart admin -c        强制编译后启动
-mvnstart --no-compile    跳过编译，直接跑已有的 class
-mvnstart --rebuild       先 clean 再编译后启动
-mvnstart --list          只列出目标，不执行；没写命令时按 run 列
-mvnstart --refresh       清掉当前命令上次的勾选记录，重新开始
-mvnstart --help          显示帮助，命令清单从注册表生成
+mvnx                 先选命令，再勾目标
+mvnx run             同上，显式写命令名
+mvnx install         找顶层项目，勾选后执行构建
+mvnx package         找可运行模块，勾选后打成可部署的 jar
+mvnx package --no-am  打包时不构建依赖的兄弟模块
+mvnx admin           带关键词时跳过界面，按子串匹配标签或路径后直接执行
+mvnx install 人影    先写命令名，再写关键词
+mvnx admin -c        强制编译后启动
+mvnx --no-compile    跳过编译，直接跑已有的 class
+mvnx --rebuild       先 clean 再编译后启动
+mvnx --list          只列出目标，不执行；没写命令时按 run 列
+mvnx --refresh       清掉当前命令上次的勾选记录，重新开始
+mvnx --help          显示帮助，命令清单从注册表生成
 ```
 
 不带参数时打开主菜单：先选命令（启动、装本地仓库、打包、退出），再进目标勾选；一个命令跑完回到菜单，选退出或按取消才离开。给了命令名或关键词时跳过菜单直接执行。
@@ -32,7 +28,7 @@ mvnstart --help          显示帮助，命令清单从注册表生成
 
 非交互环境（管道、脚本、CI）下探不到终端，自动退回编号输入，避免 whiptail 卡住。
 
-### 退出码
+## 退出码
 
 | 码 | 含义 |
 | --- | --- |
@@ -41,15 +37,15 @@ mvnstart --help          显示帮助，命令清单从注册表生成
 | 2 | 用法错误：未知选项、命令不支持某个开关、`--no-compile` 时模块没编过 |
 | 3 | 用户取消：菜单或勾选界面里取消、确认了一个都没勾 |
 
-### 安全约定
+## 安全约定
 
 - **跳过编译的判定拿不准一律判「需要编译」**（没有 `target/classes`、里面一个 class 都没有、路径不存在都算拿不准）。多编一次只是慢，漏编一次就是跑到旧代码。
 - **明说 `--no-compile` 但模块没编过时直接拒绝**，退 2，不硬起一个空壳进程。
 - **只在 `--rebuild` 时 `clean`**，其余动作不动 `target`，也不碰工作副本里的源码。
-- **勾选记录只写缓存目录**（`~/.cache/mvnstart`），`--refresh` 只清当前目录当前命令这一份。
+- **勾选记录只写缓存目录**（`~/.cache/mvnx`），`--refresh` 只清当前目录当前命令这一份。
 - **多条目标后台执行时共用当前终端**，按一次 Ctrl+C 送到整个前台进程组，所有任务一起退出；脚本自身只收等待，不拦截信号。
 
-### 启动方式
+## 启动方式
 
 默认会自动判一遍这一条记录要不要编译，另外三条由命令行指定。模式参数只对 `run` 有效，`install` 与 `package` 收到 `--no-compile` 或 `--rebuild` 直接报用法错误退出，装本地仓库与打包都必须真编译。命令行里后面写的覆盖前面的。
 
@@ -68,7 +64,7 @@ mvnstart --help          显示帮助，命令清单从注册表生成
 
 已知盲点一条：删掉源文件后，`target/classes` 里那个旧 class 会留下，光看时间戳看不出变化。这不是跳过编译独有的问题，`mvn compile` 本身也不删残留 class，删类之后都得 `clean`，也就是 `--rebuild`。
 
-### 三条命令
+## 三条命令
 
 | 命令 | 目标 | 执行的 Maven 命令 |
 | --- | --- | --- |
@@ -88,7 +84,7 @@ mvnstart --help          显示帮助，命令清单从注册表生成
 
 `-am` 让 Maven 连这个模块依赖的兄弟模块一起构建，兄弟模块还没装进本地仓库时也能一次打包成功。跳过测试省下的是编译测试类与跑测试的时间，打出来的是能跑的东西，不是验证过的版本。这两个开关只对 `package` 有效，别的命令带上直接报用法错误退出。
 
-### 目标的判定
+## 目标的判定
 
 `run` 三条同时满足：自己的 pom 里引了 `spring-boot-maven-plugin`、打包方式不是 `pom`、`src/main/java` 下确实存在带 `@SpringBootApplication` 的类。父 pom 与 common 这类纯依赖模块会被滤掉。
 
@@ -98,7 +94,7 @@ mvnstart --help          显示帮助，命令清单从注册表生成
 
 递归时跳过 `target`、`.svn`、`.git`、`node_modules`、`.idea`、`.settings`。
 
-### 启动命令怎么拼
+## 启动命令怎么拼
 
 模块能被某个上层聚合 pom 声明走到时，从该聚合根目录执行 `mvn -pl <相对路径> spring-boot:run`；走不到时进入模块目录执行 `mvn spring-boot:run`。
 
@@ -113,7 +109,7 @@ mvn -pl runnet-admin/runnet-admin-service spring-boot:run
 
 `package` 拼路径的方式与 `run` 相同，只是把 `spring-boot:run` 换成打包参数。
 
-### 同名目标
+## 同名目标
 
 大范围扫描时，不同项目里会同时存在 `runnet-admin-service` 这类同名模块。脚本给重名的补上最短的唯一路径尾巴，段数按同名分组统一取：
 
@@ -122,20 +118,20 @@ runnet-admin-service@back-end/runnet-admin/runnet-admin-service
 runnet-admin-service@backend/runnet-admin/runnet-admin-service
 ```
 
-### 勾选记录
+## 勾选记录
 
-存在 `~/.cache/mvnstart/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。
+存在 `~/.cache/mvnx/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。
 
-### 文件结构
+## 文件结构
 
 ```
-maven/
+mvnx/
 ├── README.md
 ├── bin/
-│   └── mvnstart             唯一入口：定位核心、转发参数
+│   └── mvnx             唯一入口：定位核心、转发参数
 └── lib/
-    ├── mvnstart-core.sh     加载器，按顺序 source 下面各文件
-    └── mvnstart/
+    ├── mvnx-core.sh     加载器，按顺序 source 下面各文件
+    └── mvnx/
         ├── util.sh          退出码、报错、终端探测、记录分列、路径计算
         ├── pom.sh           pom 扫描与解析、可运行模块判定、聚合根寻址
         ├── ui.sh            动作菜单、目标复选、勾选记录、同名标签去重
@@ -147,21 +143,21 @@ maven/
             └── package.sh
 ```
 
-加载器直接执行也行，等价于 `mvnstart`，调试某一步时方便。
+加载器直接执行也行，等价于 `mvnx`，调试某一步时方便。
 
 安装脚本只把 `bin` 下的文件软链成命令，`lib` 不会出现在 PATH 里。
 
 拆分按职责走，不按命令走：三条命令各自专有的代码加起来不到 90 行，剩下的是扫描、解析、勾选、启动这些三条共用的机制。bash 没有模块机制，各文件共用的是全局数组与变量，加载顺序由加载器固定，改哪个功能就看哪个文件。
 
-### 加新命令
+## 加新命令
 
-`lib/mvnstart/cli.sh` 顶部有一张注册表，每行五列，用竖线隔开：
+`lib/mvnx/cli.sh` 顶部有一张注册表，每行五列，用竖线隔开：
 
 ```
 命令名 | 说明 | 收集函数 | 目标的名词 | 是否参与编译判定
 ```
 
-加一条命令要做两件事：在 `COMMANDS` 里加一行，再在 `lib/mvnstart/commands/` 下加一个文件写收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，主菜单也从注册表生成，其余文件都不用动。记录六列，顺序是：
+加一条命令要做两件事：在 `COMMANDS` 里加一行，再在 `lib/mvnx/commands/` 下加一个文件写收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，主菜单也从注册表生成，其余文件都不用动。记录六列，顺序是：
 
 ```
 标签、工作目录、-pl 的值（不走 -pl 时为空）、mvn 参数、展示用相对路径、展示用命令
@@ -169,9 +165,9 @@ maven/
 
 `-pl` 的值单独占一列而不是先拼进参数字符串，是为了执行时能加引号，路径含空格时才不会被拆成两个参数。
 
-新命令不用加入口文件：`mvnstart <命令名>` 就能用，不带参数时的主菜单也会自动多出这一项，两处都从注册表生成。
+新命令不用加入口文件：`mvnx <命令名>` 就能用，不带参数时的主菜单也会自动多出这一项，两处都从注册表生成。
 
-### 实现上要注意的坑
+## 实现上要注意的坑
 
 改这个脚本之前先看这几条，都是踩过一遍的。
 
@@ -184,7 +180,7 @@ maven/
 - **别把入口类检查改成对整个扫描根跑一次 grep。** 从家目录或项目根扫描时，底下压着 `.vscode-server`、`node_modules` 这类大目录，实测比逐个模块查各自的源码目录还慢。
 - **判定「要不要编译」时只认文件，不认目录。** 目录的 mtime 在建目录、增删文件时都会变，`find -newer` 不限定 `-type f` 的话，刚 checkout 出来的源码目录会被判成「有改动」，跳过编译永远不生效。
 
-### 已知限制
+## 已知限制
 
 - 多选只在当前终端里并行起，不给每个目标开独立终端窗口。
 - 从 `~/`、`~/projs` 这种大范围扫描一次要几秒，是磁盘与进程派生慢，不是脚本本身的问题；在项目目录里跑通常一秒以内。
