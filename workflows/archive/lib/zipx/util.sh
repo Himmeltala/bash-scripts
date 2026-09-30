@@ -9,8 +9,9 @@ readonly DEFAULT_EXCLUDES=(.git .svn .idea node_modules target)
 
 info() { printf '%s\n' "$*" >&2; }
 
+# 只打第一条参数：第二个参数是退出码，用 $* 会把码也打进消息里。
 die() {
-  printf 'zipx: %s\n' "$*" >&2
+  printf 'zipx: %s\n' "$1" >&2
   exit "${2:-$EXIT_FAIL}"
 }
 
