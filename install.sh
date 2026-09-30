@@ -11,10 +11,7 @@
 #   └── workflows/
 #       └── maven/
 #           ├── bin/
-#           │   ├── mvnstart
-#           │   ├── mvnstart-run
-#           │   ├── mvnstart-install
-#           │   └── mvnstart-package
+#           │   └── mvnstart
 #           └── lib/
 #               ├── mvnstart-core.sh
 #               └── mvnstart/

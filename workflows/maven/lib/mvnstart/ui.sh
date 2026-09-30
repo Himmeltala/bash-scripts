@@ -1,5 +1,8 @@
-# 勾选界面与勾选记录：whiptail 复选清单、探不到终端时的编号输入、
+# 勾选界面与勾选记录：动作菜单、目标复选清单、探不到终端时的编号输入、
 # 同名标签去重、上次勾选的回填与保存。
+# 能不能画界面由 util.sh 的 ui_available 决定，这里不重复探测：
+# 这些函数都是 out=$(...) 这样调的，在替换里判 [[ -t 1 ]] 永远为假。
+# 复选函数输出到 stdout，返回 1 表示取消，2 表示确认了一个都没勾。
 # 取路径末尾 k 段。
 tail_segments() {
   local -a parts=()
@@ -90,9 +93,45 @@ assign_tags() {
   return 0
 }
 
-whiptail_choose() {
+# 列表框尺寸。行数按条目数取，最多留 8 行给边框与提示；
+# 高度给不够时 whiptail 只显示一部分，滚动行为也不对。
+ui_size() {
+  local n=$1 lines cols listh
+  lines=$(tput lines 2>/dev/null || printf '24')
+  cols=$(tput cols 2>/dev/null || printf '100')
+  ((cols < 60)) && cols=60
+  listh=$n
+  ((listh > lines - 8)) && listh=$((lines - 8))
+  ((listh < 1)) && listh=1
+  printf '%s %s %s\n' "$((listh + 8))" "$cols" "$listh"
+}
+
+# 单选菜单。$1 标题，$2 提示，其余为 tag、说明 成对给出。
+ui_menu() {
+  local title=$1 prompt=$2
+  shift 2
+  if ! ui_available; then
+    plain_menu "$prompt" "$@"
+    return $?
+  fi
+  local boxh cols listh
+  read -r boxh cols listh <<< "$(ui_size $(($# / 2)))"
+  # 界面画在 stderr，选中结果也写在 stderr（见 man whiptail 的 --menu 一节），
+  # 所以要用 3>&1 1>&2 2>&3 把两边调换，把结果捞进命令替换里。
+  whiptail --title "$title" --menu "$prompt" "$boxh" "$cols" "$listh" "$@" 3>&1 1>&2 2>&3
+}
+
+# 目标复选。$1 是目标的名词，只用在编号输入的提示语里；其余为记录。
+ui_checklist() {
+  local noun=$1
+  shift
   local -a recs=("$@") items=() picked=()
   local rec tag workdir plpath mvnargs display cmdtext
+
+  if ! ui_available; then
+    plain_checklist "$noun" "${recs[@]}"
+    return $?
+  fi
 
   # 上次勾过的预选中。勾选记录读进数组比对，别用 grep 逐条开进程。
   local -A selected=()
@@ -112,18 +151,9 @@ whiptail_choose() {
     fi
   done
 
-  local lines cols listh boxh
-  lines=$(tput lines 2>/dev/null || printf '24')
-  cols=$(tput cols 2>/dev/null || printf '100')
-  ((cols < 60)) && cols=60
-  listh=${#recs[@]}
-  ((listh > lines - 8)) && listh=$((lines - 8))
-  ((listh < 1)) && listh=1
-  boxh=$((listh + 8))
-  ((boxh > lines)) && boxh=$lines
+  local boxh cols listh
+  read -r boxh cols listh <<< "$(ui_size ${#recs[@]})"
 
-  # 界面画在 stderr，勾选结果也写在 stderr（见 man whiptail 的 --checklist 一节），
-  # 所以要用 3>&1 1>&2 2>&3 把两边调换，把结果捞进命令替换里。
   # 返回 1 表示取消，返回 2 表示确认了但一个都没勾。
   local out
   out=$(whiptail --separate-output --title 'mvnstart' --checklist \
@@ -145,7 +175,32 @@ whiptail_choose() {
   return 0
 }
 
-plain_choose() {
+# 没有 whiptail 或不在终端上时的编号单选。
+plain_menu() {
+  local prompt=$1
+  shift
+  local -a tags=() descs=()
+  while (($# > 1)); do
+    tags+=("$1")
+    descs+=("$2")
+    shift 2
+  done
+
+  printf '%s\n\n' "$prompt" >&2
+  local i
+  for i in "${!tags[@]}"; do
+    printf '  %2d) %-14s %s\n' "$((i + 1))" "${tags[$i]}" "${descs[$i]}" >&2
+  done
+  printf '\n输入编号，回车确认（直接回车取消）: ' >&2
+
+  local answer
+  read -r answer || return 1
+  [[ "$answer" =~ ^[0-9]+$ ]] || return 1
+  ((answer >= 1 && answer <= ${#tags[@]})) || return 1
+  printf '%s\n' "${tags[$((answer - 1))]}"
+}
+
+plain_checklist() {
   local noun=$1
   shift
   local -a recs=("$@")

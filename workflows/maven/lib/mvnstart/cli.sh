@@ -1,4 +1,4 @@
-# 命令行层：命令注册表、帮助生成、参数解析与主流程。
+# 命令行层：命令注册表、帮助生成、参数解析、动作分发与主菜单。
 # 加载顺序放在最后，它引用的收集函数与判定函数必须已经就位。
 # 注册表每行五列，用竖线隔开，各列内容里不能出现竖线：
 #   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）| 是否参与编译判定（1 参与）
@@ -8,6 +8,7 @@ readonly COMMANDS=(
   'package|把可运行模块打成可部署的 jar|collect_packable|可运行模块|0'
 )
 readonly DEFAULT_COMMAND='run'
+
 command_exists() {
   local row
   for row in "${COMMANDS[@]}"; do
@@ -35,11 +36,7 @@ usage() {
   cat <<'EOF'
 用法: mvnstart [命令] [选项] [关键词]
 
-在当前目录下递归查找目标，勾选后执行对应命令。
-
-不写命令时用 run。首个非选项参数命中命令名就按命令处理，否则当作关键词。
-例如 mvnstart admin 是启动匹配 admin 的模块，mvnstart install 是构建顶层项目，
-mvnstart package 是把勾选的模块打成 jar。
+在当前目录下递归查找目标，勾选后执行对应命令。不带参数时先选命令再选目标。
 
 命令:
 EOF
@@ -50,11 +47,8 @@ EOF
 
   cat <<'EOF'
 
-每条命令另有同名入口，用法与把命令名写在前面完全一样：
-  mvnstart-run、mvnstart-install、mvnstart-package
-
 选项:
-  -l, --list     只列出目标，不执行
+  -l, --list     只列出目标，不执行；没写命令时按 run 列
       --refresh  清掉当前命令上次的勾选记录，重新开始
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
@@ -76,45 +70,72 @@ class 文件，就会把整个模块重编一遍，整份被注释掉的源文�
 带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
 后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
 例如 mvnstart run install。
+
+退出码: 0 成功，1 找到了目标但执行失败，2 用法错误，3 用户取消。
 EOF
 }
 
-main() {
-  local -a rest=() args=("$@")
-  local refresh=0 list_only=0 end_opts=0 i=0 arg
+# 解析结果放全局。不用命令替换接：命令替换会开子 shell，函数里的赋值出不来。
+ACTION=''
+LIST_ONLY=0
+REFRESH=0
+declare -a POSITIONAL=()
+declare -a UI_ACTION_ITEMS=()
+
+# 命令名是否登记在注册表里，判断跟着注册表走，加命令不必改这里。
+is_action() { command_exists "$1"; }
+
+parse_args() {
+  local -a args=("$@")
+  local end_opts=0 i=0 a
   while ((i < ${#args[@]})); do
-    arg=${args[$i]}
+    a=${args[$i]}
     i=$((i + 1))
+
     # -- 之后的词一律当关键词，关键词里带减号也不怕
-    if ((end_opts == 1)); then
-      rest+=("$arg")
+    if ((end_opts)); then
+      POSITIONAL+=("$a")
       continue
     fi
-    case "$arg" in
+
+    case "$a" in
       --) end_opts=1 ;;
       -h|--help) usage; exit 0 ;;
-      -l|--list) list_only=1 ;;
-      --refresh) refresh=1 ;;
-      -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$arg ;;
-      --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$arg ;;
-      --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$arg ;;
-      --no-am) PACK_NO_AM=1; PACK_FLAG=$arg ;;
-      --no-clean) PACK_NO_CLEAN=1; PACK_FLAG=$arg ;;
-      -*) usage_error "未知选项 $arg" ;;
-      *) rest+=("$arg") ;;
+      -l|--list) LIST_ONLY=1 ;;
+      --refresh) REFRESH=1 ;;
+      -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$a ;;
+      --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$a ;;
+      --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$a ;;
+      --no-am) PACK_NO_AM=1; PACK_FLAG=$a ;;
+      --no-clean) PACK_NO_CLEAN=1; PACK_FLAG=$a ;;
+      -*) usage_error "未知选项 $a" ;;
+      *)
+        if [[ -z "$ACTION" ]] && is_action "$a"; then
+          ACTION=$a
+        else
+          POSITIONAL+=("$a")
+        fi
+        ;;
     esac
   done
+}
 
-  # 入口文件把默认命令写在 MVNSTART_DEFAULT_COMMAND 里；直接跑本文件时没有它，
-  # 退回 DEFAULT_COMMAND。两个来源都要在注册表里，写错了在这里直接报出来，
-  # 否则后面 command_field 会安静地取回空值，错在更远的地方。
-  local cmd="${MVNSTART_DEFAULT_COMMAND:-$DEFAULT_COMMAND}"
-  command_exists "$cmd" || die "入口选定的命令 $cmd 没有登记在 COMMANDS 里"
-  if [[ ${#rest[@]} -gt 0 ]] && command_exists "${rest[0]}"; then
-    cmd="${rest[0]}"
-    rest=("${rest[@]:1}")
-  fi
-  local kw="${rest[0]:-}"
+# 主菜单的选项从注册表生成，加命令时不必改这里；末尾补一项退出。
+build_action_items() {
+  UI_ACTION_ITEMS=()
+  local row name
+  for row in "${COMMANDS[@]}"; do
+    name="${row%%|*}"
+    UI_ACTION_ITEMS+=("$name" "$(command_field "$name" 2)")
+  done
+  UI_ACTION_ITEMS+=('quit' '退出')
+}
+
+# 跑一个动作。$1 是命令名，$2 起是位置参数，只取第一个当关键词。
+run_action() {
+  local cmd=$1
+  shift
+  local kw=${1:-}
 
   local noun collector allow_skip
   noun=$(command_field "$cmd" 4)
@@ -131,13 +152,11 @@ main() {
     usage_error "「$cmd」命令不支持 $PACK_FLAG"
   fi
 
-  command -v mvn >/dev/null || die '找不到 mvn，先确认 Maven 在 PATH 里'
-
   mkdir -p "$CACHE_DIR"
   local key
   key=$(printf '%s' "$PWD" | md5sum | cut -c1-16)
   SEL_FILE="$CACHE_DIR/$key.$cmd.selected"
-  [[ $refresh -eq 1 ]] && rm -f "$SEL_FILE"
+  ((REFRESH)) && rm -f "$SEL_FILE"
 
   # 解析在主 shell 里做，收集函数在子 shell 里只读这些数组。
   prepare_scan "$PWD"
@@ -147,7 +166,7 @@ main() {
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
 
   local rec tag workdir plpath mvnargs display cmdtext
-  if [[ $list_only -eq 1 ]]; then
+  if ((LIST_ONLY)); then
     for rec in "${recs[@]}"; do
       IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
       printf '%-40s %s\n' "$tag" "$cmdtext"
@@ -171,16 +190,13 @@ main() {
     done
     [[ ${#chosen[@]} -gt 0 ]] || die "没有$noun匹配关键词 $kw"
   else
+    # 取消与一个都没勾都算用户取消，退 3，与「跑失败了」的 1 分开。
     local rc=0
-    if command -v whiptail >/dev/null 2>&1 && [[ -t 0 && -t 1 && -t 2 ]]; then
-      out=$(whiptail_choose "${recs[@]}") || rc=$?
-    else
-      out=$(plain_choose "$noun" "${recs[@]}") || rc=$?
-    fi
+    out=$(ui_checklist "$noun" "${recs[@]}") || rc=$?
     case "$rc" in
       0) : ;;
-      1) die '已取消' ;;
-      *) die "一个$noun都没勾" ;;
+      1) die '已取消' "$EXIT_CANCEL" ;;
+      *) die "一个$noun都没勾" "$EXIT_CANCEL" ;;
     esac
     mapfile -t chosen <<< "$out"
   fi
@@ -195,7 +211,7 @@ main() {
       dir=$wd
       [[ -n "$pl" ]] && dir="$wd/$pl"
       [[ -d "$dir/target/classes" ]] ||
-        die "「$(relative_to_pwd "$dir")」下没有 target/classes，跳过编译没有可跑的东西；先编译一次，或去掉 $MODE_FLAG" 2
+        die "「$(relative_to_pwd "$dir")」下没有 target/classes，跳过编译没有可跑的东西；先编译一次，或去掉 $MODE_FLAG" "$EXIT_USAGE"
     done
   fi
 
@@ -204,4 +220,38 @@ main() {
 
   # 单条记录会 exec 成 mvn，正常情况下回不来；能回来只可能是工作目录进不去。
   launch_records "${chosen[@]}" || die '执行失败，检查工作目录是否存在'
+}
+
+# 不带参数时的主菜单：先选动作，再进目标勾选。动作跑完回到这里，选退出才离开。
+ui_main() {
+  local action
+  while :; do
+    action=$(ui_menu 'mvnstart' '选一个动作' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
+    [[ "$action" == 'quit' ]] && break
+    run_action "$action"
+  done
+  return 0
+}
+
+main() {
+  parse_args "$@"
+  command -v mvn >/dev/null || die '找不到 mvn，先确认 Maven 在 PATH 里'
+  # 终端探测只做一次，必须在任何命令替换之前：界面函数是 out=$(ui_checklist ...)
+  # 这样调的，替换里的 stdout 是管道，那时候再判 [[ -t 1 ]] 永远为假。
+  detect_ui_mode
+  build_action_items
+
+  if [[ -n "$ACTION" ]]; then
+    run_action "$ACTION" "${POSITIONAL[@]}"
+    return $?
+  fi
+
+  # 没写命令：带了位置参数（关键词）或 --list 就按默认命令跑，此外进主菜单。
+  # --list 也走默认命令，为了列个清单先让人选一次动作没有意义。
+  if ((${#POSITIONAL[@]})) || ((LIST_ONLY)); then
+    run_action "$DEFAULT_COMMAND" "${POSITIONAL[@]}"
+    return $?
+  fi
+
+  ui_main
 }

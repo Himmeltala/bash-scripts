@@ -4,36 +4,50 @@ Maven 工作流下的工具。
 
 ## mvnstart
 
-省掉手敲 `mvn -pl <模块> spring-boot:run` 那一长串。从当前目录递归找出可运行的模块或可构建的项目，弹出复选清单，勾选后执行。
+省掉手敲 `mvn -pl <模块> spring-boot:run` 那一长串。从当前目录递归找出可运行的模块或可构建的项目，勾选后执行。
 
 ### 用法
 
 ```
-mvnstart                 在当前目录下递归找可运行模块，弹出复选清单
-mvnstart run            同上，显式写命令名
-mvnstart install        找顶层项目，勾选后执行构建
-mvnstart package        找可运行模块，勾选后打成可部署的 jar
+mvnstart                 先选命令，再勾目标
+mvnstart run             同上，显式写命令名
+mvnstart install         找顶层项目，勾选后执行构建
+mvnstart package         找可运行模块，勾选后打成可部署的 jar
 mvnstart package --no-am  打包时不构建依赖的兄弟模块
-mvnstart admin          带关键词时跳过界面，按子串匹配标签或路径后直接执行
-mvnstart install 人影   先写命令名，再写关键词
-mvnstart admin -c       强制编译后启动
-mvnstart --no-compile   跳过编译，直接跑已有的 class
-mvnstart --rebuild      先 clean 再编译后启动
-mvnstart --list         只列出目标，不执行
-mvnstart --refresh      清掉当前命令上次的勾选记录，重新开始
-mvnstart --help         显示帮助，命令清单从注册表生成
-
-mvnstart-run            按命令命名的入口，等价于 mvnstart run
-mvnstart-install        等价于 mvnstart install
-mvnstart-package        等价于 mvnstart package
-mvnstart-package --no-am  入口与命令名可以混着用
+mvnstart admin           带关键词时跳过界面，按子串匹配标签或路径后直接执行
+mvnstart install 人影    先写命令名，再写关键词
+mvnstart admin -c        强制编译后启动
+mvnstart --no-compile    跳过编译，直接跑已有的 class
+mvnstart --rebuild       先 clean 再编译后启动
+mvnstart --list          只列出目标，不执行；没写命令时按 run 列
+mvnstart --refresh       清掉当前命令上次的勾选记录，重新开始
+mvnstart --help          显示帮助，命令清单从注册表生成
 ```
+
+不带参数时打开主菜单：先选命令（启动、装本地仓库、打包、退出），再进目标勾选；一个命令跑完回到菜单，选退出或按取消才离开。给了命令名或关键词时跳过菜单直接执行。
 
 界面用方向键移动、空格勾选、回车确认。上次勾过的目标下次自动预勾选。
 
 勾选一个目标时，脚本用 `exec` 把自身进程整个换成 `mvn`，输出、颜色、Ctrl+C 与手敲完全一样。勾选多个时全部后台执行，输出仍然直接打在当前终端上，脚本只在最后等着；按一次 Ctrl+C，信号送到整个前台进程组，所有任务一起优雅退出。
 
 非交互环境（管道、脚本、CI）下探不到终端，自动退回编号输入，避免 whiptail 卡住。
+
+### 退出码
+
+| 码 | 含义 |
+| --- | --- |
+| 0 | 成功 |
+| 1 | 找到了目标但执行失败，或者当前目录下没找到目标 |
+| 2 | 用法错误：未知选项、命令不支持某个开关、`--no-compile` 时模块没编过 |
+| 3 | 用户取消：菜单或勾选界面里取消、确认了一个都没勾 |
+
+### 安全约定
+
+- **跳过编译的判定拿不准一律判「需要编译」**（没有 `target/classes`、里面一个 class 都没有、路径不存在都算拿不准）。多编一次只是慢，漏编一次就是跑到旧代码。
+- **明说 `--no-compile` 但模块没编过时直接拒绝**，退 2，不硬起一个空壳进程。
+- **只在 `--rebuild` 时 `clean`**，其余动作不动 `target`，也不碰工作副本里的源码。
+- **勾选记录只写缓存目录**（`~/.cache/mvnstart`），`--refresh` 只清当前目录当前命令这一份。
+- **多条目标后台执行时共用当前终端**，按一次 Ctrl+C 送到整个前台进程组，所有任务一起退出；脚本自身只收等待，不拦截信号。
 
 ### 启动方式
 
@@ -110,33 +124,30 @@ runnet-admin-service@backend/runnet-admin/runnet-admin-service
 
 ### 勾选记录
 
-存在 `~/.cache/mvnstart/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。记录按命令名存，`mvnstart-run` 与 `mvnstart run` 共用同一份。
+存在 `~/.cache/mvnstart/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。
 
 ### 文件结构
 
 ```
 workflows/maven/
 ├── README.md
-├── bin/                     入口，每个只负责定位核心、转发参数
-│   ├── mvnstart             默认 run
-│   ├── mvnstart-run
-│   ├── mvnstart-install
-│   └── mvnstart-package
+├── bin/
+│   └── mvnstart             唯一入口：定位核心、转发参数
 └── lib/
     ├── mvnstart-core.sh     加载器，按顺序 source 下面各文件
     └── mvnstart/
-        ├── util.sh          报错、记录分列、路径计算
+        ├── util.sh          退出码、报错、终端探测、记录分列、路径计算
         ├── pom.sh           pom 扫描与解析、可运行模块判定、聚合根寻址
-        ├── ui.sh            勾选界面、勾选记录、同名标签去重
+        ├── ui.sh            动作菜单、目标复选、勾选记录、同名标签去重
         ├── exec.sh          启动方式与编译判定、起进程
-        ├── cli.sh           注册表、帮助、参数解析与主流程
+        ├── cli.sh           注册表、帮助、参数解析、动作分发与主菜单
         └── commands/        每条命令一个文件
             ├── run.sh
             ├── install.sh
             └── package.sh
 ```
 
-`mvnstart run admin` 与 `mvnstart-run admin` 完全等价。加载器直接执行也行，等价于 `mvnstart`，调试某一步时方便。
+加载器直接执行也行，等价于 `mvnstart`，调试某一步时方便。
 
 安装脚本只把 `bin` 下的文件软链成命令，`lib` 不会出现在 PATH 里。
 
@@ -150,7 +161,7 @@ workflows/maven/
 命令名 | 说明 | 收集函数 | 目标的名词 | 是否参与编译判定
 ```
 
-加一条命令要做两件事：在 `COMMANDS` 里加一行，再在 `lib/mvnstart/commands/` 下加一个文件写收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，其余文件都不用动。记录六列，顺序是：
+加一条命令要做两件事：在 `COMMANDS` 里加一行，再在 `lib/mvnstart/commands/` 下加一个文件写收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，主菜单也从注册表生成，其余文件都不用动。记录六列，顺序是：
 
 ```
 标签、工作目录、-pl 的值（不走 -pl 时为空）、mvn 参数、展示用相对路径、展示用命令
@@ -158,7 +169,7 @@ workflows/maven/
 
 `-pl` 的值单独占一列而不是先拼进参数字符串，是为了执行时能加引号，路径含空格时才不会被拆成两个参数。
 
-想让新命令也有独立入口名，在 `bin` 下照抄一个入口文件即可，里面只做三件事：定位 `../lib/mvnstart-core.sh`、把命令名写进 `MVNSTART_DEFAULT_COMMAND`、`source` 之后调 `main "$@"`。入口里不写别的逻辑，默认命令必须在注册表里，写错了脚本会直接报出来。
+新命令不用加入口文件：`mvnstart <命令名>` 就能用，不带参数时的主菜单也会自动多出这一项，两处都从注册表生成。
 
 ### 实现上要注意的坑
 
