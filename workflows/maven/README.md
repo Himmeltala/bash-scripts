@@ -1,6 +1,6 @@
-# java-maven
+# maven
 
-Java Maven 工作流下的工具。
+Maven 工作流下的工具。
 
 ## mvnstart
 
@@ -115,7 +115,7 @@ runnet-admin-service@backend/runnet-admin/runnet-admin-service
 ### 文件结构
 
 ```
-workflows/java-maven/
+workflows/maven/
 ├── README.md
 ├── bin/                     入口，每个只负责定位核心、转发参数
 │   ├── mvnstart             默认 run
