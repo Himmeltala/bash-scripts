@@ -7,6 +7,7 @@
 ```
 mvnx                 先选命令，再勾目标
 mvnx run             同上，显式写命令名
+mvnx war             找引了 jetty 或 tomcat 插件的 war 项目，勾选后启动
 mvnx install         找顶层项目，勾选后执行构建
 mvnx package         找可运行模块，勾选后打成可部署的 jar
 mvnx package --no-am  打包时不构建依赖的兄弟模块
@@ -20,7 +21,7 @@ mvnx --refresh       清掉当前命令上次的勾选记录，重新开始
 mvnx --help          显示帮助，命令清单从注册表生成
 ```
 
-不带参数时打开主菜单：先选命令（启动、装本地仓库、打包、退出），再进目标勾选；一个命令跑完回到菜单，选退出或按取消才离开。给了命令名或关键词时跳过菜单直接执行。
+不带参数时打开主菜单：先选命令（启动、启动 war、装本地仓库、打包、退出），再进目标勾选；一个命令跑完回到菜单，选退出或按取消才离开。给了命令名或关键词时跳过菜单直接执行。
 
 界面用方向键移动、空格勾选、回车确认。上次勾过的目标下次自动预勾选。
 
@@ -47,7 +48,7 @@ mvnx --help          显示帮助，命令清单从注册表生成
 
 ## 启动方式
 
-默认会自动判一遍这一条记录要不要编译，另外三条由命令行指定。模式参数只对 `run` 有效，`install` 与 `package` 收到 `--no-compile` 或 `--rebuild` 直接报用法错误退出，装本地仓库与打包都必须真编译。命令行里后面写的覆盖前面的。
+默认会自动判一遍这一条记录要不要编译，另外三条由命令行指定。模式参数只对 `run` 与 `war` 有效，`install` 与 `package` 收到 `--no-compile` 或 `--rebuild` 直接报用法错误退出，装本地仓库与打包都必须真编译。命令行里后面写的覆盖前面的。
 
 | 方式 | 行为 |
 | --- | --- |
@@ -64,11 +65,12 @@ mvnx --help          显示帮助，命令清单从注册表生成
 
 已知盲点一条：删掉源文件后，`target/classes` 里那个旧 class 会留下，光看时间戳看不出变化。这不是跳过编译独有的问题，`mvn compile` 本身也不删残留 class，删类之后都得 `clean`，也就是 `--rebuild`。
 
-## 三条命令
+## 四条命令
 
 | 命令 | 目标 | 执行的 Maven 命令 |
 | --- | --- | --- |
 | `run` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> spring-boot:run`，尾部参数受启动方式影响 |
+| `war` | 引了 jetty 或 tomcat 插件的 war 项目 | `mvn -pl <模块路径> jetty:run`，只声明 tomcat 插件时换成 `tomcat:run` |
 | `install` | 顶层项目 | `mvn clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true` |
 | `package` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> clean package -Dmaven.test.skip=true -am` |
 
@@ -88,7 +90,9 @@ mvnx --help          显示帮助，命令清单从注册表生成
 
 `run` 三条同时满足：自己的 pom 里引了 `spring-boot-maven-plugin`、打包方式不是 `pom`、`src/main/java` 下确实存在带 `@SpringBootApplication` 的类。父 pom 与 common 这类纯依赖模块会被滤掉。
 
-`package` 与 `run` 是同一批目标，判定只写一遍，两条命令各自只负责拼自己那条 Maven 命令。
+`war` 三条同时满足：自己的 pom 里引了 `jetty-maven-plugin` 或 `tomcat-maven-plugin`（org.codehaus.mojo）、打包方式不是 `pom`、模块目录下存在 `src/main/webapp`。两个插件都声明时启动目标取 `jetty:run`，只声明 tomcat 时取 `tomcat:run`。
+
+`package` 与 `run` 是同一批目标。三个收集函数共用同一遍遍历（`each_module`），各自只提供一个判定谓词，聚合根寻址与标签去重都不重写。`install` 用的是自己的判定，不走这一遍。
 
 `install` 判定顶层项目：没有被任何上层聚合 pom 的 `<modules>` 收录的 pom。
 
@@ -96,7 +100,7 @@ mvnx --help          显示帮助，命令清单从注册表生成
 
 ## 启动命令怎么拼
 
-模块能被某个上层聚合 pom 声明走到时，从该聚合根目录执行 `mvn -pl <相对路径> spring-boot:run`；走不到时进入模块目录执行 `mvn spring-boot:run`。
+模块能被某个上层聚合 pom 声明走到时，从该聚合根目录执行 `mvn -pl <相对路径> <目标>`；走不到时进入模块目录执行 `mvn <目标>`。目标是 `spring-boot:run`、`jetty:run` 还是 `tomcat:run`，由该模块自己的判定决定。
 
 聚合根取的是**最外层**那个能走到模块的 pom。以 `runnet-admin-service` 为例，它既能由 `runnet-admin` 寻址，也能由 `backend` 寻址，脚本选 `backend`，拼出来是：
 
@@ -107,7 +111,7 @@ mvn -pl runnet-admin/runnet-admin-service spring-boot:run
 
 与手工在项目根目录下敲的形式一致。Maven 的 `-pl` 接受指向嵌套模块的路径，即便该模块没有被根 pom 直接声明。
 
-`package` 拼路径的方式与 `run` 相同，只是把 `spring-boot:run` 换成打包参数。
+`package` 与 `war` 拼路径的方式与 `run` 相同，只是把 `spring-boot:run` 换成打包参数或 war 的启动目标。
 
 ## 同名目标
 
@@ -139,6 +143,7 @@ mvnx/
         ├── cli.sh           注册表、帮助、参数解析、动作分发与主菜单
         └── commands/        每条命令一个文件
             ├── run.sh
+            ├── war.sh
             ├── install.sh
             └── package.sh
 ```
@@ -184,3 +189,5 @@ mvnx/
 
 - 多选只在当前终端里并行起，不给每个目标开独立终端窗口。
 - 从 `~/`、`~/projs` 这种大范围扫描一次要几秒，是磁盘与进程派生慢，不是脚本本身的问题；在项目目录里跑通常一秒以内。
+- `war` 只认 `jetty-maven-plugin` 与 `tomcat-maven-plugin` 两个插件，`tomcat7-maven-plugin`、`tomcat6-maven-plugin` 这类不认，用它们的项目列不出来，得手工敲 `mvn tomcat7:run`。
+- `war` 的 `--no-compile` 靠 `-Dmaven.main.skip=true` 生效，在 `jetty:run` 上可用；`tomcat-maven-plugin` 是否同样吃这个参数没有实测，不吃也只是照样编译一遍，不会跑到旧代码。

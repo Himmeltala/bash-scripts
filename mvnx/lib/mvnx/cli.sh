@@ -4,6 +4,7 @@
 #   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）| 是否参与编译判定（1 参与）
 readonly COMMANDS=(
   'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块|1'
+  'war|启动 war 加 jetty/tomcat 插件的后端|collect_war|可启动的 war 项目|1'
   'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目|0'
   'package|把可运行模块打成可部署的 jar|collect_packable|可运行模块|0'
 )
@@ -53,7 +54,7 @@ EOF
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
 
-启动方式（只对 run 有效，命令行里后面写的覆盖前面的）:
+启动方式（只对 run 与 war 有效，命令行里后面写的覆盖前面的）:
   （不写）       自动：源码与各级 pom 都没比 target/classes 新就跳过编译
   -c, --compile  强制编译，就是手工敲 mvn 的效果
       --no-compile  跳过编译直接跑已有的 class，模块没编过时会报错退出
