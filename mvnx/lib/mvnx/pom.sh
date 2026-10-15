@@ -1,11 +1,13 @@
 # pom 扫描与解析：找出工作副本里的全部 pom，一次调用解析出 id、打包方式、
-# 是否引 spring-boot、子模块，填进 POM_LIST 与各数组；再据此判定可运行模块、
+# 引了哪些启动插件、子模块，填进 POM_LIST 与各数组；再据此判定可启动模块、
 # 往上找聚合根。数组只在主 shell 里填一次，其余文件只读。
 readonly SKIP_DIRS=(target .svn .git node_modules .idea .settings)
 # 一次调用把一个 pom 需要的信息全部取出来，输出带前缀的行：
 #   ID  <artifactId>  项目自身的 id，<parent> 里的不算
 #   PKG pom           打包方式是 pom
 #   SB  1             引了 spring-boot-maven-plugin
+#   JETTY 1           引了 jetty-maven-plugin
+#   TOMCAT 1          引了 tomcat-maven-plugin
 #   MOD <entry>       <modules> 里声明的子模块，一行一个
 readonly POM_AWK='
 BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
@@ -51,6 +53,8 @@ BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
   }
   if (line ~ /<packaging>[ \t]*pom[ \t]*<\/packaging>/) print "PKG pom"
   if (line ~ /spring-boot-maven-plugin/) print "SB 1"
+  if (line ~ /jetty-maven-plugin/) print "JETTY 1"
+  if (line ~ /tomcat-maven-plugin/) print "TOMCAT 1"
 
   if (line ~ /<modules>/) inmodules = 1
   if (inmodules) {
@@ -85,7 +89,12 @@ declare -A POM_MODULES_VAL=()
 declare -A POM_ARTIFACT_VAL=()
 declare -A POM_PKG_VAL=()
 declare -A POM_SB_VAL=()
+declare -A POM_JETTY_VAL=()
+declare -A POM_TOMCAT_VAL=()
 declare -A HAS_MAIN_CLASS=()
+declare -A HAS_WEBAPP=()
+# war 项目实际执行的目标，两个插件都声明时取 jetty，只声明 tomcat 时取 tomcat。
+declare -A WEBRUN_GOAL=()
 
 prepare_scan() {
   local root=$1 pom dump line mods
@@ -95,7 +104,11 @@ prepare_scan() {
   POM_ARTIFACT_VAL=()
   POM_PKG_VAL=()
   POM_SB_VAL=()
+  POM_JETTY_VAL=()
+  POM_TOMCAT_VAL=()
   HAS_MAIN_CLASS=()
+  HAS_WEBAPP=()
+  WEBRUN_GOAL=()
 
   for pom in "${POM_LIST[@]}"; do
     dump=$(awk "$POM_AWK" "$pom")
@@ -106,6 +119,8 @@ prepare_scan() {
         'MOD '*) mods+="${line#MOD }"$'\n' ;;
         'PKG '*) POM_PKG_VAL[$pom]=1 ;;
         'SB '*) POM_SB_VAL[$pom]=1 ;;
+        'JETTY '*) POM_JETTY_VAL[$pom]=1 ;;
+        'TOMCAT '*) POM_TOMCAT_VAL[$pom]=1 ;;
       esac
     done <<< "$dump"
     POM_MODULES_VAL[$pom]="${mods%$'\n'}"
@@ -122,6 +137,19 @@ prepare_scan() {
     [[ -d "$dir/src/main/java" ]] || continue
     grep -rql --include='*.java' '@SpringBootApplication' "$dir/src/main/java" 2>/dev/null &&
       HAS_MAIN_CLASS[$dir]=1
+  done
+
+  for pom in "${POM_LIST[@]}"; do
+    [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}" ]] || continue
+    [[ -n "${POM_PKG_VAL[$pom]:-}" ]] && continue
+    dir=$(parent_dir "$pom")
+    [[ -d "$dir/src/main/webapp" ]] || continue
+    HAS_WEBAPP[$dir]=1
+    if [[ -n "${POM_JETTY_VAL[$pom]:-}" ]]; then
+      WEBRUN_GOAL[$dir]='jetty:run'
+    else
+      WEBRUN_GOAL[$dir]='tomcat:run'
+    fi
   done
   return 0
 }
@@ -172,19 +200,30 @@ find_aggregator() {
   printf '%s\n' "$agg"
 }
 
-# 可运行模块的判定：不是 pom 打包，引了 spring-boot-maven-plugin，
-# 并且带 @SpringBootApplication 的入口类确实在它自己的源码目录里。
-# run 与 package 用的是同一批目标，判定只写这一遍，各自只管拼自己那条记录。
-# 每命中一个模块调用一次 $1，参数依次是模块目录、id、聚合根、-pl 的值；
+# 可启动模块的两种判定，谓词拿 pom 路径与模块目录，命中返回 0。
+# 「不是 pom 打包」是两者共有的前提，由 each_module 统一排除，谓词里不再重复。
+# Boot 模块：引了 spring-boot-maven-plugin，且入口类在自己源码目录里。
+is_boot_module() {
+  local pom=$1 dir=$2
+  [[ -n "${POM_SB_VAL[$pom]:-}" && -n "${HAS_MAIN_CLASS[$dir]:-}" ]]
+}
+
+# war 模块：引了 jetty 或 tomcat 插件，且模块目录下有 webapp。
+is_war_module() {
+  local pom=$1 dir=$2
+  [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}" && -n "${HAS_WEBAPP[$dir]:-}" ]]
+}
+
+# 遍历全部 pom，把命中判定的模块交给回调。
+# 每命中一个调用一次 $2，参数依次是模块目录、id、聚合根、-pl 的值；
 # 模块走不到任何聚合根时后两个参数为空。
-each_runnable_module() {
-  local cb=$1 pom dir id agg rel
+each_module() {
+  local pred=$1 cb=$2 pom dir id agg rel
   for pom in "${POM_LIST[@]}"; do
-    [[ -n "${POM_SB_VAL[$pom]:-}" ]] || continue
     [[ -n "${POM_PKG_VAL[$pom]:-}" ]] && continue
 
     dir=$(parent_dir "$pom")
-    [[ -n "${HAS_MAIN_CLASS[$dir]:-}" ]] || continue
+    "$pred" "$pom" "$dir" || continue
 
     id=$(project_artifact_id "$pom")
     [[ -n "$id" ]] || id=$(basename "$dir")

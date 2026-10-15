@@ -1,5 +1,5 @@
-# run 命令的收集函数：把可运行模块拼成 spring-boot:run 记录。
-# 可运行模块的判定在 pom.sh 的 each_runnable_module 里，与 package 共用。
+# run 命令的收集函数：把 Spring Boot 模块拼成 spring-boot:run 记录。
+# Boot 模块的判定在 pom.sh 的 is_boot_module 里，与 package 共用。
 emit_run_record() {
   local dir=$1 id=$2 agg=$3 rel=$4
   if [[ -n "$rel" ]]; then
@@ -12,5 +12,5 @@ emit_run_record() {
 }
 
 collect_runnable() {
-  each_runnable_module emit_run_record
+  each_module is_boot_module emit_run_record
 }

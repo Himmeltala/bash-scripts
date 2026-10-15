@@ -28,7 +28,7 @@ emit_package_record() {
 }
 
 collect_packable() {
-  each_runnable_module emit_package_record
+  each_module is_boot_module emit_package_record
 }
 
 PACK_NO_AM=0
