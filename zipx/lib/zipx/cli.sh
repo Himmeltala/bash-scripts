@@ -19,7 +19,6 @@ usage() {
 选项:
   -o, --output 包名    pack 的输出包名，默认取当前目录名加 .zip
   -d, --into 目录      unpack、extract 解到哪，默认当前目录
-  -e, --encrypt        pack 时加密，密码由 zip 自己交互提示输入
       --overwrite      允许覆盖：pack 撞同名包、unpack 撞同名文件时默认拒绝
       --no-exclude     打包时不套用默认排除规则
       --exclude 模式   再追加一条排除模式，可重复
@@ -40,7 +39,6 @@ PACK_OUT=''
 INTO=''
 OVERWRITE=0
 NO_EXCLUDE=0
-ENCRYPT=0
 ASSUME_YES=0
 DRY_RUN=0
 declare -a POSITIONAL=()
@@ -80,7 +78,6 @@ parse_args() {
       -o|--output) need_value "$a" "$i" "${#args[@]}"; PACK_OUT=${args[$i]}; i=$((i + 1)) ;;
       -d|--into) need_value "$a" "$i" "${#args[@]}"; INTO=${args[$i]}; i=$((i + 1)) ;;
       --exclude) need_value "$a" "$i" "${#args[@]}"; USER_EXCLUDES+=("${args[$i]}"); i=$((i + 1)) ;;
-      -e|--encrypt) ENCRYPT=1 ;;
       --overwrite) OVERWRITE=1 ;;
       --no-exclude) NO_EXCLUDE=1 ;;
       -y|--yes) ASSUME_YES=1 ;;
@@ -122,7 +119,8 @@ ui_main() {
       quit '退出') || return "$EXIT_CANCEL"
 
     case "$choice" in
-      pack) ui_pack ;;
+      # 压缩成功就结束整个界面；中途取消仍回主菜单。
+      pack) ui_pack && return 0 ;;
       unpack) ui_unpack ;;
       info) ui_info ;;
       edit) ui_edit ;;

@@ -77,8 +77,9 @@ cmd_pack() {
     reject_odd_name "$e"
   done
 
+  # 后缀统一在下面补，默认值不再带 .zip，界面里看到的与最终包名一致。
   out="${PACK_OUT:-}"
-  [[ -n "$out" ]] || out="$(basename "$PWD").zip"
+  [[ -n "$out" ]] || out="$(basename "$PWD")"
   [[ "$out" == *.zip ]] || out+='.zip'
 
   # 已有的包不静默覆盖：包里可能是上一次打包的东西，覆盖掉找不回来。
@@ -87,9 +88,6 @@ cmd_pack() {
   fi
 
   local -a cmd=(zip -r "$(archive_arg "$out")")
-  # 加密只用 -e，让 zip 自己提示输入密码。不用 -P：那个密码会留在进程列表里，
-  # 同一台机器上 ps 就能看见。
-  ((ENCRYPT)) && cmd+=(-e)
   cmd+=("${entries[@]}")
   build_exclude_patterns cmd "${entries[@]}"
 
@@ -100,19 +98,15 @@ cmd_pack() {
   info "已生成 $out"
 }
 
-# 界面流程：勾条目、定包名、问加密，再交给 cmd_pack。
+# 界面流程：勾条目、定包名，再交给 cmd_pack。
 ui_pack() {
   local out
   out=$(ui_pick_entries) || return "$EXIT_CANCEL"
   [[ -n "$out" ]] || { info '一个条目都没勾'; return 0; }
   mapfile -t UI_ENTRIES <<< "$out"
 
-  out=$(ui_input 'zipx 压缩' '输出包名' "$(basename "$PWD").zip") || return "$EXIT_CANCEL"
+  out=$(ui_input 'zipx 压缩' '输出包名（不用写 .zip，会自动补）' "$(basename "$PWD")") || return "$EXIT_CANCEL"
   PACK_OUT=$out
-
-  if ui_yesno 'zipx 压缩' '要加密吗？选是则由 zip 交互提示输入两次密码'; then
-    ENCRYPT=1
-  fi
 
   cmd_pack "${UI_ENTRIES[@]}"
 }
