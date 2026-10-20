@@ -10,9 +10,9 @@ mvnx_dir=${BASH_SOURCE[0]%/*}
 readonly mvnx_dir
 
 for mvnx_module in \
+  "$mvnx_dir"/../../lib/tui.sh \
   "$mvnx_dir"/mvnx/util.sh \
   "$mvnx_dir"/mvnx/pom.sh \
-  "$mvnx_dir"/mvnx/tui.sh \
   "$mvnx_dir"/mvnx/ui.sh \
   "$mvnx_dir"/mvnx/exec.sh
 do

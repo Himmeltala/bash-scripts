@@ -10,6 +10,7 @@ zipx_dir=${BASH_SOURCE[0]%/*}
 readonly zipx_dir
 
 for zipx_module in \
+  "$zipx_dir"/../../lib/tui.sh \
   "$zipx_dir"/zipx/util.sh \
   "$zipx_dir"/zipx/ui.sh \
   "$zipx_dir"/zipx/pack.sh \

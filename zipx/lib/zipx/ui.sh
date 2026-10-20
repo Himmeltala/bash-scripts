@@ -1,95 +1,79 @@
-# 界面层：whiptail 的几种控件，以及探不到终端时的编号输入。
-# whiptail 把结果写在 stderr（与 dialog 相反），取结果处用 3>&1 1>&2 2>&3 调换；函数输出到 stdout，返回 1 表示取消。
-
-# 列表框尺寸按条目数取，最多留 8 行给边框与提示；高度不够时 whiptail 只显示一部分，滚动也不正常。
-ui_size() {
-  local n=$1 lines cols listh
-  lines=$(tput lines 2>/dev/null || printf '24')
-  cols=$(tput cols 2>/dev/null || printf '100')
-  ((cols < 60)) && cols=60
-  listh=$n
-  ((listh > lines - 8)) && listh=$((lines - 8))
-  ((listh < 1)) && listh=1
-  printf '%s %s %s\n' "$((listh + 8))" "$cols" "$listh"
-}
+# 界面层：自绘菜单、复选、输入、确认与文本查看，以及探不到终端时的编号输入。
 
 # 单选菜单。$1 标题，$2 提示，其余为标签与说明，成对给出。
 ui_menu() {
   local title=$1 prompt=$2
   shift 2
   if ui_available; then
-    local boxh cols listh
-    read -r boxh cols listh <<< "$(ui_size $(($# / 2)))"
-    whiptail --title "$title" --menu "$prompt" "$boxh" "$cols" "$listh" "$@" 3>&1 1>&2 2>&3
+    tui_select menu "$title" "$prompt" "$@"
   else
     plain_menu "$prompt" "$@"
   fi
 }
 
-# 复选：参数为标签、说明、状态三元组；--separate-output 让结果一行一个标签，省得按引号拆分。
+# 复选：参数为标签、说明、状态三元组，状态为 ON 时预先勾选。
 ui_checklist() {
   local title=$1 prompt=$2
   shift 2
-  if ui_available; then
-    local boxh cols listh
-    read -r boxh cols listh <<< "$(ui_size $(($# / 3)))"
-    whiptail --title "$title" --separate-output --checklist "$prompt" "$boxh" "$cols" "$listh" "$@" 3>&1 1>&2 2>&3
-  else
+  if ! ui_available; then
     plain_checklist "$prompt" "$@"
+    return $?
   fi
+
+  local -a items=() selected=()
+  local rc=0 out
+  while (($# >= 3)); do
+    items+=("$1" "$2")
+    [[ "$3" == ON ]] && selected+=("$1")
+    shift 3
+  done
+
+  local TUI_PRESELECT=''
+  ((${#selected[@]})) && TUI_PRESELECT=$(printf '%s\n' "${selected[@]}")
+  out=$(tui_select checklist "$title" "$prompt" "${items[@]}") || rc=$?
+  ((rc == 2)) && return 0
+  ((rc == 0)) || return "$rc"
+  printf '%s\n' "$out"
 }
 
 # 单行输入。$1 标题，$2 提示，$3 默认值。
 ui_input() {
   local title=$1 prompt=$2 default=${3:-}
   if ui_available; then
-    whiptail --title "$title" --inputbox "$prompt" 10 70 "$default" 3>&1 1>&2 2>&3
-  else
-    printf '%s\n\n' "$prompt" >&2
-    printf '默认 [%s]: ' "$default" >&2
-    local answer
-    read -r answer || return 1
-    printf '%s\n' "${answer:-$default}"
+    tui_input "$title" "$prompt" "$default"
+    return $?
   fi
+  printf '%s\n\n' "$prompt" >&2
+  printf '默认 [%s]: ' "$default" >&2
+  local answer
+  read -r answer || return 1
+  printf '%s\n' "${answer:-$default}"
 }
 
 # 是/否。默认答否，回车即取消。
 ui_yesno() {
   local title=$1 prompt=$2
   if ui_available; then
-    whiptail --title "$title" --yesno "$prompt" 12 70 3>&1 1>&2 2>&3
-  else
-    printf '%s [y/N]: ' "$prompt" >&2
-    local answer
-    read -r answer || return 1
-    [[ "${answer,,}" == y || "${answer,,}" == yes ]]
+    tui_confirm "$title" "$prompt"
+    return $?
   fi
-}
-
-ui_msg() {
-  local title=$1 text=$2
-  if ui_available; then
-    whiptail --title "$title" --msgbox "$text" 14 70 3>&1 1>&2 2>&3
-  else
-    info "$text"
-  fi
+  printf '%s [y/N]: ' "$prompt" >&2
+  local answer
+  read -r answer || return 1
+  [[ "${answer,,}" == y || "${answer,,}" == yes ]]
 }
 
 # 输出量大时用文本框分页看，内容从文件读。
 ui_textbox() {
   local title=$1 file=$2
   if ui_available; then
-    # 文本框尺寸给 0 表示自动，但它要的是数字，这里按终端大小算。
-    local lines cols
-    lines=$(tput lines 2>/dev/null || printf '24')
-    cols=$(tput cols 2>/dev/null || printf '100')
-    whiptail --title "$title" --scrolltext --textbox "$file" "$lines" "$cols" 3>&1 1>&2 2>&3
+    tui_textbox "$title" "$file"
   else
     cat "$file" >&2
   fi
 }
 
-# 没有 whiptail 或不在终端时使用编号输入。
+# 没有终端时使用编号输入。
 plain_menu() {
   local prompt=$1
   shift

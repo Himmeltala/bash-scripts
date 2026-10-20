@@ -23,13 +23,12 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "找不到 $1，先安装"
 }
 
-# 能否画界面：必须在命令替换之外只判断一次，替换里的 stdout 是管道，[[ -t 1 ]] 永远为假。
-# 启动时判断一次并记进 UI_MODE，之后一律读它。
+# 能否画界面：界面自绘，要求三个标准流都连着终端；必须在命令替换之外只判断一次，
+# 替换里的 stdout 是管道，[[ -t 1 ]] 永远为假。判断结果记进 UI_MODE，之后一律读它。
 UI_MODE=0
 
 detect_ui_mode() {
   UI_MODE=0
-  command -v whiptail >/dev/null 2>&1 || return 0
   [[ -t 0 && -t 1 && -t 2 ]] || return 0
   UI_MODE=1
   return 0

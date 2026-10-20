@@ -86,186 +86,6 @@ assign_tags() {
   return 0
 }
 
-# 自绘选择界面：$1 模式（menu 单选、checklist 复选、all 带「全部」），$2 标题，$3 提示，其余为标签与显示文本，成对给出。
-# 选中的标签每行输出一个；取消返回 1，复选没勾返回 2，按左箭头或 b 返回上一步时为 4。
-ui_select() {
-  local mode=$1 title=$2 prompt=$3
-  shift 3
-  local -a tags=() displays=() on=() picked=()
-  local i n=$(($# / 2))
-  while (($#)); do
-    tags+=("$1")
-    displays+=("$2")
-    shift 2
-  done
-
-  local is_all=0 base=0
-  if [[ "$mode" == all ]]; then
-    is_all=1
-    base=1
-  fi
-  local rows=$((n + is_all))
-  local cursor=0 offset=0 cursor_max=$((rows - 1))
-  local all_on=0
-
-  if [[ "$mode" != menu ]]; then
-    # 上次勾过的预选中，读进数组比对，别用 grep 逐条开进程。
-    local -A saved=()
-    if [[ -f $SEL_FILE ]]; then
-      local line
-      while IFS= read -r line; do
-        [[ -n "$line" ]] && saved[$line]=1
-      done < "$SEL_FILE"
-    fi
-    for ((i = 0; i < n; i++)); do
-      on[i]=0
-      [[ -n "${saved[${tags[$i]}]:-}" ]] && on[i]=1
-    done
-
-    all_on=1
-    for ((i = 0; i < n; i++)); do
-      if ((on[i] == 0)); then
-        all_on=0
-        break
-      fi
-    done
-  fi
-
-  local listh row idx mark key key2 key3
-  local selected=0 footer=''
-
-  trap 'tui_end; exit 130' INT TERM
-  trap 'tui_end' EXIT
-  tui_begin
-
-  local rc=0
-  while :; do
-    tui_size
-    listh=$((TUI_LINES - 8))
-    ((listh > rows)) && listh=$rows
-    ((listh < 1)) && listh=1
-    ((cursor < offset)) && offset=$cursor
-    ((cursor >= offset + listh)) && offset=$((cursor - listh + 1))
-
-    tui_clear
-    tui_title "$title"
-    tui_subtitle "$prompt"
-    if [[ "$mode" == menu ]]; then
-      tui_hint '↑↓' '移动' '回车' '选择' 'q' '取消'
-    else
-      tui_hint '↑↓' '移动' '空格' '勾选' '回车' '确认' '←' '返回' 'q' '取消'
-    fi
-    tui_rule
-
-    for ((row = offset; row < offset + listh && row < rows; row++)); do
-      if [[ "$mode" == menu ]]; then
-        idx=$((row - base))
-        tui_row "$((row == cursor))" '' "${tags[$idx]}" "${displays[$idx]}"
-        continue
-      fi
-
-      if ((is_all && row == 0)); then
-        ((all_on)) && mark='[x]' || mark='[ ]'
-        tui_row "$((row == cursor))" "$mark" '全部' '选中全部模块'
-      else
-        idx=$((row - base))
-        ((on[idx])) && mark='[x]' || mark='[ ]'
-        tui_row "$((row == cursor))" "$mark" "${tags[$idx]}" "${displays[$idx]}"
-      fi
-    done
-
-    tui_rule
-    selected=0
-    for ((i = 0; i < n; i++)); do
-      ((on[i])) && selected=$((selected + 1))
-    done
-    if [[ "$mode" == menu ]]; then
-      footer=$((cursor + 1))"/$n"
-    else
-      footer="已选 $selected/$n"
-      ((offset > 0)) && footer+='   ↑ 更多'
-      ((offset + listh < rows)) && footer+='   ↓ 更多'
-    fi
-    tui_status "$footer" 'q 取消'
-
-    IFS= read -rsn1 key || { rc=1; break; }
-    case "$key" in
-      '')
-        if [[ "$mode" == menu ]]; then
-          printf '%s\n' "${tags[$cursor]}"
-          rc=0
-          break
-        fi
-        break
-        ;;
-      ' '|x|X)
-        [[ "$mode" == menu ]] && continue
-        if ((is_all && cursor == 0)); then
-          if ((all_on)); then
-            for ((i = 0; i < n; i++)); do on[i]=0; done
-            all_on=0
-          else
-            for ((i = 0; i < n; i++)); do on[i]=1; done
-            all_on=1
-          fi
-        else
-          idx=$((cursor - base))
-          on[idx]=$((1 - on[idx]))
-          all_on=1
-          for ((i = 0; i < n; i++)); do
-            if ((on[i] == 0)); then
-              all_on=0
-              break
-            fi
-          done
-        fi
-        ;;
-      k|K)
-        ((cursor > 0)) && cursor=$((cursor - 1))
-        ;;
-      j|J)
-        ((cursor < cursor_max)) && cursor=$((cursor + 1))
-        ;;
-      q|Q)
-        rc=1
-        break
-        ;;
-      b|B|$'\177'|$'\b')
-        rc=4
-        break
-        ;;
-      $'\033')
-        IFS= read -rsn1 -t 0.05 key2 || key2=''
-        if [[ "$key2" == '[' ]]; then
-          IFS= read -rsn1 -t 0.05 key3 || key3=''
-          case "$key3" in
-            A) ((cursor > 0)) && cursor=$((cursor - 1)) ;;
-            B) ((cursor < cursor_max)) && cursor=$((cursor + 1)) ;;
-            D) rc=4; break ;;
-          esac
-        else
-          rc=4
-          break
-        fi
-        ;;
-    esac
-  done
-
-  trap - EXIT INT TERM
-  tui_end
-
-  ((rc == 0)) || return "$rc"
-  [[ "$mode" == menu ]] && return 0
-
-  picked=()
-  for ((i = 0; i < n; i++)); do
-    ((on[i])) && picked+=("${tags[$i]}")
-  done
-  ((${#picked[@]})) || return 2
-  printf '%s\n' "${picked[@]}"
-  return 0
-}
-
 # 单选菜单。$1 标题，$2 提示，其余为标签与说明，成对给出。
 ui_menu() {
   local title=$1 prompt=$2
@@ -274,7 +94,7 @@ ui_menu() {
     plain_menu "$prompt" "$@"
     return $?
   fi
-  ui_select menu "$title" "$prompt" "$@"
+  tui_select menu "$title" "$prompt" "$@"
 }
 
 # 目标复选。$1 是目标的名词，只用在编号输入的提示语里；其余为记录。
@@ -294,7 +114,7 @@ ui_checklist() {
     items+=("$tag" "$display")
   done
 
-  out=$(ui_select checklist "mvnx · $noun" '' "${items[@]}") || rc=$?
+  out=$(tui_select checklist "mvnx · $noun" '' "${items[@]}") || rc=$?
   ((rc == 0)) || return "$rc"
 
   mapfile -t picked <<< "$out"
@@ -324,7 +144,7 @@ ui_checklist_all() {
     items+=("$tag" "$display")
   done
 
-  out=$(ui_select all "mvnx · $noun" '' "${items[@]}") || rc=$?
+  out=$(tui_select all "mvnx · $noun" '' "${items[@]}") || rc=$?
   ((rc == 0)) || return "$rc"
 
   mapfile -t picked <<< "$out"

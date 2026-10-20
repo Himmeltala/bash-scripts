@@ -6,6 +6,8 @@
 bash-scripts/
 ├── install.sh                    安装
 ├── uninstall.sh                  卸载
+├── lib/
+│   └── tui.sh                    共享界面组件，mvnx 与 zipx 共用
 ├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
 │   ├── README.md
 │   ├── bin/
@@ -26,7 +28,7 @@ bash-scripts/
         └── killport
 ```
 
-根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`zipx`、`killport`。`bin/` 里放可执行文件，`lib/` 放被入口共用的库，不会被软链成命令。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`zipx`、`killport`。工具目录的 `bin/` 放可执行文件，`lib/` 放入口引用的库，不会被软链成命令。加新工具就是新建一个同名目录。
 
 ## 安装
 
@@ -113,4 +115,4 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ## 环境要求
 
-需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里；界面在终端里自绘，探不到终端时退回编号输入。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错；有 whiptail 时用图形化清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。
+需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`mvnx` 与 `zipx` 的界面都在终端里自绘，探不到终端时退回编号输入。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。
