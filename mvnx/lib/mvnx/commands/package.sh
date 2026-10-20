@@ -10,7 +10,7 @@ package_args() {
   local args=''
   [[ $PACK_NO_CLEAN -eq 0 ]] && args='clean '
   args+='package -Dmaven.test.skip=true'
-  [[ $PACK_NO_AM -eq 0 ]] && args+=' -am'
+  ((NO_AM)) || args+=' -am'
   printf '%s\n' "$args"
 }
 
@@ -31,6 +31,5 @@ collect_packable() {
   each_module is_boot_module emit_package_record
 }
 
-PACK_NO_AM=0
 PACK_NO_CLEAN=0
-PACK_FLAG=''
+PACK_NO_CLEAN_FLAG=''

@@ -8,7 +8,8 @@
 mvnx                 先选命令，再勾目标
 mvnx run             同上，显式写命令名
 mvnx war             找引了 jetty 或 tomcat 插件的 war 项目，勾选后启动
-mvnx install         找顶层项目，勾选后执行构建
+mvnx install         找顶层项目，勾选后执行构建；首行开关可改成按模块安装
+mvnx install --no-am 按模块安装时不带 -am，兄弟模块须已在本地仓库
 mvnx package         找可运行模块，勾选后打成可部署的 jar
 mvnx package --no-am  打包时不构建依赖的兄弟模块
 mvnx admin           带关键词时跳过界面，按子串匹配标签或路径后直接执行
@@ -71,10 +72,12 @@ mvnx --help          显示帮助，命令清单从注册表生成
 | --- | --- | --- |
 | `run` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> spring-boot:run`，尾部参数受启动方式影响 |
 | `war` | 引了 jetty 或 tomcat 插件的 war 项目 | `mvn -pl <模块路径> jetty:run`，只声明 tomcat 插件时换成 `tomcat:run` |
-| `install` | 顶层项目 | `mvn clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true` |
+| `install` | 顶层项目，或项目下的子模块 | `mvn clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true`；按模块安装时从项目根执行 `mvn -pl <模块路径> ... -am` |
 | `package` | 可运行的 Spring Boot 模块 | `mvn -pl <模块路径> clean package -Dmaven.test.skip=true -am` |
 
 `install` 带 `maven.resources.skip`，装出来的 jar 里没有 `application.yml` 这类资源，用途是快速把依赖补齐进本地仓库，让 `run` 能解析到兄弟模块，不适合拿去部署。
+
+`install` 默认按整个项目装。第一屏清单首行的「按模块选择」勾上后，确认项目会逐个弹出该项目的模块清单，勾哪个装哪个；不勾开关时行为不变。模块清单只列非 `pom` 打包的子模块，pom 打包的父模块不单独出现，需要时由 `-am` 顺带构建。项目没有子模块时退回按整个项目安装。
 
 `package` 打的是能拿去部署的 jar，参数有两个开关：
 
@@ -84,7 +87,7 @@ mvnx --help          显示帮助，命令清单从注册表生成
 | `--no-am` | 去掉 `-am`，兄弟模块必须已经装进本地仓库，省下拉起它们的时间 |
 | `--no-clean` | 去掉 `clean`，增量打包最快，代价是残留的旧 class 会进 jar |
 
-`-am` 让 Maven 连这个模块依赖的兄弟模块一起构建，兄弟模块还没装进本地仓库时也能一次打包成功。跳过测试省下的是编译测试类与跑测试的时间，打出来的是能跑的东西，不是验证过的版本。这两个开关只对 `package` 有效，别的命令带上直接报用法错误退出。
+`-am` 让 Maven 连这个模块依赖的兄弟模块一起构建，兄弟模块还没装进本地仓库时也能一次打包成功。跳过测试省下的是编译测试类与跑测试的时间，打出来的是能跑的东西，不是验证过的版本。`--no-am` 对 `package` 与 `install` 按模块安装都有效，`--no-clean` 只对 `package` 有效，别的命令带上直接报用法错误退出。
 
 ## 目标的判定
 
@@ -94,7 +97,7 @@ mvnx --help          显示帮助，命令清单从注册表生成
 
 `package` 与 `run` 是同一批目标。三个收集函数共用同一遍遍历（`each_module`），各自只提供一个判定谓词，聚合根寻址与标签去重都不重写。`install` 用的是自己的判定，不走这一遍。
 
-`install` 判定顶层项目：没有被任何上层聚合 pom 的 `<modules>` 收录的 pom。
+`install` 判定顶层项目：没有被任何上层聚合 pom 的 `<modules>` 收录的 pom。按模块安装时，从选中项目的根目录沿 `<modules>` 递归往下收集非 `pom` 打包的子模块，标签带项目前缀，不同项目里的同名模块不会混在一起。
 
 递归时跳过 `target`、`.svn`、`.git`、`node_modules`、`.idea`、`.settings`。
 
@@ -156,11 +159,13 @@ mvnx/
 
 ## 加新命令
 
-`lib/mvnx/cli.sh` 顶部有一张注册表，每行五列，用竖线隔开：
+`lib/mvnx/cli.sh` 顶部有一张注册表，每行六列，用竖线隔开：
 
 ```
-命令名 | 说明 | 收集函数 | 目标的名词 | 是否参与编译判定
+命令名 | 说明 | 收集函数 | 目标的名词 | 是否参与编译判定 | 选择函数
 ```
+
+最后一列留空时用统一的目标复选。需要两屏选择的命令填自己的选择函数名，由它接管勾选、把最终要执行的记录打到 stdout，并自己调用 `save_selection` 写勾选记录（`install` 就是这么做的）。
 
 加一条命令要做两件事：在 `COMMANDS` 里加一行，再在 `lib/mvnx/commands/` 下加一个文件写收集函数，函数里遍历 `POM_LIST`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，主菜单也从注册表生成，其余文件都不用动。记录六列，顺序是：
 

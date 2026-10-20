@@ -1,12 +1,13 @@
 # 命令行层：命令注册表、帮助生成、参数解析、动作分发与主菜单。
 # 加载顺序放在最后，它引用的收集函数与判定函数必须已经就位。
-# 注册表每行五列，用竖线隔开，各列内容里不能出现竖线：
+# 注册表每行六列，用竖线隔开，各列内容里不能出现竖线：
 #   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）| 是否参与编译判定（1 参与）
+#   | 选择函数（空表示用统一的目标复选，有则自己接管勾选并负责写勾选记录）
 readonly COMMANDS=(
-  'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块|1'
-  'war|启动 war 加 jetty/tomcat 插件的后端|collect_war|可启动的 war 项目|1'
-  'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目|0'
-  'package|把可运行模块打成可部署的 jar|collect_packable|可运行模块|0'
+  'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块|1|'
+  'war|启动 war 加 jetty/tomcat 插件的后端|collect_war|可启动的 war 项目|1|'
+  'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目|0|select_install'
+  'package|把可运行模块打成可部署的 jar|collect_packable|可运行模块|0|'
 )
 readonly DEFAULT_COMMAND='run'
 
@@ -63,10 +64,12 @@ EOF
 跳过编译省下的是整个模块的重编时间。Maven 只要发现任何一个源文件没有对应的
 class 文件，就会把整个模块重编一遍，整份被注释掉的源文件正好会一直触发它。
 
-打包参数（只对 package 有效）:
-  （不写）       默认 clean package -Dmaven.test.skip=true -am，兄弟模块一起构建
-      --no-am    去掉 -am，兄弟模块必须在本地仓库里，省下拉起它们的时间
-      --no-clean 去掉 clean，增量打包最快，代价是残留的旧 class 会进 jar
+打包与装本地仓库参数:
+  --no-am        package 与 install 按模块安装时去掉 -am，兄弟模块须已在本地仓库
+  --no-clean     只对 package 有效，去掉 clean，增量打包最快，代价是残留的旧 class 会进 jar
+
+package 默认 clean package -Dmaven.test.skip=true -am，兄弟模块一起构建。
+install 选「按模块选择」后默认带 -am，让选中的模块连依赖的兄弟模块一起装。
 
 带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
 后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
@@ -80,6 +83,9 @@ EOF
 ACTION=''
 LIST_ONLY=0
 REFRESH=0
+# --no-am 由 package 与 install 共用，NO_AM_FLAG 只在报错时回显用户写的那个参数。
+NO_AM=0
+NO_AM_FLAG=''
 declare -a POSITIONAL=()
 declare -a UI_ACTION_ITEMS=()
 
@@ -107,8 +113,8 @@ parse_args() {
       -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$a ;;
       --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$a ;;
       --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$a ;;
-      --no-am) PACK_NO_AM=1; PACK_FLAG=$a ;;
-      --no-clean) PACK_NO_CLEAN=1; PACK_FLAG=$a ;;
+      --no-am) NO_AM=1; NO_AM_FLAG=$a ;;
+      --no-clean) PACK_NO_CLEAN=1; PACK_NO_CLEAN_FLAG=$a ;;
       -*) usage_error "未知选项 $a" ;;
       *)
         if [[ -z "$ACTION" ]] && is_action "$a"; then
@@ -138,19 +144,23 @@ run_action() {
   shift
   local kw=${1:-}
 
-  local noun collector allow_skip
+  local noun collector allow_skip selector
   noun=$(command_field "$cmd" 4)
   collector=$(command_field "$cmd" 3)
   allow_skip=$(command_field "$cmd" 5)
+  selector=$(command_field "$cmd" 6)
 
   # 跳过编译与 clean 只对能直接启动的命令有意义，install 与 package 必须真编译。
   if [[ $allow_skip -eq 0 && $START_MODE != "$MODE_AUTO" && $START_MODE != "$MODE_COMPILE" ]]; then
     usage_error "「$cmd」命令不支持 $MODE_FLAG"
   fi
 
-  # 这两个开关拼的是 package 自己的参数，别的命令带上没有意义。
-  if [[ -n "$PACK_FLAG" && "$cmd" != "$PACKAGE_COMMAND" ]]; then
-    usage_error "「$cmd」命令不支持 $PACK_FLAG"
+  # --no-am 只对 package 与 install 按模块安装有意义，--no-clean 只属于 package。
+  if [[ -n "$NO_AM_FLAG" && "$cmd" != "$PACKAGE_COMMAND" && "$cmd" != "$INSTALL_COMMAND" ]]; then
+    usage_error "「$cmd」命令不支持 $NO_AM_FLAG"
+  fi
+  if [[ -n "$PACK_NO_CLEAN_FLAG" && "$cmd" != "$PACKAGE_COMMAND" ]]; then
+    usage_error "「$cmd」命令不支持 $PACK_NO_CLEAN_FLAG"
   fi
 
   mkdir -p "$CACHE_DIR"
@@ -193,16 +203,27 @@ run_action() {
   else
     # 取消与一个都没勾都算用户取消，退 3，与「跑失败了」的 1 分开。
     local rc=0
-    out=$(ui_checklist "$noun" "${recs[@]}") || rc=$?
+    if [[ -n "$selector" ]]; then
+      out=$("$selector" "$noun" "${recs[@]}") || rc=$?
+    else
+      out=$(ui_checklist "$noun" "${recs[@]}") || rc=$?
+    fi
     case "$rc" in
       0) : ;;
       1) die '已取消' "$EXIT_CANCEL" ;;
-      *) die "一个$noun都没勾" "$EXIT_CANCEL" ;;
+      *)
+        if [[ -n "$selector" ]]; then
+          die '没有选中任何目标' "$EXIT_CANCEL"
+        else
+          die "一个$noun都没勾" "$EXIT_CANCEL"
+        fi
+        ;;
     esac
     mapfile -t chosen <<< "$out"
   fi
 
-  save_selection "${chosen[@]}"
+  # 自带选择函数的命令在函数里写勾选记录：它要同时记住两次勾选的结果。
+  [[ -z "$selector" || -n "$kw" ]] && save_selection "${chosen[@]}"
 
   # 明说跳过编译时得有东西可跑，模块没编过就报错，不硬起一个空壳。
   if [[ $START_MODE == "$MODE_NO_COMPILE" ]]; then
