@@ -20,11 +20,10 @@ bash-scripts/
 │   └── lib/
 │       ├── zipx-core.sh          加载器
 │       └── zipx/                 按职责拆的模块
-├── killport/                     系统运维：按端口结束进程
-│   ├── README.md
-│   └── bin/
-│       └── killport
-└── mysql/                        以后放数据库相关的
+└── killport/                     系统运维：按端口结束进程
+    ├── README.md
+    └── bin/
+        └── killport
 ```
 
 根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`zipx`、`killport`。`bin/` 里放可执行文件，`lib/` 放被入口共用的库，不会被软链成命令。加新工具就是新建一个同名目录。
@@ -49,7 +48,7 @@ cd bash-scripts
 
 ### 重复安装
 
-再跑一次 `install.sh` 等价于「先卸载再安装」：先删掉链接目录里指向安装目录的软链、删掉安装目录、摘掉 `.bashrc` 里那段 PATH 设置，然后重新拷一份、重新链接、重新写 PATH 设置。
+再跑一次 `install.sh` 等价于「先卸载再安装」。脚本先删掉链接目录里指向安装目录的软链，再删掉安装目录，然后摘掉 `.bashrc` 里那段 PATH 设置；之后重新拷一份、重新创建链接、重新写入 PATH 设置。
 
 这么做是因为安装脚本只加不删：工具改名或换目录结构之后，旧目录会一直留在安装目录里，链接目录里还会留下指向已删路径的死链。卸载脚本的逻辑与这里一致，区别只是那边多一个 `--dry-run` 与 `--keep-path`。
 
@@ -60,15 +59,15 @@ cd bash-scripts
 
 ### 安装地址说明
 
-用 jsDelivr 的 CDN 地址，是因为某些网络（含国内多数宽带）访问不到 `raw.githubusercontent.com`，直连会超时。仓库里文件的规范地址是：
+用 jsDelivr 的 CDN 地址，是因为某些网络（包括国内多数宽带）访问不到 `raw.githubusercontent.com`，直连会超时。仓库里文件的规范地址是：
 
 ```
 https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/install.sh
 ```
 
-网络通的话用哪条都行。jsDelivr 对分支引用有缓存，想固定到某个版本可以把 `@main` 换成具体的提交哈希。
+网络可用时用哪条都行。jsDelivr 对分支引用有缓存；如果要固定到某个版本，可以把 `@main` 换成具体的提交哈希。
 
-安装脚本内部下载仓库归档走的是 `codeload.github.com`，与上面两条是不同域名；要是这个域名也不通，用环境变量 `BASH_SCRIPTS_TARBALL_URL` 换成别的地址，或者直接 clone 后本地安装。
+安装脚本内部下载仓库归档时走的是 `codeload.github.com`，与上面两条地址属于不同域名。如果这个域名也不通，就用环境变量 `BASH_SCRIPTS_TARBALL_URL` 换成别的地址，或者先 clone 再本地安装。
 
 ## 卸载
 
@@ -106,7 +105,7 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 | 命令 | 目录 | 说明 |
 | --- | --- | --- |
-| `mvnx` | mvnx | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数先选命令再选目标，启动方式分自动跳过编译、强制编译、跳过编译、先 clean 四种 |
+| `mvnx` | mvnx | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数时先选命令再选目标，启动方式有自动判定、强制编译、跳过编译、先 clean 四种 |
 | `zipx` | zipx | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
 | `killport` | killport | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
 
@@ -114,4 +113,4 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ## 环境要求
 
-bash 4 以上。`mvnx` 额外需要 Maven 在 PATH 里；有 whiptail 时用图形化复选清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。
+需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里；界面在终端里自绘，探不到终端时退回编号输入。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错；有 whiptail 时用图形化清单，没有就退回编号输入。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。

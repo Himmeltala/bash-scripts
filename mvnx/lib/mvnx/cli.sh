@@ -1,13 +1,10 @@
-# 命令行层：命令注册表、帮助生成、参数解析、动作分发与主菜单。
-# 加载顺序放在最后，它引用的收集函数与判定函数必须已经就位。
-# 注册表每行六列，用竖线隔开，各列内容里不能出现竖线：
-#   命令名 | 说明 | 收集函数 | 目标的名词（只用在提示语里）| 是否参与编译判定（1 参与）
-#   | 选择函数（空表示用统一的目标复选，有则自己接管勾选并负责写勾选记录）
+# 命令行层：命令注册表、帮助生成、参数解析、动作分发与主菜单，加载顺序放最后。
+# 注册表每行六列以竖线分隔且内容不能含竖线：命令名|说明|收集函数|名词|参与编译判定|选择函数（空则统一复选）。
 readonly COMMANDS=(
-  'run|启动可运行的 Spring Boot 模块|collect_runnable|可运行模块|1|'
-  'war|启动 war 加 jetty/tomcat 插件的后端|collect_war|可启动的 war 项目|1|'
-  'install|把顶层项目 clean install 装进本地仓库|collect_toplevel|顶层项目|0|select_install'
-  'package|把可运行模块打成可部署的 jar|collect_packable|可运行模块|0|'
+  'run|启动 Spring Boot 模块|collect_runnable|可运行模块|1|'
+  'war|启动 war 项目（jetty/tomcat）|collect_war|war 项目|1|'
+  'install|装顶层项目到本地仓库|collect_toplevel|顶层项目|0|select_install'
+  'package|打可部署的 jar|collect_packable|可运行模块|0|'
 )
 readonly DEFAULT_COMMAND='run'
 
@@ -38,7 +35,7 @@ usage() {
   cat <<'EOF'
 用法: mvnx [命令] [选项] [关键词]
 
-在当前目录下递归查找目标，勾选后执行对应命令。不带参数时先选命令再选目标。
+在当前目录递归找目标，勾选后执行；不带参数时先选命令。
 
 命令:
 EOF
@@ -61,18 +58,16 @@ EOF
       --no-compile  跳过编译直接跑已有的 class，模块没编过时会报错退出
       --rebuild  先 clean 再编译后启动，改动大或判定猜错时用
 
-跳过编译省下的是整个模块的重编时间。Maven 只要发现任何一个源文件没有对应的
-class 文件，就会把整个模块重编一遍，整份被注释掉的源文件正好会一直触发它。
+跳过编译省下整个模块的重编时间：任一源码没有 class，Maven 就全量重编。
 
 打包与装本地仓库参数:
   --no-am        package 与 install 按模块安装时去掉 -am，兄弟模块须已在本地仓库
   --no-clean     只对 package 有效，去掉 clean，增量打包最快，代价是残留的旧 class 会进 jar
 
 package 默认 clean package -Dmaven.test.skip=true -am，兄弟模块一起构建。
-install 选「按模块选择」后默认带 -am，让选中的模块连依赖的兄弟模块一起装。
+install 直接选模块，默认带 -am 一起装兄弟模块。
 
-带关键词时跳过勾选界面，按关键词匹配标签或路径（不区分大小写，按子串匹配）
-后直接执行。要按关键词匹配与命令同名的目标时，把命令名写在前面，
+带关键词时跳过勾选，按子串匹配标签或路径后执行；匹配同名目标时先写命令名，
 例如 mvnx run install。
 
 退出码: 0 成功，1 找到了目标但执行失败，2 用法错误，3 用户取消。
@@ -89,7 +84,7 @@ NO_AM_FLAG=''
 declare -a POSITIONAL=()
 declare -a UI_ACTION_ITEMS=()
 
-# 命令名是否登记在注册表里，判断跟着注册表走，加命令不必改这里。
+# 命令名是否登记在注册表里，加命令不必改这里。
 is_action() { command_exists "$1"; }
 
 parse_args() {
@@ -138,7 +133,7 @@ build_action_items() {
   UI_ACTION_ITEMS+=('quit' '退出')
 }
 
-# 跑一个动作。$1 是命令名，$2 起是位置参数，只取第一个当关键词。
+# 执行一个动作。$1 是命令名，$2 起是位置参数，只取第一个当关键词。
 run_action() {
   local cmd=$1
   shift
@@ -191,8 +186,7 @@ run_action() {
     local lower="${kw,,}"
     for rec in "${recs[@]}"; do
       IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-      # 一并拿工作目录的绝对路径来匹配。就在项目目录里执行时，展示路径会退化成
-      # 「.」，只按它匹配的话关键词根本落不到项目名上。
+      # 也拿工作目录绝对路径匹配：在项目目录里执行时展示路径会退化成「.」，只按它匹配会落不到项目名上。
       if [[ "${tag,,}" == *"$lower"* ]] ||
          [[ "${display,,}" == *"$lower"* ]] ||
          [[ "${workdir,,}" == *"$lower"* ]]; then
@@ -201,7 +195,7 @@ run_action() {
     done
     [[ ${#chosen[@]} -gt 0 ]] || die "没有$noun匹配关键词 $kw"
   else
-    # 取消与一个都没勾都算用户取消，退 3，与「跑失败了」的 1 分开。
+    # 取消与一个都没勾都算用户取消，退 3；返回上一步单独退 4，交给主菜单处理。
     local rc=0
     if [[ -n "$selector" ]]; then
       out=$("$selector" "$noun" "${recs[@]}") || rc=$?
@@ -210,6 +204,7 @@ run_action() {
     fi
     case "$rc" in
       0) : ;;
+      4) return "$EXIT_BACK" ;;
       1) die '已取消' "$EXIT_CANCEL" ;;
       *)
         if [[ -n "$selector" ]]; then
@@ -222,10 +217,10 @@ run_action() {
     mapfile -t chosen <<< "$out"
   fi
 
-  # 自带选择函数的命令在函数里写勾选记录：它要同时记住两次勾选的结果。
+  # 自带选择函数的命令在函数里写勾选记录。
   [[ -z "$selector" || -n "$kw" ]] && save_selection "${chosen[@]}"
 
-  # 明说跳过编译时得有东西可跑，模块没编过就报错，不硬起一个空壳。
+  # 明说跳过编译时得有东西可执行，模块没编过就报错，不硬起一个空壳。
   if [[ $START_MODE == "$MODE_NO_COMPILE" ]]; then
     local r wd pl dir
     for r in "${chosen[@]}"; do
@@ -233,7 +228,7 @@ run_action() {
       dir=$wd
       [[ -n "$pl" ]] && dir="$wd/$pl"
       [[ -d "$dir/target/classes" ]] ||
-        die "「$(relative_to_pwd "$dir")」下没有 target/classes，跳过编译没有可跑的东西；先编译一次，或去掉 $MODE_FLAG" "$EXIT_USAGE"
+        die "「$(relative_to_pwd "$dir")」没有 target/classes，先编译或去掉 $MODE_FLAG" "$EXIT_USAGE"
     done
   fi
 
@@ -241,38 +236,43 @@ run_action() {
   mapfile -t chosen < <(printf '%s\n' "${chosen[@]}" | apply_start_mode "$allow_skip")
 
   # 单条记录会 exec 成 mvn，正常情况下回不来；能回来只可能是工作目录进不去。
-  launch_records "${chosen[@]}" || die '执行失败，检查工作目录是否存在'
+  launch_records "${chosen[@]}" || die '执行失败，工作目录可能不存在'
 }
 
-# 不带参数时的主菜单：先选动作，再进目标勾选。动作跑完回到这里，选退出才离开。
+# 不带参数时的主菜单：先选动作再勾目标，执行完或返回上一步都回到这里，选退出才离开。
 ui_main() {
-  local action
+  local action rc=0
   while :; do
-    action=$(ui_menu 'mvnx' '选一个动作' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
+    action=$(ui_menu 'mvnx' '选命令' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
     [[ "$action" == 'quit' ]] && break
-    run_action "$action"
+    rc=0
+    run_action "$action" || rc=$?
+    ((rc == 0 || rc == EXIT_BACK)) && continue
+    return "$rc"
   done
   return 0
 }
 
 main() {
   parse_args "$@"
-  command -v mvn >/dev/null || die '找不到 mvn，先确认 Maven 在 PATH 里'
-  # 终端探测只做一次，必须在任何命令替换之前：界面函数是 out=$(ui_checklist ...)
-  # 这样调的，替换里的 stdout 是管道，那时候再判 [[ -t 1 ]] 永远为假。
+  command -v mvn >/dev/null || die '找不到 mvn，确认 Maven 在 PATH 中'
+  # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。
   detect_ui_mode
   build_action_items
 
+  # 直接写命令时没有上一步可回，返回与取消同义。
+  local rc=0
   if [[ -n "$ACTION" ]]; then
-    run_action "$ACTION" "${POSITIONAL[@]}"
-    return $?
+    run_action "$ACTION" "${POSITIONAL[@]}" || rc=$?
+    ((rc == EXIT_BACK)) && rc=$EXIT_CANCEL
+    return "$rc"
   fi
 
-  # 没写命令：带了位置参数（关键词）或 --list 就按默认命令跑，此外进主菜单。
-  # --list 也走默认命令，为了列个清单先让人选一次动作没有意义。
+  # 没写命令：带位置参数（关键词）或 --list 就执行默认命令，否则进主菜单。
   if ((${#POSITIONAL[@]})) || ((LIST_ONLY)); then
-    run_action "$DEFAULT_COMMAND" "${POSITIONAL[@]}"
-    return $?
+    run_action "$DEFAULT_COMMAND" "${POSITIONAL[@]}" || rc=$?
+    ((rc == EXIT_BACK)) && rc=$EXIT_CANCEL
+    return "$rc"
   fi
 
   ui_main

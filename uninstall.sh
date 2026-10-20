@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# bash-scripts 卸载脚本。
-#
-# 默认只清掉自己装进去的东西：软链、源码目录、以及带着「bash-scripts 装的工具」
-# 标记的那段 PATH 设置。链接目录里不是指向本项目的文件一律不动。
-#
-# 用法:
-#   ./uninstall.sh              删软链、删源码目录、清 PATH 设置
-#   ./uninstall.sh --keep-path  保留 ~/.bashrc 里的 PATH 设置
-#   ./uninstall.sh --dry-run    只打印要做什么，不动盘
+# bash-scripts 卸载脚本：清软链、源码目录与带标记的 PATH 设置，不碰链接目录里别人的文件。
+# 支持 --keep-path 保留 PATH 设置、--dry-run 只预演不删。
 
 set -euo pipefail
 
@@ -73,9 +66,7 @@ remove_install_dir() {
   fi
 }
 
-# 清掉安装时写进 .bashrc 的那两行。
-# 只认自己写的标记行，标记行后面那一行无论内容是什么一并删掉，
-# 这样链接目录被覆盖成别的路径时也能清干净，同时不会误删用户手写的 PATH 设置。
+# 清 .bashrc 里本项目的 PATH 设置：只认标记行，标记行后一行一并删，不会误删用户手写设置。
 remove_path_setting() {
   if [[ ! -f "$RC_FILE" ]]; then
     info "  $RC_FILE 不在，跳过"

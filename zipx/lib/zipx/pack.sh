@@ -1,7 +1,6 @@
 # 压缩：把当前目录下的条目打成 zip。
 
-# 当前目录下的条目名，目录带尾斜杠，只为在界面上区分目录与文件。
-# 不用 ls 取名字：文件名里的空格会把列排乱，glob 加 -d 判断就够。
+# 当前目录下的条目名，目录带尾斜杠，只为在界面上区分目录与文件；不用 ls 以免空格打乱列，glob 加 -d 足够。
 list_dir_entries() {
   local e
   shopt -s nullglob dotglob
@@ -15,10 +14,8 @@ list_dir_entries() {
   shopt -u nullglob dotglob
 }
 
-# 排除规则匹配的是归档内路径，所以要带上被选中条目这一层前缀：
-# 选中 proj 时，proj/.git 以及它下面的所有东西都要排掉。
-# 用户显式选中的条目本身不排除，选 .git 就是要它。
-# 条目写成 "." 或 "./x" 时，zip 存进去的路径可能不带前导 "./"，两种写法都补上。
+# 排除规则匹配归档内路径，要带被选中条目这一层前缀：选 proj 时 proj/.git 及其下都要排掉。
+# 显式选中的条目本身不排除；条目写成 . 或 ./x 时 zip 存的路径可能不带前导 ./，两种都补。
 build_exclude_patterns() {
   local -n out=$1
   shift
@@ -60,7 +57,7 @@ ui_pick_entries() {
   done < <(list_dir_entries)
 
   ((${#items[@]})) || { info '当前目录下没有可打包的条目'; return 1; }
-  ui_checklist 'zipx 压缩' '空格勾选要打包的条目，回车确认' "${items[@]}"
+  ui_checklist 'zipx 压缩' '空格勾选，回车确认' "${items[@]}"
 }
 
 cmd_pack() {
@@ -82,9 +79,9 @@ cmd_pack() {
   [[ -n "$out" ]] || out="$(basename "$PWD")"
   [[ "$out" == *.zip ]] || out+='.zip'
 
-  # 已有的包不静默覆盖：包里可能是上一次打包的东西，覆盖掉找不回来。
+  # 已有的包不静默覆盖：包里可能是上一次打包的内容，覆盖后无法恢复。
   if [[ -e "$out" ]]; then
-    ((OVERWRITE)) || die "「$out」已存在，要覆盖就加 --overwrite，或者用 -o 换个包名"
+    ((OVERWRITE)) || die "「$out」已存在，加 --overwrite 或 -o 换名"
   fi
 
   local -a cmd=(zip -r "$(archive_arg "$out")")
@@ -92,7 +89,7 @@ cmd_pack() {
   build_exclude_patterns cmd "${entries[@]}"
 
   run_cmd "${cmd[@]}" || die '打包失败，看上面的 zip 输出'
-  # 预演模式没有真跑，包文件当然不存在，这一句只能放在预演之后。
+  # 预演模式没有真正执行，包文件当然不存在，这一句只能放在预演之后。
   ((DRY_RUN)) && return 0
   [[ -e "$out" ]] || die '打包失败，zip 没有生成包文件'
   info "已生成 $out"
@@ -105,7 +102,7 @@ ui_pack() {
   [[ -n "$out" ]] || { info '一个条目都没勾'; return 0; }
   mapfile -t UI_ENTRIES <<< "$out"
 
-  out=$(ui_input 'zipx 压缩' '输出包名（不用写 .zip，会自动补）' "$(basename "$PWD")") || return "$EXIT_CANCEL"
+  out=$(ui_input 'zipx 压缩' '输出包名（自动补 .zip）' "$(basename "$PWD")") || return "$EXIT_CANCEL"
   PACK_OUT=$out
 
   cmd_pack "${UI_ENTRIES[@]}"

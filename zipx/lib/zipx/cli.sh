@@ -1,5 +1,4 @@
-# 命令行层：帮助、参数解析、动作分发，以及不带参数时的主菜单。
-# 加载顺序放在最后：它引用的动作函数必须先加载完。
+# 命令行层：帮助、参数解析、动作分发与主菜单，加载顺序放最后，引用的动作函数须先加载完。
 
 usage() {
   cat <<'EOF'
@@ -28,8 +27,7 @@ usage() {
 
 退出码: 0 成功，1 操作失败，2 用法错误，3 用户取消。
 
-只管 zip 包，不支持 tar.gz 与 7z。包内条目名不是 UTF-8 时（老工具在 Windows 上
-打的包）解出来会是乱码：本机 unzip 6.0 不支持指定包内编码，只能用别的工具转。
+只管 zip 包，不支持 tar.gz 与 7z。包内条目名不是 UTF-8 时解出来是乱码，需用其他工具转码。
 EOF
 }
 
@@ -107,7 +105,7 @@ dispatch() {
   esac
 }
 
-# 主菜单循环。动作跑完回到这里，选退出或按取消才离开。
+# 主菜单循环。动作执行完回到这里，选退出或按取消才离开。
 ui_main() {
   local choice
   while :; do
@@ -134,8 +132,7 @@ main() {
   parse_args "$@"
   need_cmd zip
   need_cmd unzip
-  # 终端探测只在这里做一次，必须在任何命令替换之前：界面函数是 out=$(ui_menu ...)
-  # 这样调的，替换里的 stdout 是管道，那时候再判 [[ -t 1 ]] 永远为假。
+  # 终端探测只在这里做一次且必须在命令替换之前，替换里的 stdout 是管道，[[ -t 1 ]] 永远为假。
   detect_ui_mode
 
   if [[ -z "$ACTION" ]]; then
@@ -143,7 +140,7 @@ main() {
       # 只给条目不给动作，按压缩处理。给的是包文件时提醒一句，这是最容易搞错的一步。
       ACTION=pack
       case "${POSITIONAL[0]}" in
-        *.zip) info "没写动作，按压缩处理；要解压的是包，用 zipx unpack ${POSITIONAL[0]}" ;;
+        *.zip) info "没写动作，按压缩处理；解包用 zipx unpack ${POSITIONAL[0]}" ;;
       esac
     else
       ui_main

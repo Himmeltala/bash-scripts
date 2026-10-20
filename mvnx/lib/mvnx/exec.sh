@@ -1,12 +1,9 @@
-# 执行侧：启动方式与跳过编译的判定，以及把 mvn 跑起来。
-# 单条记录 exec 顶替当前进程，多条记录各自后台但共用这个终端。
-# 跳过编译直接跑已有的 class。maven.main.skip 是 maven-compiler-plugin 的参数，
-# 3.8.1 上实测有效：compile 阶段照跑，但不产出 class，模块没编过时不要用。
+# 执行侧：启动方式与跳过编译的判定，以及启动 mvn；单条记录 exec 顶替进程，多条记录后台共用终端。
+# maven.main.skip 是 maven-compiler-plugin 的参数，3.8.1 实测有效：compile 阶段照常执行，但不产出 class。
 readonly SKIP_ARGS='-Dmaven.main.skip=true -Dmaven.test.skip=true'
 # 启动方式。auto 由脚本判定，其余三个由命令行指定，见 usage。
 readonly MODE_AUTO='auto' MODE_COMPILE='compile' MODE_NO_COMPILE='no-compile' MODE_REBUILD='rebuild'
-# 模块目录下最新的 class 文件路径，给 find -newer 当参照。
-# 一次 find 加一次排序取头部，不给每个 class 派生 stat。
+# 模块目录下最新的 class 文件路径，供 find -newer 参照；一次 find 加排序取头部，不为每个 class 派生 stat。
 newest_class_file() {
   local classes=$1/target/classes
   [[ -d "$classes" ]] || return 1
@@ -16,13 +13,8 @@ newest_class_file() {
   printf '%s\n' "${newest#* }"
 }
 
-# 模块要不要重新编译：0 需要，1 可以跳过。
-# 判据只有一条：源码、各级 pom、生成的源里，有文件比 target/classes 下最新的 class 新。
-# 源文件比最新 class 旧却没有同名 class，说明它本来就不产出 class（整份被注释掉、只有包
-# 声明之类），Maven 会因此每次都判「有改动」并把整个模块重编一遍，判定不跟着它走。
-# 资源不在比较范围：拷贝归 resources 插件管，跳过编译不影响它，改了 application.yml
-# 这类配置照样进 target/classes。
-# 拿不准一律返回「需要」，多编一次只是慢，漏编一次就是跑到旧代码。
+# 模块要不要重新编译：源码、各级 pom 或生成源里有文件比最新 class 新，就重新编译。
+# 源文件比最新 class 旧却没有同名 class，说明它本不产出 class，Maven 会因此每次全量重编，这里不处理；资源不参与比较。
 needs_compile() {
   local dir=$1 newest d depth=0
   newest=$(newest_class_file "$dir") || return 0
@@ -33,7 +25,7 @@ needs_compile() {
     [[ -e "$r" ]] && roots+=("$r")
   done
 
-  # 模块自身与各级父 pom 都算：父 pom 改了依赖或插件版本，等于源码得重编。
+  # 模块自身与各级父 pom 都算：父 pom 改了依赖或插件版本，说明源码需要重编。
   d=$dir
   while [[ -f "$d/pom.xml" && $depth -lt 8 ]]; do
     roots+=("$d/pom.xml")
@@ -43,9 +35,7 @@ needs_compile() {
   done
 
   ((${#roots[@]})) || return 0
-  # -type f 不能省：目录的 mtime 在建目录、增删文件时都会变，拿它当判据会次次判成
-  # 「有改动」。文件的 mtime 才是编辑动作留下的痕迹。
-  # -print -quit：找到第一个就收工，目录大时不用扫完。
+  # -type f 不能省：目录 mtime 会随增删文件变化；-print -quit 找到第一个就停止，不必扫完。
   [[ -n $(find "${roots[@]}" -type f -newer "$newest" -print -quit 2>/dev/null) ]]
 }
 
@@ -61,8 +51,7 @@ count_classless_sources() {
   printf '%s\n' "$n"
 }
 
-# 按启动方式把记录里传给 mvn 的参数换掉，其余各列原样带回。
-# 参数变了就把展示用的命令一起改掉，让提示行印出来的就是真正要跑的东西。
+# 按启动方式替换记录里传给 mvn 的参数，其余列原样带回；参数变了同步改展示命令，让提示行印出的就是真正要执行的。
 apply_start_mode() {
   local allow_skip=$1 rec tag workdir plpath mvnargs display cmdtext dir n before
   while IFS= read -r rec; do
@@ -82,9 +71,9 @@ apply_start_mode() {
         if [[ $allow_skip -eq 1 ]] && ! needs_compile "$dir"; then
           mvnargs+=" $SKIP_ARGS"
           n=$(count_classless_sources "$dir")
-          printf '跳过编译「%s」：源码与各级 pom 都没比 target/classes 新（-c 可强制编译）\n' "$tag" >&2
+          printf '跳过编译「%s」：源码未更新（-c 强制编译）\n' "$tag" >&2
           if ((n > 0)); then
-            printf '  另有 %d 个源文件不产出 class，Maven 会因此每次全量重编，把它们移出源码根即可根治\n' "$n" >&2
+            printf '  另有 %d 个源文件不产出 class，会触发全量重编\n' "$n" >&2
           fi
         fi
         ;;
@@ -100,8 +89,7 @@ apply_start_mode() {
   return 0
 }
 
-# 进工作目录后把当前进程换成 mvn。放在子 shell 里调用即可得到后台执行，
-# 因为 exec 只替换那个子 shell。
+# 进工作目录后 exec 成 mvn；在子 shell 里调用即后台执行，因为 exec 只替换那个子 shell。
 launch_one() {
   local workdir=$1 plpath=$2 mvnargs=$3
   cd "$workdir" || return 1
@@ -123,7 +111,7 @@ launch_records() {
 
   if [[ ${#recs[@]} -eq 1 ]]; then
     IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "${recs[0]}"
-    printf '正在 %s 执行 %s\n' "$workdir" "$cmdtext" >&2
+    printf '在 %s 执行 %s\n' "$workdir" "$cmdtext" >&2
     launch_one "$workdir" "$plpath" "$mvnargs"
     return 1
   fi
@@ -137,11 +125,11 @@ launch_records() {
     ( launch_one "$workdir" "$plpath" "$mvnargs" ) &
     pids+=($!)
   done
-  printf '共 %d 个已在后台执行，输出直接打在本终端，按一次 Ctrl+C 全部停止。\n' "${#pids[@]}" >&2
+  printf '%d 个已在后台执行，Ctrl+C 停止全部\n' "${#pids[@]}" >&2
 
   local p
   for p in "${pids[@]}"; do wait "$p" 2>/dev/null; done
-  printf '全部已退出。\n' >&2
+  printf '全部已退出\n' >&2
   return 0
 }
 START_MODE="$MODE_AUTO"

@@ -1,26 +1,13 @@
 #!/usr/bin/env bash
-# killport —— 杀掉占用指定端口的进程。
-#
-# 默认只查 TCP 监听端口，加 -u 连 UDP 一起查。系统级端口默认拒绝执行：
-# 0 到 1023 这段特权端口，加上下面 PROTECTED_PORTS 名单里的常见服务端口，
-# 都要显式加 --force 才肯动。
-#
-# 查占用进程先试 ss，ss 没有就退回 lsof，两个都没有直接报错。非 root 时
-# ss 看不到别人进程的 pid，这种情况只报告不动手，不做任何猜测。
-#
-# 改这个脚本之前注意两条：
-#   一、ss 的过滤条件是作为单个参数传进去的，端口号必须跟着冒号拼成
-#       "sport = :<端口>"，拆成多个参数会被当成两段过滤条件。
-#   二、拿到的 pid 必须排除 1 和本脚本自身。脚本可能被子 shell 调起，
-#       猜错一次就是杀掉 init 或自己所在的进程组。
+# killport：杀掉占用指定端口的进程，默认查 TCP（-u 连 UDP），特权端口与常见服务端口需 --force。
+# 查进程先试 ss 再退回 lsof；非 root 看不到别人 pid 时只报告；ss 过滤条件须整串传参，pid 须排除 1 与本脚本自身。
 
 set -uo pipefail
 
-# 特权端口段。内核只允许 root 绑定这一段，普通用户能占上多半说明系统在跑东西。
+# 特权端口段。内核只允许 root 绑定这一段，普通用户能占用，多半说明系统里有服务在运行。
 readonly PRIVILEGED_MAX=1023
 
-# 名单里的端口同样受保护。这里放的是系统服务与常见中间件的默认端口，
-# 8080 这类开发常用的端口故意不列，免得挡住自己 spring-boot:run。
+# 受保护名单：系统服务与常见中间件的默认端口；8080 等开发常用端口故意不列，免得挡住 spring-boot:run。
 readonly PROTECTED_PORTS=(
   21 22 23 25 53 80 111 123 137 138 139 161 162 389 443 445 465 514 587
   631 636 873 993 995 1521 2049 2181 3306 5432 5672 6379 6443 9200 11211 27017
@@ -49,7 +36,7 @@ die() {
 }
 
 # 用法错误按惯例退 2，与「找到了进程但没处理成」的 1 分开。
-usage_error() { die "$*，用 killport --help 看用法" 2; }
+usage_error() { die "$*；见 killport --help" 2; }
 
 usage() {
   cat <<'EOF'
@@ -57,13 +44,11 @@ usage() {
 
 杀掉占用指定端口的进程。一次可以给多个端口。
 
-默认先发 SIGTERM 让进程自己收尾，等 --timeout 秒仍未退出时再问一次要不要补
-发 SIGKILL。stdin 不是终端时（管道、脚本、CI）不追问，直接报告进程仍在。
+默认发 SIGTERM，超时后询问是否补 SIGKILL；非终端不追问，直接报告。
 
 默认只查 TCP 监听端口，加 -u 连 UDP 一起查。
 
-系统级端口默认拒绝执行：0 到 1023 这段特权端口，加上脚本顶部名单里的常见服务
-端口（ssh、dns、http、mysql、redis、mongo 这些）。确要动它们就显式加 --force。
+0 到 1023 与常见服务端口默认拒绝，确要动加 --force。
 
 选项:
   -s, --signal <信号>  发送的信号，名字或编号都行，默认 TERM
@@ -83,16 +68,14 @@ usage() {
 EOF
 }
 
-# 校验端口并把归一化的结果写进全局 NORM_PORT。
-# 结果不能靠「函数打印、调用方命令替换接」的写法传出来：命令替换会开子 shell，
-# usage_error 里的 exit 只退掉子 shell，主流程会带着空端口继续往下跑，
-# 表现为报完错又照常去查 0 号端口。
+# 校验端口并把归一化结果写进全局 NORM_PORT。
+# 不用命令替换返回：子 shell 里的 exit 只退子 shell，主流程会带空端口继续执行。
 NORM_PORT=''
 
 parse_port() {
   local p=$1 n
   [[ $p =~ ^[0-9]+$ ]] || usage_error "端口 $p 不是数字"
-  # 位数先卡一道：交给 $((10#$p)) 处理超长数字会直接报错退出
+  # 先检查位数：超长数字交给 $((10#$p)) 会直接报错退出
   ((${#p} > 5)) && usage_error "端口 $p 超出 1 到 65535"
   # 10# 前缀按十进制解析，否则 080 这类前导零会被当成八进制
   n=$((10#$p))
@@ -117,8 +100,7 @@ set_signal() {
     n=$s
   else
     s=${s#SIG}
-    # kill -l 认信号名就把编号吐出来，不认则报错退出
-    n=$(kill -l "$s" 2>/dev/null) || usage_error "未知信号 $1，用 kill -l 看可用信号"
+    n=$(kill -l "$s" 2>/dev/null) || usage_error "未知信号 $1，用 kill -l 查看"
   fi
   # 编号是准的，名字只用来显示：编号写进命令，名字写进提示语
   SIGNAL_NAME=$(kill -l "$n" 2>/dev/null) || SIGNAL_NAME=$n
@@ -181,8 +163,7 @@ protect_reason() {
   fi
 }
 
-# 输出占用端口的 pid，一行一个。
-# 返回 0 是拿到了 pid，1 是没人监听，2 是有监听但对不上进程。
+# 输出占用端口的 pid，一行一个；返回 0 拿到 pid，1 没人监听，2 有监听但对不上进程。
 find_pids() {
   local port=$1 lines=() extra=() pids
   if command -v ss >/dev/null 2>&1; then
@@ -210,7 +191,7 @@ find_pids() {
     return 0
   fi
 
-  die 'ss 与 lsof 都没有，先装 iproute2 或 lsof'
+  die '缺少 ss 与 lsof，先装 iproute2 或 lsof'
 }
 
 describe_pid() {
@@ -236,7 +217,7 @@ alive_pids() {
 confirm() {
   local reply
   ((ASSUME_YES)) && return 0
-  # 非交互环境没人可问，按否处理，调用方自己决定提示语
+  # 非交互环境没人可问，按否处理
   [[ -t 0 ]] || return 1
   printf '%s [y/N] ' "$1" >&2
   read -r reply || return 1
@@ -250,7 +231,7 @@ handle_port() {
   local found pid
 
   if is_protected "$port" && ((!FORCE)); then
-    warn "端口 $port 受保护（$(protect_reason "$port")），拒绝执行。确要干掉就加 --force。"
+    warn "端口 $port 受保护（$(protect_reason "$port")），加 --force 才可操作"
     return 3
   fi
   if is_protected "$port"; then
@@ -260,12 +241,11 @@ handle_port() {
   found=$(find_pids "$port")
   case $? in
     1)
-      info "端口 $port 没有被监听。"
+      info "端口 $port 无监听"
       return 1
       ;;
     2)
-      warn "端口 $port 有监听但对不上进程，可能是别人的进程而当前不是 root，"
-      warn "也可能是这个端口在别的网络命名空间里（容器映射的端口）。不加猜测，跳过。"
+      warn "端口 $port 有监听但对不上进程，可能非 root 或端口在别的网络命名空间，跳过"
       return 1
       ;;
   esac
@@ -283,7 +263,7 @@ handle_port() {
     return 1
   }
 
-  info "端口 $port 被以下进程占用:"
+  info "端口 $port 被占用:"
   for pid in "${targets[@]}"; do describe_pid "$pid"; done
 
   if ((DRY_RUN)); then
@@ -303,7 +283,7 @@ handle_port() {
     if kill -s "$SIGNAL" "$pid" 2>/dev/null; then
       info "已向 PID $pid 发送 SIG${SIGNAL_NAME}。"
     else
-      warn "向 PID $pid 发送 SIG${SIGNAL_NAME} 失败，进程可能已退出或权限不足。"
+      warn "向 PID $pid 发送 SIG${SIGNAL_NAME} 失败，可能已退出或权限不足"
     fi
   done
 
@@ -324,15 +304,15 @@ handle_port() {
     return 0
   fi
 
-  # SIGKILL 送不动就没别的招了，剩下的都是权限或内核线程问题
+  # SIGKILL 也送不到时没有其他办法，剩下的都是权限或内核线程问题
   if [[ $SIGNAL_NAME == KILL ]]; then
-    warn "PID ${alive[*]} 仍在运行，SIGKILL 也送不动，多半是权限不足。"
+    warn "PID ${alive[*]} 仍在运行，SIGKILL 无效，多半权限不足"
     return 1
   fi
 
   info "以下进程在 ${TIMEOUT} 秒内没有退出: ${alive[*]}"
   if [[ ! -t 0 && $ASSUME_YES == 0 ]]; then
-    warn "非交互环境不再追问，要杀干净请直接加 -9，或先给 --yes。"
+    warn "非交互环境不追问，改用 -9 或 --yes"
     return 1
   fi
   if ! confirm "补发 SIGKILL 强制杀掉吗?"; then
@@ -341,7 +321,7 @@ handle_port() {
   fi
 
   for pid in "${alive[@]}"; do
-    kill -s KILL "$pid" 2>/dev/null || warn "向 PID $pid 发送 SIGKILL 失败，权限不足。"
+    kill -s KILL "$pid" 2>/dev/null || warn "向 PID $pid 发送 SIGKILL 失败，权限不足"
   done
   sleep 0.5
   mapfile -t alive < <(alive_pids "${targets[@]}")
@@ -349,7 +329,7 @@ handle_port() {
     info "端口 $port 已释放。"
     return 0
   fi
-  warn "PID ${alive[*]} 仍在运行，SIGKILL 也送不动，多半是权限不足。"
+  warn "PID ${alive[*]} 仍在运行，SIGKILL 无效，多半权限不足"
   return 1
 }
 
@@ -357,7 +337,7 @@ main() {
   parse_args "$@"
   ((${#PORTS[@]})) || usage_error '没给端口'
 
-  # 撞上保护端口比一般的没杀成更值得让调用方看见，整体退出码里以 3 优先
+  # 撞上保护端口比一般失败更严重，整体退出码以 3 优先
   local rc=0 r p
   for p in "${PORTS[@]}"; do
     handle_port "$p" || {

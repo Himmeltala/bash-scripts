@@ -1,7 +1,6 @@
 # 查看与校验：列包内文件、校验包的完整性。
 
-# 命令输出量可能很大，界面模式下先落到临时文件再分页看。
-# 非界面模式直接打出来，把输出留在终端上，方便配合管道与重定向。
+# 输出量大时界面模式先落临时文件再分页看；非界面模式直接打出，方便配合管道与重定向。
 show_output() {
   local title=$1
   shift
@@ -23,11 +22,10 @@ cmd_list() {
     pkg=$(ui_pick_archive) || return "$EXIT_CANCEL"
   fi
   [[ -f "$pkg" ]] || die "找不到包「$pkg」"
-  # unzip 自己的失败码有 9、10、50 这些，本工具的退出码只有 0 到 3。
-  # 统一收成 1，调用方按约定判断就行，不必去查 unzip 的码表。
+  # unzip 的失败码有 9、10、50 等，本工具统一收成 1。
   local rc=0
   show_output 'zipx 包内文件' unzip -l "$(archive_arg "$pkg")" || rc=$?
-  ((rc == 0)) || die "「$pkg」读不了，不是一个正常的 zip 包（unzip 退出码 $rc）"
+  ((rc == 0)) || die "「$pkg」不是正常的 zip 包（unzip 退出码 $rc）"
 }
 
 cmd_test() {

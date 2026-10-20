@@ -1,27 +1,6 @@
 #!/usr/bin/env bash
-# bash-scripts 安装脚本。
-#
-# 两种跑法都支持：
-#   一、从仓库检出里跑：./install.sh
-#   二、从 curl 管道里跑：curl -fsSL <install.sh 的地址> | bash
-# 第二种情况下没有本地源码，脚本会去下载仓库归档再解开。
-#
-# 重复执行等价于「先卸载再安装」：先把上一次装的清掉（旧软链、旧安装目录、
-# .bashrc 里那段 PATH 设置），再拷新的。安装目录是仓库的镜像，不要在那边直接改。
-#
-# 安装后的目录层级与仓库保持一致：仓库根下每个目录就是一个工具，目录名与命令名
-# 一致，各自的 bin 里放可执行文件，lib 里放入口共用的库。
-#   ~/.local/share/bash-scripts/
-#   ├── mvnx/
-#   │   ├── bin/
-#   │   │   └── mvnx
-#   │   └── lib/
-#   │       ├── mvnx-core.sh
-#   │       └── mvnx/
-#   └── killport/
-#       └── bin/
-#           └── killport
-# 可执行文件软链到 ~/.local/bin；lib 下是入口共用的库，不链。
+# bash-scripts 安装脚本，支持本地检出运行与 curl 管道运行，后者先下载归档再解开。
+# 重复执行等价于先卸载再安装；安装目录是仓库镜像，可执行文件软链到 ~/.local/bin。
 
 set -euo pipefail
 
@@ -29,8 +8,7 @@ readonly REPO_SLUG='Himmeltala/bash-scripts'
 readonly BRANCH='main'
 readonly TARBALL_URL="${BASH_SCRIPTS_TARBALL_URL:-https://codeload.github.com/${REPO_SLUG}/tar.gz/refs/heads/${BRANCH}}"
 
-# 卸载脚本的地址，只用来在结尾提示用户。
-# 走 jsDelivr 而不是 raw.githubusercontent.com：后者在国内多数网络下直连超时。
+# 卸载脚本地址，只用来在结尾提示；走 jsDelivr 是因为 raw.githubusercontent.com 国内直连常超时。
 readonly UNINSTALL_URL="https://cdn.jsdelivr.net/gh/${REPO_SLUG}@${BRANCH}/uninstall.sh"
 
 # 写进 .bashrc 的标记行。清旧设置与写新设置都认它，改动时两边一致。
@@ -39,8 +17,7 @@ readonly MARK_LINE='# bash-scripts 装的工具'
 readonly INSTALL_DIR="${BASH_SCRIPTS_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-scripts}"
 readonly BIN_DIR="${BASH_SCRIPTS_BIN_DIR:-$HOME/.local/bin}"
 
-# 要写进 .bashrc 的那一行。链接目录是默认位置时写成 $HOME 形式，
-# 换台机器、换个家目录仍然管用；被覆盖成别的路径就写死那个路径。
+# 要写进 .bashrc 的 PATH 行：默认位置写成 $HOME 形式，自定义路径写死。
 path_line() {
   if [[ "$BIN_DIR" == "$HOME/.local/bin" ]]; then
     printf 'export PATH="$HOME/.local/bin:$PATH"\n'
@@ -57,10 +34,9 @@ usage() {
   cat <<'EOF'
 用法: install.sh [选项]
 
-把 bash-scripts 装到 ~/.local/share/bash-scripts，可执行文件软链到 ~/.local/bin。
+装 bash-scripts 到 ~/.local/share/bash-scripts，可执行文件软链到 ~/.local/bin。
 
-重复执行等价于先卸载再安装：会先清掉上一次装的软链、安装目录与 .bashrc 里的
-PATH 设置，再重新装一遍。安装目录是仓库的镜像，不要在那边直接改。
+重复执行等于先卸载再重装；安装目录是仓库镜像，不要直接改。
 
 选项:
   -h, --help     显示本帮助
@@ -73,11 +49,10 @@ EOF
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "找不到 $1，先装上再用"
+  command -v "$1" >/dev/null 2>&1 || die "找不到 $1，先安装"
 }
 
-# 一个目录像个源码树，判据是它底下有工具目录带 bin。
-# 用来区分「脚本就在检出里」与「脚本是管道进来的、源码要去下载」。
+# 目录下有 */bin 才算源码树。
 has_bin_dirs() {
   local d
   for d in "$1"/*/bin; do
@@ -86,10 +61,8 @@ has_bin_dirs() {
   return 1
 }
 
-# 找出源码在哪里：优先用脚本所在的检出目录，管道进来的话就下载归档。
-# 结果写进全局 SRC_DIR；走下载这条路时临时目录记在 DOWNLOAD_TMP 里给调用方清理。
-# 这里不能用「函数打印、调用方 command substitution 接」的写法：
-# 命令替换会开子 shell，函数里设的 DOWNLOAD_TMP 出不来，临时目录就清不掉了。
+# 找源码：优先脚本所在检出，管道进来则下载归档；结果写 SRC_DIR，临时目录记入 DOWNLOAD_TMP，用于收尾清理。
+# 不用命令替换返回结果，因为子 shell 里设的 DOWNLOAD_TMP 传不出来，临时目录清不掉。
 SRC_DIR=''
 DOWNLOAD_TMP=''
 
@@ -121,14 +94,14 @@ resolve_source() {
 
   need_cmd tar
   tar -xzf "$archive" -C "$tmp" || die '解压失败'
-  # 归档解开后是一层 repo-branch 目录，取里面那个
+  # 归档解开后只有一层 repo-branch 目录，取其中唯一的目录
   local extracted
   extracted=$(find "$tmp" -maxdepth 1 -mindepth 1 -type d | head -1)
   [[ -n "$extracted" ]] && has_bin_dirs "$extracted" || die '归档里没找到任何 */bin 目录'
   SRC_DIR=$extracted
 }
 
-# 用 tar 管道复制，顺手排掉 .git，不依赖 rsync。
+# 用 tar 管道复制，同时排除 .git，不依赖 rsync。
 copy_tree() {
   local src=$1 dst=$2
   mkdir -p "$dst"
@@ -164,9 +137,7 @@ remove_links() {
   ((removed > 0)) || info '  没有指向本项目的旧软链'
 }
 
-# 清掉安装时写进 .bashrc 的那段 PATH 设置。
-# 只认自己写的标记行，标记行后面那一行无论内容是什么一并删掉，
-# 这样链接目录被覆盖成别的路径时也能清干净，同时不会误删用户手写的设置。
+# 清 .bashrc 里本项目的 PATH 设置：只认标记行，标记行后一行一并删，不会误删用户手写设置。
 remove_path_setting() {
   local rc="$HOME/.bashrc"
   if [[ ! -f "$rc" ]] || ! grep -qF "$MARK_LINE" "$rc"; then
@@ -185,17 +156,13 @@ remove_path_setting() {
   rm -f "$tmp"
 }
 
-# 装之前先把上一次装的清干净：旧软链、旧安装目录、.bashrc 里那段 PATH 设置。
-# 与 uninstall.sh 做的是同一件事（那边多一个 --keep-path 与预演开关），放在这里
-# 是因为管道安装时本地根本没有 uninstall.sh，装完再装也不该靠另一个脚本。
-# 不清的后果很具体：改名或换目录结构之后，安装目录里会留着上一版的整个目录树，
-# 链接目录里会留下指向已删路径的死链。
+# 装前清掉上一次的旧软链、旧安装目录与 PATH 设置；管道安装时本地没有 uninstall.sh，故在此重复实现。
+# 不清会在安装目录留下上一版目录树，并在链接目录留下指向已删路径的死链。
 clean_previous() {
   if [[ -d "$INSTALL_DIR" ]]; then
-    # 安装目录可以由环境变量指到别处，删之前先确认里面装的确实是本项目的东西，
-    # 否则一次 rm -rf 会把无关目录整个删掉。
+    # 安装目录可由环境变量指到别处，删前先确认里面确实是本项目的东西，否则 rm -rf 会误删无关目录。
     if [[ "$(basename "$INSTALL_DIR")" != 'bash-scripts' ]] && ! has_bin_dirs "$INSTALL_DIR"; then
-      die "$INSTALL_DIR 看着不是本项目的安装目录（名字不是 bash-scripts，里面也没有带 bin 的工具目录），确认路径没问题再装"
+      die "$INSTALL_DIR 不像本项目安装目录（名字不是 bash-scripts、无 */bin 目录），确认路径"
     fi
     remove_links
     info "清除上一次装的目录 $INSTALL_DIR"
@@ -204,8 +171,7 @@ clean_previous() {
   remove_path_setting
 }
 
-# 把各工具目录下 bin 里的可执行文件软链到 BIN_DIR。
-# 这里只认链接，不解引用，重复执行也不会叠出备份文件。
+# 把各工具 bin 下的可执行文件软链到 BIN_DIR，不解引用，重复执行不会叠出备份文件。
 link_bins() {
   local found=0 f name target stamp
   mkdir -p "$BIN_DIR"
@@ -232,10 +198,8 @@ link_bins() {
   ((found > 0)) || warn "在 $INSTALL_DIR/*/bin 下没找到可执行文件"
 }
 
-# 保证 .bashrc 里有 BIN_DIR 的 PATH 设置，已经有就不重复写，免得越堆越长。
-# 判据看 .bashrc 里有没有那一行，不看当前 PATH：本次安装刚把旧设置清掉，
-# 而当前 shell 的 PATH 里还留着旧值，照 PATH 判断会以为不必写，
-# 重开 shell 后 PATH 设置就真没了。
+# 保证 .bashrc 里有 BIN_DIR 的 PATH 设置，已有则跳过，免得越堆越长。
+# 判据看 .bashrc 不看当前 PATH：旧设置刚清掉，当前 shell 的 PATH 仍留着旧值，照它判断会漏写。
 ensure_path() {
   local rc="$HOME/.bashrc" line
   line=$(path_line)

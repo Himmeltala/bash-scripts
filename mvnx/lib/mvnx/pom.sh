@@ -1,14 +1,7 @@
-# pom 扫描与解析：找出工作副本里的全部 pom，一次调用解析出 id、打包方式、
-# 引了哪些启动插件、子模块，填进 POM_LIST 与各数组；再据此判定可启动模块、
-# 往上找聚合根。数组只在主 shell 里填一次，其余文件只读。
+# pom 扫描与解析：一次调用取出全部 pom 的 id、打包方式、启动插件与子模块，填入各数组，再据此判定可启动模块与聚合根。
+# 数组只在主 shell 里填一次，其余文件只读。
 readonly SKIP_DIRS=(target .svn .git node_modules .idea .settings)
-# 一次调用把一个 pom 需要的信息全部取出来，输出带前缀的行：
-#   ID  <artifactId>  项目自身的 id，<parent> 里的不算
-#   PKG pom           打包方式是 pom
-#   SB  1             引了 spring-boot-maven-plugin
-#   JETTY 1           引了 jetty-maven-plugin
-#   TOMCAT 1          引了 tomcat-maven-plugin
-#   MOD <entry>       <modules> 里声明的子模块，一行一个
+# 一次取出一个 pom 的信息，输出带前缀行：ID（自身 artifactId，不含 parent）、PKG pom、SB、JETTY、TOMCAT、MOD（子模块）。
 readonly POM_AWK='
 BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
 {
@@ -29,8 +22,7 @@ BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
     line = substr(line, 1, i - 1) substr(rest, j + 3)
   }
 
-  # 只摘掉行内的 parent 片段，不能整行 next：
-  # pom 若把 <parent> 与项目自身坐标写在同一行，整行跳掉会把 artifactId 也一起丢掉。
+  # 只摘掉行内 parent 片段，不能整行 next：parent 与坐标同行时整行跳会丢 artifactId。
   while (1) {
     if (inparent) {
       q = index(line, "</parent>")
@@ -78,11 +70,8 @@ scan_poms() {
   find "$1" \( "${expr[@]}" \) -prune -o -type f -name pom.xml -print 2>/dev/null
 }
 
-# 每个 pom 在一次扫描里会被反复问「你声明了哪些子模块」「你叫什么」「能不能跑」，
-# 所以先统一解析一遍填进数组，之后只读不写。
-#
-# 这一步必须在主 shell 里做：can_reach 之类是在命令替换与进程替换的子 shell 里跑的，
-# 子 shell 里对数组的写入会随子 shell 一起丢掉，缓存在里面等于没建。
+# 每个 pom 在扫描中会被反复查询，先统一解析填进数组，之后只读不写。
+# 必须在主 shell 里做：can_reach 等在命令替换与进程替换的子 shell 里执行，子 shell 写入随其丢失。
 declare -a POM_LIST=()
 
 declare -A POM_MODULES_VAL=()
@@ -126,9 +115,8 @@ prepare_scan() {
     POM_MODULES_VAL[$pom]="${mods%$'\n'}"
   done
 
-  # 入口类检查按模块各自的源码目录来跑，只对已经通过前两道检查的 pom 跑。
-  # 不要图省事改成对整个扫描根跑一次 grep：从家目录或 projs 根扫时，底下压着
-  # .vscode-server、node_modules 这类大目录，实测比逐个模块查还慢。
+  # 入口类检查只在模块各自的源码目录里执行，并且只对已通过前两道检查的 pom 执行。
+  # 不要对整个扫描根只 grep 一次：家目录或 projs 根下压着 .vscode-server、node_modules 这类大目录，实测更慢。
   local dir
   for pom in "${POM_LIST[@]}"; do
     [[ -n "${POM_SB_VAL[$pom]:-}" ]] || continue
@@ -164,9 +152,7 @@ project_artifact_id() {
   return 0
 }
 
-# 从某个聚合 pom 出发，沿 <modules> 一层层往下走，看能不能走到目标目录。
-# -pl 接收的是从当前目录算起的路径，嵌套的模块即便没有直接声明也能寻址，
-# 所以要递归往下找，只看一层不够。
+# 从聚合 pom 沿 <modules> 逐层往下，看能否走到目标目录；-pl 接受当前目录起的路径，嵌套模块须递归查找。
 can_reach() {
   local agg=$1 target=$2 depth=${3:-0}
   ((depth > 8)) && return 1
@@ -183,8 +169,7 @@ can_reach() {
   return 1
 }
 
-# 取最外层那个能走到模块的聚合 pom。从最外层跑，命令更接近手敲的样子。
-# 都走不到就说明只能进模块目录里跑。
+# 取最外层能走到模块的聚合 pom，更接近手工执行；都走不到就只能进入模块目录执行。
 find_aggregator() {
   local target
   target=$(normalize_path "$1")
@@ -200,8 +185,7 @@ find_aggregator() {
   printf '%s\n' "$agg"
 }
 
-# 可启动模块的两种判定，谓词拿 pom 路径与模块目录，命中返回 0。
-# 「不是 pom 打包」是两者共有的前提，由 each_module 统一排除，谓词里不再重复。
+# 可启动模块的两种判定，参数是 pom 路径与模块目录，命中返回 0；「不是 pom 打包」由 each_module 统一排除。
 # Boot 模块：引了 spring-boot-maven-plugin，且入口类在自己源码目录里。
 is_boot_module() {
   local pom=$1 dir=$2
@@ -214,8 +198,7 @@ is_war_module() {
   [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}" && -n "${HAS_WEBAPP[$dir]:-}" ]]
 }
 
-# 遍历全部 pom，把命中判定的模块交给回调。
-# 每命中一个调用一次 $2，参数依次是模块目录、id、聚合根、-pl 的值；
+# 遍历全部 pom，命中判定就调用回调 $2，参数依次是模块目录、id、聚合根、-pl 的值。
 # 模块走不到任何聚合根时后两个参数为空。
 each_module() {
   local pred=$1 cb=$2 pom dir id agg rel
