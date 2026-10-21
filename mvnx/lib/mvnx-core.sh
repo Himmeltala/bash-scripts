@@ -9,8 +9,13 @@ mvnx_dir=${BASH_SOURCE[0]%/*}
 [[ "$mvnx_dir" == "${BASH_SOURCE[0]}" ]] && mvnx_dir='.'
 readonly mvnx_dir
 
+# shellcheck source=../../lib/tui-path.sh
+if ! source "$mvnx_dir"/../../lib/tui-path.sh; then
+  printf 'mvnx: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
+  exit 1
+fi
+
 for mvnx_module in \
-  "$mvnx_dir"/../../lib/tui.sh \
   "$mvnx_dir"/mvnx/util.sh \
   "$mvnx_dir"/mvnx/pom.sh \
   "$mvnx_dir"/mvnx/ui.sh \

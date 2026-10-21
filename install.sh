@@ -6,6 +6,8 @@ set -euo pipefail
 
 readonly REPO_SLUG='Himmeltala/bash-scripts'
 readonly BRANCH='main'
+readonly BASH_TUI_SLUG="${BASH_TUI_SLUG:-Himmeltala/bash-tui}"
+readonly BASH_TUI_REF_FILE='bash-tui.ref'
 readonly TARBALL_URL="${BASH_SCRIPTS_TARBALL_URL:-https://codeload.github.com/${REPO_SLUG}/tar.gz/refs/heads/${BRANCH}}"
 
 # 卸载脚本地址，只用来在结尾提示；走 jsDelivr 是因为 raw.githubusercontent.com 国内直连常超时。
@@ -45,6 +47,9 @@ usage() {
   BASH_SCRIPTS_INSTALL_DIR   源码安装目录，默认 ${XDG_DATA_HOME:-~/.local/share}/bash-scripts
   BASH_SCRIPTS_BIN_DIR       可执行文件链接目录，默认 ~/.local/bin
   BASH_SCRIPTS_TARBALL_URL   管道安装时下载的归档地址，默认从 GitHub 取 main 分支
+  BASH_TUI_REF               覆盖 bash-tui 标签，默认读 bash-tui.ref
+  BASH_TUI_TARBALL_URL       覆盖 bash-tui 归档地址
+  BASH_TUI_SRC               指定本地 bash-tui 源码目录
 EOF
 }
 
@@ -106,6 +111,65 @@ copy_tree() {
   local src=$1 dst=$2
   mkdir -p "$dst"
   ( cd "$src" && tar --exclude=./.git -cf - . ) | ( cd "$dst" && tar -xf - )
+}
+
+BASH_TUI_SRC_DIR=''
+BASH_TUI_REF_RESOLVED=''
+BASH_TUI_DOWNLOAD_TMP=''
+
+# 先定标签，再找本地同级检出；都没有时按标签下载归档。结果写 BASH_TUI_SRC_DIR。
+resolve_bash_tui() {
+  local ref="${BASH_TUI_REF:-}"
+  if [[ -z "$ref" ]]; then
+    if [[ ! -f "$SRC_DIR/$BASH_TUI_REF_FILE" ]]; then
+      die "缺少 $SRC_DIR/$BASH_TUI_REF_FILE，无法确定 bash-tui 版本"
+    fi
+    ref=$(tr -d '[:space:]' < "$SRC_DIR/$BASH_TUI_REF_FILE")
+  fi
+  [[ -n "$ref" ]] || die "$BASH_TUI_REF_FILE 内容为空"
+  BASH_TUI_REF_RESOLVED=$ref
+
+  if [[ -n "${BASH_TUI_SRC:-}" ]]; then
+    [[ -f "$BASH_TUI_SRC/bash-tui.sh" ]] || die "BASH_TUI_SRC 下没有 bash-tui.sh: $BASH_TUI_SRC"
+    BASH_TUI_SRC_DIR=$BASH_TUI_SRC
+    info "用 BASH_TUI_SRC 指定的 bash-tui 来源: $BASH_TUI_SRC"
+    return 0
+  fi
+
+  local sibling
+  sibling="$(cd "$SRC_DIR/.." && pwd)/bash-tui"
+  if [[ -f "$sibling/bash-tui.sh" ]]; then
+    BASH_TUI_SRC_DIR=$sibling
+    info "用同级检出作为 bash-tui 来源: $sibling"
+    return 0
+  fi
+
+  local url="${BASH_TUI_TARBALL_URL:-https://codeload.github.com/${BASH_TUI_SLUG}/tar.gz/refs/tags/${ref}}"
+  local tmp archive extracted
+  tmp=$(mktemp -d)
+  BASH_TUI_DOWNLOAD_TMP=$tmp
+  info "从 $url 下载 bash-tui $ref"
+
+  archive="$tmp/bash-tui.tar.gz"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$archive" || die "下载 bash-tui $ref 失败，检查标签与地址"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$archive" "$url" || die "下载 bash-tui $ref 失败，检查标签与地址"
+  else
+    die 'curl 与 wget 都没有，装一个再来'
+  fi
+
+  need_cmd tar
+  tar -xzf "$archive" -C "$tmp" || die '解压 bash-tui 归档失败'
+  extracted=$(find "$tmp" -maxdepth 1 -mindepth 1 -type d | head -1)
+  [[ -n "$extracted" && -f "$extracted/bash-tui.sh" ]] || die 'bash-tui 归档里没有 bash-tui.sh'
+  BASH_TUI_SRC_DIR=$extracted
+}
+
+install_bash_tui() {
+  local dest="$INSTALL_DIR/vendor/bash-tui"
+  info "安装 bash-tui $BASH_TUI_REF_RESOLVED 到 $dest"
+  copy_tree "$BASH_TUI_SRC_DIR" "$dest"
 }
 
 install_tree() {
@@ -228,13 +292,16 @@ main() {
 
   resolve_source
   [[ -n "$SRC_DIR" ]] || die '没能确定源码位置'
+  resolve_bash_tui
 
   clean_previous
   install_tree "$SRC_DIR"
+  install_bash_tui
   link_bins
   ensure_path
 
   [[ -n "$DOWNLOAD_TMP" ]] && rm -rf "$DOWNLOAD_TMP"
+  [[ -n "$BASH_TUI_DOWNLOAD_TMP" ]] && rm -rf "$BASH_TUI_DOWNLOAD_TMP"
 
   info ''
   info '装好了。'

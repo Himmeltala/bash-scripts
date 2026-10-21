@@ -200,7 +200,7 @@ run_action() {
     if [[ -n "$selector" ]]; then
       out=$("$selector" "$noun" "${recs[@]}") || rc=$?
     else
-      out=$(ui_checklist "$noun" "${recs[@]}") || rc=$?
+      out=$(mvnx_ui_checklist "$noun" "${recs[@]}") || rc=$?
     fi
     case "$rc" in
       0) : ;;

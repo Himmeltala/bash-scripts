@@ -6,8 +6,9 @@
 bash-scripts/
 ├── install.sh                    安装
 ├── uninstall.sh                  卸载
+├── bash-tui.ref                  依赖的 bash-tui 标签
 ├── lib/
-│   └── tui.sh                    共享界面组件，mvnx 与 zipx 共用
+│   └── tui-path.sh               定位并加载 bash-tui
 ├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
 │   ├── README.md
 │   ├── bin/
@@ -47,6 +48,15 @@ git clone git@github.com:Himmeltala/bash-scripts.git
 cd bash-scripts
 ./install.sh
 ```
+
+## 依赖 bash-tui
+
+界面组件来自独立仓库 `Himmeltala/bash-tui`，版本固定在 `bash-tui.ref`。
+
+- 本地开发时，`bash-scripts` 与 `bash-tui` 放在同一父目录，加载器直接使用同级检出。
+- 安装时优先复制同级检出；没有同级检出时，按 `bash-tui.ref` 的标签下载归档。
+- 安装后依赖位于 `~/.local/share/bash-scripts/vendor/bash-tui`。
+- 也可以用 `BASH_TUI_DIR` 显式指定依赖目录。
 
 ### 重复安装
 

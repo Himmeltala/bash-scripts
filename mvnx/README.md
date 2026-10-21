@@ -36,7 +36,7 @@ mvnx --help          显示帮助，命令清单从注册表生成
 
 颜色用 256 色，遵循 `NO_COLOR`，`TERM=dumb` 时不着色。宽字符按两列计算，中文不会把边线撑破。
 
-组件在仓库根下的 `lib/tui.sh`，`mvnx` 与 `zipx` 共用；`ui.sh` 只负责组装屏幕。以后别的命令要新界面，直接用这些组件：
+组件来自独立仓库 `Himmeltala/bash-tui`，由仓库根下的 `lib/tui-path.sh` 定位并加载，`mvnx` 与 `zipx` 共用；`ui.sh` 只负责组装屏幕。以后别的命令要新界面，直接用这些组件：
 
 | 组件 | 作用 |
 | --- | --- |
@@ -50,7 +50,7 @@ mvnx --help          显示帮助，命令清单从注册表生成
 | `tui_select` | 单选、复选与带「全部」的复选 |
 | `tui_input`、`tui_confirm` | 单行输入、是或否确认 |
 | `tui_textbox` | 分页查看文件内容 |
-| `tui_width`、`tui_clip` | 按显示宽度计算与截断，结果写进 `TUI_W`、`TUI_TEXT` |
+| `_tui_measure`、`_tui_clip_to` | 按显示宽度计算与截断，结果写进 `_TUI_WIDTH`、`_TUI_TEXT` |
 
 ## 退出码
 
@@ -173,7 +173,7 @@ mvnx/
             └── package.sh
 ```
 
-界面组件在仓库根下的 `lib/tui.sh`，不在上面的目录树里。加载器直接执行也行，等价于 `mvnx`，调试某一步时方便。
+界面组件在独立仓库 `bash-tui`，由仓库根下的 `lib/tui-path.sh` 定位，不在上面的目录树里。加载器直接执行也行，等价于 `mvnx`，调试某一步时方便。
 
 安装脚本只把 `bin` 下的文件软链成命令，`lib` 不会出现在 PATH 里。
 

@@ -1,5 +1,5 @@
-# 勾选界面与勾选记录：单选菜单、目标复选、「全部」联动、无终端时的编号输入、同名标签去重、上次勾选回填。
-# 界面自绘是因为 whiptail 只在确认时返回结果，做不到「全部」与各项实时联动；复选输出到 stdout，取消返回 1、没勾返回 2、上一步返回 4。
+# 勾选界面与勾选记录：记录映射、同名标签去重、上次勾选回填。
+# 界面自绘由 bash-tui 提供；复选输出到 stdout，取消返回 1、没勾返回 2、上一步返回 4。
 tail_segments() {
   local -a parts=()
   IFS='/' read -r -a parts <<< "$1"
@@ -86,103 +86,8 @@ assign_tags() {
   return 0
 }
 
-# 单选菜单。$1 标题，$2 提示，其余为标签与说明，成对给出。
-ui_menu() {
-  local title=$1 prompt=$2
-  shift 2
-  if ! ui_available; then
-    plain_menu "$prompt" "$@"
-    return $?
-  fi
-  tui_select menu "$title" "$prompt" "$@"
-}
-
-# 目标复选。$1 是目标的名词，只用在编号输入的提示语里；其余为记录。
-ui_checklist() {
-  local noun=$1
-  shift
-  local -a recs=("$@") items=() picked=()
-  local rec tag workdir plpath mvnargs display cmdtext out rc=0 p
-
-  if ! ui_available; then
-    plain_checklist "$noun" "${recs[@]}"
-    return $?
-  fi
-
-  for rec in "${recs[@]}"; do
-    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-    items+=("$tag" "$display")
-  done
-
-  out=$(tui_select checklist "mvnx · $noun" '' "${items[@]}") || rc=$?
-  ((rc == 0)) || return "$rc"
-
-  mapfile -t picked <<< "$out"
-  for rec in "${recs[@]}"; do
-    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-    for p in "${picked[@]}"; do
-      [[ "$p" == "$tag" ]] && { printf '%s\n' "$rec"; break; }
-    done
-  done
-  return 0
-}
-
-# 带「全部」总开关的复选，总开关与其余项实时联动。参数与输出同 ui_checklist。
-ui_checklist_all() {
-  local noun=$1
-  shift
-  local -a recs=("$@") items=() picked=()
-  local rec tag workdir plpath mvnargs display cmdtext out rc=0 p
-
-  if ! ui_available; then
-    plain_checklist "$noun" "${recs[@]}"
-    return $?
-  fi
-
-  for rec in "${recs[@]}"; do
-    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-    items+=("$tag" "$display")
-  done
-
-  out=$(tui_select all "mvnx · $noun" '' "${items[@]}") || rc=$?
-  ((rc == 0)) || return "$rc"
-
-  mapfile -t picked <<< "$out"
-  for rec in "${recs[@]}"; do
-    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-    for p in "${picked[@]}"; do
-      [[ "$p" == "$tag" ]] && { printf '%s\n' "$rec"; break; }
-    done
-  done
-  return 0
-}
-
-# 没有终端时的编号单选。
-plain_menu() {
-  local prompt=$1
-  shift
-  local -a tags=() descs=()
-  while (($# > 1)); do
-    tags+=("$1")
-    descs+=("$2")
-    shift 2
-  done
-
-  printf '%s\n\n' "$prompt" >&2
-  local i
-  for i in "${!tags[@]}"; do
-    printf '  %2d) %-14s %s\n' "$((i + 1))" "${tags[$i]}" "${descs[$i]}" >&2
-  done
-  printf '\n编号（回车取消）: ' >&2
-
-  local answer
-  read -r answer || return 1
-  [[ "$answer" =~ ^[0-9]+$ ]] || return 1
-  ((answer >= 1 && answer <= ${#tags[@]})) || return 1
-  printf '%s\n' "${tags[$((answer - 1))]}"
-}
-
-plain_checklist() {
+# 没有终端时沿用原来的两行记录展示，保持输出与改造前一致。
+mvnx_plain_checklist() {
   local noun=$1
   shift
   local -a recs=("$@")
@@ -193,9 +98,10 @@ plain_checklist() {
     printf '  %2d) %s\n      %s\n' "$((i + 1))" "$tag" "$display" >&2
   done
   printf '\n编号，空格分隔: ' >&2
-  local answer
-  read -r answer || return 1
-  [[ -n "$answer" ]] || return 2
+
+  local answer=''
+  read -r answer || return "$TUI_CANCEL"
+  [[ -n "$answer" ]] || return "$TUI_EMPTY"
 
   local -a picked=()
   for n in $answer; do
@@ -203,8 +109,82 @@ plain_checklist() {
     ((n >= 1 && n <= ${#recs[@]})) || continue
     picked+=("${recs[$((n - 1))]}")
   done
-  [[ ${#picked[@]} -gt 0 ]] || return 2
+  ((${#picked[@]})) || return "$TUI_EMPTY"
   printf '%s\n' "${picked[@]}"
+  return "$TUI_OK"
+}
+
+# 复选：把六列记录映射成通用层的「标签、说明、状态」三元组，再把选中标签映射回记录。
+mvnx_ui_checklist() {
+  local noun=$1
+  shift
+  local -a recs=("$@")
+  local -a items=()
+  local -a picked=()
+  local rec tag workdir plpath mvnargs display cmdtext out rc=0 p
+
+  if ! ui_available; then
+    mvnx_plain_checklist "$noun" "${recs[@]}"
+    return $?
+  fi
+
+  for rec in "${recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+    items+=("$tag" "$display" OFF)
+  done
+
+  TUI_PRESELECT=''
+  if [[ -n ${SEL_FILE:-} && -f $SEL_FILE ]]; then
+    TUI_PRESELECT=$(<"$SEL_FILE")
+  fi
+
+  out=$(ui_checklist "mvnx · $noun" '' "${items[@]}") || rc=$?
+  ((rc == 0)) || return "$rc"
+
+  mapfile -t picked <<< "$out"
+  for p in "${picked[@]}"; do
+    for rec in "${recs[@]}"; do
+      IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+      [[ "$p" == "$tag" ]] && { printf '%s\n' "$rec"; break; }
+    done
+  done
+  return 0
+}
+
+# 带「全部」总开关的复选，参数与输出同 mvnx_ui_checklist。
+mvnx_ui_checklist_all() {
+  local noun=$1
+  shift
+  local -a recs=("$@")
+  local -a items=()
+  local -a picked=()
+  local rec tag workdir plpath mvnargs display cmdtext out rc=0 p
+
+  if ! ui_available; then
+    mvnx_plain_checklist "$noun" "${recs[@]}"
+    return $?
+  fi
+
+  for rec in "${recs[@]}"; do
+    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+    items+=("$tag" "$display" OFF)
+  done
+
+  TUI_PRESELECT=''
+  if [[ -n ${SEL_FILE:-} && -f $SEL_FILE ]]; then
+    TUI_PRESELECT=$(<"$SEL_FILE")
+  fi
+
+  out=$(ui_checklist_all "mvnx · $noun" '' "${items[@]}") || rc=$?
+  ((rc == 0)) || return "$rc"
+
+  mapfile -t picked <<< "$out"
+  for p in "${picked[@]}"; do
+    for rec in "${recs[@]}"; do
+      IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
+      [[ "$p" == "$tag" ]] && { printf '%s\n' "$rec"; break; }
+    done
+  done
   return 0
 }
 

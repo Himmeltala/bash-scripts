@@ -11,7 +11,7 @@ ui_pick_archive_entries() {
     if [[ "$n" == */ ]]; then desc='目录'; else desc='文件'; fi
     items+=("$n" "$desc" OFF)
   done
-  ui_checklist "$purpose" '空格勾选包内条目，回车确认' "${items[@]}"
+  zipx_ui_checklist "$purpose" '空格勾选包内条目，回车确认' "${items[@]}"
 }
 
 cmd_add() {
