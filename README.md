@@ -27,16 +27,25 @@ bash-scripts/
 │   ├── README.md
 │   └── bin/
 │       └── killport
-└── cleanx/                       系统运维：清理缓存、日志与开发垃圾
+├── cleanx/                       系统运维：清理缓存、日志与开发垃圾
+│   ├── README.md
+│   ├── bin/
+│   │   └── cleanx
+│   └── lib/
+│       ├── cleanx-core.sh        加载器
+│       └── cleanx/               注册表、三类清理项、执行器与界面
+└── claudex/                      系统运维：管理 Claude Code 会话与缓存
     ├── README.md
     ├── bin/
-    │   └── cleanx
-    └── lib/
-        ├── cleanx-core.sh        加载器
-        └── cleanx/               注册表、三类清理项、执行器与界面
+    │   └── claudex
+    ├── lib/
+    │   ├── claudex-core.sh       加载器
+    │   └── claudex/              会话扫描、归档动作、缓存与界面
+    └── test/
+        └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`zipx`、`killport`、`cleanx`。工具目录的 `bin/` 放可执行文件，`lib/` 放入口引用的库，不会被软链成命令。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`zipx`、`killport`、`cleanx`、`claudex`。工具目录的 `bin/` 放可执行文件，`lib/` 放入口引用的库，不会被软链成命令。加新工具就是新建一个同名目录。
 
 ## 安装
 
@@ -128,9 +137,10 @@ clone 过的可以直接跑 `./uninstall.sh`。两个常用开关：
 | `zipx` | zipx | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
 | `killport` | killport | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，要 `--force` 才动 |
 | `cleanx` | cleanx | 清理用户缓存、回收站、系统包缓存与日志、开发缓存，另带大文件与构建产物扫描；默认只预览，`--yes` 才删，需要 root 的项用 sudo 逐项确认 |
+| `claudex` | claudex | 管理 Claude Code 会话：列表、继续、归档、恢复归档、永久删除，另清旧快照、孤儿数据与插件缓存；归档与删除默认只预览，运行中的会话受保护 |
 
 各工具的详细用法见对应目录下的 README。
 
 ## 环境要求
 
-需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`mvnx`、`zipx` 与 `cleanx` 的界面都在终端里自绘，探不到终端时退回编号输入。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。
+需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`mvnx`、`zipx`、`cleanx` 与 `claudex` 的界面都在终端里自绘，探不到终端时退回编号输入。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。

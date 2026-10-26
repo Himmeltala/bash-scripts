@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# claudex 入口，核心在 ../lib/claudex-core.sh。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+lib="${self%/bin/*}/lib/claudex-core.sh"
+[[ -f "$lib" ]] || { printf 'claudex: 找不到 %s\n' "$lib" >&2; exit 1; }
+
+# shellcheck source=../lib/claudex-core.sh
+source "$lib"
+main "$@"
