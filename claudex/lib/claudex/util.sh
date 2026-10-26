@@ -31,6 +31,9 @@ detect_ui_mode() {
 
 ui_available() { ((UI_MODE)); }
 
+# 会话多时一屏只画 15 行，翻页键跳转；终端更矮时仍按终端行数收缩。
+TUI_PAGE_SIZE=${TUI_PAGE_SIZE:-15}
+
 # 归档、删除、缓存清理默认只预览；菜单里的每一步另有确认框。
 DRY_RUN=1
 ASSUME_YES=0
