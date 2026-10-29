@@ -19,9 +19,9 @@ gradlex --help          显示帮助，命令清单从注册表生成
 
 不带参数时打开主菜单：先选命令（启动、构建、退出），再进目标勾选；一个命令执行完回到菜单，只有选退出才离开。给了命令名或关键词时跳过菜单直接执行。
 
-界面用方向键移动，用空格勾选，用回车确认；按 `←` 或 `b` 返回上一步，按 `q` 取消。上次勾过的目标下次自动预勾选。从主菜单进入时，返回后回到命令选择；直接写命令时没有上一步，返回等同于取消。
+在界面里用方向键移动，用空格勾选，用回车确认；按 `←` 或 `b` 返回上一步，按 `q` 取消。上次勾过的目标下次自动预勾选。从主菜单进入时，返回后回到命令选择；直接写命令时没有上一步，返回等同于取消。
 
-勾选一个目标时，脚本用 `exec` 把自身进程整个换成 Gradle，输出、颜色与 Ctrl+C 行为都和手敲完全一样。勾选多个时全部后台执行，输出仍然直接打在当前终端上，脚本只在最后等待。按一次 Ctrl+C，信号送到整个前台进程组，所有任务一起退出。
+只勾选一个目标时，脚本用 `exec` 把自身进程整个换成 Gradle，输出、颜色与 Ctrl+C 行为都和手敲完全一样。勾选多个时全部后台执行，输出仍然直接打在当前终端上，脚本只在最后等待。按一次 Ctrl+C，信号送到整个前台进程组，所有任务一起退出。
 
 非交互环境（管道、脚本、CI）下探不到终端，自动退回编号输入，避免界面卡住。
 
@@ -39,11 +39,11 @@ gradlex --help          显示帮助，命令清单从注册表生成
 `run` 与 `build` 看同一批模块：
 
 - 应用了 Spring Boot 插件，并且 `src/main/java` 或 `src/main/kotlin` 下存在带 `@SpringBootApplication` 的类。
-- 或者应用了 `application` 插件，并且声明了 `mainClass` / `mainClassName`，或存在带 `public static void main` / `fun main` 的类。
+- 或者应用了 `application` 插件，并且声明了 `mainClass` 或 `mainClassName`，或者存在带 `public static void main` 或 `fun main` 的类。
 
 插件可以写在三个位置：
 
-1. 模块自己的 `build.gradle` / `build.gradle.kts`。
+1. 模块自己的 `build.gradle` 或 `build.gradle.kts`。
 2. 构建根 `build.gradle` 的 `project(":名字") { apply plugin: ... }` 块。
 3. 构建根 `build.gradle` 的 `subprojects { ... }` 或 `allprojects { ... }` 块。
 
@@ -53,7 +53,7 @@ gradlex --help          显示帮助，命令清单从注册表生成
 
 从当前目录递归查找 `settings.gradle` 与 `settings.gradle.kts`，跳过 `build`、`.gradle`、`.git`、`.svn`、`node_modules`、`.idea`、`.settings`、`out`、`target`。每个 settings 文件对应一个构建根。
 
-当前目录及其子目录没有 settings 时，从当前目录向上找最近的构建根，支持在子模块目录里直接运行。再找不到时，若当前目录有 `build.gradle` 或 `build.gradle.kts`，按单项目构建处理。
+当前目录及其子目录没有 settings 时，从当前目录向上找最近的构建根，所以在子模块目录里也能直接运行。再找不到时，若当前目录有 `build.gradle` 或 `build.gradle.kts`，按单项目构建处理。
 
 解析 `include` 时支持：
 
@@ -74,11 +74,11 @@ include(":app", ":lib")
 
 按以下优先级选择：
 
-1. 环境变量 `GRADLEX_GRADLE`。
-2. 从构建根向上最近的 `gradlew`；不可执行时用 `sh gradlew`。
+1. 环境变量 `GRADLEX_GRADLE` 指定的入口。
+2. 构建根及其上层目录里最近的 `gradlew`；不可执行时用 `sh gradlew`。
 3. PATH 里的 `gradle`。
 
-`gradlew` 带 CRLF 换行时在 Linux 上跑不起来（shebang 会带上 `\r`，`sh` 又把行尾 `\r` 当命令）。这种情况会打一行警告，然后改用系统 `gradle`；系统 `gradle` 也没有时才报错退出。想强制用系统 Gradle：
+如果 `gradlew` 带 CRLF 换行，在 Linux 上就跑不起来（shebang 会带上 `\r`，`sh` 又把行尾 `\r` 当命令）。这种情况会打一行警告，然后改用系统 `gradle`；系统 `gradle` 也没有时才报错退出。想强制用系统 Gradle：
 
 ```bash
 GRADLEX_GRADLE=gradle gradlex run
@@ -89,7 +89,7 @@ GRADLEX_GRADLE=gradle gradlex run
 命令在构建根执行，项目路径用 Gradle 的 `:模块:任务` 形式：
 
 ```
-gradle :runnet-nhssp-service:bootRun
+gradle :app:bootRun
 ```
 
 模块是根项目时直接执行 `gradle bootRun`。
@@ -107,7 +107,7 @@ gradle :runnet-nhssp-service:bootRun
 
 ## 勾选记录
 
-存在 `~/.cache/gradlex/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `build` 上。`--reset` 只清当前目录当前命令这一份。
+勾选记录存在 `~/.cache/gradlex/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `build` 上。`--reset` 只清当前目录当前命令这一份。
 
 ## 退出码
 
@@ -122,7 +122,7 @@ gradle :runnet-nhssp-service:bootRun
 
 - 只在 `--rebuild` 时执行 `clean`。
 - 不修改源码，不删除构建产物，不终止 Gradle 守护进程。
-- wrapper 带 CRLF 或不可执行时报告；CRLF 会警告后改用系统 `gradle`，没有 `gradle` 才退出。
+- wrapper 带 CRLF 或不可执行时会报告；CRLF 会先警告，再改用系统 `gradle`，没有 `gradle` 才报错退出。
 - 勾选记录只写缓存目录（`~/.cache/gradlex`）。
 
 ## 文件结构
@@ -147,7 +147,7 @@ gradlex/
     └── run.sh              临时目录下的回归测试
 ```
 
-界面组件在独立仓库 `bash-tui`，由仓库根下的 `lib/tui-path.sh` 定位，不在上面的目录树里。加载器直接执行也行，等价于 `gradlex`，调试某一步时方便。
+界面组件在独立仓库 `bash-tui`，由仓库根下的 `lib/tui-path.sh` 定位，不在上面的目录树里。加载器也可以直接执行，效果等价于 `gradlex`，调试某一步时比较方便。
 
 安装脚本只把 `bin` 下的文件软链成命令，`lib` 不会出现在 PATH 里。
 
@@ -159,7 +159,7 @@ gradlex/
 命令名 | 说明 | 收集函数 | 目标的名词 | 参与构建参数 | 选择函数
 ```
 
-在 `lib/gradlex/commands/` 下加一个文件写收集函数，函数里遍历 `MODULE_DIRS`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，主菜单也从注册表生成。
+在 `lib/gradlex/commands/` 下加一个文件，在里面写收集函数，函数里遍历 `MODULE_DIRS`、对每个目标调用一次 `emit_record`。文件名随命令名，加载器按通配 source，主菜单也从注册表生成。
 
 记录六列，顺序是：
 
@@ -167,7 +167,7 @@ gradlex/
 标签、工作目录、Gradle 项目路径、任务参数、展示用相对路径、展示用命令
 ```
 
-项目路径单独占一列而不是先拼进参数字符串，是为了执行时能加引号，路径含空格时才不会被拆成两个参数。
+项目路径单独占一列，而不是先拼进参数字符串，是为了执行时能加引号，路径含空格时才不会被拆成两个参数。
 
 ## 测试
 
@@ -175,7 +175,7 @@ gradlex/
 gradlex/test/run.sh
 ```
 
-测试在临时目录构造 Gradle 工程，覆盖 Groovy/Kotlin settings、三种插件位置、`projectDir` 覆盖、纯库过滤、单项目、Gradle 入口选择，以及用假 gradle 验证真正传出的参数。测试不编译、不启动真实项目。
+测试在临时目录构造 Gradle 工程，覆盖 Groovy 与 Kotlin 的 settings 文件、三种插件位置、`projectDir` 覆盖、纯库过滤、单项目、Gradle 入口选择，以及用假 gradle 验证真正传出的参数。测试不编译、不启动真实项目。
 
 ## 已知限制
 
