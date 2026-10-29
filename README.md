@@ -43,18 +43,27 @@ bash-scripts/
 │   └── lib/
 │       ├── cleanx-core.sh        加载器
 │       └── cleanx/               注册表、三类清理项、执行器与界面
-└── claudex/                      系统运维：管理 Claude Code 会话与缓存
+├── claudex/                      系统运维：管理 Claude Code 会话与缓存
+│   ├── README.md
+│   ├── bin/
+│   │   └── claudex
+│   ├── lib/
+│   │   ├── claudex-core.sh       加载器
+│   │   └── claudex/              会话扫描、归档动作、缓存与界面
+│   └── test/
+│       └── run.sh                临时 HOME 下的回归测试
+└── tokx/                         用量统计：三个编码代理的 token 与费用
     ├── README.md
+    ├── config.example.toml       价格与峰谷时段示例
     ├── bin/
-    │   └── claudex
+    │   └── tokx                  Python 入口
     ├── lib/
-    │   ├── claudex-core.sh       加载器
-    │   └── claudex/              会话扫描、归档动作、缓存与界面
+    │   └── tokx/                 配置、价格、三个数据源与报表
     └── test/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`killport`、`cleanx`、`claudex`。工具目录的 `bin/` 放可执行文件，`lib/` 放入口引用的库，不会被软链成命令。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，根下每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`killport`、`cleanx`、`claudex`、`tokx`。`tokx` 用 Python 写成，其余用 bash。工具目录的 `bin/` 放可执行文件，`lib/` 放入口引用的库，不会被软链成命令。加新工具就是新建一个同名目录。
 
 ## 安装
 

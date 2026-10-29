@@ -1,0 +1,26 @@
+# tokx 配置示例，复制到 ~/.config/tokx/config.toml 后按需修改。
+
+# 模型单价，单位是元每百万 token。off 是空闲价，peak 是高峰价。
+[models."deepseek-flash"]
+off  = { hit = 0.02, miss = 1.0, output = 4.0 }
+peak = { hit = 0.04, miss = 2.0, output = 8.0 }
+
+[models."deepseek-v4-pro"]
+off  = { hit = 0.15, miss = 4.5, output = 13.5 }
+peak = { hit = 0.30, miss = 9.0, output = 27.0 }
+
+# 免费模型只统计 token，费用记 0。
+# [models."some-free-model"]
+# free = true
+
+# 别名把带后缀或旧版本的模型名归到计价名称。
+[aliases]
+"deepseek-v4.1-flash" = "deepseek-flash"
+"deepseek-v4-pro-0813" = "deepseek-v4-pro"
+
+[peak]
+timezone = "Asia/Shanghai"
+windows  = ["09:00-12:00", "14:00-18:00"]
+weekdays = [0, 1, 2, 3, 4]
+# 法定节假日全天按空闲价，每年安排不同，需要自己补。
+holidays = []

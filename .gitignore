@@ -8,3 +8,7 @@
 # 安装脚本跑到一半留下的东西
 *.bak
 *.bak.*
+
+# Python 缓存
+__pycache__/
+*.pyc
