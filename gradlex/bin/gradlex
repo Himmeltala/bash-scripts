@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# gradlex 入口，默认执行 run，共用机制在 ../lib/gradlex-core.sh。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+lib="${self%/bin/*}/lib/gradlex-core.sh"
+[[ -f "$lib" ]] || { printf 'gradlex: 找不到 %s\n' "$lib" >&2; exit 1; }
+
+# shellcheck source=../lib/gradlex-core.sh
+source "$lib"
+main "$@"
