@@ -12,7 +12,7 @@ from .config import Config, ConfigError, load
 from .pricing import PriceBook
 from .sources import SOURCE_LABELS, SOURCE_ORDER, SourceError, collect
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 COMMANDS = ("daily", "session", "hour", "prices")
 
 
@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tokx",
         description="统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用，按 DeepSeek 峰谷价计费。",
+        epilog="不带参数运行且连着终端时打开菜单，也可以显式写 tokx menu。",
     )
     parser.add_argument("--version", action="version", version=f"tokx {VERSION}")
     _add_common(parser, suppress=False)

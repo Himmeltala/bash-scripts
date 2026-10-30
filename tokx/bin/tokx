@@ -1,12 +1,30 @@
-#!/usr/bin/env python3
-"""tokx 入口，代码在 ../lib/tokx。"""
+#!/usr/bin/env bash
+# tokx 入口：无参数且连着终端时进交互菜单，其余参数交给 Python。
+set -uo pipefail
 
-import sys
-from pathlib import Path
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+root=${self%/bin/*}
+export PYTHONPATH="$root/lib${PYTHONPATH:+:$PYTHONPATH}"
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+menu=0
+if (($# == 0)); then
+  [[ -t 0 && -t 1 && -t 2 ]] && menu=1
+elif [[ $# -eq 1 && $1 == menu ]]; then
+  menu=1
+fi
 
-from tokx.cli import main
+if ((menu)); then
+  # shellcheck source=../lib/tokx-tui.sh
+  if source "$root/lib/tokx-tui.sh"; then
+    tokx_tui
+    exit $?
+  fi
+  # 显式要菜单却没界面组件是错误；无参数时退回默认日报，不让工具整个不可用。
+  if (($# > 0)); then
+    printf 'tokx: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
+    exit 1
+  fi
+  printf 'tokx: 界面不可用，按默认范围输出日报\n' >&2
+fi
 
-if __name__ == "__main__":
-    sys.exit(main())
+exec "${TOKX_PYTHON:-python3}" -m tokx "$@"

@@ -156,4 +156,17 @@ session_out=$("$bin" session --all) || fail "session 命令失败"
 ok 会话表带来源
 "$bin" hour --all >/dev/null || fail "hour 命令失败"
 ok session 与 hour 命令
+
+# 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，然后退出。
+printf '1\n5\n1 3\n5\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
+grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
+grep -q '^dsh' "$tmp/menu.out" || fail "菜单输出缺少 dsh"
+grep -q '^opencode' "$tmp/menu.out" && fail "菜单没有排除 opencode"
+ok 菜单按来源过滤
+
+# 主菜单回车取消，退出码是 3。
+printf '' | "$bin" menu >/dev/null 2>&1
+[[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
+ok 取消菜单返回 3
+
 printf '\n全部通过\n'

@@ -56,14 +56,15 @@ bash-scripts/
     ├── README.md
     ├── config.example.toml       价格与峰谷时段示例
     ├── bin/
-    │   └── tokx                  Python 入口
+    │   └── tokx                  入口：bash，负责菜单与分发
     ├── lib/
+    │   ├── tokx-tui.sh           交互菜单
     │   └── tokx/                 配置、价格、三个数据源与报表
     └── test/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`killport`、`cleanx`、`claudex`、`tokx`。`tokx` 用 Python 写成，其余用 bash。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`killport`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
 
 ## 安装
 
@@ -157,9 +158,10 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 | `killport` | killport | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，加了 `--force` 才会动 |
 | `cleanx` | cleanx | 清理用户缓存、回收站、系统包缓存与日志、开发缓存，另带大文件与构建产物扫描；默认只预览，加了 `--yes` 才会删除，需要 root 的项用 sudo 逐项确认 |
 | `claudex` | claudex | 管理 Claude Code 会话：列表、继续、归档、恢复归档、永久删除，另清旧快照、孤儿数据与插件缓存；归档与删除默认只预览，运行中的会话受保护 |
+| `tokx` | tokx | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 峰谷价折算费用；不带参数时进菜单选报表、统计范围与来源，报表按天、按会话或按小时汇总 |
 
 各工具的详细用法见对应目录下的 README。
 
 ## 环境要求
 
-需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`cleanx` 与 `claudex` 的界面都在终端里自绘，探不到终端时退回编号输入。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
+需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`cleanx`、`claudex` 与 `tokx` 的界面都在终端里自绘，探不到终端时退回编号输入。`tokx` 的统计部分用 Python 3.11 以上，读 DeepSeek Harness 的会话日志需要 `zstd`。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`killport` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
