@@ -1,20 +1,20 @@
-# killport
+# killx
 
 输入端口，杀掉占用它的进程。系统级端口默认拒绝，必须显式加 `--force` 才会动。
 
 ## 用法
 
 ```
-killport 8080                   杀掉占用 8080 的进程
-killport 8080 8081 8082         一次给多个端口，逐个处理
-killport -n 8080                只列出占用进程，不发信号
-killport -9 8080                直接 SIGKILL，不等进程收尾
-killport -s INT 8080            发指定信号，名字或编号都行
-killport -u 5353                连 UDP 端口一起查
-killport -t 10 8080             信号发出后等 10 秒，默认 5 秒
-killport -y 8080                跳过确认，超时后补发 SIGKILL 也不再追问
-killport --force 3306           受保护端口，确要动就显式放行
-killport --help                 显示帮助
+killx 8080                   杀掉占用 8080 的进程
+killx 8080 8081 8082         一次给多个端口，逐个处理
+killx -n 8080                只列出占用进程，不发信号
+killx -9 8080                直接 SIGKILL，不等进程收尾
+killx -s INT 8080            发指定信号，名字或编号都行
+killx -u 5353                连 UDP 端口一起查
+killx -t 10 8080             信号发出后等 10 秒，默认 5 秒
+killx -y 8080                跳过确认，超时后补发 SIGKILL 也不再追问
+killx --force 3306           受保护端口，确要动就显式放行
+killx --help                 显示帮助
 ```
 
 ## 默认行为

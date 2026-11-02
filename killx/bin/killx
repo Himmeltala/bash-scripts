@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# killport：杀掉占用指定端口的进程，默认查 TCP（-u 连 UDP），特权端口与常见服务端口需 --force。
+# killx：杀掉占用指定端口的进程，默认查 TCP（-u 连 UDP），特权端口与常见服务端口需 --force。
 # 查进程先试 ss 再退回 lsof；非 root 看不到别人 pid 时只报告；ss 过滤条件须整串传参，pid 须排除 1 与本脚本自身。
 
 set -uo pipefail
@@ -29,18 +29,18 @@ TIMEOUT=$DEFAULT_TIMEOUT
 PORTS=()
 
 info() { printf '%s\n' "$*"; }
-warn() { printf 'killport: %s\n' "$*" >&2; }
+warn() { printf 'killx: %s\n' "$*" >&2; }
 die() {
-  printf 'killport: %s\n' "$*" >&2
+  printf 'killx: %s\n' "$*" >&2
   exit "${2:-1}"
 }
 
 # 用法错误按惯例退 2，与「找到了进程但没处理成」的 1 分开。
-usage_error() { die "$*；见 killport --help" 2; }
+usage_error() { die "$*；见 killx --help" 2; }
 
 usage() {
   cat <<'EOF'
-用法: killport [选项] <端口>...
+用法: killx [选项] <端口>...
 
 杀掉占用指定端口的进程。一次可以给多个端口。
 
