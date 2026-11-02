@@ -43,128 +43,38 @@ port_row_secondary() {
   fi
 }
 
-port_row_desc() {
-  local key=$1
-  printf '%s/%s  %s\n' "${LP_PORT[$key]}" "${LP_PROTO[$key]}" "$(port_row_secondary "$key")"
-}
-
 ui_port_list() {
-  local choice
+  local choice key desc udp_state
+  local -a args=()
+
   while :; do
-    if ui_available; then
-      choice=$(ui_port_list_view) || return 0
-    else
-      choice=$(ui_port_list_fallback) || return 0
+    scan_all_ports
+    if ((UDP)); then udp_state='开'; else udp_state='关'; fi
+    args=()
+    for key in "${LP_SORTED[@]}"; do
+      desc="$(port_row_secondary "$key")"
+      if ui_available; then
+        args+=("p:$key" "${LP_PORT[$key]}/${LP_PROTO[$key]}" "$desc")
+      else
+        # 无终端时编号菜单不显示标签，把标签并入主文本以保留旧的可见输出。
+        args+=("p:$key" "p:$key  ${LP_PORT[$key]}/${LP_PROTO[$key]}" "$desc")
+      fi
+    done
+
+    if ((${#args[@]} == 0)); then
+      info '没有监听端口'
+      return 0
     fi
 
-    case $choice in
-      udp) UDP=$((1 - UDP)) ;;
-      back | '') return 0 ;;
+    choice=$(ui_browse 'portx / 端口列表' "UDP：$udp_state" \
+      --hotkey u udp --hotkey r refresh -- "${args[@]}") || return 0
+
+    case "$choice" in
+      '@hotkey:udp') UDP=$((1 - UDP)) ;;
+      '@hotkey:refresh') ;;
       p:*) ui_port_actions "${choice#p:}" ;;
     esac
   done
-}
-
-ui_port_list_fallback() {
-  local key
-  local -a args=()
-  scan_all_ports
-  if ((${#LP_SORTED[@]} == 0)); then
-    printf '没有监听端口\n' >&2
-    return 1
-  fi
-  for key in "${LP_SORTED[@]}"; do
-    args+=("p:$key" "$(port_row_desc "$key")")
-  done
-  ui_menu 'portx / 端口列表' '选择端口' "${args[@]}"
-}
-
-ui_port_list_view() {
-  local -a keys=() primaries=() secondaries=()
-  local cursor=0 offset=0 n=0 listh=0 row=0 need_load=1 action='' udp_state key
-
-  tui_begin
-  while :; do
-    if ((need_load)); then
-      scan_all_ports
-      keys=("${LP_SORTED[@]}")
-      primaries=()
-      secondaries=()
-      for key in "${keys[@]}"; do
-        primaries+=("${LP_PORT[$key]}/${LP_PROTO[$key]}")
-        secondaries+=("$(port_row_secondary "$key")")
-      done
-      n=${#keys[@]}
-      need_load=0
-    fi
-
-    tui_size
-    listh=$((_TUI_LINES - _TUI_CHROME_LINES))
-    ((listh > n)) && listh=$n
-    ((listh < 1)) && listh=1
-    if ((n > 0)); then
-      _tui_clamp_window "$cursor" "$offset" "$listh" "$n"
-      cursor=$_TUI_CURSOR
-      offset=$_TUI_OFFSET
-    else
-      cursor=0
-      offset=0
-    fi
-
-    if ((UDP)); then udp_state='开'; else udp_state='关'; fi
-
-    tui_frame_begin
-    tui_clear
-    tui_title 'portx / 端口列表'
-    tui_subtitle "UDP：$udp_state"
-    tui_hint '↑↓' '选择' '回车' '操作' 'u' 'UDP' 'r' '刷新' 'q' '返回'
-    tui_rule
-    if ((n == 0)); then
-      printf '   没有监听端口%s\n' "$_TUI_CLEAR_LINE" >&2
-    else
-      for ((row = offset; row < offset + listh && row < n; row++)); do
-        tui_row "$((row == cursor))" '' "${primaries[$row]}" "${secondaries[$row]}"
-      done
-    fi
-    tui_rule
-    if ((n == 0)); then
-      tui_status '0/0' 'q 返回'
-    else
-      tui_status "$((offset + 1))-$((offset + listh))/$n" 'q 返回'
-    fi
-    tui_frame_end
-
-    if ! _tui_read_key; then
-      action='back'
-      break
-    fi
-    case "$_TUI_KEY" in
-      ENTER)
-        if ((n > 0)); then
-          action="p:${keys[$cursor]}"
-          break
-        fi
-        ;;
-      u | U)
-        action='udp'
-        break
-        ;;
-      r | R) need_load=1 ;;
-      q | Q | ESC | LEFT)
-        action='back'
-        break
-        ;;
-      UP) ((cursor > 0)) && cursor=$((cursor - 1)) ;;
-      DOWN) ((cursor < n - 1)) && cursor=$((cursor + 1)) ;;
-      '[') ((cursor >= listh)) && cursor=$((cursor - listh)) || cursor=0 ;;
-      ']')
-        cursor=$((cursor + listh))
-        ((cursor >= n)) && cursor=$((n - 1))
-        ;;
-    esac
-  done
-  tui_end
-  printf '%s\n' "$action"
 }
 
 ui_port_actions() {
@@ -191,9 +101,7 @@ ui_port_actions() {
 }
 
 ui_pause() {
-  [[ -t 0 ]] || return 0
-  printf '按回车返回' >&2
-  read -r _ || true
+  ui_wait_key '按回车返回' >/dev/null || true
 }
 
 ui_kill_port() {
@@ -248,88 +156,35 @@ ui_detail_loop() {
         ;;
       dir) ui_enter_dir "$port" ;;
       udp) UDP=$((1 - UDP)) ;;
+      refresh) ;;
       back | '') return 0 ;;
     esac
   done
 }
 
 ui_detail_view() {
-  local port=$1
-  local -a lines=()
-  local cursor=0 offset=0 n=0 listh=0 row=0 need_load=1 action='' udp_state
+  local port=$1 action udp_state
+  if ((UDP)); then udp_state='开'; else udp_state='关'; fi
+  ui_detail_lines "$port"
 
   if ! ui_available; then
-    ui_detail_lines "$port"
-    printf '%s\n' "${INFO_LINES[@]}" >&2
+    # 调用方会捕获 stdout，回退模式把内容写到 stderr 以保持旧的可见输出。
+    ui_pager_lines "portx / 端口 $port" "UDP：$udp_state" \
+      --hotkey k kill --hotkey p dir --hotkey u udp --hotkey r refresh \
+      -- "${INFO_LINES[@]}" >&2
     printf 'back\n'
     return 0
   fi
 
-  tui_begin
-  while :; do
-    if ((need_load)); then
-      ui_detail_lines "$port"
-      lines=("${INFO_LINES[@]}")
-      n=${#lines[@]}
-      ((n < 1)) && n=1
-      need_load=0
-    fi
+  action=$(ui_pager_lines "portx / 端口 $port" "UDP：$udp_state" \
+    --hotkey k kill --hotkey p dir --hotkey u udp --hotkey r refresh \
+    -- "${INFO_LINES[@]}") || return 0
 
-    tui_size
-    listh=$((_TUI_LINES - _TUI_CHROME_LINES))
-    ((listh > n)) && listh=$n
-    ((listh < 1)) && listh=1
-    _tui_clamp_window "$cursor" "$offset" "$listh" "$n"
-    cursor=$_TUI_CURSOR
-    offset=$_TUI_OFFSET
-
-    if ((UDP)); then udp_state='开'; else udp_state='关'; fi
-
-    tui_frame_begin
-    tui_clear
-    tui_title "portx / 端口 $port"
-    tui_subtitle "UDP：$udp_state"
-    tui_hint '↑↓' '滚动' 'k' '结束' 'p' '目录' 'u' 'UDP' 'r' '刷新' 'q' '返回'
-    tui_rule
-    for ((row = offset; row < offset + listh && row < n; row++)); do
-      _tui_clip_to "${lines[$row]}" "$((_TUI_COLS - 2))"
-      printf ' %s%s\n' "$_TUI_TEXT" "$_TUI_CLEAR_LINE" >&2
-    done
-    tui_rule
-    tui_status "$((offset + 1))-$((offset + listh))/$n" 'q 返回'
-    tui_frame_end
-
-    if ! _tui_read_key; then
-      action='back'
-      break
-    fi
-    case "$_TUI_KEY" in
-      k | K)
-        action='kill'
-        break
-        ;;
-      p | P)
-        action='dir'
-        break
-        ;;
-      u | U)
-        action='udp'
-        break
-        ;;
-      r | R) need_load=1 ;;
-      q | Q | ESC | LEFT)
-        action='back'
-        break
-        ;;
-      UP) ((cursor > 0)) && cursor=$((cursor - 1)) ;;
-      DOWN) ((cursor < n - 1)) && cursor=$((cursor + 1)) ;;
-      '[') ((cursor >= listh)) && cursor=$((cursor - listh)) || cursor=0 ;;
-      ']')
-        cursor=$((cursor + listh))
-        ((cursor >= n)) && cursor=$((n - 1))
-        ;;
-    esac
-  done
-  tui_end
-  printf '%s\n' "$action"
+  case "$action" in
+    '@hotkey:kill') printf 'kill\n' ;;
+    '@hotkey:dir') printf 'dir\n' ;;
+    '@hotkey:udp') printf 'udp\n' ;;
+    '@hotkey:refresh') printf 'refresh\n' ;;
+    *) printf 'back\n' ;;
+  esac
 }

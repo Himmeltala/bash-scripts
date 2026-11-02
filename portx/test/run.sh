@@ -214,6 +214,12 @@ else
   fi
 fi
 
+if grep -q '_TUI_' "$repo/portx/lib/portx/ui.sh"; then
+  bad 'portx 仍引用 _TUI_ 私有状态'
+else
+  ok 'portx 不再引用 _TUI_ 私有状态'
+fi
+
 if ((fail)); then
   exit 1
 fi
