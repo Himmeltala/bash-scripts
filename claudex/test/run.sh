@@ -160,4 +160,10 @@ ok '历史与守护日志'
 
 kill "$active_pid" 2>/dev/null || true
 wait "$active_pid" 2>/dev/null || true
+
+if grep -q 'ui_textbox' "$repo/claudex/lib/claudex/ui.sh"; then
+  fail 'claudex 仍使用 ui_textbox'
+fi
+ok 'claudex 使用统一分页接口'
+
 printf '全部通过，测试目录：%s\n' "$tmp"

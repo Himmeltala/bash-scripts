@@ -36,7 +36,7 @@ ui_session_detail() {
     printf '文件历史：%s\n' "${S_HIST[$idx]:-无}"
     printf '会话环境：%s\n' "${S_ENV[$idx]:-无}"
   } >"$out"
-  ui_textbox '会话详情' "$out"
+  ui_pager '会话详情' '↑↓ 滚动，q 返回' -- "$out"
   rm -f -- "$out"
 }
 
