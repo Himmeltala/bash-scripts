@@ -9,7 +9,7 @@ show_output() {
     tmp=$(mktemp) || die '建不了临时文件'
     "$@" > "$tmp" 2>&1
     rc=$?
-    ui_textbox "$title" "$tmp"
+    ui_pager "$title" '↑↓ 滚动，q 返回' -- "$tmp"
     rm -f "$tmp"
     return "$rc"
   fi
