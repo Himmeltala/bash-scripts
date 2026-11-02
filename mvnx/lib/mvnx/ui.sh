@@ -86,34 +86,6 @@ assign_tags() {
   return 0
 }
 
-# 没有终端时沿用原来的两行记录展示，保持输出与改造前一致。
-mvnx_plain_checklist() {
-  local noun=$1
-  shift
-  local -a recs=("$@")
-  local rec tag workdir plpath mvnargs display cmdtext i n
-  printf '%d 个%s:\n\n' "${#recs[@]}" "$noun" >&2
-  for i in "${!recs[@]}"; do
-    IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "${recs[$i]}"
-    printf '  %2d) %s\n      %s\n' "$((i + 1))" "$tag" "$display" >&2
-  done
-  printf '\n编号，空格分隔: ' >&2
-
-  local answer=''
-  read -r answer || return "$TUI_CANCEL"
-  [[ -n "$answer" ]] || return "$TUI_EMPTY"
-
-  local -a picked=()
-  for n in $answer; do
-    [[ "$n" =~ ^[0-9]+$ ]] || continue
-    ((n >= 1 && n <= ${#recs[@]})) || continue
-    picked+=("${recs[$((n - 1))]}")
-  done
-  ((${#picked[@]})) || return "$TUI_EMPTY"
-  printf '%s\n' "${picked[@]}"
-  return "$TUI_OK"
-}
-
 # 复选：把六列记录映射成通用层的「标签、说明、状态」三元组，再把选中标签映射回记录。
 mvnx_ui_checklist() {
   local noun=$1
@@ -123,14 +95,9 @@ mvnx_ui_checklist() {
   local -a picked=()
   local rec tag workdir plpath mvnargs display cmdtext out rc=0 p
 
-  if ! ui_available; then
-    mvnx_plain_checklist "$noun" "${recs[@]}"
-    return $?
-  fi
-
   for rec in "${recs[@]}"; do
     IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-    items+=("$tag" "$display" OFF)
+    items+=("$tag" "${display}"$'\t'"${cmdtext}" OFF)
   done
 
   TUI_PRESELECT=''
@@ -160,14 +127,9 @@ mvnx_ui_checklist_all() {
   local -a picked=()
   local rec tag workdir plpath mvnargs display cmdtext out rc=0 p
 
-  if ! ui_available; then
-    mvnx_plain_checklist "$noun" "${recs[@]}"
-    return $?
-  fi
-
   for rec in "${recs[@]}"; do
     IFS=$FS read -r tag workdir plpath mvnargs display cmdtext <<< "$rec"
-    items+=("$tag" "$display" OFF)
+    items+=("$tag" "${display}"$'\t'"${cmdtext}" OFF)
   done
 
   TUI_PRESELECT=''
