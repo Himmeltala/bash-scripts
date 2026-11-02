@@ -214,6 +214,22 @@ else
   fi
 fi
 
+# 空列表提示必须走 stderr，stdout 只留给结果。
+stdout=$(bash -c 'source "$1"; scan_all_ports() { LP_SORTED=(); }; ui_port_list' _ "$repo/portx/lib/portx-core.sh" 2>"$tmp/err")
+if [[ -z $stdout ]] && grep -Fq '没有监听端口' "$tmp/err"; then
+  ok '端口列表空提示写 stderr'
+else
+  bad '端口列表空提示应写 stderr'
+fi
+
+# 非 TTY 的 ui_pause 不应消费 stdin，否则管道里的后续菜单按键会丢失。
+got=$(printf 'q\n' | bash -c 'source "$1"; UI_MODE=0; ui_pause; IFS= read -r x; printf "%s" "$x"' _ "$repo/portx/lib/portx-core.sh" 2>/dev/null)
+if [[ "$got" == q ]]; then
+  ok '非 TTY 的 ui_pause 不消费输入'
+else
+  bad '非 TTY 的 ui_pause 消费了输入'
+fi
+
 if grep -q '_TUI_' "$repo/portx/lib/portx/ui.sh"; then
   bad 'portx 仍引用 _TUI_ 私有状态'
 else

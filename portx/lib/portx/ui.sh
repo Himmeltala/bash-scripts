@@ -62,12 +62,12 @@ ui_port_list() {
     done
 
     if ((${#args[@]} == 0)); then
-      info '没有监听端口'
+      printf '没有监听端口\n' >&2
       return 0
     fi
 
     choice=$(ui_browse 'portx / 端口列表' "UDP：$udp_state" \
-      --hotkey u udp --hotkey r refresh -- "${args[@]}") || return 0
+      --hotkey u udp UDP --hotkey r refresh 刷新 -- "${args[@]}") || return 0
 
     case "$choice" in
       '@hotkey:udp') UDP=$((1 - UDP)) ;;
@@ -101,6 +101,7 @@ ui_port_actions() {
 }
 
 ui_pause() {
+  ((UI_MODE)) || return 0
   ui_wait_key '按回车返回' >/dev/null || true
 }
 
@@ -170,14 +171,16 @@ ui_detail_view() {
   if ! ui_available; then
     # 调用方会捕获 stdout，回退模式把内容写到 stderr 以保持旧的可见输出。
     ui_pager_lines "portx / 端口 $port" "UDP：$udp_state" \
-      --hotkey k kill --hotkey p dir --hotkey u udp --hotkey r refresh \
+      --hotkey k kill 结束 --hotkey p dir 目录 \
+      --hotkey u udp UDP --hotkey r refresh 刷新 \
       -- "${INFO_LINES[@]}" >&2
     printf 'back\n'
     return 0
   fi
 
   action=$(ui_pager_lines "portx / 端口 $port" "UDP：$udp_state" \
-    --hotkey k kill --hotkey p dir --hotkey u udp --hotkey r refresh \
+    --hotkey k kill 结束 --hotkey p dir 目录 \
+    --hotkey u udp UDP --hotkey r refresh 刷新 \
     -- "${INFO_LINES[@]}") || return 0
 
   case "$action" in
