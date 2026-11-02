@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# portx 入口，核心在 ../lib/portx-core.sh。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+lib="${self%/bin/*}/lib/portx-core.sh"
+[[ -f "$lib" ]] || { printf 'portx: 找不到 %s\n' "$lib" >&2; exit 1; }
+
+# shellcheck source=../lib/portx-core.sh
+source "$lib"
+main "$@"

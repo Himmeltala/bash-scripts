@@ -32,10 +32,15 @@ bash-scripts/
 │   └── lib/
 │       ├── zipx-core.sh          加载器
 │       └── zipx/                 按职责拆的模块
-├── killx/                        系统运维：按端口结束进程
+├── portx/                        系统运维：按端口查询应用，-k 结束进程
 │   ├── README.md
-│   └── bin/
-│       └── killx
+│   ├── bin/
+│   │   └── portx
+│   ├── lib/
+│   │   ├── portx-core.sh         加载器
+│   │   └── portx/                端口扫描、命令行与终端菜单
+│   └── test/
+│       └── run.sh                临时监听进程下的回归测试
 ├── cleanx/                       系统运维：清理缓存、日志与开发垃圾
 │   ├── README.md
 │   ├── bin/
@@ -64,7 +69,7 @@ bash-scripts/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`killx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
 
 ## 安装
 
@@ -155,7 +160,7 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 | `mvnx` | mvnx | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数时先选命令再选目标，启动方式有自动判定、强制编译、跳过编译、先 clean 四种 |
 | `gradlex` | gradlex | 递归发现 Gradle 构建与可运行模块，勾选后执行 `bootRun` 或 `run`，或者 `bootJar` 或 `assemble`；支持 `--rebuild` 与 `--refresh`，自动选 wrapper 或系统 Gradle |
 | `zipx` | zipx | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
-| `killx` | killx | 输入端口，杀掉占用它的进程；先 SIGTERM 再按需补 SIGKILL，系统级端口默认拒绝，加了 `--force` 才会动 |
+| `portx` | portx | 按端口查询占用它的应用与进程，或浏览当前监听端口；默认只读，加 `-k` 才结束进程，系统级端口需 `--force`；不带参数进入终端菜单 |
 | `cleanx` | cleanx | 清理用户缓存、回收站、系统包缓存与日志、开发缓存，另带大文件与构建产物扫描；默认只预览，加了 `--yes` 才会删除，需要 root 的项用 sudo 逐项确认 |
 | `claudex` | claudex | 管理 Claude Code 会话：列表、继续、归档、恢复归档、永久删除，另清旧快照、孤儿数据与插件缓存；归档与删除默认只预览，运行中的会话受保护 |
 | `tokx` | tokx | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 峰谷价折算费用；不带参数时进菜单选报表、统计范围与来源，报表按天、按会话或按小时汇总 |
@@ -164,4 +169,4 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ## 环境要求
 
-需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`cleanx`、`claudex` 与 `tokx` 的界面都在终端里自绘，探不到终端时退回编号输入。`tokx` 的统计部分用 Python 3.11 以上，读 DeepSeek Harness 的会话日志需要 `zstd`。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`killx` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
+需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex` 与 `tokx` 的界面都在终端里自绘，探不到终端时退回编号输入。`tokx` 的统计部分用 Python 3.11 以上，读 DeepSeek Harness 的会话日志需要 `zstd`。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`portx` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
