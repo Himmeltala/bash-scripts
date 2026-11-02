@@ -22,10 +22,6 @@ claudex cache --days 30 --yes        按 30 天阈值清默认项
 claudex --help                       显示帮助
 ```
 
-会话 id 支持唯一前缀，至少 4 位。前缀匹配到多个时会列出候选并退出。
-
-在界面里用上下方向键移动，用空格勾选，用回车确认，用 `q` 取消，用 `[` `]` 翻页。会话列表每页最多 15 行，底部显示当前页的范围。
-
 ## 会话数据
 
 一个会话由四块数据组成，共用同一个 session id：
@@ -61,12 +57,12 @@ claudex --help                       显示帮助
 
 ## 缓存清理
 
-| 编号 | 内容 | 默认 |
-| --- | --- | --- |
-| `cache.snapshots` | `shell-snapshots/snapshot-bash-*` 与 `paste-cache/*` 中超过 N 天的文件 | 勾选 |
-| `cache.orphans` | 找不到对应正文的 `file-history`、`session-env` 与会话目录 | 勾选 |
-| `cache.plugins` | 清空 `plugins/cache`，插件可能重新下载 | 不勾选 |
-| `cache.history` | 删除 `history.jsonl`，把 `daemon.log` 清空 | 不勾选 |
+| 编号                | 内容                                                                       | 默认   |
+| ------------------- | -------------------------------------------------------------------------- | ------ |
+| `cache.snapshots` | `shell-snapshots/snapshot-bash-*` 与 `paste-cache/*` 中超过 N 天的文件 | 勾选   |
+| `cache.orphans`   | 找不到对应正文的 `file-history`、`session-env` 与会话目录              | 勾选   |
+| `cache.plugins`   | 清空 `plugins/cache`，插件可能重新下载                                   | 不勾选 |
+| `cache.history`   | 删除 `history.jsonl`，把 `daemon.log` 清空                             | 不勾选 |
 
 天数阈值默认 7 天，用 `--days` 改。孤儿判定以现有 jsonl 的 id 为准，`projects/*/memory` 永远跳过，运行中的会话也跳过。插件缓存只清 `cache` 子目录，不碰 `installed_plugins.json`、`marketplaces` 与 `data`。`daemon.log` 用 `truncate -s 0`，不删文件。
 
@@ -81,26 +77,9 @@ claudex --help                       显示帮助
 
 ## 退出码
 
-| 码 | 含义 |
-| --- | --- |
-| 0 | 成功，或预览完成 |
-| 1 | 至少有一项没完成 |
-| 2 | 用法错误，包括 id 前缀歧义 |
-| 3 | 用户取消 |
-
-## 已知限制
-
-- 只支持 Linux，依赖 GNU coreutils 的 `stat`、`du`、`find`、`truncate`。
-- 标题从 `ai-title` 记录按文本提取，标题含转义字符时可能原样显示；没有标题时显示会话 id 前 8 位。
-- 不管理后台任务、daemon 状态与插件安装记录。
-- 恢复归档时若原项目已改名，会按 `meta` 里的目录名重建，`cwd` 是否仍有效由用户判断。
-- `claude` 命令必须在 PATH 里，才能继续会话。
-
-## 验证
-
-```bash
-bash -n claudex/bin/claudex claudex/lib/claudex-core.sh claudex/lib/claudex/*.sh
-bash claudex/test/run.sh
-```
-
-测试在临时 HOME 与临时归档目录里造假的 `~/.claude` 树，覆盖列表、预览、归档、恢复、删除、运行中保护与四类缓存清理，不会动真实数据。
+| 码 | 含义                       |
+| -- | -------------------------- |
+| 0  | 成功，或预览完成           |
+| 1  | 至少有一项没完成           |
+| 2  | 用法错误，包括 id 前缀歧义 |
+| 3  | 用户取消                   |

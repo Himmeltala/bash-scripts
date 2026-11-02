@@ -31,25 +31,25 @@ cleanx --help                  显示帮助
 
 ## 清理项
 
-| 编号 | 类别 | 说明 | 默认 |
-| --- | --- | --- | --- |
-| `user.thumbnails` | user | `~/.cache/thumbnails`，缩略图缓存 | 勾选 |
-| `user.fontconfig` | user | `~/.cache/fontconfig`，字体索引缓存 | 勾选 |
-| `user.browser` | user | Firefox 与 Chrome 系网页缓存，建议先关浏览器 | 不勾选 |
-| `user.trash` | user | 清空回收站，文件与 `.trashinfo` 一并删除 | 勾选 |
-| `sys.apt` | system | `apt-get clean`，清 `/var/cache/apt/archives` | 勾选 |
-| `sys.journal` | system | `journalctl --vacuum-time=14d`，保留 14 天 | 勾选 |
-| `sys.tmp` | system | `systemd-tmpfiles --clean`，按发行版规则清 `/tmp` | 不勾选 |
-| `dev.maven` | dev | `~/.m2/repository` | 勾选 |
-| `dev.gradle` | dev | `~/.gradle/caches` | 勾选 |
-| `dev.npm` | dev | `~/.npm/_cacache` | 勾选 |
-| `dev.yarn` | dev | `~/.cache/yarn` | 勾选 |
-| `dev.pnpm` | dev | `~/.local/share/pnpm/store` | 勾选 |
-| `dev.pip` | dev | `~/.cache/pip` | 勾选 |
-| `dev.go` | dev | `~/.cache/go-build` 与 `~/go/pkg/mod` | 勾选 |
-| `dev.cargo` | dev | `~/.cargo/registry` 下的下载缓存与解包源码 | 勾选 |
-| `dev.ide` | dev | JetBrains 与 VS Code 的缓存，建议先关 IDE | 不勾选 |
-| `dev.docker` | dev | 悬空镜像与构建缓存，需要 docker 与 sudo | 勾选 |
+| 编号                | 类别   | 说明                                                  | 默认   |
+| ------------------- | ------ | ----------------------------------------------------- | ------ |
+| `user.thumbnails` | user   | `~/.cache/thumbnails`，缩略图缓存                   | 勾选   |
+| `user.fontconfig` | user   | `~/.cache/fontconfig`，字体索引缓存                 | 勾选   |
+| `user.browser`    | user   | Firefox 与 Chrome 系网页缓存，建议先关浏览器          | 不勾选 |
+| `user.trash`      | user   | 清空回收站，文件与 `.trashinfo` 一并删除            | 勾选   |
+| `sys.apt`         | system | `apt-get clean`，清 `/var/cache/apt/archives`     | 勾选   |
+| `sys.journal`     | system | `journalctl --vacuum-time=14d`，保留 14 天          | 勾选   |
+| `sys.tmp`         | system | `systemd-tmpfiles --clean`，按发行版规则清 `/tmp` | 不勾选 |
+| `dev.maven`       | dev    | `~/.m2/repository`                                  | 勾选   |
+| `dev.gradle`      | dev    | `~/.gradle/caches`                                  | 勾选   |
+| `dev.npm`         | dev    | `~/.npm/_cacache`                                   | 勾选   |
+| `dev.yarn`        | dev    | `~/.cache/yarn`                                     | 勾选   |
+| `dev.pnpm`        | dev    | `~/.local/share/pnpm/store`                         | 勾选   |
+| `dev.pip`         | dev    | `~/.cache/pip`                                      | 勾选   |
+| `dev.go`          | dev    | `~/.cache/go-build` 与 `~/go/pkg/mod`             | 勾选   |
+| `dev.cargo`       | dev    | `~/.cargo/registry` 下的下载缓存与解包源码          | 勾选   |
+| `dev.ide`         | dev    | JetBrains 与 VS Code 的缓存，建议先关 IDE             | 不勾选 |
+| `dev.docker`      | dev    | 悬空镜像与构建缓存，需要 docker 与 sudo               | 勾选   |
 
 路径不存在的项不会出现在菜单与默认清单里，`cleanx list` 里会标为「不适用」。
 
@@ -71,25 +71,9 @@ cleanx --help                  显示帮助
 
 ## 退出码
 
-| 码 | 含义 |
-| --- | --- |
-| 0 | 成功，或预览完成 |
-| 1 | 至少有一项没完成：路径校验拒绝、删除失败、sudo 不可用 |
-| 2 | 用法错误 |
-| 3 | 用户取消 |
-
-## 已知限制
-
-- 只支持 Linux，大小的统计依赖 GNU `du -sb` 与 GNU `find -printf`。
-- 路径类清理项只清理家目录以内的路径；`~/.cache` 如果是指向家目录外的符号链接，会被安全校验拒绝。
-- `/var/log` 下的普通文件、发行版包管理器以外的缓存不在范围内。
-- `apt autoremove` 会卸载软件包，不属于清理范围，本工具不执行。
-- 系统日志固定保留 14 天，没有提供参数。
-- 没有配置文件。新增清理项要在 `lib/cleanx/items-*.sh` 里注册，这样做是为了让所有可删路径都经过同一套安全校验。
-
-## 实现说明
-
-- 清理项是注册表里的数据：编号、类别、标题、说明、类型、路径或函数、测量函数、是否需要 root、默认是否勾选。执行器只管测量、确认、校验、执行与统计，不认具体工具。
-- `path` 类型按 `du -sb` 测量；`func` 类型用专用测量函数，测不到时显示「大小未知」，不影响执行。执行完成后再测一次，用前后差值统计释放量。
-- 界面能不能用，必须在命令替换之外判断一次并写进 `UI_MODE`。界面函数的输出走标准输出，被 `$(...)` 接走；在替换里判断终端会把界面一直退化成编号输入。
-- 预览与真正执行走同一个执行出口 `run_cmd`，预览只打印命令、返回成功，所以清理函数不需要自己判断模式。
+| 码 | 含义                                                  |
+| -- | ----------------------------------------------------- |
+| 0  | 成功，或预览完成                                      |
+| 1  | 至少有一项没完成：路径校验拒绝、删除失败、sudo 不可用 |
+| 2  | 用法错误                                              |
+| 3  | 用户取消                                              |

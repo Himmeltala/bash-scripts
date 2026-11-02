@@ -2,13 +2,6 @@
 
 统计本机三个编码代理的 token 用量，并按 DeepSeek 官方单价折算成人民币费用：Claude Code、opencode、DeepSeek Harness。
 
-## 能回答的问题
-
-- 最近 14 天、指定日期区间各用了多少 token，三个工具各占多少。
-- 每条请求落在高峰还是空闲时段，两个时段分别花了多少钱。
-- 哪个会话最贵，一天里哪个小时用量最大。
-- 换价格或换模型时，改配置文件即可，不用改代码。
-
 ## 用法
 
 ```
@@ -81,19 +74,19 @@ printf '1\n5\n1 3\n5\n' | tokx menu    按日汇总、全部历史、只勾 clau
 
 计费口径：
 
-| 项目 | 单价 |
-| --- | --- |
-| 输入（缓存未命中） | miss 价 |
-| 输入（缓存命中） | hit 价 |
-| 缓存写入 | 按 miss 价，DeepSeek 不单独收写入费 |
-| 输出 | output 价，含思考 token |
+| 项目               | 单价                                |
+| ------------------ | ----------------------------------- |
+| 输入（缓存未命中） | miss 价                             |
+| 输入（缓存命中）   | hit 价                              |
+| 缓存写入           | 按 miss 价，DeepSeek 不单独收写入费 |
+| 输出               | output 价，含思考 token             |
 
 默认单价来自 2026 年 10 月的 DeepSeek 官方价，单位是元每百万 token：
 
-| 模型 | 空闲·命中 | 空闲·未命中 | 空闲·输出 | 高峰·命中 | 高峰·未命中 | 高峰·输出 |
-| --- | --- | --- | --- | --- | --- | --- |
-| deepseek-flash | 0.02 | 1 | 4 | 0.04 | 2 | 8 |
-| deepseek-v4-pro | 0.15 | 4.5 | 13.5 | 0.3 | 9 | 27 |
+| 模型            | 空闲·命中 | 空闲·未命中 | 空闲·输出 | 高峰·命中 | 高峰·未命中 | 高峰·输出 |
+| --------------- | ---------- | ------------ | ---------- | ---------- | ------------ | ---------- |
+| deepseek-flash  | 0.02       | 1            | 4          | 0.04       | 2            | 8          |
+| deepseek-v4-pro | 0.15       | 4.5          | 13.5       | 0.3        | 9            | 27         |
 
 另外几条：
 
@@ -105,10 +98,10 @@ printf '1\n5\n1 3\n5\n' | tokx menu    按日汇总、全部历史、只勾 clau
 
 ## 数据来源
 
-| 来源 | 位置 | 说明 |
-| --- | --- | --- |
-| Claude Code | `~/.claude/projects/**/*.jsonl` | 一条回复按内容块写成多行，按 `message.id` 合并，取 token 数最大的那一行 |
-| opencode | `~/.local/share/opencode/opencode.db` | 读 `message` 表，旧版本回退到 `storage/message` 下的 JSON |
+| 来源             | 位置                                          | 说明                                                                               |
+| ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Claude Code      | `~/.claude/projects/**/*.jsonl`             | 一条回复按内容块写成多行，按 `message.id` 合并，取 token 数最大的那一行          |
+| opencode         | `~/.local/share/opencode/opencode.db`       | 读 `message` 表，旧版本回退到 `storage/message` 下的 JSON                      |
 | DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd` | 需要 `zstd` 命令，模型从 `request/header` 事件取，同一步骤重试只留最后一次结算 |
 
 三个位置都可以用环境变量覆盖：`TOKX_CLAUDE_DIR`、`TOKX_OPENCODE_DIR`、`TOKX_DSH_SESSIONS`。
@@ -119,14 +112,6 @@ printf '1\n5\n1 3\n5\n' | tokx menu    按日汇总、全部历史、只勾 clau
 - 网页搜索与抓取按成功次数计费，每千次 5 元，和 token 无关，未计入。
 - Claude Code 的子代理会话写在独立的 jsonl 里，会单独计数，不会并进父会话。
 - opencode 的 `tokens.total` 把思考 token 又加了一遍，tokx 不使用该字段，直接按 input、output、cache 拆分。
-
-## 与 ccusage 的差异
-
-Claude Code 把一条回复按内容块写成多行，每一行都带着同一份 usage。按行累加的工具会把同一份 usage 重复计入，数字自然偏大；`ccusage` 20.0.26 就是这么算的，结果大约是 tokx 的两倍。
-
-举个例子：一条回复的 usage 是输入 100、输出 20，Claude Code 把它写成 2 行，每行都记着这组数。按行累加得到输入 200、输出 40；tokx 按 `message.id` 只算一次，仍然是输入 100、输出 20。
-
-两个工具的数字对不上时，先查这一点。
 
 ## 配置
 
@@ -163,11 +148,3 @@ PYTHONPATH=tokx/lib python3 -m tokx --all
 ```
 
 依赖：Python 3.11 或更高版本（用到 `tomllib`），读 DeepSeek Harness 时需要 `zstd` 命令，其余都是标准库。菜单依赖 `bash-tui` 与 bash 4.2 以上，由仓库根下的 `lib/tui-path.sh` 定位。
-
-## 测试
-
-```
-bash tokx/test/run.sh
-```
-
-测试在临时 HOME 里造三个来源的假数据，覆盖去重、峰谷定价、节假日、来源过滤、日期过滤、JSON 输出，以及菜单的编号回退与来源勾选。
