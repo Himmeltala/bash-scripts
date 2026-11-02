@@ -23,10 +23,9 @@ _tokx_report() {
 # 报表看完停一下，回车回菜单；非终端下不停，便于管道驱动。
 _tokx_pause() {
   ((UI_MODE)) || return 0
-  printf '\n回车回到菜单，输入 q 退出：' >&2
   local key=''
-  IFS= read -r key || return 0
-  [[ $key == q || $key == Q ]] && return 1
+  key=$(ui_wait_key '回车回到菜单，输入 q 退出') || return 0
+  [[ "$key" == q || "$key" == Q ]] && return 1
   return 0
 }
 
