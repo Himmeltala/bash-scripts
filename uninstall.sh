@@ -66,7 +66,7 @@ remove_install_dir() {
   fi
 }
 
-# 清 .bashrc 里本项目的 PATH 设置：只认标记行，标记行后一行一并删，不会误删用户手写设置。
+# 清 .bashrc 的 PATH 设置，连同标记行前旧版遗留的空行。install.sh 有同样一份。
 remove_path_setting() {
   if [[ ! -f "$RC_FILE" ]]; then
     info "  $RC_FILE 不在，跳过"
@@ -79,16 +79,27 @@ remove_path_setting() {
 
   info "  从 $RC_FILE 摘掉 PATH 设置"
   if ((DRY_RUN)); then
-    printf '  [预演] 删除标记行 %s 及其后一行\n' "$MARK_LINE"
+    printf '  [预演] 删除标记行 %s、其后的 PATH 行及其前面的连续空行\n' "$MARK_LINE"
     return 0
   fi
 
   local tmp
   tmp=$(mktemp)
   awk -v mark="$MARK_LINE" '
-    $0 == mark { skip = 2 }
-    skip > 0 { skip--; next }
-    { print }
+    { line[NR] = $0 }
+    END {
+      skip_next = 0
+      for (i = 1; i <= NR; i++) {
+        if (skip_next) { skip_next = 0; continue }
+        if (line[i] == mark) {
+          while (n > 0 && out[n] ~ /^[[:space:]]*$/) n--
+          if (i < NR && line[i + 1] ~ /^export PATH=/) skip_next = 1
+          continue
+        }
+        out[++n] = line[i]
+      }
+      for (i = 1; i <= n; i++) print out[i]
+    }
   ' "$RC_FILE" > "$tmp"
   cat "$tmp" > "$RC_FILE"
   rm -f "$tmp"

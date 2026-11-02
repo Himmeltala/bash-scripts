@@ -13,7 +13,7 @@ readonly TARBALL_URL="${BASH_SCRIPTS_TARBALL_URL:-https://codeload.github.com/${
 # 卸载脚本地址，只用来在结尾提示；走 jsDelivr 是因为 raw.githubusercontent.com 国内直连常超时。
 readonly UNINSTALL_URL="https://cdn.jsdelivr.net/gh/${REPO_SLUG}@${BRANCH}/uninstall.sh"
 
-# 写进 .bashrc 的标记行。清旧设置与写新设置都认它，改动时两边一致。
+# 写进 .bashrc 的标记行，安装与卸载共用。
 readonly MARK_LINE='# bash-scripts 装的工具'
 
 readonly INSTALL_DIR="${BASH_SCRIPTS_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-scripts}"
@@ -66,8 +66,8 @@ has_bin_dirs() {
   return 1
 }
 
-# 找源码：优先脚本所在检出，管道进来则下载归档；结果写 SRC_DIR，临时目录记入 DOWNLOAD_TMP，用于收尾清理。
-# 不用命令替换返回结果，因为子 shell 里设的 DOWNLOAD_TMP 传不出来，临时目录清不掉。
+# 找源码并写入 SRC_DIR；下载的临时目录记入 DOWNLOAD_TMP，供收尾清理。
+# 不用命令替换返回：子 shell 里的 DOWNLOAD_TMP 传不出来。
 SRC_DIR=''
 DOWNLOAD_TMP=''
 
@@ -117,7 +117,7 @@ BASH_TUI_SRC_DIR=''
 BASH_TUI_REF_RESOLVED=''
 BASH_TUI_DOWNLOAD_TMP=''
 
-# 先定标签，再找本地同级检出；都没有时按标签下载归档。结果写 BASH_TUI_SRC_DIR。
+# 结果写 BASH_TUI_SRC_DIR。
 resolve_bash_tui() {
   local ref="${BASH_TUI_REF:-}"
   if [[ -z "$ref" ]]; then
@@ -201,7 +201,7 @@ remove_links() {
   ((removed > 0)) || info '  没有指向本项目的旧软链'
 }
 
-# 清 .bashrc 里本项目的 PATH 设置：只认标记行，标记行后一行一并删，不会误删用户手写设置。
+# 清 .bashrc 的 PATH 设置，连同标记行前旧版遗留的空行。uninstall.sh 有同样一份。
 remove_path_setting() {
   local rc="$HOME/.bashrc"
   if [[ ! -f "$rc" ]] || ! grep -qF "$MARK_LINE" "$rc"; then
@@ -212,16 +212,26 @@ remove_path_setting() {
   local tmp
   tmp=$(mktemp)
   awk -v mark="$MARK_LINE" '
-    $0 == mark { skip = 2 }
-    skip > 0 { skip--; next }
-    { print }
+    { line[NR] = $0 }
+    END {
+      skip_next = 0
+      for (i = 1; i <= NR; i++) {
+        if (skip_next) { skip_next = 0; continue }
+        if (line[i] == mark) {
+          while (n > 0 && out[n] ~ /^[[:space:]]*$/) n--
+          if (i < NR && line[i + 1] ~ /^export PATH=/) skip_next = 1
+          continue
+        }
+        out[++n] = line[i]
+      }
+      for (i = 1; i <= n; i++) print out[i]
+    }
   ' "$rc" > "$tmp"
   cat "$tmp" > "$rc"
   rm -f "$tmp"
 }
 
-# 装前清掉上一次的旧软链、旧安装目录与 PATH 设置；管道安装时本地没有 uninstall.sh，故在此重复实现。
-# 不清会在安装目录留下上一版目录树，并在链接目录留下指向已删路径的死链。
+# 装前清掉旧软链、旧安装目录与 PATH 设置；管道安装没有 uninstall.sh，故在此重复实现。
 clean_previous() {
   if [[ -d "$INSTALL_DIR" ]]; then
     # 安装目录可由环境变量指到别处，删前先确认里面确实是本项目的东西，否则 rm -rf 会误删无关目录。
@@ -262,8 +272,7 @@ link_bins() {
   ((found > 0)) || warn "在 $INSTALL_DIR/*/bin 下没找到可执行文件"
 }
 
-# 保证 .bashrc 里有 BIN_DIR 的 PATH 设置，已有则跳过，免得越堆越长。
-# 判据看 .bashrc 不看当前 PATH：旧设置刚清掉，当前 shell 的 PATH 仍留着旧值，照它判断会漏写。
+# 看 .bashrc 判断是否已有设置，不看当前 PATH：旧设置刚清掉时当前 shell 仍是旧值。
 ensure_path() {
   local rc="$HOME/.bashrc" line
   line=$(path_line)
@@ -274,8 +283,10 @@ ensure_path() {
   fi
 
   info "把 $BIN_DIR 写进 $rc"
+  # 空文件不加前导空行；非空时留一个空行，也补上末尾缺的换行。
   {
-    printf '\n%s\n' "$MARK_LINE"
+    [[ -s "$rc" ]] && printf '\n'
+    printf '%s\n' "$MARK_LINE"
     printf '%s\n' "$line"
   } >> "$rc"
   info "重开 shell 或执行 source $rc 后生效"
