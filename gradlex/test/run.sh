@@ -181,6 +181,13 @@ out=$( printf '1\n' | ( cd "$tmp/groovy" && PATH="$tmp/fakebin:$PATH" "$bin" run
   printf 'ok   exec: rebuild 与 refresh\n' ||
   { printf 'FAIL exec: 得到 %s\n' "$out" >&2; fail=1; }
 
+if grep -q 'gradlex_plain_checklist' "$repo/gradlex/lib/gradlex/ui.sh"; then
+  printf 'FAIL - 仍保留自定义编号清单\n' >&2
+  fail=1
+else
+  printf 'ok - 已删除自定义编号清单\n'
+fi
+
 if ((fail)); then
   printf '\n有测试失败\n' >&2
   exit 1
