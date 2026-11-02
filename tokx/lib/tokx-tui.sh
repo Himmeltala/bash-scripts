@@ -20,11 +20,11 @@ _tokx_report() {
   "${TOKX_PYTHON:-python3}" -m tokx "$command" "$@"
 }
 
-# 报表看完停一下，回车回菜单；非终端下不停，便于管道驱动。
+# 报表看完停一下，任意键回菜单、q 退出；非终端下不停，便于管道驱动。
 _tokx_pause() {
   ((UI_MODE)) || return 0
   local key=''
-  key=$(ui_wait_key '回车回到菜单，输入 q 退出') || return 0
+  key=$(ui_wait_key '任意键回到菜单，q 退出') || return 0
   [[ "$key" == q || "$key" == Q ]] && return 1
   return 0
 }
