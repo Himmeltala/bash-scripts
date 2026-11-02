@@ -79,7 +79,7 @@ run_report() {
   esac
 
   if ui_available && ((REPORT_PAGED)); then
-    ui_textbox '扫描报告' "$out"
+    ui_pager '扫描报告' '↑↓ 滚动，q 返回' -- "$out"
   else
     cat "$out"
   fi
