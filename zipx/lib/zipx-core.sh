@@ -15,6 +15,9 @@ if ! source "$zipx_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
+# shellcheck source=../../lib/ui-item.sh
+source "$zipx_dir"/../../lib/ui-item.sh
+
 for zipx_module in \
   "$zipx_dir"/zipx/util.sh \
   "$zipx_dir"/zipx/ui.sh \

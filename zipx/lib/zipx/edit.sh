@@ -6,10 +6,14 @@ ui_pick_archive_entries() {
   load_archive_entries "$pkg" || die "「$pkg」不是有效的 zip 包"
 
   local -a items=()
-  local n desc
+  local n
   for n in "${ARCHIVE_ENTRIES[@]}"; do
-    if [[ "$n" == */ ]]; then desc='目录'; else desc='文件'; fi
-    items+=("$n" "$desc" OFF)
+    if [[ "$n" == */ ]]; then
+      ui_item_text "$n" '目录'
+    else
+      ui_item_text "$n" '文件'
+    fi
+    items+=("$n" "$UI_ITEM_TEXT" OFF)
   done
   zipx_ui_checklist "$purpose" '空格勾选包内条目，回车确认' "${items[@]}"
 }
@@ -87,7 +91,7 @@ cmd_extract() {
 ui_edit() {
   local pkg action
   pkg=$(ui_pick_archive) || return "$EXIT_CANCEL"
-  action=$(ui_menu 'zipx 包内增删' "包：$pkg" \
+  action=$(ui_menu_named 'zipx 包内增删' "包：$pkg" \
     add '把当前目录的文件追加进这个包' \
     rm '删掉包内条目' \
     extract '只提取包内几个条目') || return "$EXIT_CANCEL"

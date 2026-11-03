@@ -200,7 +200,7 @@ run_action() {
 ui_main() {
   local action rc=0
   while :; do
-    action=$(ui_menu 'gradlex' '选命令' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
+    action=$(ui_menu_named 'gradlex' '选命令' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
     [[ "$action" == 'quit' ]] && break
     rc=0
     run_action "$action" || rc=$?

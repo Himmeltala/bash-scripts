@@ -6,6 +6,9 @@ if ! source "${BASH_SOURCE[0]%/*}/../../lib/tui-path.sh"; then
   return 1
 fi
 
+# shellcheck source=../../lib/ui-item.sh
+source "${BASH_SOURCE[0]%/*}/../../lib/ui-item.sh"
+
 # 三个标准流都连着终端才画界面，否则 ui_* 自动退回编号输入。
 UI_MODE=0
 _tokx_ui_probe() {
@@ -30,7 +33,7 @@ _tokx_pause() {
 }
 
 _tokx_menu_command() {
-  ui_menu 'tokx' '看哪一类报表' \
+  ui_menu_named 'tokx' '看哪一类报表' \
     daily '按日汇总：每天每个来源一行' \
     session '按会话汇总：每个会话一行' \
     hour '按小时汇总：一天内各个时段的用量' \
@@ -39,7 +42,7 @@ _tokx_menu_command() {
 }
 
 _tokx_menu_range() {
-  ui_menu 'tokx · 统计范围' '看哪段时间' \
+  ui_menu_named 'tokx · 统计范围' '看哪段时间' \
     today '今天' \
     week '近 7 天' \
     fortnight '近 14 天' \

@@ -14,6 +14,9 @@ if ! source "$portx_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
+# shellcheck source=../../lib/ui-item.sh
+source "$portx_dir"/../../lib/ui-item.sh
+
 for portx_module in \
   "$portx_dir"/portx/util.sh \
   "$portx_dir"/portx/scan.sh \

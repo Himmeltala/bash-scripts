@@ -121,10 +121,12 @@ ui_pick_archive() {
   fi
 
   local -a items=()
-  local z
+  local z size
   for z in "${zips[@]}"; do
     reject_odd_name "$z"
-    items+=("$z" "$(du -h -- "$z" 2>/dev/null | cut -f1)")
+    size=$(du -h -- "$z" 2>/dev/null | cut -f1)
+    ui_item_text "$z" "$size"
+    items+=("$z" "$UI_ITEM_TEXT")
   done
   ui_menu 'zipx' '选一个包' "${items[@]}"
 }

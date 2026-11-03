@@ -47,7 +47,7 @@ cmd_test() {
 ui_info() {
   local pkg action
   pkg=$(ui_pick_archive) || return "$EXIT_CANCEL"
-  action=$(ui_menu 'zipx 查看与校验' "包：$pkg" \
+  action=$(ui_menu_named 'zipx 查看与校验' "包：$pkg" \
     list '列出包内文件' \
     test '校验包的完整性') || return "$EXIT_CANCEL"
 

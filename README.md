@@ -8,7 +8,8 @@ bash-scripts/
 ├── uninstall.sh                  卸载
 ├── bash-tui.ref                  依赖的 bash-tui 标签
 ├── lib/
-│   └── tui-path.sh               定位并加载 bash-tui
+│   ├── tui-path.sh               定位并加载 bash-tui
+│   └── ui-item.sh                条目文本与命令菜单，七个工具共用
 ├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
 │   ├── README.md
 │   ├── bin/
@@ -120,6 +121,15 @@ https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/install.sh
 网络通的时候，用哪条都行。jsDelivr 对分支引用有缓存；如果要固定到某个版本，可以把 `@main` 换成具体的提交哈希。
 
 安装脚本内部下载仓库归档时走的是 `codeload.github.com`，与上面两条地址属于不同域名。如果这个域名也不通，就用环境变量 `BASH_SCRIPTS_TARBALL_URL` 换成别的地址，或者先 clone 再本地安装。
+
+## 界面约定
+
+菜单与勾选的每一项都由「标签」与「说明」组成，两种模式画出来的东西不一样：
+
+- 终端界面画主文本与次要文本，标签只用来回传选中结果，不显示。
+- 编号回退画标签与说明，标签本身就是名字。
+
+命令菜单（`pack`、`clean`、`quit` 这类关键词）用 `lib/ui-item.sh` 里的 `ui_menu_named`：界面上主文本写命令名，小字写对命令名的解释。数据列表（包名、会话标题、归档）仍用 `ui_menu`，主文本写数据本身。名字与标签相同的勾选项用 `ui_item_text` 拼文本，两种模式下名字都可见且不重复。
 
 ## 卸载
 

@@ -3,7 +3,7 @@
 ui_main() {
   local choice
   while :; do
-    choice=$(ui_menu 'portx' '选择操作' \
+    choice=$(ui_menu_named 'portx' '选择操作' \
       query '查询端口详情' \
       list '查看端口列表' \
       quit '退出') || return 0
@@ -80,7 +80,7 @@ ui_port_list() {
 ui_port_actions() {
   local port=${1#*:} choice
   while :; do
-    choice=$(ui_menu "portx / $port" '选择操作' \
+    choice=$(ui_menu_named "portx / $port" '选择操作' \
       detail '查看详情' \
       kill '结束进程' \
       back '返回') || return 0

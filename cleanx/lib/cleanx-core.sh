@@ -14,6 +14,9 @@ if ! source "$cleanx_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
+# shellcheck source=../../lib/ui-item.sh
+source "$cleanx_dir"/../../lib/ui-item.sh
+
 for cleanx_module in \
   "$cleanx_dir"/cleanx/util.sh \
   "$cleanx_dir"/cleanx/registry.sh \

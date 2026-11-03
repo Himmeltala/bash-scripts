@@ -58,7 +58,7 @@ ui_clean_category() {
 ui_dev() {
   local choice
   while :; do
-    choice=$(ui_menu 'cleanx / 开发' '选择操作' \
+    choice=$(ui_menu_named 'cleanx / 开发' '选择操作' \
       clean '清理开发缓存（包管理器、IDE、Docker）' \
       build '扫描构建产物（只报告，不删除）' \
       back '返回') || return 0
@@ -79,7 +79,7 @@ ui_scan() {
 ui_main() {
   local choice
   while :; do
-    choice=$(ui_menu 'cleanx' '选择类别' \
+    choice=$(ui_menu_named 'cleanx' '选择类别' \
       user '用户缓存与回收站' \
       system '系统包与日志（需要 sudo）' \
       dev '开发缓存与构建产物扫描' \

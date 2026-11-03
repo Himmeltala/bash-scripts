@@ -50,10 +50,11 @@ ui_pick_entries() {
     name="${e%/}"
     reject_odd_name "$name"
     if [[ "$e" == */ ]]; then
-      items+=("$name" '目录' OFF)
+      ui_item_text "$name" '目录'
     else
-      items+=("$name" '文件' OFF)
+      ui_item_text "$name" '文件'
     fi
+    items+=("$name" "$UI_ITEM_TEXT" OFF)
   done < <(list_dir_entries)
 
   ((${#items[@]})) || { info '当前目录下没有可打包的条目'; return 1; }

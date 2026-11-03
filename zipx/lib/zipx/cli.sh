@@ -109,7 +109,7 @@ dispatch() {
 ui_main() {
   local choice
   while :; do
-    choice=$(ui_menu 'zipx' '选一个动作' \
+    choice=$(ui_menu_named 'zipx' '选一个动作' \
       pack '压缩：把当前目录的条目打成 zip' \
       unpack '解压：把 zip 解到当前目录或指定目录' \
       info '查看与校验：列包内文件、校验完整性' \

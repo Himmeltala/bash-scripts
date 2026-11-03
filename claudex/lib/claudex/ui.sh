@@ -49,7 +49,7 @@ ui_session_actions() {
   done
 
   while :; do
-    choice=$(ui_menu 'claudex / 会话' "已选 ${#ids[@]} 个，合计 $(format_size "$total")" \
+    choice=$(ui_menu_named 'claudex / 会话' "已选 ${#ids[@]} 个，合计 $(format_size "$total")" \
       resume '继续会话（claude --resume）' \
       archive '归档到 ~/.claude/archive' \
       delete '永久删除，不可恢复' \
@@ -129,7 +129,7 @@ ui_session_pick() {
 ui_sessions_menu() {
   local choice days_input
   while :; do
-    choice=$(ui_menu 'claudex / 会话列表' '选择范围' \
+    choice=$(ui_menu_named 'claudex / 会话列表' '选择范围' \
       current '当前项目，全部会话' \
       all '全部项目，全部会话' \
       current_old "当前项目，只看 ${UI_DAYS} 天前的" \
@@ -222,7 +222,7 @@ ui_cache() {
 ui_main() {
   local choice
   while :; do
-    choice=$(ui_menu 'claudex' '选择功能' \
+    choice=$(ui_menu_named 'claudex' '选择功能' \
       sessions '会话列表：查看、继续、归档、删除' \
       archives '归档恢复：把归档会话放回原项目' \
       cache '缓存清理：旧快照、孤儿数据、插件缓存' \

@@ -15,6 +15,9 @@ if ! source "$gradlex_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
+# shellcheck source=../../lib/ui-item.sh
+source "$gradlex_dir"/../../lib/ui-item.sh
+
 for gradlex_module in \
   "$gradlex_dir"/gradlex/util.sh \
   "$gradlex_dir"/gradlex/scan.sh \
