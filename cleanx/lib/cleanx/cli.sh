@@ -127,7 +127,7 @@ cmd_category() {
 
 main() {
   parse_args "$@"
-  detect_ui_mode
+  ui_detect
   need_cmd du
   need_cmd find
   need_cmd sort

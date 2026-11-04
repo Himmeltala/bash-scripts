@@ -23,19 +23,6 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "找不到 $1，先安装"
 }
 
-# 能否画界面：界面自绘，要求三个标准流都连着终端；必须在命令替换之外只判断一次，
-# 替换里的 stdout 是管道，[[ -t 1 ]] 永远为假。判断结果记进 UI_MODE，之后一律读它。
-UI_MODE=0
-
-detect_ui_mode() {
-  UI_MODE=0
-  [[ -t 0 && -t 1 && -t 2 ]] || return 0
-  UI_MODE=1
-  return 0
-}
-
-ui_available() { ((UI_MODE)); }
-
 # 名字带换行就没法可靠处理：清单一行一个名字，换行会被当成两个条目；撞上一律拒绝。
 reject_odd_name() {
   local n=$1

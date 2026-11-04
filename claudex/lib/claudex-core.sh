@@ -13,9 +13,6 @@ if ! source "$claudex_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
-# shellcheck source=../../lib/ui-item.sh
-source "$claudex_dir"/../../lib/ui-item.sh
-
 for claudex_module in \
   "$claudex_dir"/claudex/util.sh \
   "$claudex_dir"/claudex/sessions.sh \

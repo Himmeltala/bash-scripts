@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zipx 加载器：按顺序 source util、ui 与四个动作文件，cli 放最后，它引用的动作函数须先加载完。
+# zipx 加载器：按顺序 source util 与四个动作文件，cli 放最后，它引用的动作函数须先加载完。
 # 直接执行本文件等价于 zipx 命令，便于调试。
 
 set -uo pipefail
@@ -15,12 +15,8 @@ if ! source "$zipx_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
-# shellcheck source=../../lib/ui-item.sh
-source "$zipx_dir"/../../lib/ui-item.sh
-
 for zipx_module in \
   "$zipx_dir"/zipx/util.sh \
-  "$zipx_dir"/zipx/ui.sh \
   "$zipx_dir"/zipx/pack.sh \
   "$zipx_dir"/zipx/unpack.sh \
   "$zipx_dir"/zipx/info.sh \

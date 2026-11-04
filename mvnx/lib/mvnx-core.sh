@@ -15,9 +15,6 @@ if ! source "$mvnx_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
-# shellcheck source=../../lib/ui-item.sh
-source "$mvnx_dir"/../../lib/ui-item.sh
-
 for mvnx_module in \
   "$mvnx_dir"/mvnx/util.sh \
   "$mvnx_dir"/mvnx/pom.sh \

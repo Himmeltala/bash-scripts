@@ -6,37 +6,18 @@ if ! source "${BASH_SOURCE[0]%/*}/../../lib/tui-path.sh"; then
   return 1
 fi
 
-# shellcheck source=../../lib/ui-item.sh
-source "${BASH_SOURCE[0]%/*}/../../lib/ui-item.sh"
-
 # 三个标准流都连着终端才画界面，否则 ui_* 自动退回编号输入。
-UI_MODE=0
-_tokx_ui_probe() {
-  UI_MODE=0
-  [[ -t 0 && -t 1 && -t 2 ]] && UI_MODE=1
-  return 0
-}
-
 _tokx_report() {
   local command=$1
   shift
   "${TOKX_PYTHON:-python3}" -m tokx "$command" "$@"
 }
 
-# 报表看完停一下，任意键回菜单、q 退出；非终端下不停，便于管道驱动。
-_tokx_pause() {
-  ((UI_MODE)) || return 0
-  local key=''
-  key=$(ui_wait_key '任意键回到菜单，q 退出') || return 0
-  [[ "$key" == q || "$key" == Q ]] && return 1
-  return 0
-}
-
 _tokx_menu_command() {
   ui_menu_named 'tokx' '看哪一类报表' \
-    daily '按日汇总：每天每个来源一行' \
-    session '按会话汇总：每个会话一行' \
-    hour '按小时汇总：一天内各个时段的用量' \
+    daily '按日汇总：每天每个来源的每个模型一行' \
+    session '按会话汇总：每个会话的每个模型一行' \
+    hour '按小时汇总：各时段中每个模型的用量' \
     prices '价格表：模型单价与峰谷时段' \
     quit '退出'
 }
@@ -98,7 +79,7 @@ _tokx_view() {
 
   printf '统计中…\n\n' >&2
   _tokx_report "$command" "${args[@]}"
-  _tokx_pause || return 1
+  ui_pause '任意键回到菜单，q 退出' || return 1
   return 0
 }
 
@@ -107,13 +88,13 @@ readonly TOKX_EXIT_CANCEL=3
 
 # 主循环：报表看完回菜单，只有选退出、看完按 q 或主菜单取消才离开。
 tokx_tui() {
-  _tokx_ui_probe
+  ui_detect
   local choice=''
   while :; do
     choice=$(_tokx_menu_command) || return "$TOKX_EXIT_CANCEL"
     case "$choice" in
       daily | session | hour) _tokx_view "$choice" || return 0 ;;
-      prices) _tokx_report prices; _tokx_pause || return 0 ;;
+      prices) _tokx_report prices; ui_pause '任意键回到菜单，q 退出' || return 0 ;;
       quit) return 0 ;;
     esac
   done

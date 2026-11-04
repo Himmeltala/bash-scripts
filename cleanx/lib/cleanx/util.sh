@@ -12,18 +12,6 @@ die() {
 
 usage_error() { die "$*；见 cleanx --help" "$EXIT_USAGE"; }
 
-# 界面能否自绘：三个标准流都连着终端才算；判断必须在命令替换之外做一次，之后只读 UI_MODE。
-UI_MODE=0
-
-detect_ui_mode() {
-  UI_MODE=0
-  [[ -t 0 && -t 1 && -t 2 ]] || return 0
-  UI_MODE=1
-  return 0
-}
-
-ui_available() { ((UI_MODE)); }
-
 # 默认只预览，--yes 才改成真删；菜单模式由交互确认兜底，启动时另行关闭。
 DRY_RUN=1
 ASSUME_YES=0

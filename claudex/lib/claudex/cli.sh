@@ -237,7 +237,7 @@ cmd_cache() {
 
 main() {
   parse_args "$@"
-  detect_ui_mode
+  ui_detect
   need_cmd stat
   need_cmd du
   need_cmd find

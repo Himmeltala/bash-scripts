@@ -58,7 +58,7 @@ ui_pick_entries() {
   done < <(list_dir_entries)
 
   ((${#items[@]})) || { info '当前目录下没有可打包的条目'; return 1; }
-  zipx_ui_checklist 'zipx 压缩' '空格勾选，回车确认' "${items[@]}"
+  ui_checklist_optional 'zipx 压缩' '空格勾选，回车确认' "${items[@]}"
 }
 
 cmd_pack() {

@@ -8,8 +8,7 @@ bash-scripts/
 ├── uninstall.sh                  卸载
 ├── bash-tui.ref                  依赖的 bash-tui 标签
 ├── lib/
-│   ├── tui-path.sh               定位并加载 bash-tui
-│   └── ui-item.sh                条目文本与命令菜单，七个工具共用
+│   └── tui-path.sh               定位并加载 bash-tui
 ├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
 │   ├── README.md
 │   ├── bin/
@@ -129,7 +128,9 @@ https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/install.sh
 - 终端界面画主文本与次要文本，标签只用来回传选中结果，不显示。
 - 编号回退画标签与说明，标签本身就是名字。
 
-命令菜单（`pack`、`clean`、`quit` 这类关键词）用 `lib/ui-item.sh` 里的 `ui_menu_named`：界面上主文本写命令名，小字写对命令名的解释。数据列表（包名、会话标题、归档）仍用 `ui_menu`，主文本写数据本身。名字与标签相同的勾选项用 `ui_item_text` 拼文本，两种模式下名字都可见且不重复。
+命令菜单（`pack`、`clean`、`quit` 这类关键词）用 bash-tui 的 `ui_menu_named`：界面上主文本写命令名，小字写对命令名的解释。数据列表（包名、会话标题、归档）仍用 `ui_menu`，主文本写数据本身。名字与标签相同的勾选项用 `ui_item_text` 拼文本，两种模式下名字都可见且不重复。
+
+界面之外的东西不再各写一份：终端探测、暂停等键、空选当成功、同名标签去重、勾选记忆都由 bash-tui 提供，见 [bash-tui 的组件文档](https://github.com/Himmeltala/bash-tui/blob/main/docs/components.md)。
 
 ## 卸载
 

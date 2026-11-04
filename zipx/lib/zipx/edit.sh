@@ -15,7 +15,7 @@ ui_pick_archive_entries() {
     fi
     items+=("$n" "$UI_ITEM_TEXT" OFF)
   done
-  zipx_ui_checklist "$purpose" '空格勾选包内条目，回车确认' "${items[@]}"
+  ui_checklist_optional "$purpose" '空格勾选包内条目，回车确认' "${items[@]}"
 }
 
 cmd_add() {

@@ -100,11 +100,6 @@ ui_port_actions() {
   done
 }
 
-ui_pause() {
-  ((UI_MODE)) || return 0
-  ui_wait_key '按回车返回' >/dev/null || true
-}
-
 ui_kill_port() {
   local port=$1 rc
   if is_protected "$port" && ((!FORCE)); then

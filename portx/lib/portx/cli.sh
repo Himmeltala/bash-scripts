@@ -129,7 +129,7 @@ parse_args() {
 
 main() {
   parse_args "$@"
-  detect_ui_mode
+  ui_detect
 
   if ((LIST)); then
     list_all_ports

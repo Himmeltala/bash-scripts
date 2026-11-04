@@ -181,6 +181,33 @@ out=$( printf '1\n' | ( cd "$tmp/groovy" && PATH="$tmp/fakebin:$PATH" "$bin" run
   printf 'ok   exec: rebuild 与 refresh\n' ||
   { printf 'FAIL exec: 得到 %s\n' "$out" >&2; fail=1; }
 
+
+ok() { printf 'ok - %s\n' "$*"; }
+bad() { printf 'FAIL - %s\n' "$*" >&2; fail=1; }
+
+# 记录六列：标签去重只换第一列，工作目录、工具自己的两列、展示路径与命令都原样保留。
+rec() {
+  local IFS=$'\x1f'
+  printf '%s\n' "$*"
+}
+
+records=$(rec web /w/a '' '' a/web 'mvn -pl a'; rec web /w/b '' '' b/web 'mvn -pl b')
+expected=$(rec 'web@a/web' /w/a '' '' a/web 'mvn -pl a'; rec 'web@b/web' /w/b '' '' b/web 'mvn -pl b')
+got=$(printf '%s\n' "$records" | bash -c 'source "$1/gradlex/lib/gradlex-core.sh"; assign_tags' _ "$repo")
+[[ "$got" == "$expected" ]] && ok '标签去重后记录仍是六列' || bad '标签去重改动了记录'
+
+# 勾选结果按标签映射回整条记录，执行时不用再猜字段。
+one=$(rec web /w/a '' '' a/web 'mvn -pl a')
+got=$(printf '1\n' | bash -c 'source "$1/gradlex/lib/gradlex-core.sh"; UI_MODE=0; gradlex_ui_checklist 模块 "$2"' _ "$repo" "$one" 2>/dev/null)
+[[ "$got" == "$one" ]] && ok '勾选结果映射回整条记录' || bad '勾选结果丢了记录字段'
+
+# 终端探测、暂停与空选判断都在 bash-tui，本地不再各写一份。
+if grep -rq 'detect_ui_mode\|ui_available() {' "$repo/gradlex/lib"; then
+  bad '仍自带终端探测或 ui_available'
+else
+  ok '终端探测交给 bash-tui'
+fi
+
 if grep -q 'gradlex_plain_checklist' "$repo/gradlex/lib/gradlex/ui.sh"; then
   printf 'FAIL - 仍保留自定义编号清单\n' >&2
   fail=1

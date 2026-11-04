@@ -169,11 +169,11 @@ printf '' | "$bin" menu >/dev/null 2>&1
 [[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
 ok 取消菜单返回 3
 
-if grep -q 'ui_wait_key' "$repo/tokx/lib/tokx-tui.sh" &&
+if grep -q 'ui_pause' "$repo/tokx/lib/tokx-tui.sh" &&
   ! grep -q 'IFS= read -r key' "$repo/tokx/lib/tokx-tui.sh"; then
-  ok 'tokx 使用统一等待按键'
+  ok 'tokx 用 bash-tui 的暂停'
 else
-  fail 'tokx 仍自行读取按键'
+  fail 'tokx 仍自行处理按键'
 fi
 
 printf '\n全部通过\n'

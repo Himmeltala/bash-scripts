@@ -1,15 +1,5 @@
 # 界面层：主菜单、类别勾选与开发子菜单；勾选结果只取编号。
 
-# 没勾任何项时按正常返回处理，避免把「没选」当成错误。
-cleanx_ui_checklist() {
-  local out='' rc=0
-  out=$(ui_checklist "$@") || rc=$?
-  ((rc == TUI_EMPTY)) && return "$TUI_OK"
-  ((rc == TUI_OK)) || return "$rc"
-  printf '%s\n' "$out"
-  return "$TUI_OK"
-}
-
 ui_clean_category() {
   local category=$1 title=$2
   local -a args=() ids=()
@@ -35,7 +25,7 @@ ui_clean_category() {
     args+=("$id" "$desc" "$state")
   done
 
-  picked=$(cleanx_ui_checklist "$title" '空格勾选，回车确认' "${args[@]}") || return 0
+  picked=$(ui_checklist_optional "$title" '空格勾选，回车确认' "${args[@]}") || return 0
   [[ -n $picked ]] || return 0
   mapfile -t ids <<<"$picked"
 

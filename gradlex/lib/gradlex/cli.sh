@@ -213,7 +213,7 @@ ui_main() {
 main() {
   parse_args "$@"
   # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。
-  detect_ui_mode
+  ui_detect
   build_action_items
 
   # 直接写命令时没有上一步可回，返回与取消同义。

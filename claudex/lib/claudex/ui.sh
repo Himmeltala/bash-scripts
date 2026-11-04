@@ -2,15 +2,6 @@
 
 UI_DAYS=30
 
-claudex_ui_checklist() {
-  local out='' rc=0
-  out=$(ui_checklist "$@") || rc=$?
-  ((rc == TUI_EMPTY)) && return "$TUI_OK"
-  ((rc == TUI_OK)) || return "$rc"
-  printf '%s\n' "$out"
-  return "$TUI_OK"
-}
-
 session_desc() {
   local idx=$1 desc
   desc="${S_TITLE[$idx]}，$(format_time "${S_MTIME[$idx]}")，$(format_size "${S_SIZE[$idx]}")"
@@ -119,7 +110,7 @@ ui_session_pick() {
     return 0
   fi
 
-  picked=$(claudex_ui_checklist 'claudex / 会话' '空格勾选，回车确认' "${args[@]}") || return 0
+  picked=$(ui_checklist_optional 'claudex / 会话' '空格勾选，回车确认' "${args[@]}") || return 0
   [[ -n $picked ]] || return 0
   mapfile -t ids <<<"$picked"
   ((${#ids[@]})) || return 0
@@ -201,7 +192,7 @@ ui_cache() {
     fi
   done
 
-  picked=$(claudex_ui_checklist 'claudex / 缓存' '空格勾选，回车确认' "${args[@]}") || return 0
+  picked=$(ui_checklist_optional 'claudex / 缓存' '空格勾选，回车确认' "${args[@]}") || return 0
   [[ -n $picked ]] || return 0
   mapfile -t ids <<<"$picked"
 

@@ -1,4 +1,4 @@
-# 基础设施：退出码、输出、尺寸、命令执行出口与终端探测。
+# 基础设施：退出码、输出、尺寸与命令执行出口。
 
 readonly EXIT_FAIL=1 EXIT_USAGE=2 EXIT_CANCEL=3
 
@@ -18,18 +18,6 @@ usage_error() { die "$*；见 claudex --help" "$EXIT_USAGE"; }
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "找不到 $1，先安装"
 }
-
-# 界面自绘要求三个标准流都连着终端；判断必须在命令替换之外做一次。
-UI_MODE=0
-
-detect_ui_mode() {
-  UI_MODE=0
-  [[ -t 0 && -t 1 && -t 2 ]] || return 0
-  UI_MODE=1
-  return 0
-}
-
-ui_available() { ((UI_MODE)); }
 
 # 会话多时一屏只画 15 行，翻页键跳转；终端更矮时仍按终端行数收缩。
 TUI_PAGE_SIZE=${TUI_PAGE_SIZE:-15}

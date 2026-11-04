@@ -133,7 +133,7 @@ main() {
   need_cmd zip
   need_cmd unzip
   # 终端探测只在这里做一次且必须在命令替换之前，替换里的 stdout 是管道，[[ -t 1 ]] 永远为假。
-  detect_ui_mode
+  ui_detect
 
   if [[ -z "$ACTION" ]]; then
     if ((${#POSITIONAL[@]})); then

@@ -35,5 +35,15 @@ if ! source "$BASH_TUI_DIR/bash-tui.sh"; then
   return 1
 fi
 
+# 工具用到 ui_detect、ui_pause 与 ui_unique_tags，1.1.0 之前没有；
+# 缺了直接说版本旧，免得后面报 command not found，看不出是版本问题。
+if ! declare -F ui_detect >/dev/null || ! declare -F ui_pause >/dev/null ||
+  ! declare -F ui_unique_tags >/dev/null; then
+  printf 'bash-tui: %s 版本过旧，缺 ui_detect、ui_pause 或 ui_unique_tags，请更新到 1.1.0 及以上\n' \
+    "$BASH_TUI_DIR" >&2
+  unset _tui_path_root _tui_path_candidates _tui_path_candidate _tui_path_found
+  return 1
+fi
+
 unset _tui_path_root _tui_path_candidates _tui_path_candidate _tui_path_found
 return 0

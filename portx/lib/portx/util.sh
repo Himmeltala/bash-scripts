@@ -1,4 +1,4 @@
-# 基础设施：退出码、输出、UI 模式探测与本工具的全局状态。
+# 基础设施：退出码、输出与本工具的全局状态。
 
 readonly EXIT_FAIL=1 EXIT_USAGE=2 EXIT_PROTECTED=3
 
@@ -29,16 +29,6 @@ DRY_RUN=0
 UDP=0
 TIMEOUT=$DEFAULT_TIMEOUT
 PORTS=()
-
-# 界面能否自绘：三个标准流都连着终端才算；判断必须在命令替换之外做一次，之后只读 UI_MODE。
-UI_MODE=0
-
-detect_ui_mode() {
-  UI_MODE=0
-  [[ -t 0 && -t 1 && -t 2 ]] || return 0
-  UI_MODE=1
-  return 0
-}
 
 info() { printf '%s\n' "$*"; }
 warn() { printf 'portx: %s\n' "$*" >&2; }
