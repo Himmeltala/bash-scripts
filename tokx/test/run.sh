@@ -84,23 +84,31 @@ python3 - "$output" <<'PY' || exit 1
 import json, sys
 payload = json.loads(sys.argv[1])
 rows = payload["rows"]
-by_source = {row["source"]: row for row in rows}
-claude = by_source["claude"]
+# 日报按来源、模型分行：同一来源的不同模型各算各的费用。
+by_model = {(row["source"], row["model"]): row for row in rows}
+claude = by_model[("claude", "deepseek-flash")]
 assert claude["requests"] == 2, claude
 assert abs(claude["cost_peak"] - 10.04) < 1e-6, claude
 assert abs(claude["cost_off"] - 5.0) < 1e-6, claude
 assert claude["total_tokens"] == 5_000_000, claude
 
-opencode = by_source["opencode"]
-assert opencode["requests"] == 3, opencode
-assert abs(opencode["cost_off"] - 0.5) < 1e-6, opencode
-assert opencode["unpriced"] == 1, opencode
+free = by_model[("opencode", "deepseek-v4.1-flash-free")]
+assert free["cost"] == 0.0, free
 
-dsh = by_source["dsh"]
+oc_flash = by_model[("opencode", "deepseek-flash")]
+assert abs(oc_flash["cost_off"] - 0.5) < 1e-6, oc_flash
+
+# 无价模型单独一行，只有自己留空，不会把同来源的有价模型一起拖成 --。
+oc_unknown = by_model[("opencode", "mystery-model")]
+assert oc_unknown["cost"] is None and oc_unknown["unpriced"] == 1, oc_unknown
+
+dsh = by_model[("dsh", "deepseek-flash")]
 assert abs(dsh["cost_off"] - 1.0) < 1e-6, dsh
+# 合计只累加计得出来的行：claude 15.04 + opencode 0.5 + dsh 1.0。
 assert abs(payload["totals"]["cost"] - 16.54) < 1e-6, payload["totals"]
 assert payload["totals"]["total_tokens"] == 7_501_000, payload["totals"]
-print("ok - 三个来源的峰谷费用")
+assert payload["unpriced_models"] == ["mystery-model"], payload["unpriced_models"]
+print("ok - 按模型分行的峰谷费用")
 PY
 
 # 节假日把工作日高峰整段降为空闲价。
@@ -112,16 +120,27 @@ output=$("$bin" --all --json --config "$tmp/holiday.toml") || fail "带配置运
 python3 - "$output" <<'PY' || exit 1
 import json, sys
 payload = json.loads(sys.argv[1])
-claude = {row["source"]: row for row in payload["rows"]}["claude"]
+claude = next(row for row in payload["rows"] if row["source"] == "claude")
 assert claude["cost_peak"] == 0, claude
 assert abs(claude["cost_off"] - 10.02) < 1e-6, claude
 print("ok - 节假日全天按空闲价")
 PY
 
-# 未知模型要有提示，且不能吞掉其他来源。
-err=$("$bin" --all --json 2>&1 >/dev/null) || fail "运行失败"
-[[ "$err" == *"mystery-model"* ]] || fail "未知模型没有提示: $err"
-ok 未知模型有提示
+# 无价模型照样出表：它自己那行费用显示 --，同一行的有价模型照常给出金额。
+table=$("$bin" --all) || fail "运行失败"
+python3 - "$table" <<'PY' || exit 1
+import sys
+lines = sys.argv[1].splitlines()
+row = next(line for line in lines if line.startswith("opencode") and "mystery-model" in line)
+assert "--" in row and "¥" not in row, row
+priced = next(line for line in lines if line.startswith("opencode") and "deepseek-flash" in line)
+assert "¥" in priced, priced
+assert any(line.startswith("未计价模型") and "mystery-model" in line for line in lines), lines
+print("ok - 无价模型单独一行，费用显示 --")
+PY
+err=$("$bin" --all 2>&1 >/dev/null) || fail "运行失败"
+[[ -z "$err" ]] || fail "不该再往 stderr 写提示: $err"
+ok 没有多余的 stderr 提示
 
 # 来源过滤与日期过滤。
 output=$("$bin" --all --json -s claude) || fail "来源过滤失败"
@@ -156,6 +175,16 @@ session_out=$("$bin" session --all) || fail "session 命令失败"
 ok 会话表带来源
 "$bin" hour --all >/dev/null || fail "hour 命令失败"
 ok session 与 hour 命令
+
+# 同一会话用过两个模型时，会话表按模型分成两行。
+session_json=$("$bin" session --all --json) || fail "session --json 失败"
+python3 - "$session_json" <<'PY' || exit 1
+import json, sys
+rows = json.loads(sys.argv[1])["rows"]
+sess = [row for row in rows if row["session"] == "ses-oc2"]
+assert {row["model"] for row in sess} == {"deepseek-flash", "mystery-model"}, sess
+print("ok - 同一会话按模型分行")
+PY
 
 # 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，然后退出。
 printf '1\n5\n1 3\n5\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"

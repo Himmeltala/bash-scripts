@@ -8,7 +8,7 @@ import sys
 from datetime import date, datetime, timedelta
 
 from . import report
-from .config import Config, ConfigError, load
+from .config import ConfigError, load
 from .pricing import PriceBook
 from .sources import SOURCE_LABELS, SOURCE_ORDER, SourceError, collect
 
@@ -99,15 +99,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     book = config.book
+    unpriced = _unpriced_models(records, book)
     if command == "session":
         rows, total = report.sessions(records, book)
-        text = report.table_sessions(rows, total)
+        text = report.table_sessions(rows, total, unpriced)
     elif command == "hour":
         rows, total = report.hours(records, book)
-        text = report.table_hours(rows, total)
+        text = report.table_hours(rows, total, unpriced)
     else:
         rows, total = report.daily(records, book)
-        text = report.table_daily(rows, total)
+        text = report.table_daily(rows, total, unpriced)
 
     if getattr(args, "json", False):
         print(
@@ -118,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                     "until": until.isoformat() if until else None,
                     "timezone": str(book.tz),
                     "currency": "CNY",
+                    "unpriced_models": unpriced,
                     "rows": rows,
                     "totals": total,
                 },
@@ -128,7 +130,6 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(text)
 
-    _warn_unpriced(records, config)
     return 0
 
 
@@ -183,17 +184,14 @@ def _in_range(at: datetime, book: PriceBook, since: date | None, until: date | N
     return True
 
 
-def _warn_unpriced(records, config: Config) -> None:
-    unknown = sorted(
-        {record.model or "未知" for record in records if config.book.price_for(record.model) is None}
-    )
-    if not unknown:
-        return
-    where = config.path
-    hint = f"补进 {where}" if where else "在 ~/.config/tokx/config.toml 里补上价格"
-    print(
-        f"tokx: 这些模型没有价格，费用未计入: {', '.join(unknown)}；{hint}",
-        file=sys.stderr,
+def _unpriced_models(records, book: PriceBook) -> list[str]:
+    """表里查不到价格的模型名，按字母序去重，用来在表下说明 -- 的含义。"""
+    return sorted(
+        {
+            book.resolve(record.model) or "未知"
+            for record in records
+            if book.price_for(record.model) is None
+        }
     )
 
 
