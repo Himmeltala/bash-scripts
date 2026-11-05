@@ -1,6 +1,7 @@
 """价格表、高峰与空闲时段判定，以及单条记录的费用计算。
 
-价格口径来自 DeepSeek 官方文档：空闲价是高峰价的一半；高峰时段为北京时间
+价格口径来自 DeepSeek 与 mimo 官方文档：DeepSeek 空闲价是高峰价的一半；mimo 不分
+峰谷，两档同价，并且只按实时推理计，批量推理的价不适用。高峰时段为北京时间
 周一至周五 9:00-12:00、14:00-18:00，法定节假日全天按空闲价。
 """
 
@@ -38,7 +39,13 @@ class ModelPrice:
     free: bool = False
 
 
-# 2026-10 官方价，单位元每百万 token。
+def flat_price(hit: float, miss: float, output: float) -> ModelPrice:
+    """不分峰谷的模型：高峰与空闲两档同价。"""
+    tier = Tier(hit=hit, miss=miss, output=output)
+    return ModelPrice(off=tier, peak=tier)
+
+
+# 2026-10 官方价，单位元每百万 token；mimo 是实时推理的价。
 DEFAULT_MODELS: dict[str, ModelPrice] = {
     "deepseek-flash": ModelPrice(
         off=Tier(hit=0.02, miss=1.0, output=4.0),
@@ -48,6 +55,9 @@ DEFAULT_MODELS: dict[str, ModelPrice] = {
         off=Tier(hit=0.15, miss=4.5, output=13.5),
         peak=Tier(hit=0.30, miss=9.0, output=27.0),
     ),
+    "mimo-v2.6-flash": flat_price(hit=0.02, miss=1.0, output=2.0),
+    "mimo-v2.6-pro": flat_price(hit=0.025, miss=3.0, output=6.0),
+    "mimo-v2.6-pro-ultraspeed": flat_price(hit=0.25, miss=30.0, output=60.0),
 }
 
 # 旧模型名与带版本的写法都归到当前在售名称。

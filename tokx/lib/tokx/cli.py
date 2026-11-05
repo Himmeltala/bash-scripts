@@ -23,7 +23,7 @@ class UsageError(Exception):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tokx",
-        description="统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用，按 DeepSeek 峰谷价计费。",
+        description="统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用，按 DeepSeek 峰谷价与 mimo 实时价计费。",
         epilog="不带参数运行且连着终端时打开菜单，也可以显式写 tokx menu。",
     )
     parser.add_argument("--version", action="version", version=f"tokx {VERSION}")

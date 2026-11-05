@@ -174,7 +174,7 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 | `portx` | portx | 按端口查询占用它的应用与进程，或浏览当前监听端口；默认只读，加 `-k` 才结束进程，系统级端口需 `--force`；不带参数进入终端菜单 |
 | `cleanx` | cleanx | 清理用户缓存、回收站、系统包缓存与日志、开发缓存，另带大文件与构建产物扫描；默认只预览，加了 `--yes` 才会删除，需要 root 的项用 sudo 逐项确认 |
 | `claudex` | claudex | 管理 Claude Code 会话：列表、继续、归档、恢复归档、永久删除，另清旧快照、孤儿数据与插件缓存；归档与删除默认只预览，运行中的会话受保护 |
-| `tokx` | tokx | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 峰谷价折算费用；不带参数时进菜单选报表、统计范围与来源，报表按天、按会话或按小时汇总 |
+| `tokx` | tokx | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 峰谷价与 mimo 实时价折算费用；不带参数时进菜单选报表、统计范围与来源，报表按天、按会话或按小时汇总 |
 
 各工具的详细用法见对应目录下的 README。
 

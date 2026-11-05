@@ -186,6 +186,35 @@ assert {row["model"] for row in sess} == {"deepseek-flash", "mystery-model"}, se
 print("ok - 同一会话按模型分行")
 PY
 
+# mimo 只有实时推理价，不分峰谷：两档同价，金额按 miss 价算。
+output=$("$bin" prices --json) || fail "prices 失败"
+python3 - "$output" <<'PY' || exit 1
+import json, sys
+models = json.loads(sys.argv[1])["models"]
+flash = models["mimo-v2.6-flash"]
+assert flash["off"] == flash["peak"] == {"hit": 0.02, "miss": 1.0, "output": 2.0}, flash
+assert models["mimo-v2.6-pro"]["peak"]["miss"] == 3.0, models["mimo-v2.6-pro"]
+assert models["mimo-v2.6-pro-ultraspeed"]["off"]["output"] == 60.0
+print("ok - mimo 实时价")
+PY
+
+# 直连计价函数：高峰与空闲时段金额相同，输入按 miss 价。
+PYTHONPATH="$repo/tokx/lib" python3 - <<'PY' || exit 1
+from datetime import datetime, timezone
+from tokx.model import Usage
+from tokx.pricing import PriceBook
+
+book = PriceBook()
+usage = Usage(input=1_000_000)
+peak = datetime(2026, 11, 5, 3, 0, tzinfo=timezone.utc)   # 北京 11:00，高峰
+off = datetime(2026, 11, 5, 13, 0, tzinfo=timezone.utc)    # 北京 21:00，空闲
+assert abs(book.cost("mimo-v2.6-flash", usage, peak) - 1.0) < 1e-9
+assert book.cost("mimo-v2.6-flash", usage, off) == book.cost("mimo-v2.6-flash", usage, peak)
+assert abs(book.cost("mimo-v2.6-pro", usage, peak) - 3.0) < 1e-9
+assert abs(book.cost("mimo-v2.6-pro-ultraspeed", usage, peak) - 30.0) < 1e-9
+print("ok - mimo 不分峰谷")
+PY
+
 # 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，然后退出。
 printf '1\n5\n1 3\n5\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
 grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
