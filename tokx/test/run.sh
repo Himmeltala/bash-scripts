@@ -9,6 +9,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 export HOME="$tmp/home"
 mkdir -p "$HOME/.claude/projects/-tmp-demo" "$HOME/.local/share/opencode" "$HOME/.dsh/sessions/-tmp-demo/session-demo"
+mkdir -p "$HOME/.config/opencode" "$HOME/.dsh/profiles/web"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 ok() { printf 'ok - %s\n' "$*"; }
@@ -38,6 +39,35 @@ lines = [
 ]
 path = home / ".claude/projects/-tmp-demo/sess-claude.jsonl"
 path.write_text("\n".join(json.dumps(item) for item in lines) + "\n", encoding="utf-8")
+
+# Claude Code 的接口地址取设置文件里的 ANTHROPIC_BASE_URL。
+(home / ".claude/settings.json").write_text(
+    json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9000"}}), encoding="utf-8"
+)
+
+# opencode 的接口地址取 provider 的 options.baseURL。
+(home / ".config/opencode/opencode.json").write_text(
+    json.dumps({"provider": {"opencode": {"options": {"baseURL": "https://opencode.test/v1"}}}}),
+    encoding="utf-8",
+)
+
+# DeepSeek Harness 的接口地址取 profile 补丁里的 providers.<id>.baseURL。
+(home / ".dsh/profiles/web/cordis.patch.yml").write_text(
+    "\n".join(
+        [
+            "- id: llm-pi-ai",
+            "  name: \"@deepseek-ai/dsh-llm-pi-ai\"",
+            "  config:",
+            "    providers:",
+            "      deepseek-official:",
+            "        baseURL: \"http://127.0.0.1:9001/v1\"",
+            "        models:",
+            "          - id: deepseek-flash",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
 
 # opencode：免费模型记 0，计费模型按表算，未知模型只计 token。
 db = home / ".local/share/opencode/opencode.db"
@@ -91,12 +121,14 @@ assert claude["requests"] == 2, claude
 assert abs(claude["cost_peak"] - 10.04) < 1e-6, claude
 assert abs(claude["cost_off"] - 5.0) < 1e-6, claude
 assert claude["total_tokens"] == 5_000_000, claude
+assert claude["api"] == "http://127.0.0.1:9000", claude
 
 free = by_model[("opencode", "deepseek-v4.1-flash-free")]
 assert free["cost"] == 0.0, free
 
 oc_flash = by_model[("opencode", "deepseek-flash")]
 assert abs(oc_flash["cost_off"] - 0.5) < 1e-6, oc_flash
+assert oc_flash["api"] == "https://opencode.test/v1", oc_flash
 
 # 无价模型单独一行，只有自己留空，不会把同来源的有价模型一起拖成 --。
 oc_unknown = by_model[("opencode", "mystery-model")]
@@ -104,6 +136,7 @@ assert oc_unknown["cost"] is None and oc_unknown["unpriced"] == 1, oc_unknown
 
 dsh = by_model[("dsh", "deepseek-flash")]
 assert abs(dsh["cost_off"] - 1.0) < 1e-6, dsh
+assert dsh["api"] == "http://127.0.0.1:9001/v1", dsh
 # 合计只累加计得出来的行：claude 15.04 + opencode 0.5 + dsh 1.0。
 assert abs(payload["totals"]["cost"] - 16.54) < 1e-6, payload["totals"]
 assert payload["totals"]["total_tokens"] == 7_501_000, payload["totals"]
@@ -135,12 +168,29 @@ row = next(line for line in lines if line.startswith("opencode") and "mystery-mo
 assert "--" in row and "¥" not in row, row
 priced = next(line for line in lines if line.startswith("opencode") and "deepseek-flash" in line)
 assert "¥" in priced, priced
+# 表头带接口地址列，地址按各自配置解析。
+assert "API 地址" in " ".join(lines[0].split()), lines[0]
+assert any(line.startswith("claude") and "http://127.0.0.1:9000" in line for line in lines), lines
 assert any(line.startswith("未计价模型") and "mystery-model" in line for line in lines), lines
 print("ok - 无价模型单独一行，费用显示 --")
 PY
 err=$("$bin" --all 2>&1 >/dev/null) || fail "运行失败"
 [[ -z "$err" ]] || fail "不该再往 stderr 写提示: $err"
 ok 没有多余的 stderr 提示
+
+# tokx 配置里的 [apis] 优先于日志与各工具配置。
+cat >"$tmp/apis.toml" <<'EOF'
+[apis]
+"deepseek-official" = "http://relay.local/v1"
+EOF
+output=$("$bin" --all --json --config "$tmp/apis.toml") || fail "带 [apis] 配置运行失败"
+python3 - "$output" <<'PY' || exit 1
+import json, sys
+rows = json.loads(sys.argv[1])["rows"]
+dsh = next(row for row in rows if row["source"] == "dsh")
+assert dsh["api"] == "http://relay.local/v1", dsh
+print("ok - tokx 配置覆盖接口地址")
+PY
 
 # 来源过滤与日期过滤。
 output=$("$bin" --all --json -s claude) || fail "来源过滤失败"
@@ -196,6 +246,16 @@ assert flash["off"] == flash["peak"] == {"hit": 0.02, "miss": 1.0, "output": 2.0
 assert models["mimo-v2.6-pro"]["peak"]["miss"] == 3.0, models["mimo-v2.6-pro"]
 assert models["mimo-v2.6-pro-ultraspeed"]["off"]["output"] == 60.0
 print("ok - mimo 实时价")
+PY
+
+# opencode 的配置文件允许注释，剥注释后再解析。
+PYTHONPATH="$repo/tokx/lib" python3 - <<'PY' || exit 1
+import json
+from tokx.api import _strip_jsonc
+
+text = '{\n // 行注释\n "a": "// 不是注释", /* 块注释 */\n "b": 1\n}'
+assert json.loads(_strip_jsonc(text)) == {"a": "// 不是注释", "b": 1}
+print("ok - 剥离 JSONC 注释")
 PY
 
 # 直连计价函数：高峰与空闲时段金额相同，输入按 miss 价。

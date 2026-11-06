@@ -92,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"tokx: 跳过 {SOURCE_LABELS[source]}: {exc}", file=sys.stderr)
 
     records = [record for record in records if _in_range(record.at, config.book, since, until)]
+    for record in records:
+        record.api = config.api.address(record.source, record.provider)
     records.sort(key=lambda record: record.at)
 
     if not records:

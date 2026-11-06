@@ -30,5 +30,6 @@ class Record:
     at: datetime
     model: str
     provider: str = ""
+    api: str = ""
     project: str = ""
     usage: Usage = field(default_factory=Usage)

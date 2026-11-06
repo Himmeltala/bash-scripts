@@ -96,29 +96,35 @@ def _cost_key(bucket: Bucket) -> tuple[bool, float]:
 
 
 def daily(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    # 一个来源可能用好几个模型，按天、来源、模型三者分开算，费用才不会互相牵连。
-    buckets: dict[tuple[str, str, str], Bucket] = {}
+    # 一个来源可能用好几个模型、几个接口，按天、来源、模型、接口分开算，各算各的。
+    buckets: dict[tuple[str, str, str, str], Bucket] = {}
     for record in records:
         day = record.at.astimezone(book.tz).date().isoformat()
-        key = (day, record.source, _model_name(record, book))
+        key = (day, record.source, _model_name(record, book), record.api)
         buckets.setdefault(key, Bucket()).add(record, book)
 
     order = {name: index for index, name in enumerate(SOURCE_ORDER)}
     rows = []
-    for (day, source, model), bucket in sorted(
+    for (day, source, model, api), bucket in sorted(
         buckets.items(),
-        key=lambda item: (item[0][0], order.get(item[0][1], 9), *_cost_key(item[1]), item[0][2]),
+        key=lambda item: (
+            item[0][0],
+            order.get(item[0][1], 9),
+            *_cost_key(item[1]),
+            item[0][2],
+            item[0][3],
+        ),
     ):
-        rows.append(_row(day, source, bucket, model))
+        rows.append(_row(day, source, bucket, model, api))
     return rows, _totals(rows)
 
 
 def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    buckets: dict[tuple[str, str, str], Bucket] = {}
+    buckets: dict[tuple[str, str, str, str], Bucket] = {}
     projects: dict[str, str] = {}
-    span: dict[tuple[str, str, str], list[datetime]] = {}
+    span: dict[tuple[str, str, str, str], list[datetime]] = {}
     for record in records:
-        key = (record.source, record.session, _model_name(record, book))
+        key = (record.source, record.session, _model_name(record, book), record.api)
         buckets.setdefault(key, Bucket()).add(record, book)
         if record.project:
             projects[record.session] = record.project
@@ -129,10 +135,11 @@ def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     order = {name: index for index, name in enumerate(SOURCE_ORDER)}
     rows = []
     for key in sorted(
-        buckets, key=lambda k: (order.get(k[0], 9), span[k][0], *_cost_key(buckets[k]), k[2])
+        buckets,
+        key=lambda k: (order.get(k[0], 9), span[k][0], *_cost_key(buckets[k]), k[2], k[3]),
     ):
         bucket = buckets[key]
-        row = _row("", key[0], bucket, key[2])
+        row = _row("", key[0], bucket, key[2], key[3])
         row.update(
             session=key[1],
             project=_project_name(projects.get(key[1], "")),
@@ -145,16 +152,17 @@ def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
 
 
 def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    buckets: dict[tuple[int, str], Bucket] = {}
+    buckets: dict[tuple[int, str, str], Bucket] = {}
     for record in records:
         local = record.at.astimezone(book.tz)
-        buckets.setdefault((local.hour, _model_name(record, book)), Bucket()).add(record, book)
+        key = (local.hour, _model_name(record, book), record.api)
+        buckets.setdefault(key, Bucket()).add(record, book)
 
     rows = []
-    for (hour, model), bucket in sorted(
-        buckets.items(), key=lambda item: (item[0][0], *_cost_key(item[1]), item[0][1])
+    for (hour, model, api), bucket in sorted(
+        buckets.items(), key=lambda item: (item[0][0], *_cost_key(item[1]), item[0][1], item[0][2])
     ):
-        row = _row(f"{hour:02d}:00", _slot_label(hour, book), bucket, model)
+        row = _row(f"{hour:02d}:00", _slot_label(hour, book), bucket, model, api)
         row["slot"] = row.pop("date")
         row["label"] = row.pop("source")
         row["hour"] = hour
@@ -162,7 +170,7 @@ def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     return rows, _totals(rows)
 
 
-def _row(key_a: str, key_b: str, bucket: Bucket, model: str) -> dict:
+def _row(key_a: str, key_b: str, bucket: Bucket, model: str, api: str) -> dict:
     usage = bucket.usage
     # 一条记录查不到价格，这一行的费用就算不全，三个费用列都留空。
     known = bucket.unpriced == 0
@@ -170,6 +178,7 @@ def _row(key_a: str, key_b: str, bucket: Bucket, model: str) -> dict:
         "date": key_a,
         "source": key_b,
         "model": model,
+        "api": api,
         "requests": bucket.requests,
         "input": usage.input,
         "cache_read": usage.cache_read,
@@ -243,6 +252,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
             row["source"] or "",
             row["date"],
             row["model"],
+            row["api"] or "-",
             _number(row["requests"]),
             _number(row["input"]),
             _number(row["cache_read"]),
@@ -260,6 +270,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
                 "合计",
                 "",
                 "",
+                "",
                 _number(total["requests"]),
                 _number(total["input"]),
                 _number(total["cache_read"]),
@@ -275,6 +286,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "来源",
             "日期",
             "模型",
+            "API 地址",
             "请求",
             "输入",
             "缓存读",
@@ -285,7 +297,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "合计",
         ],
         body,
-        ["left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right"],
+        ["left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right"],
     ) + _unpriced_note(unpriced or [], has_total)
 
 
@@ -297,6 +309,7 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
             _short_session(row["session"]),
             row["project"] or "-",
             row["model"],
+            row["api"] or "-",
             _number(row["requests"]),
             _number(row["input"]),
             _number(row["cache_read"]),
@@ -316,6 +329,7 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
                 "",
                 "",
                 "",
+                "",
                 _number(total["requests"]),
                 _number(total["input"]),
                 _number(total["cache_read"]),
@@ -328,9 +342,9 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
             ]
         )
     return render(
-        ["来源", "会话", "项目", "模型", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计", "开始"],
+        ["来源", "会话", "项目", "模型", "API 地址", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计", "开始"],
         body,
-        ["left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right", "left"],
+        ["left", "left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right", "left"],
     ) + _unpriced_note(unpriced or [], has_total)
 
 
@@ -340,6 +354,7 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
             row["slot"],
             row["label"],
             row["model"],
+            row["api"] or "-",
             _number(row["requests"]),
             _number(row["input"]),
             _number(row["cache_read"]),
@@ -356,6 +371,7 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "时段",
             "档位",
             "模型",
+            "API 地址",
             "请求",
             "输入",
             "缓存读",
@@ -366,7 +382,7 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "合计",
         ],
         body,
-        ["left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right"],
+        ["left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right"],
     ) + _unpriced_note(unpriced or [], False)
 
 

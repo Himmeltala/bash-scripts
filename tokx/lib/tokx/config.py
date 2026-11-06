@@ -9,6 +9,7 @@ from datetime import date, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .api import ApiBook
 from .pricing import (
     DEFAULT_ALIASES,
     DEFAULT_MODELS,
@@ -30,6 +31,7 @@ class ConfigError(Exception):
 class Paths:
     claude: Path
     opencode: Path
+    opencode_config: Path
     dsh_sessions: Path
 
 
@@ -37,6 +39,7 @@ class Paths:
 class Config:
     book: PriceBook
     paths: Paths
+    api: ApiBook
     path: Path | None
 
 
@@ -135,16 +138,29 @@ def load(explicit: str | None = None) -> Config:
 
     holidays = _parse_holidays(peak.get("holidays", []))
 
+    apis: dict[str, str] = {}
+    for name, value in (doc.get("apis") or {}).items():
+        if not isinstance(value, str):
+            raise ConfigError(f"apis.{name} 需要写成地址字符串")
+        apis[str(name)] = value
+
     home = Path.home()
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")).expanduser()
     paths = Paths(
         claude=Path(os.environ.get("TOKX_CLAUDE_DIR", home / ".claude")).expanduser(),
         opencode=Path(
             os.environ.get("TOKX_OPENCODE_DIR", home / ".local" / "share" / "opencode")
         ).expanduser(),
+        opencode_config=Path(
+            os.environ.get("TOKX_OPENCODE_CONFIG", config_home / "opencode")
+        ).expanduser(),
         dsh_sessions=Path(
             os.environ.get("TOKX_DSH_SESSIONS", home / ".dsh" / "sessions")
         ).expanduser(),
     )
+    dsh_profiles = Path(
+        os.environ.get("TOKX_DSH_PROFILES", paths.dsh_sessions.parent / "profiles")
+    ).expanduser()
 
     book = PriceBook(
         models=models,
@@ -154,4 +170,10 @@ def load(explicit: str | None = None) -> Config:
         holidays=holidays,
         tz=tz,
     )
-    return Config(book=book, paths=paths, path=path if path.is_file() else None)
+    api = ApiBook.load(
+        apis,
+        claude_dir=paths.claude,
+        opencode_dir=paths.opencode_config,
+        dsh_profiles=dsh_profiles,
+    )
+    return Config(book=book, paths=paths, api=api, path=path if path.is_file() else None)
