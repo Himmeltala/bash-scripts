@@ -236,6 +236,101 @@ assert {row["model"] for row in sess} == {"deepseek-flash", "mystery-model"}, se
 print("ok - 同一会话按模型分行")
 PY
 
+# 账本：删掉 Claude 的会话文件后，那部分用量还能从账本回显，并标成缓存。
+[[ -f "$HOME/.local/state/tokx/usage.db" ]] || fail "首次运行没建账本"
+rm -f "$HOME/.claude/projects/-tmp-demo/sess-claude.jsonl"
+rm -f "$HOME/.local/state/tokx/cache/claude.json"
+output=$("$bin" --all --json) || fail "删掉会话后运行失败"
+python3 - "$output" <<'PY' || exit 1
+import json, sys
+payload = json.loads(sys.argv[1])
+cache = [row for row in payload["rows"] if row["origin"] == "cache"]
+assert [row["source"] for row in cache] == ["claude"], cache
+assert cache[0]["date"] == "2026-10-26" and cache[0]["model"] == "deepseek-flash", cache[0]
+assert cache[0]["requests"] == 2, cache[0]
+# 回显的数字与删除前一致，合计不变。
+assert abs(payload["totals"]["cost"] - 16.54) < 1e-6, payload["totals"]
+assert payload["totals"]["total_tokens"] == 7_501_000, payload["totals"]
+print("ok - 被删会话从账本回显")
+PY
+
+table=$("$bin" --all) || fail "回显后出表失败"
+python3 - "$table" <<'PY' || exit 1
+import sys
+lines = sys.argv[1].splitlines()
+row = next(line for line in lines if line.startswith("claude"))
+assert "缓存" in row, row
+assert any("出处标为缓存" in line for line in lines), lines[-3:]
+print("ok - 表里标出缓存来源")
+PY
+
+# 同一份数据再跑两遍，账本不会重复累加。
+first=$("$bin" --all --json) || fail "第二次运行失败"
+second=$("$bin" --all --json) || fail "第三次运行失败"
+[[ "$first" == "$second" ]] || fail "多次运行数字不一致"
+ok 重复运行数字稳定
+
+# tokx db status 能看到账本内容，db import 重复导入不翻倍。
+status=$("$bin" db status) || fail "db status 失败"
+[[ "$status" == *"请求"* ]] || fail "db status 输出不对: $status"
+ok db status
+
+before=$("$bin" --all --json) || fail "导入前运行失败"
+import_out=$("$bin" db import --json) || fail "db import 失败"
+after=$("$bin" --all --json) || fail "导入后运行失败"
+[[ "$before" == "$after" ]] || fail "db import 后数字变了"
+python3 - "$import_out" <<'PY' || exit 1
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload["records"] >= payload["added"] >= 0, payload
+print("ok - db import 不重复计入")
+PY
+
+# 会话文件变短（被重写）时以现扫为准，不把消失的请求留在账本里。
+python3 - "$HOME" <<'PY' || exit 1
+import json, sys
+from pathlib import Path
+home = Path(sys.argv[1])
+path = home / ".claude/projects/-tmp-demo/sess-claude.jsonl"
+lines = [
+    {"type": "assistant", "timestamp": "2026-10-26T01:00:00.000Z", "sessionId": "sess-claude",
+     "cwd": "/tmp/demo", "message": {"id": "msg-a", "model": "deepseek-flash",
+     "usage": {"input_tokens": 1000000, "cache_read_input_tokens": 1000000,
+               "cache_creation_input_tokens": 0, "output_tokens": 1000000}}},
+]
+path.write_text("\n".join(json.dumps(item) for item in lines) + "\n", encoding="utf-8")
+PY
+output=$("$bin" --all --json) || fail "会话变短后运行失败"
+python3 - "$output" <<'PY' || exit 1
+import json, sys
+payload = json.loads(sys.argv[1])
+claude = [row for row in payload["rows"] if row["source"] == "claude"]
+assert len(claude) == 1 and claude[0]["requests"] == 1, claude
+assert claude[0]["origin"] == "live", claude
+print("ok - 会话变短后以现扫为准")
+PY
+
+# 账本按天清理：老会话里的请求时间没动，按请求时间算就不会被一次次刷新而永远清不掉。
+PYTHONPATH="$repo/tokx/lib" python3 - "$HOME" <<'PY' || exit 1
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
+from tokx.model import Record, Usage
+from tokx.store import Store
+
+path = Path(sys.argv[1]) / ".local/state/tokx/usage.db"
+old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+record = Record(source="claude", session="sess-old", at=old, model="deepseek-flash",
+                usage=Usage(input=1), key="old-1")
+with Store(path, ZoneInfo("Asia/Shanghai")) as store:
+    store.insert({"claude": {"sess-old": [record]}})
+    assert store.stale(["claude"], 30) == [("claude", "sess-old")]
+    store.forget(store.stale(["claude"], 30))
+    assert store.stale(["claude"], 30) == []
+print("ok - db gc 按请求时间清理")
+PY
+
 # mimo 只有实时推理价，不分峰谷：两档同价，金额按 miss 价算。
 output=$("$bin" prices --json) || fail "prices 失败"
 python3 - "$output" <<'PY' || exit 1
@@ -276,7 +371,7 @@ print("ok - mimo 不分峰谷")
 PY
 
 # 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，然后退出。
-printf '1\n5\n1 3\n5\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
+printf '1\n5\n1 3\n6\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
 grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
 grep -q '^dsh' "$tmp/menu.out" || fail "菜单输出缺少 dsh"
 grep -q '^opencode' "$tmp/menu.out" && fail "菜单没有排除 opencode"

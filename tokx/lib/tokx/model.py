@@ -33,3 +33,7 @@ class Record:
     api: str = ""
     project: str = ""
     usage: Usage = field(default_factory=Usage)
+    # 同一来源同一会话里的去重键，账本主键的一部分；采集后由来源模块填上。
+    key: str = ""
+    # 这条记录是现扫到的，还是会话文件没了以后从账本补回来的。
+    origin: str = "live"

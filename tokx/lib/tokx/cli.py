@@ -8,12 +8,15 @@ import sys
 from datetime import date, datetime, timedelta
 
 from . import report
-from .config import ConfigError, load
+from .config import Config, ConfigError, load
+from .model import Record
 from .pricing import PriceBook
+from .snapshot import Snapshot
 from .sources import SOURCE_LABELS, SOURCE_ORDER, SourceError, collect
+from .store import Store, StoreError
 
 VERSION = "0.2.0"
-COMMANDS = ("daily", "session", "hour", "prices")
+COMMANDS = ("daily", "session", "hour", "prices", "rebuild", "db")
 
 
 class UsageError(Exception):
@@ -37,8 +40,24 @@ def build_parser() -> argparse.ArgumentParser:
         ("session", "按会话汇总"),
         ("hour", "按一天内的小时分布汇总"),
         ("prices", "打印当前价格表"),
+        ("rebuild", "清空账本后全量重扫并重建"),
     ):
         sub.add_parser(name, parents=[suppressed], help=text, description=text)
+
+    db = sub.add_parser("db", help="查看与维护用量账本", description="查看与维护用量账本")
+    db.add_argument(
+        "action",
+        choices=("import", "status", "gc"),
+        help="import 采集并写入账本；status 看账本概况；gc 清理过期记录",
+    )
+    db.add_argument(
+        "--keep-days",
+        type=int,
+        metavar="N",
+        help="gc 时保留最近多少天，默认取配置里的 store.keep_days",
+    )
+    db.add_argument("--json", action="store_true", help="输出 JSON")
+    db.add_argument("--config", metavar="路径", help="指定配置文件")
     return parser
 
 
@@ -76,22 +95,44 @@ def main(argv: list[str] | None = None) -> int:
 
     if command == "prices":
         return _print_prices(config.book, getattr(args, "json", False))
+    if command == "db":
+        return _db_command(args, config)
 
     try:
-        sources = _pick_sources(getattr(args, "source", None))
         since, until = _range(args, config.book)
     except UsageError as exc:
         print(f"tokx: {exc}", file=sys.stderr)
         return 2
 
-    records = []
-    for source in sources:
-        try:
-            records.extend(collect(source, config.paths))
-        except (SourceError, OSError) as exc:
-            print(f"tokx: 跳过 {SOURCE_LABELS[source]}: {exc}", file=sys.stderr)
+    if command == "rebuild":
+        return _rebuild(args, config, since, until)
+
+    return _report_command(command, args, config, since, until)
+
+
+def _report_command(
+    command: str,
+    args: argparse.Namespace,
+    config: Config,
+    since: date | None,
+    until: date | None,
+) -> int:
+    try:
+        sources = _pick_sources(getattr(args, "source", None))
+    except UsageError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return 2
+
+    records, batches, snapshots = _scan(config, sources)
+    _remember(config, batches, snapshots)
+
+    recalled = _recall(config, sources, batches)
+    kept, recalled = _trim(config, recalled, since, until)
+    if kept:
+        _forget(config, kept)
 
     records = [record for record in records if _in_range(record.at, config.book, since, until)]
+    records.extend(recalled)
     for record in records:
         record.api = config.api.address(record.source, record.provider)
     records.sort(key=lambda record: record.at)
@@ -132,6 +173,213 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(text)
 
+    return 0
+
+
+def _scan(config: Config, sources: list[str]):
+    """现扫三个来源，顺手把现扫结果存进快照缓存。
+
+    返回 (记录, {来源: {会话: [记录]}}, {来源: 快照})。
+    """
+    records: list[Record] = []
+    batches: dict[str, dict[str, list[Record]]] = {}
+    snapshots: dict[str, Snapshot] = {}
+    for source in sources:
+        snapshot = None
+        if config.store.enabled:
+            snapshot = Snapshot(source, config.store.cache_dir / f"{source}.json")
+            snapshots[source] = snapshot
+        try:
+            found = collect(source, config.paths, snapshot)
+        except (SourceError, OSError) as exc:
+            print(f"tokx: 跳过 {SOURCE_LABELS[source]}: {exc}", file=sys.stderr)
+            found = []
+        records.extend(found)
+        batches[source] = _by_session(found)
+    return records, batches, snapshots
+
+
+def _by_session(records: list[Record]) -> dict[str, list[Record]]:
+    grouped: dict[str, list[Record]] = {}
+    for record in records:
+        grouped.setdefault(record.session, []).append(record)
+    return grouped
+
+
+def _remember(
+    config: Config,
+    batches: dict[str, dict[str, list[Record]]],
+    snapshots: dict[str, Snapshot],
+) -> None:
+    """把现扫结果写进账本，并把快照缓存落盘；账本写不进去只警告，不影响出表。"""
+    for snapshot in snapshots.values():
+        snapshot.save()
+    if not config.store.enabled or not batches:
+        return
+    try:
+        with Store(config.store.db, config.book.tz) as store:
+            store.insert(batches)
+    except StoreError as exc:
+        print(f"tokx: {exc}（本次只显示现扫结果）", file=sys.stderr)
+
+
+def _recall(config: Config, sources: list[str], batches: dict[str, dict[str, list[Record]]]) -> list[Record]:
+    """账本里有、这次没扫到的会话，把它们的记录读回来补进报表。"""
+    if not config.store.enabled:
+        return []
+    try:
+        with Store(config.store.db, config.book.tz) as store:
+            known = store.sessions(sources)
+            old = {key for key in known if key[1] not in batches.get(key[0], {})}
+            if not old:
+                return []
+            records = [record for record in store.records(sources) if (record.source, record.session) in old]
+    except StoreError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return []
+    for record in records:
+        record.origin = report.ORIGIN_CACHE
+    return records
+
+
+def _trim(
+    config: Config,
+    records: list[Record],
+    since: date | None,
+    until: date | None,
+) -> tuple[list[tuple[str, str]], list[Record]]:
+    """日期范围完全落在账本记录之外的会话，账本里的记录留着没用了，返回要清理的会话。"""
+    if not config.store.enabled or not records:
+        return [], records
+    span: dict[tuple[str, str], tuple[date, date]] = {}
+    for record in records:
+        day = record.at.astimezone(config.book.tz).date()
+        key = (record.source, record.session)
+        low, high = span.get(key, (day, day))
+        span[key] = (min(low, day), max(high, day))
+    drop = {
+        key
+        for key, (low, high) in span.items()
+        if (since is not None and high < since) or (until is not None and low > until)
+    }
+    if not drop:
+        return [], records
+    return list(drop), [record for record in records if (record.source, record.session) not in drop]
+
+
+def _forget(config: Config, sessions: list[tuple[str, str]]) -> None:
+    try:
+        with Store(config.store.db, config.book.tz) as store:
+            store.forget(sessions)
+    except StoreError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+
+
+def _rebuild(
+    args: argparse.Namespace,
+    config: Config,
+    since: date | None,
+    until: date | None,
+) -> int:
+    """清空账本后按当前采集口径全量重扫，改了口径或时区之后用。"""
+    try:
+        sources = _pick_sources(getattr(args, "source", None))
+    except UsageError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return 2
+    if not config.store.enabled:
+        print("tokx: 配置里 store.enabled 是 false，账本没在用", file=sys.stderr)
+        return 2
+
+    records, batches, snapshots = _scan(config, sources)
+    for snapshot in snapshots.values():
+        snapshot.save()
+    records = [record for record in records if _in_range(record.at, config.book, since, until)]
+    try:
+        with Store(config.store.db, config.book.tz) as store:
+            store.clear(sources)
+            added = store.insert(batches)
+    except StoreError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"账本已重建：{len(records)} 条请求，写入 {added} 行，{config.store.db}")
+    return 0
+
+
+def _db_command(args: argparse.Namespace, config: Config) -> int:
+    if not config.store.enabled:
+        print("tokx: 配置里 store.enabled 是 false，账本没在用", file=sys.stderr)
+        return 2
+    try:
+        if args.action == "import":
+            return _db_import(config, bool(args.json))
+        if args.action == "gc":
+            return _db_gc(config, args.keep_days, bool(args.json))
+        return _db_status(config, bool(args.json))
+    except (StoreError, UsageError) as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return 1
+
+
+def _db_import(config: Config, as_json: bool) -> int:
+    """采集并入库，给 SessionEnd 之类的外部钩子调用，不出报表。"""
+    records, batches, snapshots = _scan(config, list(SOURCE_ORDER))
+    for snapshot in snapshots.values():
+        snapshot.save()
+    with Store(config.store.db, config.book.tz) as store:
+        added = store.insert(batches)
+    if as_json:
+        print(
+            json.dumps(
+                {"action": "import", "records": len(records), "added": added},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(f"账本导入完成：现扫 {len(records)} 条请求，新增 {added} 行")
+    return 0
+
+
+def _db_gc(config: Config, keep_days: int | None, as_json: bool) -> int:
+    days = keep_days if keep_days is not None else config.store.keep_days
+    if days < 1:
+        raise UsageError("--keep-days 至少为 1")
+    with Store(config.store.db, config.book.tz) as store:
+        stale = store.stale(list(SOURCE_ORDER), days)
+        removed = store.forget(stale)
+    if as_json:
+        print(
+            json.dumps(
+                {"action": "gc", "keep_days": days, "sessions": len(stale), "removed": removed},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(f"清理完成：{days} 天内没再出现的会话 {len(stale)} 个，删除 {removed} 行")
+    return 0
+
+
+def _db_status(config: Config, as_json: bool) -> int:
+    with Store(config.store.db, config.book.tz) as store:
+        stats = store.stats()
+    if as_json:
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        return 0
+    if not stats["requests"]:
+        print(f"账本还是空的：{stats['path']}")
+        return 0
+    lines = [
+        f"账本      {stats['path']}",
+        f"请求      {stats['requests']:,} 条，{stats['sessions']} 个会话",
+        f"时间范围  {stats['first_at']} 至 {stats['last_at']}",
+    ]
+    for item in stats["sources"]:
+        label = SOURCE_LABELS.get(item["source"], item["source"])
+        lines.append(f"  {label}：{item['requests']:,} 条，{item['sessions']} 个会话")
+    print("\n".join(lines))
     return 0
 
 

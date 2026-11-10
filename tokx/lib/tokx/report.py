@@ -13,6 +13,10 @@ from .sources import SOURCE_ORDER
 
 MONEY = "¥"
 
+# 行的来路：现扫到的显示空，从账本回显的标成缓存。
+ORIGIN_LIVE = "live"
+ORIGIN_CACHE = "cache"
+
 
 @dataclass(slots=True)
 class Bucket:
@@ -21,6 +25,7 @@ class Bucket:
     cost_peak: float = 0.0
     cost_off: float = 0.0
     unpriced: int = 0
+    from_cache: bool = False
 
     @property
     def cost(self) -> float:
@@ -29,6 +34,8 @@ class Bucket:
     def add(self, record: Record, book: PriceBook) -> None:
         usage = record.usage
         self.requests += 1
+        if getattr(record, "origin", ORIGIN_LIVE) != ORIGIN_LIVE:
+            self.from_cache = True
         self.usage = Usage(
             input=self.usage.input + usage.input,
             cache_read=self.usage.cache_read + usage.cache_read,
@@ -76,6 +83,32 @@ def _totals(rows: list[dict]) -> dict:
     return total
 
 
+def _cache_note(rows: list[dict], has_total: bool) -> str:
+    """表里有从账本回显的行时，单独列出这些会话占了其中多少，免得和现扫的数字混在一起看。"""
+    cached = [row for row in rows if row.get("origin") == ORIGIN_CACHE]
+    if not cached:
+        return ""
+    sessions = len({row.get("session") for row in cached if row.get("session")})
+    if not sessions:
+        # 按天、按小时汇总的表没有会话，只能说明口径。
+        return "\n\n出处标为缓存的请求，原始会话文件已不在，显示的是删除前最后一次采集的数字。"
+    requests = sum(row["requests"] for row in cached)
+    # 同一会话每换一次模型就占一行，先把会话去重再加，避免重复累加。
+    by_session: dict[str, dict] = {}
+    for row in cached:
+        if row.get("session") and row["cost"] is not None:
+            by_session.setdefault(row["session"], row)
+    priced = list(by_session.values())
+    money = _money(sum(row["cost"] for row in priced)) if priced else "--"
+    note = (
+        f"\n\n出处标为缓存的 {sessions} 个会话、{_number(requests)} 条请求（{money}）"
+        "原始会话文件已不在，数字来自删除前最后一次采集；"
+    )
+    if not has_total:
+        return note + "整张表只有缓存行时不出合计。"
+    return note + "与上方合计行无关。"
+
+
 def _unpriced_note(models: list[str], has_total: bool) -> str:
     """表下说明哪些模型没价格，说明 -- 与合计的口径。"""
     if not models:
@@ -97,15 +130,15 @@ def _cost_key(bucket: Bucket) -> tuple[bool, float]:
 
 def daily(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     # 一个来源可能用好几个模型、几个接口，按天、来源、模型、接口分开算，各算各的。
-    buckets: dict[tuple[str, str, str, str], Bucket] = {}
+    buckets: dict[tuple[str, str, str, str, str], Bucket] = {}
     for record in records:
         day = record.at.astimezone(book.tz).date().isoformat()
-        key = (day, record.source, _model_name(record, book), record.api)
+        key = (day, record.source, _model_name(record, book), record.api, _origin(record))
         buckets.setdefault(key, Bucket()).add(record, book)
 
     order = {name: index for index, name in enumerate(SOURCE_ORDER)}
     rows = []
-    for (day, source, model, api), bucket in sorted(
+    for (day, source, model, api, origin), bucket in sorted(
         buckets.items(),
         key=lambda item: (
             item[0][0],
@@ -113,18 +146,25 @@ def daily(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
             *_cost_key(item[1]),
             item[0][2],
             item[0][3],
+            item[0][4],
         ),
     ):
-        rows.append(_row(day, source, bucket, model, api))
+        rows.append(_row(day, source, bucket, model, api, origin))
     return rows, _totals(rows)
 
 
 def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    buckets: dict[tuple[str, str, str, str], Bucket] = {}
+    buckets: dict[tuple[str, str, str, str, str], Bucket] = {}
     projects: dict[str, str] = {}
-    span: dict[tuple[str, str, str, str], list[datetime]] = {}
+    span: dict[tuple[str, str, str, str, str], list[datetime]] = {}
     for record in records:
-        key = (record.source, record.session, _model_name(record, book), record.api)
+        key = (
+            record.source,
+            record.session,
+            _model_name(record, book),
+            record.api,
+            _origin(record),
+        )
         buckets.setdefault(key, Bucket()).add(record, book)
         if record.project:
             projects[record.session] = record.project
@@ -136,10 +176,17 @@ def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     rows = []
     for key in sorted(
         buckets,
-        key=lambda k: (order.get(k[0], 9), span[k][0], *_cost_key(buckets[k]), k[2], k[3]),
+        key=lambda k: (
+            order.get(k[0], 9),
+            span[k][0],
+            *_cost_key(buckets[k]),
+            k[2],
+            k[3],
+            k[4],
+        ),
     ):
         bucket = buckets[key]
-        row = _row("", key[0], bucket, key[2], key[3])
+        row = _row("", key[0], bucket, key[2], key[3], key[4])
         row.update(
             session=key[1],
             project=_project_name(projects.get(key[1], "")),
@@ -152,17 +199,24 @@ def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
 
 
 def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    buckets: dict[tuple[int, str, str], Bucket] = {}
+    buckets: dict[tuple[int, str, str, str], Bucket] = {}
     for record in records:
         local = record.at.astimezone(book.tz)
-        key = (local.hour, _model_name(record, book), record.api)
+        key = (local.hour, _model_name(record, book), record.api, _origin(record))
         buckets.setdefault(key, Bucket()).add(record, book)
 
     rows = []
-    for (hour, model, api), bucket in sorted(
-        buckets.items(), key=lambda item: (item[0][0], *_cost_key(item[1]), item[0][1], item[0][2])
+    for (hour, model, api, origin), bucket in sorted(
+        buckets.items(),
+        key=lambda item: (
+            item[0][0],
+            *_cost_key(item[1]),
+            item[0][1],
+            item[0][2],
+            item[0][3],
+        ),
     ):
-        row = _row(f"{hour:02d}:00", _slot_label(hour, book), bucket, model, api)
+        row = _row(f"{hour:02d}:00", _slot_label(hour, book), bucket, model, api, origin)
         row["slot"] = row.pop("date")
         row["label"] = row.pop("source")
         row["hour"] = hour
@@ -170,7 +224,18 @@ def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     return rows, _totals(rows)
 
 
-def _row(key_a: str, key_b: str, bucket: Bucket, model: str, api: str) -> dict:
+def _origin(record: Record) -> str:
+    return getattr(record, "origin", ORIGIN_LIVE)
+
+
+def _row(
+    key_a: str,
+    key_b: str,
+    bucket: Bucket,
+    model: str,
+    api: str,
+    origin: str = ORIGIN_LIVE,
+) -> dict:
     usage = bucket.usage
     # 一条记录查不到价格，这一行的费用就算不全，三个费用列都留空。
     known = bucket.unpriced == 0
@@ -189,6 +254,7 @@ def _row(key_a: str, key_b: str, bucket: Bucket, model: str, api: str) -> dict:
         "cost_off": round(bucket.cost_off, 8) if known else None,
         "cost": round(bucket.cost, 8) if known else None,
         "unpriced": bucket.unpriced,
+        "origin": origin,
     }
 
 
@@ -197,6 +263,10 @@ def _slot_label(hour: int, book: PriceBook) -> str:
         if start.hour <= hour < end.hour:
             return "高峰窗口"
     return "空闲"
+
+
+def _origin_name(row: dict) -> str:
+    return "缓存" if row.get("origin") == ORIGIN_CACHE else ""
 
 
 def _short_session(session: str) -> str:
@@ -250,6 +320,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
     body = [
         [
             row["source"] or "",
+            _origin_name(row),
             row["date"],
             row["model"],
             row["api"] or "-",
@@ -271,6 +342,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
                 "",
                 "",
                 "",
+                "",
                 _number(total["requests"]),
                 _number(total["input"]),
                 _number(total["cache_read"]),
@@ -284,6 +356,7 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
     return render(
         [
             "来源",
+            "出处",
             "日期",
             "模型",
             "API 地址",
@@ -297,8 +370,22 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "合计",
         ],
         body,
-        ["left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right"],
-    ) + _unpriced_note(unpriced or [], has_total)
+        [
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+        ],
+    ) + _cache_note(rows, has_total) + _unpriced_note(unpriced or [], has_total)
 
 
 def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = None) -> str:
@@ -306,6 +393,7 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
     body = [
         [
             row["source"],
+            _origin_name(row),
             _short_session(row["session"]),
             row["project"] or "-",
             row["model"],
@@ -330,6 +418,7 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
                 "",
                 "",
                 "",
+                "",
                 _number(total["requests"]),
                 _number(total["input"]),
                 _number(total["cache_read"]),
@@ -342,10 +431,26 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
             ]
         )
     return render(
-        ["来源", "会话", "项目", "模型", "API 地址", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计", "开始"],
+        ["来源", "出处", "会话", "项目", "模型", "API 地址", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计", "开始"],
         body,
-        ["left", "left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right", "left"],
-    ) + _unpriced_note(unpriced or [], has_total)
+        [
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "left",
+        ],
+    ) + _cache_note(rows, has_total) + _unpriced_note(unpriced or [], has_total)
 
 
 def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None) -> str:

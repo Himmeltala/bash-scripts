@@ -11,7 +11,8 @@ tokx [选项] [命令]
   daily      按天汇总，每个模型、每个接口地址一行，默认命令
   session    按会话汇总，每个模型、每个接口地址一行
   hour       按一天内的小时分布汇总，每个模型、每个接口地址一行
-  prices     打印当前价格表
+  rebuild    清空账本后全量重扫、重建
+  db         用量账本：import 采集入库，status 看概况，gc 清理过期记录
   menu       打开交互菜单
 
 选项:
@@ -36,22 +37,25 @@ tokx session --all                    按会话看，找出最贵的会话
 tokx hour --all                       按时段看，看高峰时段用了多少
 tokx -s dsh --since 2026-10-01        只看 DeepSeek Harness
 tokx --json                           输出 JSON，交给脚本处理
+tokx db status                        看账本里存了多少、覆盖到哪天
 ```
 
 `daily` 的输出（下表是示例数据，只用来说明格式）。一行是某天某个来源的某个模型走的某个接口地址，一个来源用了几个模型、几个接口地址就出几行，各算各的费用。总 token 是输入、缓存读、缓存写与输出之和，缓存读也算消耗；`--all` 时合计行就是全部历史的总量：
 
 ```
-来源      日期        模型            API 地址                            请求    输入     缓存读    输出   总 token  高峰费用  空闲费用      合计
---------  ----------  --------------  ----------------------------------  ----  ------  ---------  ------  ---------  --------  --------  --------
-claude    2026-10-26  deepseek-flash  https://api.anthropic.com            120  12,000    300,000   8,000    320,000   ¥1.2000   ¥0.6000   ¥1.8000
-claude    2026-10-27  deepseek-flash  https://api.anthropic.com             98   9,500    240,000   6,400    255,900   ¥0.9820   ¥0.4910   ¥1.4730
-opencode  2026-10-27  deepseek-flash  https://api.deepseek.com              15   1,200     20,000     900     22,100   ¥0.0500   ¥0.0250   ¥0.0750
-dsh       2026-10-27  deepseek-flash  https://api.deepseek.com/anthropic   210  25,000    900,000  15,000    940,000   ¥4.8000   ¥2.4000   ¥7.2000
-dsh       2026-10-27  qwen3.8-27b     https://api.deepseek.com/anthropic    40   8,000          0   2,000     10,000        --        --        --
-合计                                                                       483  55,700  1,460,000  32,300  1,548,000   ¥7.0320   ¥3.5160  ¥10.5480
+来源      出处  日期        模型            API 地址                            请求    输入     缓存读    输出   总 token  高峰费用  空闲费用      合计
+--------  ----  ----------  --------------  ----------------------------------  ----  ------  ---------  ------  ---------  --------  --------  --------
+claude          2026-10-26  deepseek-flash  https://api.anthropic.com            120  12,000    300,000   8,000    320,000   ¥1.2000   ¥0.6000   ¥1.8000
+claude          2026-10-27  deepseek-flash  https://api.anthropic.com             98   9,500    240,000   6,400    255,900   ¥0.9820   ¥0.4910   ¥1.4730
+opencode        2026-10-27  deepseek-flash  https://api.deepseek.com              15   1,200     20,000     900     22,100   ¥0.0500   ¥0.0250   ¥0.0750
+dsh             2026-10-27  deepseek-flash  https://api.deepseek.com/anthropic   210  25,000    900,000  15,000    940,000   ¥4.8000   ¥2.4000   ¥7.2000
+dsh             2026-10-27  qwen3.8-27b     https://api.deepseek.com/anthropic    40   8,000          0   2,000     10,000        --        --        --
+合计                                                                          483  55,700  1,460,000  32,300  1,548,000   ¥7.0320   ¥3.5160  ¥10.5480
 
 未计价模型：qwen3.8-27b；这些行没有单价，费用显示 --，合计只累加计得出来的行。
 ```
+
+`出处` 列留空的是本次现扫到的行；会话文件已经不在了、数字从账本读回来的行标成 `缓存`，表下会多一行说明。
 
 `API 地址` 列是请求实际走的接口地址：Claude Code 取设置文件里的 `ANTHROPIC_BASE_URL`，opencode 取配置文件里 `provider.<id>.options.baseURL`，DeepSeek Harness 取 profile 补丁里 `providers.<id>.baseURL`。配置里没写地址的常见 provider 用内置默认地址，其余查不到时显示 `-`。地址按当前配置解析，换了地址后旧日期也跟着变。同一模型走了多个地址时，各地址单独成行；费用仍按模型单价计算。
 
@@ -107,13 +111,33 @@ printf '1\n5\n1 3\n5\n' | tokx menu    按日汇总、全部历史、只勾 clau
 - Claude Code 如果走代理或中转站，代理的加价与折扣不体现，这里算的是 DeepSeek 与 mimo 的官方价。
 - 历史请求一律按当前价格表重算，官方调价后，旧日期的费用会跟着变。
 
+## 用量账本
+
+报表每次运行时现扫三个来源，同时把扫到的每条请求写进本机账本 `~/.local/state/tokx/usage.db`（sqlite3）。会话文件被删掉、被工具自己清理以后，账本里的用量照样出表，不会因为文件没了就从报表里消失。
+
+- 一行一条请求，主键是来源、会话与去重键，重复导入不会翻倍。去重键：Claude Code 用 `message.id`，opencode 用消息 id，DeepSeek Harness 用 `turn:step`。
+- 接口地址与费用不入账，出表时按当前配置与当前价格表现算，改价、换地址后历史数字照常跟着变。
+- 本次没扫到的会话，记录从账本读回来，`出处` 列标成 `缓存`，表下也有一行说明；正常现扫的行 `出处` 留空。
+- 会话文件被重写变短时以现扫为准：同一会话这次采到的条数比账本里见过的最大值少，就删掉这个会话的旧记录再写，不会把已经不存在的请求当成历史回显。
+- 现扫结果另有一层快照缓存 `~/.local/state/tokx/cache/<来源>.json`，按文件大小与修改时间判断，没变的会话不重复解压；缓存丢了只会慢一点，不影响数字。
+- 账本目录可以用 `TOKX_STATE_DIR` 换位置，配置里的 `[store]` 节可以整个关掉或改路径。
+
+维护命令：
+
+```
+tokx db status              账本有多少条、覆盖到哪天、各来源多少
+tokx db import              只采集入库、不出报表，适合挂到工具的结束钩子上
+tokx db gc --keep-days 180  清掉 180 天内没再出现的会话
+tokx rebuild                清空账本后按当前口径全量重扫，改过采集口径或时区后执行
+```
+
 ## 数据来源
 
 | 来源             | 位置                                          | 说明                                                                               |
 | ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Claude Code      | `~/.claude/projects/**/*.jsonl`             | 一条回复按内容块写成多行，按 `message.id` 合并，取 token 数最大的那一行          |
 | opencode         | `~/.local/share/opencode/opencode.db`       | 读 `message` 表，旧版本回退到 `storage/message` 下的 JSON                      |
-| DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd` | 需要 `zstd` 命令，模型从 `request/header` 事件取，同一步骤重试只留最后一次结算 |
+| DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd` | 需要 `zstd` 命令，模型从 `request/header` 事件取，同一步骤重试只留最后一次结算；只读每个会话版本号最高的那一代日志 |
 
 三个位置都可以用环境变量覆盖：`TOKX_CLAUDE_DIR`、`TOKX_OPENCODE_DIR`、`TOKX_DSH_SESSIONS`。读接口地址的配置位置另有 `TOKX_OPENCODE_CONFIG` 与 `TOKX_DSH_PROFILES`。
 
@@ -153,6 +177,16 @@ holidays = ["2026-10-01", "2026-10-02", "2026-10-03"]
 `weekdays` 用 0 表示周一，用 6 表示周日。`holidays` 只列法定节假日当天，程序不内置，因为每年安排不同，需要自己补。
 
 `[apis]` 按 provider 覆盖接口地址，优先于从各工具配置文件里读到的值。日志里只记 provider，地址靠配置文件补；配置里查不到、`[apis]` 也没写时，表里显示 `-`。
+
+账本与快照缓存的位置也可以配置，默认放在 `~/.local/state/tokx`：
+
+```toml
+[store]
+enabled   = true                          # 关掉后完全按现扫出表，不回显、不写账本
+db        = "~/.local/state/tokx/usage.db"
+cache_dir = "~/.local/state/tokx/cache"
+keep_days = 180                           # db gc 默认保留多少天
+```
 
 ## 安装
 

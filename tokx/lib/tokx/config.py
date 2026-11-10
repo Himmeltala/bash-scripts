@@ -33,6 +33,7 @@ class Paths:
     opencode: Path
     opencode_config: Path
     dsh_sessions: Path
+    state: Path
 
 
 @dataclass(slots=True)
@@ -40,7 +41,18 @@ class Config:
     book: PriceBook
     paths: Paths
     api: ApiBook
+    store: StoreConfig
     path: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class StoreConfig:
+    """账本与现扫缓存的位置；关掉以后退回纯现扫，行为与没有账本时一致。"""
+
+    enabled: bool
+    db: Path
+    cache_dir: Path
+    keep_days: int
 
 
 def config_path(explicit: str | None = None) -> Path:
@@ -76,6 +88,31 @@ def _model_price(spec: object, name: str) -> ModelPrice:
         off=_tier(spec["off"], f"models.{name}.off"),
         peak=_tier(spec["peak"], f"models.{name}.peak"),
     )
+
+
+def _state_dir(home: Path) -> Path:
+    return Path(
+        os.environ.get("TOKX_STATE_DIR", home / ".local" / "state" / "tokx")
+    ).expanduser()
+
+
+def _store(table: object, home: Path) -> StoreConfig:
+    if not isinstance(table, dict):
+        raise ConfigError("store 需要写成表")
+    enabled = table.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ConfigError("store.enabled 需要写成 true 或 false")
+    try:
+        keep_days = int(table.get("keep_days", 180))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("store.keep_days 需要写成整数天数") from exc
+    if keep_days < 1:
+        raise ConfigError("store.keep_days 至少为 1")
+    # 默认放在 ~/.local/state 下：配置目录会被人清空，账本清掉就没了。
+    state_dir = _state_dir(home)
+    db = Path(str(table.get("db") or state_dir / "usage.db")).expanduser()
+    cache_dir = Path(str(table.get("cache_dir") or state_dir / "cache")).expanduser()
+    return StoreConfig(enabled=enabled, db=db, cache_dir=cache_dir, keep_days=keep_days)
 
 
 def _parse_window(text: str) -> tuple[time, time]:
@@ -138,6 +175,8 @@ def load(explicit: str | None = None) -> Config:
 
     holidays = _parse_holidays(peak.get("holidays", []))
 
+    store = _store(doc.get("store") or {}, Path.home())
+
     apis: dict[str, str] = {}
     for name, value in (doc.get("apis") or {}).items():
         if not isinstance(value, str):
@@ -157,6 +196,7 @@ def load(explicit: str | None = None) -> Config:
         dsh_sessions=Path(
             os.environ.get("TOKX_DSH_SESSIONS", home / ".dsh" / "sessions")
         ).expanduser(),
+        state=_state_dir(Path.home()),
     )
     dsh_profiles = Path(
         os.environ.get("TOKX_DSH_PROFILES", paths.dsh_sessions.parent / "profiles")
@@ -176,4 +216,10 @@ def load(explicit: str | None = None) -> Config:
         opencode_dir=paths.opencode_config,
         dsh_profiles=dsh_profiles,
     )
-    return Config(book=book, paths=paths, api=api, path=path if path.is_file() else None)
+    return Config(
+        book=book,
+        paths=paths,
+        api=api,
+        store=store,
+        path=path if path.is_file() else None,
+    )

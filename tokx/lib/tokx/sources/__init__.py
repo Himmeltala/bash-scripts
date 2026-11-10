@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from ..config import Paths
 from ..model import Record, Usage
+from ..snapshot import Snapshot
 
 SOURCE_ORDER = ("claude", "opencode", "dsh")
 
@@ -40,19 +41,20 @@ def parse_epoch_ms(value: object) -> datetime | None:
     return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
 
 
-def collect(source: str, paths: Paths) -> list[Record]:
+def collect(source: str, paths: Paths, snapshot: Snapshot | None = None) -> list[Record]:
+    """采集一个来源的用量；给了 snapshot 就把解析结果缓存下来，没改过的文件不重扫。"""
     if source == "claude":
         from .claude import collect as run
 
-        return run(paths.claude)
+        return run(paths.claude, snapshot)
     if source == "opencode":
         from .opencode import collect as run
 
-        return run(paths.opencode)
+        return run(paths.opencode, snapshot)
     if source == "dsh":
         from .dsh import collect as run
 
-        return run(paths.dsh_sessions)
+        return run(paths.dsh_sessions, snapshot)
     raise SourceError(f"未知数据源: {source}")
 
 
