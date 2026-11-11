@@ -29,16 +29,6 @@ const clock = computed(() => {
   return sums.map((slot, hour) => ({ label: `${String(hour).padStart(2, '0')}:00`, ...slot }))
 })
 
-// 高峰号段从数据里推出来：某一小时的行标着高峰窗口，就说明它落在高峰号段里。
-const windows = computed(() => {
-  const list = []
-  for (let hour = 0; hour < 24; hour += 1) {
-    const slot = clock.value[hour]
-    if (slot.peak) list.push([hour, Math.min(hour + 1, 23.5)])
-  }
-  return list
-})
-
 function shortApi(api) {
   if (!api || api === '-') return '无接口'
   try {
@@ -69,7 +59,7 @@ const slots = computed(() =>
     </v-col>
     <v-col v-if="command === 'hour'" cols="12" lg="6">
       <v-card variant="outlined">
-        <BarChart :items="clock" :windows="windows" title="24 小时合计费用（元）" legend="高峰窗口 / 空闲" />
+        <BarChart :items="clock" title="24 小时合计费用（元）" legend />
       </v-card>
     </v-col>
     <v-col v-if="command === 'hour'" cols="12" lg="6">

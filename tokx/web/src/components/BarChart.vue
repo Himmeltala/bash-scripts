@@ -2,21 +2,23 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
-import { GridComponent, MarkAreaComponent, TooltipComponent } from 'echarts/components'
+import { LegendComponent, GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { fmtMoney, fmtTokens } from '../composables/format'
 
-echarts.use([BarChart, GridComponent, TooltipComponent, MarkAreaComponent, CanvasRenderer])
+const PEAK = '高峰'
+const OFF = '空闲'
+
+echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const props = defineProps({
   // items: [{ label, value, peak, tokens }]，按传入顺序画柱子。
   items: { type: Array, default: () => [] },
-  // 高峰号段：用来画背景色带，也用来给柱子上色。
-  windows: { type: Array, default: () => [] },
   // 标题与图例写在图内左上角，跟命令行报表的写法一致。
   title: { type: String, default: '' },
-  legend: { type: String, default: '' },
+  // 给了图例就在图内右上角画「高峰 / 空闲」两项，说明柱子颜色的含义。
+  legend: { type: Boolean, default: false },
   // 图的像素高度，卡片的宽度由栅格给，高度得自己定，否则 canvas 没有可用尺寸。
   height: { type: Number, default: 260 },
 })
@@ -60,13 +62,15 @@ function option() {
       : undefined,
     legend: props.legend
       ? {
-          data: ['高峰窗口', '空闲'],
+          data: [PEAK, OFF],
           right: 12,
           top: 8,
           icon: 'roundRect',
           itemWidth: 10,
           itemHeight: 10,
           textStyle: { color: text, fontSize: 11 },
+          // 图例只管说明颜色，点它不让柱子消失。
+          selectedMode: false,
         }
       : undefined,
     xAxis: {
@@ -82,24 +86,24 @@ function option() {
       axisLabel: { color: text, fontSize: 11, formatter: (value) => `¥${value}` },
       splitLine: { lineStyle: { color: line } },
     },
+    // 每根柱子的档位不一定相同，所以高峰、空闲各占一条系列，同一时刻只有一条有值。
+    // 图例说的就是这两条系列的颜色。
     series: [
       {
         type: 'bar',
+        name: PEAK,
         barMaxWidth: 28,
-        // 两条系列共用一根柱子：柱子颜色按该点是不是高峰决定，图例只负责说明颜色。
-        data: props.items.map((item) => ({
-          value: item.value,
-          name: item.peak ? '高峰窗口' : '空闲',
-          itemStyle: { color: item.peak ? peakColor : offColor, borderRadius: [2, 2, 0, 0] },
-        })),
-        markArea: {
-          silent: true,
-          data: props.windows.map(([from, to]) => [
-            { xAxis: from, itemStyle: { color: night ? 'rgba(251,191,36,0.12)' : 'rgba(245,158,11,0.10)' } },
-            { xAxis: to },
-          ]),
-        },
-
+        barGap: '-100%',
+        data: props.items.map((item) => (item.peak ? item.value : null)),
+        itemStyle: { color: peakColor, borderRadius: [2, 2, 0, 0] },
+      },
+      {
+        type: 'bar',
+        name: OFF,
+        barMaxWidth: 28,
+        barGap: '-100%',
+        data: props.items.map((item) => (item.peak ? null : item.value)),
+        itemStyle: { color: offColor, borderRadius: [2, 2, 0, 0] },
       },
     ],
   }
