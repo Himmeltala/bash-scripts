@@ -23,7 +23,7 @@ from .sources import SOURCE_LABELS, SOURCE_ORDER, SourceError, collect
 from .store import Store, StoreError
 
 VERSION = "0.2.0"
-COMMANDS = ("daily", "session", "hour", "prices", "rebuild", "db")
+COMMANDS = ("daily", "session", "hour", "prices", "rebuild", "db", "web")
 
 # --watch 不带秒数时多久刷一次。
 WATCH_SECONDS = 5
@@ -54,10 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
         ("hour", "按一天内的小时分布汇总"),
         ("prices", "打印当前价格表"),
         ("rebuild", "清空账本后全量重扫并重建"),
+        ("web", "在本机浏览器里看用量，定时自动刷新"),
     ):
         child = sub.add_parser(name, parents=[suppressed], help=text, description=text)
         if name in ("daily", "session", "hour"):
             _add_watch(child, suppress=True)
+        if name == "web":
+            _add_web(child)
 
     db = sub.add_parser("db", help="查看与维护用量账本", description="查看与维护用量账本")
     db.add_argument(
@@ -142,6 +145,12 @@ def _add_watch(parser: argparse.ArgumentParser, suppress: bool = False) -> None:
     )
 
 
+def _add_web(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--host", default="127.0.0.1", metavar="地址", help="监听地址，默认 127.0.0.1，只给本机用")
+    parser.add_argument("--port", type=int, default=0, metavar="端口", help="监听端口，默认 0 由系统挑一个空闲的")
+    parser.add_argument("--open", action="store_true", help="启动后打开默认浏览器")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -169,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
         return _print_prices(config.book, getattr(args, "json", False))
     if command == "db":
         return _db_command(args, config)
+    if command == "web":
+        return _web_command(args, config)
 
     try:
         since, until = _range(args, config.book)
@@ -193,20 +204,34 @@ def main(argv: list[str] | None = None) -> int:
     return _report_command(command, args, config, since, until)
 
 
-def _report_command(
+def _web_command(args: argparse.Namespace, config: Config) -> int:
+    from . import web
+
+    try:
+        host = web.parse_host(args.host)
+        if args.port < 0 or args.port > 65535:
+            raise UsageError("--port 取 0 到 65535")
+        # stdout 接了管道时地址行会被读走，服务却还开着；--json 就是给脚本起服务用的。
+        if not getattr(args, "json", False) and not sys.stdout.isatty():
+            raise UsageError("输出没接终端时用 tokx web --json 打出地址，别接管道")
+    except UsageError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return 2
+    return web.serve(config, host=host, port=args.port, open_browser=args.open, as_json=getattr(args, "json", False))
+
+
+def _collect(
     command: str,
     args: argparse.Namespace,
     config: Config,
     since: date | None,
     until: date | None,
-    out: object | None = None,
-) -> int:
-    """出一张表。out 给定时写进它，用于 --watch 取表格文本，否则直接打印。"""
-    try:
-        sources = _pick_sources(getattr(args, "source", None))
-    except UsageError as exc:
-        print(f"tokx: {exc}", file=sys.stderr)
-        return 2
+) -> dict:
+    """一次出表要的全部数据：本次范围的记录、聚合好的行与合计、未计价模型。
+
+    --json 和网页界面都拿这份结构，行里的字段直接就是 JSON 里的字段。
+    """
+    sources = _pick_sources(getattr(args, "source", None))
 
     records, batches, snapshots = _scan(config, sources)
     _remember(config, batches, snapshots)
@@ -222,43 +247,57 @@ def _report_command(
         record.api = config.api.address(record.source, record.provider)
     records.sort(key=lambda record: record.at)
 
-    if not records:
-        print("没有找到用量记录。", file=out or sys.stderr)
-        return 0
-
     book = config.book
     unpriced = _unpriced_models(records, book)
     if command == "session":
         rows, total = report.sessions(records, book)
-        text = report.table_sessions(rows, total, unpriced)
     elif command == "hour":
         rows, total = report.hours(records, book)
-        text = report.table_hours(rows, total, unpriced)
     else:
         rows, total = report.daily(records, book)
+    return {
+        "command": command,
+        "since": since.isoformat() if since else None,
+        "until": until.isoformat() if until else None,
+        "timezone": str(book.tz),
+        "currency": "CNY",
+        "unpriced_models": unpriced,
+        "rows": rows,
+        "totals": total,
+    }
+
+
+def _report_command(
+    command: str,
+    args: argparse.Namespace,
+    config: Config,
+    since: date | None,
+    until: date | None,
+    out: object | None = None,
+) -> int:
+    """出一张表。out 给定时写进它，用于 --watch 和网页界面取表格文本，否则直接打印。"""
+    try:
+        data = _collect(command, args, config, since, until)
+    except UsageError as exc:
+        print(f"tokx: {exc}", file=sys.stderr)
+        return 2
+
+    if not data["rows"]:
+        print("没有找到用量记录。", file=out or sys.stderr)
+        return 0
+    book = config.book
+    rows, total, unpriced = data["rows"], data["totals"], data["unpriced_models"]
+    if command == "session":
+        text = report.table_sessions(rows, total, unpriced)
+    elif command == "hour":
+        text = report.table_hours(rows, total, unpriced)
+    else:
         text = report.table_daily(rows, total, unpriced)
 
     if getattr(args, "json", False):
-        print(
-            json.dumps(
-                {
-                    "command": command,
-                    "since": since.isoformat() if since else None,
-                    "until": until.isoformat() if until else None,
-                    "timezone": str(book.tz),
-                    "currency": "CNY",
-                    "unpriced_models": unpriced,
-                    "rows": rows,
-                    "totals": total,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            file=out or sys.stdout,
-        )
+        print(json.dumps(data, ensure_ascii=False, indent=2), file=out or sys.stdout)
     else:
         print(text, file=out or sys.stdout)
-
     return 0
 
 
@@ -744,10 +783,8 @@ def _unpriced_models(records, book: PriceBook) -> list[str]:
     )
 
 
-def _print_prices(book: PriceBook, as_json: bool) -> int:
-    if not as_json:
-        print(report.table_prices(book))
-        return 0
+def _price_data(book: PriceBook) -> dict:
+    """价格表的 JSON 形态，--json 与网页界面共用。"""
     models = {}
     for name, price in sorted(book.models.items()):
         if price.free:
@@ -758,21 +795,22 @@ def _print_prices(book: PriceBook, as_json: bool) -> int:
                 "off": {"hit": price.off.hit, "miss": price.off.miss, "output": price.off.output},
                 "peak": {"hit": price.peak.hit, "miss": price.peak.miss, "output": price.peak.output},
             }
-    print(
-        json.dumps(
-            {
-                "currency": "CNY",
-                "unit": "per_million_tokens",
-                "timezone": str(book.tz),
-                "peak_windows": [
-                    f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}" for start, end in book.windows
-                ],
-                "weekdays": sorted(book.weekdays),
-                "holidays": [day.isoformat() for day in sorted(book.holidays)],
-                "models": models,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    return {
+        "currency": "CNY",
+        "unit": "per_million_tokens",
+        "timezone": str(book.tz),
+        "peak_windows": [
+            f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}" for start, end in book.windows
+        ],
+        "weekdays": sorted(book.weekdays),
+        "holidays": [day.isoformat() for day in sorted(book.holidays)],
+        "models": models,
+    }
+
+
+def _print_prices(book: PriceBook, as_json: bool) -> int:
+    if not as_json:
+        print(report.table_prices(book))
+        return 0
+    print(json.dumps(_price_data(book), ensure_ascii=False, indent=2))
     return 0

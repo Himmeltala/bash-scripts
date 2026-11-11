@@ -396,6 +396,86 @@ grep -q '秒数至少为 1' "$tmp/watch3.err" || fail "--watch 0 的提示不对
 grep -q '去掉 --all' "$tmp/watch4.err" || fail "--all 配 --watch 的提示不对"
 ok --watch 拦住写错的参数
 
+# 网页界面：写错的参数要拦住，服务只给本机用。
+"$bin" web >/dev/null 2>&1 && fail "接管道时没报错"
+"$bin" web --port 70000 >/dev/null 2>"$tmp/web1.err" && fail "--port 越界没报错"
+grep -q '0 到 65535' "$tmp/web1.err" || fail "--port 的提示不对: $(cat "$tmp/web1.err")"
+"$bin" web --host example.com >/dev/null 2>&1 && fail "非 IP 的主机名没报错"
+"$bin" web --host 0.0.0.0 --json >/dev/null 2>"$tmp/web2.err" && fail "非回环地址没报错"
+grep -q 'TOKX_WEB_PUBLIC' "$tmp/web2.err" || fail "非回环地址的提示不对"
+ok web 拦住写错的参数
+
+# 起一个真服务，拿到的数据要和 tokx --json 完全一样。
+"$bin" web --json --port 0 >"$tmp/web.json" 2>"$tmp/web.err" &
+web_pid=$!
+for _ in $(seq 50); do
+  grep -q '"url"' "$tmp/web.json" 2>/dev/null && break
+  sleep 0.1
+done
+if ! grep -q '"url"' "$tmp/web.json" 2>/dev/null; then
+  kill "$web_pid" 2>/dev/null
+  fail "web 没有打出地址: $(cat "$tmp/web.err")"
+fi
+"$bin" --days 30 --json >"$tmp/web-cli.json" || fail "取命令行基准失败"
+if ! python3 - "$tmp/web.json" "$tmp/web-cli.json" <<'PY'
+import json, sys
+from urllib.error import HTTPError
+from urllib.request import urlopen
+
+web = json.load(open(sys.argv[1]))
+base = web["url"].rstrip("/")
+cli = json.load(open(sys.argv[2]))
+
+
+def get(path):
+    with urlopen(base + path, timeout=60) as res:
+        return res, res.read()
+
+
+res, raw = get("/")
+assert res.status == 200 and "text/html" in res.headers["Content-Type"], res.headers
+assert "tokx 用量" in raw.decode("utf-8"), raw[:200]
+assert res.headers["Cache-Control"] == "no-cache", res.headers
+for path, kind in (("/app.js", "javascript"), ("/style.css", "text/css")):
+    res, _ = get(path)
+    assert res.status == 200 and kind in res.headers["Content-Type"], (path, res.headers)
+
+res, raw = get("/api/usage?command=daily&days=30")
+assert res.headers["Cache-Control"] == "no-store", res.headers
+page = json.loads(raw)
+assert page["command"] == "daily", page
+assert page["rows"] == cli["rows"], (page["rows"], cli["rows"])
+assert page["totals"] == cli["totals"], page["totals"]
+assert page["store"]["enabled"] is True, page["store"]
+assert page["now"], page
+
+page = json.loads(get("/api/usage?command=session&days=30&source=dsh")[1])
+assert page["command"] == "session" and page["rows"], page
+assert {row["source"] for row in page["rows"]} == {"dsh"}, page["rows"]
+
+page = json.loads(get("/api/usage?command=hour&days=30")[1])
+assert page["command"] == "hour" and page["rows"], page
+
+price = json.loads(get("/api/prices")[1])
+assert price["models"]["deepseek-flash"]["off"]["hit"] == 0.02, price
+
+for path, status in (("/api/usage?command=bogus", 400), ("/api/usage?command=daily&days=x", 400), ("/nope", 404)):
+    try:
+        get(path)
+    except HTTPError as exc:
+        assert exc.code == status, (path, exc.code)
+        assert "error" in json.loads(exc.read()), path
+    else:
+        raise AssertionError(f"{path} 应该返回 {status}")
+print("ok - 网页接口与 tokx --json 同源")
+PY
+then
+  kill "$web_pid" 2>/dev/null
+  fail "网页接口检查没通过"
+fi
+kill "$web_pid" 2>/dev/null
+wait "$web_pid" 2>/dev/null
+
 # 主菜单回车取消，退出码是 3。
 printf '' | "$bin" menu >/dev/null 2>&1
 [[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
