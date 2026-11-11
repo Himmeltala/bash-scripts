@@ -370,12 +370,31 @@ assert abs(book.cost("mimo-v2.6-pro-ultraspeed", usage, peak) - 30.0) < 1e-9
 print("ok - mimo 不分峰谷")
 PY
 
-# 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，然后退出。
-printf '1\n5\n1 3\n6\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
+# 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，看完选回主菜单，然后退出。
+printf '1\n5\n1 3\n1\n6\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
 grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
 grep -q '^dsh' "$tmp/menu.out" || fail "菜单输出缺少 dsh"
 grep -q '^opencode' "$tmp/menu.out" && fail "菜单没有排除 opencode"
 ok 菜单按来源过滤
+
+# --watch 原地刷新：没有终端时按 TOKX_WATCH_FRAMES 连出几帧，每帧都是整张表。
+TOKX_WATCH_FRAMES=2 "$bin" daily --days 30 --watch 1 >"$tmp/watch.out" 2>"$tmp/watch.err" ||
+  fail "--watch 退出码非 0"
+[[ $(grep -c '^来源' "$tmp/watch.out") -eq 2 ]] || fail "--watch 没有连出两帧"
+grep -q '每 1 秒一次' "$tmp/watch.out" || fail "--watch 帧尾没有刷新时间"
+grep -q '^合计' "$tmp/watch.out" || fail "--watch 帧里没有合计"
+ok --watch 连出整帧
+
+TOKX_WATCH_FRAMES=1 "$bin" --watch 3 --days 30 daily >"$tmp/watch2.out" 2>&1 ||
+  fail "--watch 写在子命令前面时不认"
+grep -q '每 3 秒一次' "$tmp/watch2.out" || fail "子命令前面的秒数没生效"
+ok --watch 写在子命令前面
+
+"$bin" daily --watch 0 >/dev/null 2>"$tmp/watch3.err" && fail "--watch 0 没有报错"
+grep -q '秒数至少为 1' "$tmp/watch3.err" || fail "--watch 0 的提示不对"
+"$bin" daily --all --watch >/dev/null 2>"$tmp/watch4.err" && fail "--all 配 --watch 没有报错"
+grep -q '去掉 --all' "$tmp/watch4.err" || fail "--all 配 --watch 的提示不对"
+ok --watch 拦住写错的参数
 
 # 主菜单回车取消，退出码是 3。
 printf '' | "$bin" menu >/dev/null 2>&1

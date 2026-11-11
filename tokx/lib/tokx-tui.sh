@@ -33,6 +33,13 @@ _tokx_menu_range() {
     custom '自定义起止日期'
 }
 
+# 报表出完之后问一次要不要盯着看：一直刷新的话就不再回菜单，看完按 q 退出。
+_tokx_menu_live() {
+  ui_menu_named 'tokx · 看完了' '就这么看，还是盯着刷新' \
+    keep '看完，回主菜单' \
+    live '盯着刷新：每 5 秒原地重画一次'
+}
+
 _TOKX_RANGE=()
 _tokx_custom_range() {
   local since='' until=''
@@ -79,9 +86,28 @@ _tokx_view() {
   done <<< "$out"
 
   printf '统计中…\n\n' >&2
-  _tokx_report "$command" "${args[@]}"
-  ui_pause '任意键回到菜单，q 退出' || return 1
-  return 0
+  # 第一次照常出表，选"全部历史"时第一屏也还是全量；接着按需原地刷新。
+  _tokx_report "$command" "${args[@]}" || return 1
+
+  case "$(_tokx_menu_live)" in
+    live) ;;
+    *) ui_pause '任意键回到菜单，q 退出' || return 1; return 0 ;;
+  esac
+  # --all 的整张表放不进一屏，盯着刷新时换成最近 14 天。
+  local -a live_args=()
+  local seen=0 item=''
+  for item in "${args[@]}"; do
+    if [[ $item == --all ]]; then
+      live_args+=(--days 14)
+      seen=1
+    else
+      live_args+=("$item")
+    fi
+  done
+  ((seen == 0)) && live_args=("${args[@]}")
+  printf '\n\n盯着刷新，按 q 退出。\n' >&2
+  _tokx_report "$command" "${live_args[@]}" --watch
+  return 1
 }
 
 # 主菜单取消时按仓库惯例以 3 退出。
