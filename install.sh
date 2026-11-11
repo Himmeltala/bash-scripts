@@ -19,6 +19,41 @@ readonly MARK_LINE='# bash-scripts 装的工具'
 readonly INSTALL_DIR="${BASH_SCRIPTS_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-scripts}"
 readonly BIN_DIR="${BASH_SCRIPTS_BIN_DIR:-$HOME/.local/bin}"
 
+# 系统默认配置里已经给了 PATH 时就不用再写 .bashrc。两种都认：
+# Debian/Ubuntu 的 ~/.profile 里有一句，只要 ~/.local/bin 在就加进 PATH；
+# /etc/environment 是 PAM 在会话开始时读的。
+# 两种文件只要有一种已经把链接目录加进 PATH，就不改 .bashrc。
+readonly PROFILE_FILE="$HOME/.profile"
+readonly ENVIRONMENT_FILE='/etc/environment'
+# 核对 /etc/environment 用哪个文件，可以换掉，测试用。
+readonly ENVIRONMENT_PATH="${BASH_SCRIPTS_ENVIRONMENT:-$ENVIRONMENT_FILE}"
+
+# 默认链接目录 + ~/.profile 里的那句 = 登录时自动进 PATH，不必改 .bashrc。
+default_bin_covered() {
+  [[ "$BIN_DIR" == "$HOME/.local/bin" ]] || return 1
+  [[ -f "$PROFILE_FILE" ]] || return 1
+  grep -qF 'PATH="$HOME/.local/bin:$PATH"' "$PROFILE_FILE"
+}
+
+# /etc/environment 里已经把某个目录写进 PATH。这里不展开变量，只认字面路径。
+environment_covered() {
+  local file="$ENVIRONMENT_PATH"
+  [[ -f "$file" && -r "$file" ]] || return 1
+  awk -v dir="$BIN_DIR" '
+    /^PATH=/ {
+      value = $0
+      # 整个值外面套着一对双引号时先剥掉，否则首尾两段会带上引号。
+      if (value ~ /^PATH=".*"$/) value = substr(value, 7, length(value) - 7)
+      else sub(/^PATH=/, "", value)
+      n = split(value, parts, ":")
+      for (i = 1; i <= n; i++) {
+        if (parts[i] == dir) found = 1
+      }
+    }
+    END { exit !found }
+  ' "$file"
+}
+
 # 要写进 .bashrc 的 PATH 行：默认位置写成 $HOME 形式，自定义路径写死。
 path_line() {
   if [[ "$BIN_DIR" == "$HOME/.local/bin" ]]; then
@@ -47,6 +82,7 @@ usage() {
   BASH_SCRIPTS_INSTALL_DIR   源码安装目录，默认 ${XDG_DATA_HOME:-~/.local/share}/bash-scripts
   BASH_SCRIPTS_BIN_DIR       可执行文件链接目录，默认 ~/.local/bin
   BASH_SCRIPTS_TARBALL_URL   管道安装时下载的归档地址，默认从 GitHub 取 main 分支
+  BASH_SCRIPTS_ENVIRONMENT   核对 PATH 用的系统配置文件，默认 /etc/environment
   BASH_TUI_REF               覆盖 bash-tui 标签，默认读 bash-tui.ref
   BASH_TUI_TARBALL_URL       覆盖 bash-tui 归档地址
   BASH_TUI_SRC               指定本地 bash-tui 源码目录
@@ -276,6 +312,16 @@ ensure_path() {
 
   if [[ -f "$rc" ]] && grep -qF "$line" "$rc"; then
     info "$rc 里已有 PATH 设置，重开 shell 或 source 一次即可生效"
+    return 0
+  fi
+
+  # 系统已有设置时不再往 .bashrc 里加，免得同一行 PATH 写两遍。
+  if default_bin_covered; then
+    info "$BIN_DIR 已由 $PROFILE_FILE 加进 PATH，不写 $rc"
+    return 0
+  fi
+  if environment_covered; then
+    info "$BIN_DIR 已由 $ENVIRONMENT_FILE 加进 PATH，不写 $rc"
     return 0
   fi
 

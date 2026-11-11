@@ -79,7 +79,14 @@ bash-scripts/
 curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/install.sh | bash
 ```
 
-装完重开 shell，或者执行 `source ~/.bashrc`，让 PATH 生效。
+装完重开 shell，让 PATH 生效。
+
+安装脚本只在需要时才改 `~/.bashrc`。默认链接目录 `~/.local/bin` 在这台机器上已经被系统配置加进 PATH 时不写，只提示一句：
+
+- Debian / Ubuntu 的 `~/.profile` 里有「`~/.local/bin` 存在就加进 PATH」那段，登录 shell 会读它。
+- `/etc/environment` 里的 `PATH=` 已经包含链接目录时同样算已有设置。
+
+两种都不满足（比如 `BASH_SCRIPTS_BIN_DIR` 指到了别处、`.profile` 没有那段、或者不是 Debian 系）才写 `.bashrc`，写入的是带 `# bash-scripts 装的工具` 标记的两行，卸载时按标记摘掉。
 
 也可以先 clone 仓库再安装，适合要改源码的情形：
 
@@ -100,7 +107,7 @@ cd bash-scripts
 
 ### 重复安装
 
-再跑一次 `install.sh` 等价于「先卸载再安装」。脚本先删掉链接目录里指向安装目录的软链，再删掉安装目录，然后摘掉 `.bashrc` 里那段 PATH 设置；之后重新拷贝一份源码、重新创建链接、重新写入 PATH 设置。
+再跑一次 `install.sh` 等价于「先卸载再安装」。脚本先删掉链接目录里指向安装目录的软链，再删掉安装目录，然后摘掉 `.bashrc` 里那段 PATH 设置；之后重新拷贝一份源码、重新创建链接，再按上面的规则决定要不要重新写 PATH 设置。
 
 这么做是因为安装脚本只加不删：工具改名或换目录结构之后，旧目录会一直留在安装目录里，链接目录里还会留下指向已删路径的死链。卸载脚本的逻辑与这里一致，区别只是那边多一个 `--dry-run` 与 `--keep-path`。
 
@@ -145,7 +152,7 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 ./uninstall.sh --keep-path   保留 ~/.bashrc 里的 PATH 设置
 ```
 
-卸载只清自己装进去的东西：指向本项目源码目录的软链、源码目录，以及带 `# bash-scripts 装的工具` 标记的那段 PATH 设置。链接目录里不是本项目的文件一律不碰。
+卸载只清自己装进去的东西：指向本项目源码目录的软链、源码目录，以及带 `# bash-scripts 装的工具` 标记的那段 PATH 设置（安装时没写就没有可摘的）。链接目录里不是本项目的文件一律不碰。
 
 ## 装到哪里
 
@@ -163,6 +170,7 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 | `BASH_SCRIPTS_INSTALL_DIR` | `${XDG_DATA_HOME:-~/.local/share}/bash-scripts` |
 | `BASH_SCRIPTS_BIN_DIR` | `~/.local/bin` |
 | `BASH_SCRIPTS_TARBALL_URL` | 仓库 main 分支的归档地址 |
+| `BASH_SCRIPTS_ENVIRONMENT` | 核对 PATH 用的系统配置文件，默认 `/etc/environment` |
 
 ## 工具清单
 
