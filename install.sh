@@ -106,11 +106,12 @@ resolve_source() {
   SRC_DIR=$extracted
 }
 
-# 用 tar 管道复制，同时排除 .git，不依赖 rsync。
+# 用 tar 管道复制，排除 .git 与前端依赖目录，不依赖 rsync。
+# 收方先删掉旧目录：重复执行时源码目录可能原样在安装位置上，--exclude 管不到收方已有的文件。
 copy_tree() {
   local src=$1 dst=$2
-  mkdir -p "$dst"
-  ( cd "$src" && tar --exclude=./.git -cf - . ) | ( cd "$dst" && tar -xf - )
+  ( cd "$src" && tar --exclude=./.git --exclude=./node_modules --exclude='*/node_modules' -cf - . ) |
+    ( rm -rf "$dst" && mkdir -p "$dst" && cd "$dst" && tar -xf - )
 }
 
 BASH_TUI_SRC_DIR=''
@@ -174,10 +175,6 @@ install_bash_tui() {
 
 install_tree() {
   local src=$1
-  if [[ "$src" == "$INSTALL_DIR" ]]; then
-    info "源码已经在 $INSTALL_DIR，跳过复制"
-    return 0
-  fi
   info "安装源码到 $INSTALL_DIR"
   copy_tree "$src" "$INSTALL_DIR"
 }
