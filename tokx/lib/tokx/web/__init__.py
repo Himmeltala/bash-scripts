@@ -27,6 +27,8 @@ from ..sources import SOURCE_ORDER
 # vite 把 web/ 打包成 lib/tokx/web/static，这里只认打包产物；开发时用 web/README.md 里的代理。
 STATIC = Path(__file__).resolve().parent / "static"
 INDEX = STATIC / "index.html"
+# 带内容哈希的资源可以长期缓存。
+_CACHED = "public, max-age=31536000, immutable"
 COMMANDS = ("daily", "session", "hour")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
 LOCK = threading.Lock()
@@ -94,7 +96,14 @@ def _static_file(path: str) -> Path | None:
 def _content_type(name: Path | None) -> str:
     if name is None or name.suffix == ".html":
         return "text/html; charset=utf-8"
-    fixed = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
+    fixed = {
+        ".js": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+        ".ttf": "font/ttf",
+    }
     return fixed.get(name.suffix) or mimetypes.guess_type(name.name)[0] or "application/octet-stream"
 
 
@@ -128,17 +137,18 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
         def _asset(self, path: str) -> None:
             # 只发打包目录里的文件；路径先解开再核对前缀，防止 ../ 跑出目录。
             name = _static_file(path)
-            hashed = name is not None and name != INDEX
+            # 深链接（如 /?command=hour）回落成首页时 name 是 None，不能算带哈希的资源。
+            hashed = name is not None and name.parent != STATIC
             try:
                 body = name.read_bytes() if name is not None else INDEX.read_bytes()
             except OSError:
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "缺少 static/index.html，没有打包前端")
                 return
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", _content_type(name))
+            self.send_header("Content-Type", _content_type(name if name is not None else INDEX))
             self.send_header("Content-Length", str(len(body)))
-            # vite 给资源名带内容哈希，可以长缓存；页面本身每次核对。
-            self.send_header("Cache-Control", "public, max-age=31536000, immutable" if hashed else "no-cache")
+            # assets 下的文件名带内容哈希，可以长缓存；页面本身每次核对。
+            self.send_header("Cache-Control", _CACHED if hashed else "no-cache")
             self.end_headers()
             self.wfile.write(body)
 

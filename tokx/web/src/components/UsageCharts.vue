@@ -17,7 +17,6 @@ const days = computed(() => {
 })
 
 // 按小时报表：24 个小时各自合计，柱子按该小时属于高峰还是空闲上色。
-// 每一根柱子是某个小时里的某一行，"小时"这一列会重复，所以横轴带上模型与接口区分。
 const clock = computed(() => {
   const sums = Array.from({ length: 24 }, () => ({ value: 0, tokens: 0, peak: false }))
   for (const row of data.value?.rows || []) {
@@ -53,6 +52,7 @@ function shortApi(api) {
 const slots = computed(() =>
   (data.value?.rows || []).map((row) => ({
     label: `${row.slot}  ${row.model}  ${shortApi(row.api)}`,
+    short: row.slot,
     value: Number(row.cost) || 0,
     peak: row.label === '高峰窗口',
     tokens: row.total_tokens,
@@ -61,16 +61,21 @@ const slots = computed(() =>
 </script>
 
 <template>
-  <div class="charts">
-    <!-- 标题与图例画在 canvas 里，见 BarChart 的 title / legend 参数。 -->
-    <figure v-if="command === 'daily'">
-      <BarChart :items="days" title="每天的费用（元）" />
-    </figure>
-    <figure v-else-if="command === 'hour'">
-      <BarChart :items="clock" :windows="windows" title="24 小时合计费用（元）" legend="高峰窗口 / 空闲" />
-    </figure>
-    <figure v-if="command === 'hour'">
-      <BarChart :items="slots" title="按小时分行的费用（元）" />
-    </figure>
-  </div>
+  <v-row dense>
+    <v-col v-if="command === 'daily'" cols="12">
+      <v-card variant="outlined">
+        <BarChart :items="days" title="每天的费用（元）" />
+      </v-card>
+    </v-col>
+    <v-col v-if="command === 'hour'" cols="12" lg="6">
+      <v-card variant="outlined">
+        <BarChart :items="clock" :windows="windows" title="24 小时合计费用（元）" legend="高峰窗口 / 空闲" />
+      </v-card>
+    </v-col>
+    <v-col v-if="command === 'hour'" cols="12" lg="6">
+      <v-card variant="outlined">
+        <BarChart :items="slots" title="按小时分行的费用（元）" />
+      </v-card>
+    </v-col>
+  </v-row>
 </template>
