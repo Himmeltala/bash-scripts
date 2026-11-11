@@ -5,10 +5,10 @@ import { view } from '../composables/useView'
 import { COLUMNS, SOURCE_LIST, cellValue } from '../composables/format'
 
 const rows = computed(() => {
-  const list = [...(data.value?.rows || [])].map((row) => ({ ...row }))
+  const list = [...(data.value?.rows || [])]
   const { key, desc } = view.sort
   if (!key) return list
-  const column = COLUMNS[data.value?.command].find((item) => item.key === key)
+  const column = COLUMNS[data.value?.command || 'daily'].find((item) => item.key === key)
   const sign = desc ? -1 : 1
   return list.sort((a, b) => {
     if (column?.num || column?.money) return sign * ((Number(a[key]) || 0) - (Number(b[key]) || 0))
@@ -68,8 +68,8 @@ const cell = (column, row) => cellValue(column, row)
       </tbody>
       <tfoot v-if="showTotals">
         <tr>
-          <th v-for="column in COLUMNS.totalsFor(data.command)" :key="column.key" :class="{ num: column.num || column.money }">
-            {{ column.label === '合计' ? '合计' : cell(column, data.totals) }}
+          <th v-for="column in COLUMNS.totalsFor(data && data.command)" :key="column.key" :class="{ num: column.num || column.money }">
+            {{ cell(column, data.totals, true) }}
           </th>
         </tr>
       </tfoot>

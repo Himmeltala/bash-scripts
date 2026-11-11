@@ -46,14 +46,14 @@ export const HEAD = {
 }
 
 const TOTALS = {
-  requests: { key: 'requests', label: '合计', ...COUNT },
+  requests: { key: 'requests', label: '', ...COUNT },
   input: { key: 'input', label: '', ...COUNT },
   cache_read: { key: 'cache_read', label: '', ...COUNT },
   output: { key: 'output', label: '', ...COUNT },
   total_tokens: { key: 'total_tokens', label: '', ...COUNT },
   cost_peak: { key: 'cost_peak', label: '', ...MONEY },
   cost_off: { key: 'cost_off', label: '', ...MONEY },
-  cost: { key: 'cost', label: '', ...MONEY },
+  cost: { key: 'cost', label: '合计', ...MONEY },
 }
 
 const TAIL = ['requests', 'input', 'cache_read', 'output', 'total_tokens', 'cost_peak', 'cost_off', 'cost']
@@ -62,16 +62,19 @@ export const COLUMNS = {
   daily: ['source', 'origin', 'date', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
   session: ['source', 'origin', 'session', 'project', 'start', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
   hour: ['slot', 'label', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
-  // 合计行与命令行一致：前面留出非数字列的位置，只填数字列。
+  // 合计行与命令行一致：非数字列留空，"合计"两字放在最后一格（合计费用）上，数字列逐列对齐。
   totalsFor(command) {
     const front = command === 'session' ? 7 : 5
-    return ['合计', ...Array(front - 1).fill(''), ...TAIL].map((key, index) =>
-      key === '' ? { key: `blank${index}`, label: '' } : key === '合计' ? { key, label: key } : TOTALS[key],
+    // 第一格只是占位，让数字列落在表头对应的位置上。
+    return ['', ...Array(front - 1).fill(''), ...TAIL].map((key, index) =>
+      key === '' ? { key: `blank${index}`, label: '' } : TOTALS[key],
     )
   },
 }
 
-export function cellValue(column, row) {
+export function cellValue(column, row, blankMissing = false) {
+  // 合计行里没有的格子留空，明细行里缺的格子写成 -。
+  if (blankMissing && (row[column.key] === '' || row[column.key] == null)) return ''
   const value = row[column.key]
   if (column.key === 'source') {
     const found = SOURCE_LIST.find((item) => item.key === value)
