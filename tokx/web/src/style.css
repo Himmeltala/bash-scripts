@@ -90,8 +90,10 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+button:hover,
+button.active {
   border-color: var(--accent);
+  color: var(--accent);
 }
 
 .sources {
@@ -145,12 +147,11 @@ main {
   border-radius: 6px;
   background: var(--cached);
   border: 1px solid var(--line);
-  color: var(--text);
 }
 
 .charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 1rem;
 }
 
@@ -168,50 +169,21 @@ figcaption {
   margin-bottom: 0.3rem;
 }
 
+.charts figure {
+  position: relative;
+}
+
 .chart {
   width: 100%;
-  height: 200px;
+  height: 240px;
 }
 
-.chart rect {
-  fill: var(--accent);
-  opacity: 0.85;
-}
-
-.chart rect:hover {
-  opacity: 1;
-}
-
-.chart rect.peak {
-  fill: var(--peak);
-}
-
-.legend {
-  display: inline-flex;
+.toolbar {
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-  margin-left: 0.8rem;
-}
-
-.legend i {
-  display: inline-block;
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 2px;
-  margin-left: 0.4rem;
-}
-
-.legend i.peak {
-  background: var(--peak);
-}
-
-.legend i.off {
-  background: var(--accent);
-}
-
-.chart .axis {
-  fill: var(--muted);
-  font-size: 11px;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .table-wrap {
@@ -219,7 +191,7 @@ figcaption {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
-  max-height: 60vh;
+  max-height: 62vh;
 }
 
 table {
@@ -308,4 +280,9 @@ tfoot th {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.empty {
+  color: var(--muted);
+  padding: 1rem;
 }

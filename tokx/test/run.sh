@@ -418,7 +418,7 @@ if ! grep -q '"url"' "$tmp/web.json" 2>/dev/null; then
 fi
 "$bin" --days 30 --json >"$tmp/web-cli.json" || fail "取命令行基准失败"
 if ! python3 - "$tmp/web.json" "$tmp/web-cli.json" <<'PY'
-import json, sys
+import json, re, sys
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -436,9 +436,24 @@ res, raw = get("/")
 assert res.status == 200 and "text/html" in res.headers["Content-Type"], res.headers
 assert "tokx 用量" in raw.decode("utf-8"), raw[:200]
 assert res.headers["Cache-Control"] == "no-cache", res.headers
-for path, kind in (("/app.js", "javascript"), ("/style.css", "text/css")):
+# 页面是 vite 打包出来的，资源名带内容哈希；从首页里取出实际引用的地址再逐个取一遍。
+assets = re.findall(r'(?:src|href)="\.(/assets/[^"]+)"', raw.decode("utf-8"))
+assert len(assets) >= 2, assets
+for path in assets:
     res, _ = get(path)
-    assert res.status == 200 and kind in res.headers["Content-Type"], (path, res.headers)
+    assert res.status == 200, (path, res.status)
+    assert res.headers["Cache-Control"] == "public, max-age=31536000, immutable", (path, res.headers)
+    kind = "javascript" if path.endswith(".js") else "text/css"
+    assert kind in res.headers["Content-Type"], (path, res.headers)
+
+# 前端是单页应用，深链接与不存在的非接口路径都回首页，由页面自己按地址栏还原视图。
+for path in ("/?command=hour&range=all", "/nope"):
+    res, page_html = get(path)
+    assert res.status == 200 and '<div id="app">' in page_html.decode("utf-8"), path
+
+# 不能顺着 ../ 读到源码目录里去。
+res, page_html = get("/../pyproject.toml")
+assert res.status == 200 and '<div id="app">' in page_html.decode("utf-8"), res.headers
 
 res, raw = get("/api/usage?command=daily&days=30")
 assert res.headers["Cache-Control"] == "no-store", res.headers
@@ -459,7 +474,7 @@ assert page["command"] == "hour" and page["rows"], page
 price = json.loads(get("/api/prices")[1])
 assert price["models"]["deepseek-flash"]["off"]["hit"] == 0.02, price
 
-for path, status in (("/api/usage?command=bogus", 400), ("/api/usage?command=daily&days=x", 400), ("/nope", 404)):
+for path, status in (("/api/usage?command=bogus", 400), ("/api/usage?command=daily&days=x", 400), ("/api/nope", 404)):
     try:
         get(path)
     except HTTPError as exc:

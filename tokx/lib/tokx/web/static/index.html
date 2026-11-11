@@ -1,87 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>tokx 用量</title>
-    <link rel="stylesheet" href="/style.css" />
+    <script type="module" crossorigin src="./assets/index-DuyWP7ux.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bu4BQ2ki.css">
   </head>
   <body>
-    <header>
-      <div class="bar">
-        <h1>tokx 用量</h1>
-        <span id="stamp" class="stamp">正在读取…</span>
-        <span class="grow"></span>
-        <button id="refresh" type="button" title="立刻刷新一次">刷新</button>
-      </div>
-      <div class="bar filters">
-        <label>报表
-          <select id="command">
-            <option value="daily">按天汇总</option>
-            <option value="session">按会话汇总</option>
-            <option value="hour">按小时汇总</option>
-          </select>
-        </label>
-        <label>范围
-          <select id="range">
-            <option value="1">今天</option>
-            <option value="7">近 7 天</option>
-            <option value="14" selected>近 14 天</option>
-            <option value="30">近 30 天</option>
-            <option value="all">全部历史</option>
-            <option value="custom">自定义</option>
-          </select>
-        </label>
-        <span id="custom" class="custom" hidden>
-          <input id="since" type="date" aria-label="起始日期" />
-          <span>至</span>
-          <input id="until" type="date" aria-label="结束日期" />
-        </span>
-        <span class="sources" id="sources">
-          <label><input type="checkbox" value="claude" checked /> Claude Code</label>
-          <label><input type="checkbox" value="opencode" checked /> opencode</label>
-          <label><input type="checkbox" value="dsh" checked /> DeepSeek Harness</label>
-        </span>
-        <span class="grow"></span>
-        <label>自动刷新
-          <select id="every">
-            <option value="0">关闭</option>
-            <option value="5" selected>5 秒</option>
-            <option value="10">10 秒</option>
-            <option value="30">30 秒</option>
-            <option value="60">60 秒</option>
-          </select>
-        </label>
-      </div>
-    </header>
-
-    <main>
-      <section id="cards" class="cards" aria-label="合计"></section>
-      <p id="notice" class="notice" hidden></p>
-      <div class="charts" id="charts" hidden>
-        <figure>
-          <figcaption>按天费用（元）</figcaption>
-          <svg id="chart-day" class="chart" viewBox="0 0 900 220" preserveAspectRatio="none"></svg>
-        </figure>
-        <figure id="chart-hour-box" hidden>
-          <figcaption>24 小时合计费用（元）<span class="legend"><i class="peak"></i>高峰窗口<i class="off"></i>空闲</span></figcaption>
-          <svg id="chart-clock" class="chart" viewBox="0 0 900 220" preserveAspectRatio="none"></svg>
-        </figure>
-        <figure id="chart-slot-box" hidden>
-          <figcaption>按小时分行的费用（元）</figcaption>
-          <svg id="chart-hour" class="chart" viewBox="0 0 900 220" preserveAspectRatio="none"></svg>
-        </figure>
-      </div>
-      <div class="table-wrap">
-        <table id="table">
-          <thead></thead>
-          <tbody></tbody>
-          <tfoot></tfoot>
-        </table>
-      </div>
-      <p class="hint">点表头排序，再点一次反向。出处标成「缓存」的是会话文件已删除、数字从账本读回来的行。</p>
-    </main>
-
-    <script src="/app.js"></script>
+    <div id="app"></div>
   </body>
 </html>

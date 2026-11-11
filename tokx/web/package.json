@@ -1,0 +1,20 @@
+{
+  "name": "tokx-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "tokx 的网页界面，由 vite 打包进 tokx/lib/tokx/web/static",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "echarts": "^6.0.0",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^8.3.6"
+  }
+}
