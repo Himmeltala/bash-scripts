@@ -19,7 +19,8 @@ for mvnx_module in \
   "$mvnx_dir"/mvnx/util.sh \
   "$mvnx_dir"/mvnx/pom.sh \
   "$mvnx_dir"/mvnx/ui.sh \
-  "$mvnx_dir"/mvnx/exec.sh
+  "$mvnx_dir"/mvnx/exec.sh \
+  "$mvnx_dir"/mvnx/server.sh
 do
   source "$mvnx_module"
 done

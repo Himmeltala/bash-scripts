@@ -76,6 +76,9 @@ EOF
 
 # 解析结果放全局。不用命令替换接：命令替换会开子 shell，函数里的赋值出不来。
 ACTION=''
+# 网页模式：不写参数是主进程，--engine 是 python 拉起来的执行进程，只接请求流。
+WEB_ENGINE=0
+JSON_ONLY=0
 LIST_ONLY=0
 REFRESH=0
 # --no-am 由 package 与 install 共用，NO_AM_FLAG 只在报错时回显用户写的那个参数。
@@ -110,6 +113,12 @@ parse_args() {
       --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$a ;;
       --no-am) NO_AM=1; NO_AM_FLAG=$a ;;
       --no-clean) PACK_NO_CLEAN=1; PACK_NO_CLEAN_FLAG=$a ;;
+      -p|--port) RV_PORT=${args[$i]:-}; i=$((i + 1)) ;;
+      --host) RV_HOST=${args[$i]:-}; i=$((i + 1)) ;;
+      -o|--open) RV_OPEN=1 ;;
+      --json) JSON_ONLY=1 ;;
+      --engine) WEB_ENGINE=1 ;;
+      web) if [[ -z "$ACTION" ]]; then ACTION='web'; else POSITIONAL+=("$a"); fi ;;
       -*) usage_error "未知选项 $a" ;;
       *)
         if [[ -z "$ACTION" ]] && is_action "$a"; then
@@ -255,6 +264,16 @@ ui_main() {
 
 main() {
   parse_args "$@"
+
+  # 网页模式的三个入口先分流，不走后面的目标收集与勾选。
+  if ((WEB_ENGINE)); then
+    web_engine
+    return
+  fi
+  if [[ "$ACTION" == 'web' ]]; then
+    web_command
+    return
+  fi
   command -v mvn >/dev/null || die '找不到 mvn，确认 Maven 在 PATH 中'
   # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。
   ui_detect

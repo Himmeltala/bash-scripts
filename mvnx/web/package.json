@@ -1,0 +1,21 @@
+{
+  "name": "mvnx-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "mvnx 的网页界面，由 vite 打包进 mvnx/lib/mvnx/web/static",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mdi/font": "^7.4.47",
+    "vue": "^3.5.44",
+    "vuetify": "^3.13.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^8.3.6"
+  }
+}
