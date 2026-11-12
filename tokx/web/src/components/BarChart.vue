@@ -47,7 +47,7 @@ function seriesOf(skin) {
     return props.series.map((item) => ({
       type: 'bar',
       name: item.name,
-      barMaxWidth: 16,
+      barMaxWidth: 28,
       data: item.data,
       itemStyle: { color: item.color, borderRadius: [2, 2, 0, 0] },
     }))
