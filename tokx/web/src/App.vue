@@ -181,7 +181,6 @@ onBeforeUnmount(() => {
           没有找到用量记录。
         </v-alert>
 
-        <p class="hint mt-3">点表头排序，再点一次反向。出处标成「缓存」的是会话文件已删除、数字从账本读回来的行。</p>
       </v-container>
     </v-main>
   </v-app>
@@ -214,9 +213,4 @@ onBeforeUnmount(() => {
   flex: 0 0 8rem;
 }
 
-.hint {
-  margin: 0;
-  color: rgb(var(--v-theme-on-surface-variant));
-  font-size: 0.82rem;
-}
 </style>
