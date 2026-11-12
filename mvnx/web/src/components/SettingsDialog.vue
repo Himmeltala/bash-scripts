@@ -1,82 +1,88 @@
 <template>
-  <v-dialog :model-value="modelValue" max-width="760" scrollable @update:model-value="$emit('update:modelValue', $event)">
-    <v-card v-if="svc">
-      <v-card-title class="d-flex align-center">
-        <span>{{ actionName }}-{{ svc.tag }}</span>
-        <v-chip size="small" class="ml-3" variant="tonal">{{ actionName }}</v-chip>
-        <v-chip v-if="logStatus" size="small" class="ml-2" variant="outlined">{{ logStatus }}</v-chip>
-        <v-spacer />
-        <v-btn :icon="true" variant="text" @click="$emit('update:modelValue', false)">
-          <v-icon>mdi-close</v-icon>
-        </v-btn>
-      </v-card-title>
+  <FloatingDialog
+    v-if="svc"
+    :model-value="modelValue"
+    :initial-width="760"
+    :initial-height="620"
+    storage-key="settings"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
+    <template #title>
+      <span>{{ actionName }}-{{ svc.tag }}</span>
+      <v-chip size="small" class="ml-3" variant="tonal">{{ actionName }}</v-chip>
+      <v-chip v-if="logStatus" size="small" class="ml-2" variant="outlined">{{ logStatus }}</v-chip>
+      <v-spacer />
+      <v-btn :icon="true" variant="text" @click="$emit('update:modelValue', false)">
+        <v-icon>mdi-close</v-icon>
+      </v-btn>
+    </template>
 
-      <v-card-text>
-        <div class="grid">
-          <v-combobox
-            v-model="module"
-            :items="moduleItems"
-            label="指定模块（mvn -pl）"
-            density="compact"
-            variant="outlined"
-            clearable
-            hint="留空按服务自己的位置跑；选了就只在这个模块上执行"
-            persistent-hint
-          />
-          <v-select
-            v-if="isService"
-            v-model="mode"
-            :items="modeItems"
-            item-title="title"
-            item-value="value"
-            label="启动方式"
-            density="compact"
-            variant="outlined"
-            :hint="modeHint"
-            persistent-hint
-          />
-        </div>
+    <div class="grid">
+      <v-combobox
+        v-model="module"
+        :items="moduleItems"
+        label="指定模块（mvn -pl）"
+        density="compact"
+        variant="outlined"
+        clearable
+        hint="留空按服务自己的位置跑；选了就只在这个模块上执行"
+        persistent-hint
+      />
+      <v-select
+        v-if="isService"
+        v-model="mode"
+        :items="modeItems"
+        item-title="title"
+        item-value="value"
+        label="启动方式"
+        density="compact"
+        variant="outlined"
+        :hint="modeHint"
+        persistent-hint
+      />
+    </div>
 
-        <v-textarea
-          v-model="args"
-          label="本次附加参数"
-          placeholder="-Dserver.port=8081"
-          rows="2"
-          auto-grow
-          density="compact"
-          variant="outlined"
-          class="mt-4"
-          hint="只对这一次生效，参数会一并存进这个服务，下次直接用"
-          persistent-hint
-        />
+    <v-textarea
+      v-model="args"
+      label="本次附加参数"
+      placeholder="-Dserver.port=8081"
+      rows="2"
+      auto-grow
+      density="compact"
+      variant="outlined"
+      class="mt-4"
+      hint="只对这一次生效，参数会一并存进这个服务，下次直接用"
+      persistent-hint
+    />
 
-        <div class="preview">
-          <span class="label">将要执行</span>
-          <code>{{ preview }}</code>
-        </div>
+    <div class="preview">
+      <span class="label">将要执行</span>
+      <code>{{ preview }}</code>
+    </div>
 
-        <div class="log-head">
-          <span class="label">日志</span>
-          <v-spacer />
-          <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
-        </div>
-        <LogView v-if="logText" :text="logText" :dark="dark" />
-        <p v-else class="log-empty">还没有运行过</p>
-      </v-card-text>
+    <div class="log-head">
+      <span class="label">日志</span>
+      <v-spacer />
+      <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
+    </div>
+    <div class="log-box">
+      <LogView v-if="logText" :text="logText" :dark="dark" />
+      <p v-else class="log-empty">还没有运行过</p>
+    </div>
 
-      <v-card-actions>
-        <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一模块的其他动作</span>
-        <v-spacer />
-        <v-btn variant="text" @click="$emit('update:modelValue', false)">关闭</v-btn>
-        <v-btn color="primary" variant="flat" @click="save">保存</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+    <template #actions>
+      <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一模块的其他动作</span>
+      <v-spacer />
+      <v-btn variant="text" @click="$emit('update:modelValue', false)">关闭</v-btn>
+      <v-btn color="primary" variant="flat" @click="save">保存</v-btn>
+    </template>
+  </FloatingDialog>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { MODE_ITEMS, TYPE_TEXT, moduleOf } from '../composables/format'
+import FloatingDialog from './FloatingDialog.vue'
 import LogView from './LogView.vue'
 
 const props = defineProps({
@@ -135,6 +141,15 @@ function save() {
 </script>
 
 <style scoped>
+.log-box {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+.log-box > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -151,7 +166,6 @@ function save() {
   color: rgb(var(--v-theme-on-surface-variant));
 }
 code {
-  font-family: inherit;
   font-size: 0.82rem;
   word-break: break-all;
 }

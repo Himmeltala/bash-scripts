@@ -76,7 +76,7 @@ onMounted(() => {
     disableStdin: true,
     cursorBlink: false,
     scrollback: 5000,
-    fontFamily: 'Roboto, sans-serif',
+    fontFamily: "'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Sarasa Mono SC', 'Cascadia Mono', Consolas, Menlo, monospace",
     fontSize: 12,
     lineHeight: 1.3,
     theme: themeFor(props.dark),
@@ -86,10 +86,13 @@ onMounted(() => {
   term.open(host.value)
   // 弹窗有展开动画，等一帧再按实际宽度算行列。
   requestAnimationFrame(() => term && fit.fit())
-  // Roboto 加载完之后再量一次，比例字体的列宽按真实字形算。
-  document.fonts?.ready.then(() => {
-    if (term) fit.fit()
-  })
+  // 等字体真正可用之后再量列宽，免得先按回退字体算好再重排。
+  if (document.fonts) {
+    document.fonts
+      .load("12px 'JetBrains Mono'")
+      .then(() => term && fit.fit())
+      .catch(() => {})
+  }
   observer = new ResizeObserver(() => {
     if (term) fit.fit()
   })
@@ -124,7 +127,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .term {
-  height: 320px;
+  flex: 1 1 auto;
+  min-height: 200px;
   padding: 8px;
   border-radius: 8px;
   overflow: hidden;
