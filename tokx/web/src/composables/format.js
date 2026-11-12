@@ -58,10 +58,11 @@ const TOTALS = {
 
 const TAIL = ['requests', 'input', 'cache_read', 'output', 'total_tokens', 'cost_peak', 'cost_off', 'cost']
 
+// 三张表的前几列统一：来源、模型、API 地址，再放这张表自己的时间列，然后是数字列。
 export const COLUMNS = {
-  daily: ['source', 'origin', 'date', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
-  session: ['source', 'origin', 'session', 'project', 'start', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
-  hour: ['slot', 'label', 'source', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
+  daily: ['source', 'model', 'api', 'date', 'origin', ...TAIL].map((key) => HEAD[key]),
+  session: ['source', 'model', 'api', 'start', 'session', 'project', 'origin', ...TAIL].map((key) => HEAD[key]),
+  hour: ['source', 'model', 'api', 'slot', 'label', ...TAIL].map((key) => HEAD[key]),
   // 合计行与命令行一致：非数字列留空，"合计"两字放在最后一格（合计费用）上，数字列逐列对齐。
   totalsFor(command) {
     const front = command === 'session' ? 7 : 5
@@ -81,6 +82,8 @@ export function cellValue(column, row, blankMissing = false) {
     return found ? found.short : value || '-'
   }
   if (column.key === 'origin') return value === 'cache' ? '缓存' : '现扫'
+  // 会话 id 太长，表里只留前 10 位，完整值挂在悬停提示上。
+  if (column.key === 'session') return value && value.length > 12 ? `${value.slice(0, 10)}..` : value || '-'
   if (column.money) return fmtMoney(value)
   if (column.num) return fmtNum(value)
   if (column.key === 'label') return value === '高峰窗口' ? '高峰' : value

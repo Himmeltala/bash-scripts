@@ -324,10 +324,10 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
     body = [
         [
             row["source"] or "",
-            _origin_name(row),
-            row["date"],
             row["model"],
             row["api"] or "-",
+            row["date"],
+            _origin_name(row),
             _number(row["requests"]),
             _number(row["input"]),
             _number(row["cache_read"]),
@@ -360,10 +360,10 @@ def table_daily(rows: list[dict], total: dict, unpriced: list[str] | None = None
     return render(
         [
             "来源",
-            "出处",
-            "日期",
             "模型",
             "API 地址",
+            "日期",
+            "出处",
             "请求",
             "输入",
             "缓存读",
@@ -397,11 +397,12 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
     body = [
         [
             row["source"],
-            _origin_name(row),
-            _short_session(row["session"]),
-            row["project"] or "-",
             row["model"],
             row["api"] or "-",
+            row["start"],
+            _short_session(row["session"]),
+            row["project"] or "-",
+            _origin_name(row),
             _number(row["requests"]),
             _number(row["input"]),
             _number(row["cache_read"]),
@@ -410,7 +411,6 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
             _cost(row["cost_peak"]),
             _cost(row["cost_off"]),
             _cost(row["cost"]),
-            row["start"],
         ]
         for row in rows
     ]
@@ -418,6 +418,7 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
         body.append(
             [
                 "合计",
+                "",
                 "",
                 "",
                 "",
@@ -431,11 +432,10 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
                 _cost(total["cost_peak"]),
                 _cost(total["cost_off"]),
                 _cost(total["cost"]),
-                "",
             ]
         )
     return render(
-        ["来源", "出处", "会话", "项目", "模型", "API 地址", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计", "开始"],
+        ["来源", "模型", "API 地址", "开始", "会话", "项目", "出处", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计"],
         body,
         [
             "left",
@@ -444,15 +444,15 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
             "left",
             "left",
             "left",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
             "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
         ],
     ) + _cache_note(rows, has_total) + _unpriced_note(unpriced or [], has_total)
 
@@ -460,11 +460,11 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
 def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None) -> str:
     body = [
         [
-            row["slot"],
-            row["label"],
             SOURCE_LABELS.get(row["source"], row["source"]),
             row["model"],
             row["api"] or "-",
+            row["slot"],
+            row["label"],
             _number(row["requests"]),
             _number(row["input"]),
             _number(row["cache_read"]),
@@ -478,11 +478,11 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
     ]
     return render(
         [
-            "时段",
-            "档位",
             "来源",
             "模型",
             "API 地址",
+            "小时",
+            "时段",
             "请求",
             "输入",
             "缓存读",

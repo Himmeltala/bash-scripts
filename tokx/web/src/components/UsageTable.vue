@@ -84,7 +84,11 @@ function rowProps({ item }) {
         <span v-else-if="column.key === 'origin'" :class="{ cached: item.origin === 'cache' }">
           {{ cell(column, item) }}
         </span>
-        <span v-else :class="{ mono: column.mono, strong: column.strong }" :title="column.key === 'api' ? item.api : null">
+        <span
+          v-else
+          :class="{ mono: column.mono, strong: column.strong }"
+          :title="column.key === 'api' ? item.api : column.key === 'session' ? item.session : null"
+        >
           {{ cell(column, item) }}
         </span>
       </template>
