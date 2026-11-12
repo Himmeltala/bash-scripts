@@ -18,7 +18,11 @@
         <v-icon size="16">{{ open ? 'mdi-chevron-down' : 'mdi-chevron-right' }}</v-icon>
       </v-btn>
       <span v-else class="arrow-space" />
-      <v-icon size="16" :class="node.type === 'dir' ? 'folder' : 'file'">
+      <v-icon
+        size="16"
+        :class="node.type === 'dir' ? 'folder' : 'file'"
+        :style="file && file.color ? { color: file.color } : null"
+      >
         {{ icon }}
       </v-icon>
       <span class="label" :title="node.path">{{ node.name }}</span>
@@ -48,6 +52,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { fileIcon } from '../composables/fileIcons'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -63,9 +68,11 @@ const open = computed(() => props.expanded[props.node.path] === true)
 const state = computed(
   () => props.cache[props.node.path] || { loading: false, error: '', entries: [], truncated: false },
 )
+// 目录按展开状态换图标，文件按名字配类型图标与颜色。
+const file = computed(() => (props.node.type === 'file' ? fileIcon(props.node.name) : null))
 const icon = computed(() => {
   if (props.node.type === 'dir') return open.value ? 'mdi-folder-open-outline' : 'mdi-folder-outline'
-  return 'mdi-file-outline'
+  return file.value.icon
 })
 
 function clickRow() {
