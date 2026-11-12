@@ -29,8 +29,8 @@ glob 支持 `*`、`**`、`?`，以 `!` 开头的模式表示排除。`node_modul
 
 | 命令      | 目标                               | 执行                                                       |
 | --------- | ---------------------------------- | ---------------------------------------------------------- |
-| `dev`     | 有 `dev`、`start` 或 `serve` 脚本的包 | 进包目录执行 `pnpm run dev`（脚本名按实际有的取）          |
-| `build`   | 有 `build` 脚本的包                | 进包目录执行 `pnpm run build`                              |
+| `dev`     | 有 `dev`、`start`、`serve` 或带冒号变体的包 | 进包目录执行 `pnpm run dev`（脚本名按实际有的取，多个变体各列一条） |
+| `build`   | 有 `build` 或 `build:` 变体的包     | 进包目录执行 `pnpm run build`                              |
 | `install` | 工作区根与所有子包                 | 根执行 `pnpm install`；子包执行 `pnpm --filter <包名> install` |
 
 `install` 的三家写法：

@@ -1,6 +1,6 @@
 // 扫描 Node 工作区：包管理器、工作区里的包与各自的脚本，按行输出给 bash 读。
 // 输出用 \x1f 分列：meta<FS>包管理器，pkg<FS>相对路径<FS>包名<FS>启动脚本<FS>构建脚本。
-// 脚本名为空表示这个包没有对应脚本，不参与那一类动作。
+// 脚本列可以是空格分隔的多个名字，表示这个包有多个同义脚本；为空表示没有，不参与那一类动作。
 
 const fs = require('fs')
 const path = require('path')
@@ -122,12 +122,19 @@ function walk(dir, rel, out) {
   }
 }
 
-function scriptOf(scripts, names) {
-  if (!scripts || typeof scripts !== 'object') return ''
+// 一个包可能有多个同类脚本：精确名字优先，没有就收带冒号的变体（dev:pcsp-web 这种）。
+function scriptsOf(scripts, names) {
+  if (!scripts || typeof scripts !== 'object') return []
   for (const name of names) {
-    if (typeof scripts[name] === 'string' && scripts[name].trim()) return name
+    if (typeof scripts[name] === 'string' && scripts[name].trim()) return [name]
   }
-  return ''
+  const heads = names.map((name) => name + ':')
+  return Object.keys(scripts)
+    .filter((name) => {
+      if (typeof scripts[name] !== 'string' || !scripts[name].trim()) return false
+      return heads.some((head) => name.startsWith(head))
+    })
+    .sort()
 }
 
 const rootPkg = readJson(path.join(root, 'package.json'))
@@ -160,8 +167,8 @@ for (const rel of found) {
   const pkg = rel === '.' ? rootPkg : readJson(path.join(root, rel, 'package.json'))
   if (!pkg) continue
   const name = typeof pkg.name === 'string' && pkg.name.trim() ? pkg.name.trim() : (rel === '.' ? path.basename(root) : rel)
-  const dev = scriptOf(pkg.scripts, ['dev', 'start', 'serve'])
-  const build = scriptOf(pkg.scripts, ['build'])
+  const dev = scriptsOf(pkg.scripts, ['dev', 'start', 'serve']).join(' ')
+  const build = scriptsOf(pkg.scripts, ['build']).join(' ')
   rows.push([rel, name, dev, build])
 }
 

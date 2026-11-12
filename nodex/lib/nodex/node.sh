@@ -113,14 +113,28 @@ each_package_do() {
   return 0
 }
 
-# 有启动脚本（dev、start、serve）的包。
+# 一个包有多个同类脚本时逐个出记录；不止一个就在名字后面缀上脚本名，标签才不撞。
+emit_script_records() {
+  local dir=$1 rel=$2 name=$3 script
+  local -a scripts=()
+  read -r -a scripts <<< "$4"
+  for script in "${scripts[@]}"; do
+    if ((${#scripts[@]} > 1)); then
+      emit_action_record "$dir" "$rel" "$name:$script" "$script"
+    else
+      emit_action_record "$dir" "$rel" "$name" "$script"
+    fi
+  done
+}
+
+# 有启动脚本（dev、start、serve 及其带冒号的变体）的包。
 has_dev() { [[ -n "${PKG_DEV[$1]:-}" ]]; }
-emit_dev_record() { emit_action_record "$1" "$2" "$3" "${PKG_DEV[$2]}"; }
+emit_dev_record() { emit_script_records "$1" "$2" "$3" "${PKG_DEV[$2]}"; }
 collect_dev() { each_package_do has_dev emit_dev_record; }
 
-# 有 build 脚本的包。
+# 有 build 脚本（含 build: 开头的变体）的包。
 has_build() { [[ -n "${PKG_BUILD[$1]:-}" ]]; }
-emit_build_record() { emit_action_record "$1" "$2" "$3" "${PKG_BUILD[$2]}"; }
+emit_build_record() { emit_script_records "$1" "$2" "$3" "${PKG_BUILD[$2]}"; }
 collect_build() { each_package_do has_build emit_build_record; }
 
 # 安装依赖：根一行装整个工作区；子包各一行，按包管理器的选择器只装这个包。
