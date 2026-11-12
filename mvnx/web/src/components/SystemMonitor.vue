@@ -22,7 +22,6 @@ use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 // 60 个点，5 秒一个，正好是最近 5 分钟。
 const POINTS = 60
-const REFRESH_MS = 5000
 const HOT = 85
 
 const props = defineProps({
@@ -42,7 +41,7 @@ const series = reactive([
 
 const boxes = {}
 const charts = {}
-let timer = null
+let source = null
 let observer = null
 
 function setBox(key, el) {
@@ -131,16 +130,18 @@ function apply(data) {
   }
 }
 
-async function poll() {
-  try {
-    apply(await api.metrics())
-  } catch (err) {
-    // 取不到就留着上一份，五秒后再试；指标断了不该在头部弹提示。
-  }
-}
-
-function onVisible() {
-  if (!document.hidden) poll()
+// 服务端每 5 秒推一条，断线由 EventSource 自己重连。
+function connect() {
+  source = new EventSource(api.metricsStreamUrl())
+  source.addEventListener('metrics', (ev) => {
+    // 页面切到后台就不画了，回来后的下一条接着用。
+    if (document.hidden) return
+    try {
+      apply(JSON.parse(ev.data))
+    } catch (err) {
+      // 单条数据坏了就跳过，下一条再来。
+    }
+  })
 }
 
 onMounted(() => {
@@ -155,17 +156,11 @@ onMounted(() => {
   for (const item of series) {
     if (boxes[item.key]) observer.observe(boxes[item.key])
   }
-  poll()
-  timer = setInterval(() => {
-    // 页面切到后台就不刷了，回来立刻补一次。
-    if (!document.hidden) poll()
-  }, REFRESH_MS)
-  document.addEventListener('visibilitychange', onVisible)
+  connect()
 })
 
 onBeforeUnmount(() => {
-  clearInterval(timer)
-  document.removeEventListener('visibilitychange', onVisible)
+  if (source) source.close()
   if (observer) observer.disconnect()
   for (const key in charts) charts[key].dispose()
 })

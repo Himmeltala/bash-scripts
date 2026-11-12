@@ -36,6 +36,10 @@ else
   ok '终端探测交给 bash-tui'
 fi
 
+python3 "$repo/mvnx/test/test_web_jdk.py" >/dev/null 2>&1 || bad '网页按工作区选 JDK 的测试未通过'
+python3 "$repo/mvnx/test/test_web_log.py" >/dev/null 2>&1 || bad '网页日志 SSE 的测试未通过'
+python3 "$repo/mvnx/test/test_web_metrics.py" >/dev/null 2>&1 || bad '网页指标 SSE 的测试未通过'
+
 "$repo/mvnx/bin/mvnx" --help >/dev/null 2>&1 || bad 'mvnx --help 失败'
 ((fail)) && exit 1
 printf '全部通过\n'

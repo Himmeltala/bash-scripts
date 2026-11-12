@@ -12,6 +12,7 @@
 """
 
 import argparse
+import codecs
 import json
 import os
 import re
@@ -96,6 +97,140 @@ def parse_rows(text):
         if len(parts) == WIDTHS.get(parts[0]):
             rows.append(parts)
     return rows
+
+
+# ---------------------------------------------------------------- 按工作区选 JDK
+
+# 自动扫描的两处：SDKMAN 装的与发行版软件包装的。别处的 JDK 由页面手填路径。
+JDK_ROOTS = (Path.home() / ".sdkman" / "candidates" / "java", Path("/usr/lib/jvm"))
+
+
+def is_jdk_home(path):
+    """JAVA_HOME 至少要有 bin/java 与 bin/javac，缺一个就跑不了 Maven 编译。"""
+    home = Path(path)
+    return (home / "bin" / "java").is_file() and (home / "bin" / "javac").is_file()
+
+
+def _release_info(home):
+    """读 JAVA_HOME/release，拿版本与厂商；不起 java 进程。"""
+    info = {}
+    try:
+        with open(Path(home) / "release", "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                key, sep, value = line.partition("=")
+                if sep and value:
+                    info[key.strip()] = value.strip().strip('"')
+    except OSError:
+        pass
+    return info
+
+
+def discover_jdks(roots=None):
+    """扫已装的 JDK。符号链接跳过：current 与发行版默认别名都指向真实目录，列出来只是重复。"""
+    out = []
+    seen = set()
+    for root in (roots if roots is not None else JDK_ROOTS):
+        try:
+            entries = sorted(Path(root).iterdir(), key=lambda p: p.name)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith(".") or entry.is_symlink():
+                continue
+            try:
+                if not entry.is_dir():
+                    continue
+            except OSError:
+                continue
+            real = entry.resolve()
+            if real in seen or not is_jdk_home(real):
+                continue
+            seen.add(real)
+            info = _release_info(real)
+            version = info.get("JAVA_VERSION", "")
+            vendor = info.get("IMPLEMENTOR", "")
+            label = version or real.name
+            if vendor:
+                label += " · " + vendor
+            out.append({"path": str(real), "version": version, "vendor": vendor, "label": label})
+    return out
+
+
+def effective_jdk(jdk):
+    """存着的目录还在才用它；不在了回退到当前环境。"""
+    return jdk if jdk and is_jdk_home(jdk) else ""
+
+
+def build_env(jdk, base=None):
+    """jdk 非空时换掉 JAVA_HOME，并把它的 bin 放到 PATH 最前；空则原样继承。"""
+    if not jdk:
+        return None
+    env = dict(os.environ if base is None else base)
+    env["JAVA_HOME"] = jdk
+    bindir = os.path.join(jdk, "bin")
+    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p and p != bindir]
+    env["PATH"] = os.pathsep.join([bindir] + parts)
+    return env
+
+
+class JdkStore:
+    """工作区到 JAVA_HOME 的映射，存在状态文件旁边，只有网页进程写它。"""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+
+    def _load(self):
+        out = {}
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        for line in text.splitlines():
+            if not line:
+                continue
+            ws, sep, jdk = line.partition(FS)
+            if sep and ws:
+                out[ws] = jdk
+        return out
+
+    def _save(self, data):
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            text = "".join(ws + FS + jdk + "\n" for ws, jdk in data.items() if ws)
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            log("写 JDK 设置失败 %s：%s" % (self.path, exc))
+
+    def get(self, ws):
+        with self._lock:
+            return self._load().get(ws, "")
+
+    def set(self, ws, jdk):
+        with self._lock:
+            data = self._load()
+            if jdk:
+                data[ws] = jdk
+            else:
+                data.pop(ws, None)
+            self._save(data)
+
+    def remove(self, ws):
+        with self._lock:
+            data = self._load()
+            data.pop(ws, None)
+            self._save(data)
+
+
+def attach_jdks(snapshot, store):
+    """把每个工作区选中的 JDK 与失效标记拼进状态回话。"""
+    for ws in snapshot.get("workspaces", []):
+        jdk = store.get(ws["id"])
+        ws["jdk"] = jdk
+        ws["jdk_missing"] = bool(jdk) and not is_jdk_home(jdk)
+    return snapshot
 
 
 # ---------------------------------------------------------------- 状态文件
@@ -205,7 +340,7 @@ class Sessions:
         self.lock = threading.Lock()
         self.procs = {}
 
-    def spawn(self, workdir, argv, log_path):
+    def spawn(self, workdir, argv, log_path, env=None):
         """新会话起一条命令，返回会话号；日志收进 log_path，退出后把退出码写进 <日志>.code。"""
         log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +351,7 @@ class Sessions:
                 stdin=fh,
                 stdout=out,
                 stderr=subprocess.STDOUT,
+                env=env,
                 start_new_session=True,
             )
         with self.lock:
@@ -296,11 +432,12 @@ class Engine:
 
     WELCOME = "hello" + FS + "1\n"
 
-    def __init__(self, mvnx, state, sessions, logs):
+    def __init__(self, mvnx, state, sessions, logs, jdks=None):
         self.mvnx = mvnx
         self.state = state
         self.sessions = sessions
         self.logs = Path(logs)
+        self.jdks = jdks
         self.lock = threading.Lock()
         self.proc = None
         # 逐字节读回话时拼行用；上一次没读完的残行在下个请求前丢掉。
@@ -446,8 +583,13 @@ class Engine:
 
         log_path = self.logs / runid.split(".", 1)[0] / (runid + ".log")
         argv = ["mvn"] + [w for w in mvn_args.split() if w]
+        raw_jdk = self.jdks.get(row[CO_WS]) if self.jdks else ""
+        jdk = effective_jdk(raw_jdk)
+        if raw_jdk and not jdk:
+            log("工作区 %s 选的 JDK 已不存在，回退到当前环境：%s" % (row[CO_WS], raw_jdk))
+        env = build_env(jdk)
         try:
-            sid = self.sessions.spawn(path, argv, log_path)
+            sid = self.sessions.spawn(path, argv, log_path, env=env)
         except OSError as exc:
             raise ApiError(500, "起 mvn 失败：%s" % exc)
         self.call("launched", sid, gen)
@@ -633,6 +775,8 @@ class Metrics:
 
 
 METRICS = Metrics()
+# 指标栏的推送间隔；前端按这个节奏存点，60 个点正好覆盖 5 分钟。
+METRICS_STREAM_INTERVAL = 5.0
 
 
 CONTENT_TYPES = {
@@ -661,6 +805,7 @@ class Handler(BaseHTTPRequestHandler):
     state = None
     sessions = None
     engine = None
+    jdks = None
     logs = None
     api_prefix = "/__mvnx/api"
 
@@ -698,11 +843,17 @@ class Handler(BaseHTTPRequestHandler):
             log("接口出错 %s %s：%r" % (method, self.path, exc))
             self._json(500, {"error": "服务端出错：%s" % exc})
             return
+        # 流式回话已经自己写完，别再套一层 JSON。
+        if result is STREAMED:
+            return
         self._json(200, result)
 
     # ---- 路由
 
     def _dispatch(self, method, route, query, body):
+        if route == "log/stream":
+            self._stream_log((query.get("run") or [""])[0])
+            return STREAMED
         if route == "state":
             # 页面每两秒取一次状态，顺手让引擎收拾在跑的记录：端口、退出码、状态都靠这一趟更新。
             # 引擎自己出问题时照旧把状态给出去，页面不至于连列表都打不开。
@@ -710,11 +861,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.engine.call("tick")
             except ApiError as exc:
                 log("tick 失败：%s" % exc.message)
-            return self.state.snapshot()
+            return attach_jdks(self.state.snapshot(), self.jdks)
         if route == "log":
             return self._log(query)
         if route == "dirs":
             return list_dirs((query.get("path") or [""])[0])
+        if route == "jdks":
+            return {"jdks": discover_jdks(), "current": os.environ.get("JAVA_HOME", "")}
+        if route == "metrics/stream":
+            self._stream_metrics()
+            return STREAMED
         if route == "metrics":
             return METRICS.snapshot()
         if method != "POST":
@@ -730,7 +886,20 @@ class Handler(BaseHTTPRequestHandler):
             engine.call("scan", str(body.get("ws", "")))
             return {"ok": True}
         if route == "forget":
-            engine.remove_workspace(str(body.get("ws", "")))
+            ws = str(body.get("ws", ""))
+            engine.remove_workspace(ws)
+            self.jdks.remove(ws)
+            return {"ok": True}
+        if route == "jdk":
+            ws = str(body.get("ws", "")).strip()
+            jdk = str(body.get("jdk", "") or "").strip()
+            if not ws or self.state.find(WS_KIND, ws) is None:
+                raise ApiError(404, "没有这个工作区：%s" % ws)
+            if jdk:
+                jdk = os.path.abspath(os.path.expanduser(jdk))
+                if not is_jdk_home(jdk):
+                    raise ApiError(400, "这个目录不是 JDK：缺 bin/java 或 bin/javac")
+            self.jdks.set(ws, jdk)
             return {"ok": True}
         if route == "start":
             return engine.start(body)
@@ -746,6 +915,91 @@ class Handler(BaseHTTPRequestHandler):
             )
             return {"ok": True}
         raise ApiError(404, "没有这个接口：%s" % route)
+
+    def _stream_log(self, runid):
+        """把日志按 SSE 推给页面：先补最近一页，再推新写入的行。"""
+        if not runid:
+            raise ApiError(400, "没给运行号")
+        logs = Path(self.logs).resolve()
+        path = logs / runid.split(".", 1)[0] / (runid + ".log")
+        try:
+            path.resolve().relative_to(logs)
+        except ValueError:
+            raise ApiError(400, "运行号不对")
+
+        # 断线重连时浏览器会带上 Last-Event-ID，从那里接着推，不重发历史。
+        try:
+            offset = int(self.headers.get("Last-Event-ID", ""))
+        except ValueError:
+            offset = None
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        self.close_connection = True
+
+        buf = LineBuffer()
+        last_write = time.time()
+        fh = None
+        try:
+            while True:
+                if fh is None:
+                    try:
+                        fh = open(path, "rb")
+                    except OSError:
+                        fh = None
+                if fh is not None:
+                    size = os.fstat(fh.fileno()).st_size
+                    if offset is None or size < offset:
+                        # 第一次连上，或者文件被重写：先补尾部。
+                        with open(path, "rb") as rf:
+                            data = rf.read()
+                        text, more = last_lines(data)
+                        offset = len(data)
+                        buf = LineBuffer()
+                        self.wfile.write(sse_event(text, event="tail", event_id=offset, more=more).encode("utf-8"))
+                        self.wfile.flush()
+                        last_write = time.time()
+                    else:
+                        fh.seek(offset)
+                        chunk = fh.read()
+                        if chunk:
+                            offset += len(chunk)
+                            text = buf.feed(chunk)
+                            if text:
+                                self.wfile.write(sse_event(text, event="append", event_id=offset).encode("utf-8"))
+                                self.wfile.flush()
+                                last_write = time.time()
+                if time.time() - last_write >= 5:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    last_write = time.time()
+                time.sleep(0.25)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if fh is not None:
+                fh.close()
+
+    def _stream_metrics(self):
+        """头部三个指标按固定间隔推，省得页面每 5 秒发一次请求。"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            while True:
+                self.wfile.write(sse_data(METRICS.snapshot(), event="metrics").encode("utf-8"))
+                self.wfile.flush()
+                time.sleep(METRICS_STREAM_INTERVAL)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _log(self, query):
         runid = (query.get("run") or [""])[0]
@@ -835,6 +1089,53 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
 
+# _dispatch 用它表示「回话已经流式写完」，外层别再包 JSON。
+STREAMED = object()
+
+
+class LineBuffer:
+    """把字节流按行切开；末尾没写完的行留到下一次，跨块的多字节字符也不会切坏。"""
+
+    def __init__(self):
+        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._pending = ""
+
+    def feed(self, data):
+        self._pending += self._decoder.decode(data)
+        if "\n" not in self._pending:
+            return ""
+        *lines, self._pending = self._pending.split("\n")
+        return "\n".join(lines)
+
+    def flush(self):
+        text = self._pending + self._decoder.decode(b"", final=True)
+        self._pending = ""
+        return text
+
+
+def last_lines(data, lines=LOG_PAGE):
+    """日志尾部一页：返回 (文本, 还有更早的没有)。"""
+    all_lines = data.decode("utf-8", "replace").splitlines()
+    return "\n".join(all_lines[-lines:]), len(all_lines) > lines
+
+
+def sse_data(payload, event=None, event_id=None):
+    """一条 SSE 事件。数据整体走 JSON，换行不会破坏 data 行的格式。"""
+    head = ""
+    if event_id is not None:
+        head += "id: %s\n" % event_id
+    if event:
+        head += "event: %s\n" % event
+    return head + "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
+def sse_event(text, event=None, event_id=None, more=None):
+    payload = {"text": text}
+    if more is not None:
+        payload["more"] = bool(more)
+    return sse_data(payload, event=event, event_id=event_id)
+
+
 def tail(path, page=0, lines=LOG_PAGE):
     """日志的一页：page=0 最新，page=n 再往前翻 n 页。返回 (文本, 还有更早的没有)。"""
     try:
@@ -876,12 +1177,14 @@ def serve(args):
 
     state = State(args.state)
     sessions = Sessions()
-    engine = Engine(os.path.abspath(args.mvnx), state, sessions, args.logs)
+    jdks = JdkStore(Path(args.state).parent / "jdk.tsv")
+    engine = Engine(os.path.abspath(args.mvnx), state, sessions, args.logs, jdks)
 
     Handler.static = static
     Handler.state = state
     Handler.sessions = sessions
     Handler.engine = engine
+    Handler.jdks = jdks
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
 

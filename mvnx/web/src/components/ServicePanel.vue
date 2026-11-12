@@ -6,6 +6,20 @@
         <p class="root" :title="ws.root">{{ ws.root }}</p>
       </div>
       <div class="actions">
+        <v-select
+          :model-value="ws.jdk || ''"
+          :items="jdkItems"
+          item-title="label"
+          item-value="path"
+          label="JDK"
+          density="compact"
+          variant="outlined"
+          hide-details
+          class="jdk"
+          :prepend-inner-icon="ws.jdk_missing ? 'mdi-alert' : 'mdi-language-java'"
+          :title="jdkTitle"
+          @update:model-value="pickJdk"
+        />
         <v-chip size="small" variant="tonal">{{ ws.poms.length }} 个模块</v-chip>
         <v-chip v-if="running" size="small" color="ready" variant="tonal">{{ running }} 个在跑</v-chip>
         <v-btn size="small" variant="text" prepend-icon="mdi-refresh" @click="$emit('scan')">重新扫描</v-btn>
@@ -40,18 +54,32 @@
     </div>
 
     <div v-if="!rows.length" class="none">
-      <template v-if="tab === 'history'">还没有运行记录</template>
-      <template v-else-if="tab === 'poms'">没扫到 pom</template>
+      <template v-if="tab === 'poms'">没扫到 pom</template>
       <template v-else>这一栏没有可执行的模块，换个栏目看看，或点重新扫描。</template>
     </div>
+
+    <v-table v-else-if="tab === 'poms'" density="compact" class="table">
+      <thead>
+        <tr>
+          <th>模块</th>
+          <th>路径</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="row in rows" :key="row.key">
+          <td class="svc-name">{{ row.title }}</td>
+          <td class="svc-path" :title="row.path">{{ row.path }}</td>
+        </tr>
+      </tbody>
+    </v-table>
 
     <v-table v-else density="compact" class="table">
       <thead>
         <tr>
           <th style="width: 42%">模块</th>
           <th>参数</th>
-          <th style="width: 150px">状态</th>
-          <th style="width: 190px"></th>
+          <th style="width: 200px">状态</th>
+          <th style="width: 230px"></th>
         </tr>
       </thead>
       <tbody>
@@ -64,45 +92,55 @@
             <div class="cmd" :title="row.cmd">{{ row.cmd }}</div>
           </td>
           <td>
-            <template v-if="row.live">
-              <v-chip size="small" :color="row.color" variant="tonal" :prepend-icon="row.icon">
-                {{ row.statusText }}
-              </v-chip>
-              <div v-if="row.port" class="meta">端口 {{ row.port }}</div>
-              <div v-else-if="row.started" class="meta">{{ row.ago }}</div>
-            </template>
-            <template v-else-if="row.run">
-              <v-chip size="small" :color="row.color" variant="tonal" :prepend-icon="row.icon" @click="openLog(row)">
-                {{ row.statusText }}
-              </v-chip>
-              <div v-if="row.err" class="meta err" :title="row.err">{{ row.err }}</div>
-              <div v-else-if="row.started" class="meta">{{ row.ago }}</div>
-            </template>
-            <span v-else class="meta">—</span>
+            <div class="status-line">
+              <template v-if="row.live">
+                <v-chip size="small" class="status-chip" :color="row.color" variant="tonal" :prepend-icon="row.icon">
+                  {{ row.statusText }}
+                </v-chip>
+                <span v-if="row.port" class="meta">端口 {{ row.port }}</span>
+                <span v-else-if="row.started" class="meta">{{ row.ago }}</span>
+              </template>
+              <template v-else-if="row.run">
+                <v-chip
+                  size="small"
+                  class="status-chip"
+                  :color="row.color"
+                  variant="tonal"
+                  :prepend-icon="row.icon"
+                  @click="openLog(row)"
+                >
+                  {{ row.statusText }}
+                </v-chip>
+                <span v-if="row.err" class="meta err" :title="row.err">{{ row.err }}</span>
+                <span v-else-if="row.started" class="meta">{{ row.ago }}</span>
+              </template>
+              <span v-else class="meta">—</span>
+            </div>
           </td>
           <td class="ops">
-            <template v-if="tab === 'history'">
+            <template v-if="row.live">
               <v-btn size="small" variant="text" prepend-icon="mdi-text-box-outline" @click="openLog(row)">日志</v-btn>
-            </template>
-            <template v-else>
-              <v-btn v-if="row.live" size="small" color="error" variant="tonal" :loading="row.stopping" @click="stop(row)">
+              <v-btn size="small" color="error" variant="tonal" :loading="row.stopping" @click="stop(row)">
                 停止
               </v-btn>
-              <template v-else>
-                <v-btn
-                  size="small"
-                  color="primary"
-                  variant="flat"
-                  :disabled="row.blocked"
-                  :loading="row.starting"
-                  @click="start(row)"
-                >
-                  {{ row.action }}
-                </v-btn>
-                <v-btn size="small" variant="text" :icon="true" title="参数与日志" @click="openSettings(row)">
-                  <v-icon size="20">mdi-tune</v-icon>
-                </v-btn>
-              </template>
+            </template>
+            <template v-else>
+              <v-btn
+                size="small"
+                color="primary"
+                variant="flat"
+                :disabled="row.blocked"
+                :loading="row.starting"
+                @click="start(row)"
+              >
+                {{ row.action }}
+              </v-btn>
+              <v-btn size="small" variant="text" :icon="true" title="参数" @click="openSettings(row)">
+                <v-icon size="20">mdi-tune</v-icon>
+              </v-btn>
+              <v-btn v-if="row.run" size="small" variant="text" prepend-icon="mdi-text-box-outline" @click="openLog(row)">
+                日志
+              </v-btn>
             </template>
           </td>
         </tr>
@@ -120,11 +158,35 @@
       @save="onSave"
       @load-more="loadMoreLog"
     />
+
+    <v-dialog v-model="custom.on" max-width="560">
+      <v-card>
+        <v-card-title>自定义 JDK</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="custom.path"
+            label="JAVA_HOME"
+            placeholder="/opt/jdk-17"
+            density="compact"
+            variant="outlined"
+            hide-details="auto"
+            hint="填 JDK 根目录，目录下要有 bin/java 与 bin/javac"
+            persistent-hint
+            autofocus
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="custom.on = false">取消</v-btn>
+          <v-btn color="primary" variant="flat" @click="saveCustom">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import SettingsDialog from './SettingsDialog.vue'
 import { api } from '../composables/useApi'
 import {
@@ -139,14 +201,15 @@ import {
 const props = defineProps({
   ws: { type: Object, required: true },
   dark: { type: Boolean, default: false },
+  jdks: { type: Array, default: () => [] },
+  currentJdk: { type: String, default: '' },
 })
-const emit = defineEmits(['start', 'stop', 'save', 'scan', 'forget'])
+const emit = defineEmits(['start', 'stop', 'save', 'setjdk', 'scan', 'forget'])
 
 const tabs = [
   { value: 'service', title: '启动服务' },
   { value: 'package', title: '打包' },
   { value: 'install', title: '安装' },
-  { value: 'history', title: '运行记录' },
   { value: 'poms', title: '模块清单' },
 ]
 const tab = ref('service')
@@ -155,6 +218,40 @@ const stopping = ref({})
 const starting = ref({})
 
 const settings = reactive({ on: false, svc: null, log: '', more: false, page: 0, logStatus: '' })
+const custom = reactive({ on: false, path: '' })
+let logSource = null
+
+const CUSTOM = '__mvnx_custom__'
+
+const jdkItems = computed(() => {
+  const items = [{ label: '跟随当前环境', path: '' }]
+  for (const item of props.jdks) items.push({ label: item.label, path: item.path })
+  // 存着但没扫到的路径也要列出来，否则下拉里看不到当前值。
+  const cur = props.ws.jdk || ''
+  if (cur && !props.jdks.some((item) => item.path === cur)) items.push({ label: cur, path: cur })
+  items.push({ label: '自定义路径…', path: CUSTOM })
+  return items
+})
+
+const jdkTitle = computed(() => {
+  if (props.ws.jdk_missing) return `选中的 JDK 已不存在，启动时回退到当前环境：${props.ws.jdk}`
+  if (props.ws.jdk) return props.ws.jdk
+  return props.currentJdk ? `跟随当前环境：${props.currentJdk}` : '跟随启动服务时的环境'
+})
+
+function pickJdk(value) {
+  if (value === CUSTOM) {
+    custom.path = props.ws.jdk || ''
+    custom.on = true
+    return
+  }
+  emit('setjdk', { ws: props.ws.id, jdk: value })
+}
+
+function saveCustom() {
+  emit('setjdk', { ws: props.ws.id, jdk: custom.path.trim() })
+  custom.on = false
+}
 
 const running = computed(() => props.ws.services.filter((s) => s.run && LIVE.includes(s.run.status)).length)
 
@@ -173,51 +270,16 @@ function matches(text) {
 }
 
 function count(value) {
-  if (value === 'history') return 0
   if (value === 'poms') return 0
   return props.ws.services.filter((s) => typeTab(s.type) === value && matches(s.tag)).length
 }
 
-const latestRuns = computed(() => {
-  const map = new Map()
-  for (const svc of props.ws.services) {
-    if (svc.run) map.set(svc.id, svc.run)
-  }
-  return map
-})
-
-// 列表按栏目拼：服务与模块共用一个动作按钮，历史栏把运行记录原样列出来。
+// 列表按栏目拼：每个动作只看自己的模块，日志也从这一行打开。
 const rows = computed(() => {
   if (tab.value === 'poms') {
     return props.ws.poms
       .filter(matches)
-      .map((rel) => ({ key: rel, title: moduleOf(rel), path: rel, cmd: rel, action: '', live: false }))
-  }
-  if (tab.value === 'history') {
-    const out = []
-    for (const svc of props.ws.services) {
-      const run = svc.run
-      if (!run) continue
-      if (!matches(svc.tag)) continue
-      out.push({
-        key: run.id,
-        run,
-        svc,
-        title: svc.tag,
-        path: svc.display,
-        cmd: run.cmd,
-        statusText: STATUS_TEXT[run.status] || run.status,
-        color: STATUS_COLOR[run.status] || 'grey',
-        icon: iconOf(run.status),
-        live: LIVE.includes(run.status),
-        err: run.err,
-        port: run.port,
-        started: run.started,
-        ago: ago(run.started),
-      })
-    }
-    out.sort((a, b) => Number(b.started || 0) - Number(a.started || 0))
-    return out
+      .map((rel) => ({ key: rel, title: moduleOf(rel), path: rel }))
   }
 
   return props.ws.services
@@ -278,25 +340,70 @@ async function stop(row) {
   }, 3000)
 }
 
-async function openSettings(row) {
+function openSettings(row) {
   settings.svc = row.svc
   settings.log = ''
   settings.more = false
   settings.page = 0
-  settings.logStatus = ''
+  settings.logStatus = row.run ? STATUS_TEXT[row.run.status] || row.run.status : ''
   settings.on = true
-  if (row.run) await loadLog(row.run.id, 0)
+  if (row.run) startLogStream(row.run.id)
+  else closeLogStream()
 }
 
-async function openLog(row) {
+function openLog(row) {
+  if (!row.run) return
   settings.svc = row.svc || null
   settings.on = true
   settings.log = ''
   settings.more = false
   settings.page = 0
-  settings.logStatus = ''
-  await loadLog(row.run.id, 0)
+  settings.logStatus = row.run ? STATUS_TEXT[row.run.status] || row.run.status : ''
+  startLogStream(row.run.id)
 }
+
+function closeLogStream() {
+  if (logSource) {
+    logSource.close()
+    logSource = null
+  }
+}
+
+// 先收尾部一页，之后文件有新行就追加；换运行号或关面板时断开。
+function startLogStream(run) {
+  closeLogStream()
+  const source = new EventSource(api.logStreamUrl(run))
+  logSource = source
+  source.addEventListener('tail', (ev) => {
+    const data = JSON.parse(ev.data)
+    settings.log = data.text || ''
+    settings.more = !!data.more
+    settings.page = 0
+  })
+  source.addEventListener('append', (ev) => {
+    const data = JSON.parse(ev.data)
+    if (data.text) settings.log = settings.log ? `${settings.log}\n${data.text}` : data.text
+  })
+}
+
+watch(
+  () => settings.on,
+  (on) => {
+    if (!on) closeLogStream()
+  },
+)
+
+// 状态轮询每两秒换一份 ws，日志弹窗里的状态跟着最新运行走。
+watch(
+  () => props.ws,
+  () => {
+    if (!settings.on || !settings.svc) return
+    const svc = props.ws.services.find((s) => s.id === settings.svc.id)
+    if (svc && svc.run) settings.logStatus = STATUS_TEXT[svc.run.status] || svc.run.status
+  },
+)
+
+onBeforeUnmount(closeLogStream)
 
 async function loadLog(run, page) {
   try {
@@ -347,6 +454,10 @@ function onSave({ module, args }) {
   gap: 4px;
   flex-wrap: wrap;
 }
+.jdk {
+  max-width: 240px;
+  min-width: 170px;
+}
 .tabs {
   display: flex;
   align-items: center;
@@ -363,6 +474,22 @@ function onSave({ module, args }) {
 .table {
   background: rgb(var(--v-theme-surface));
   border-radius: 10px;
+}
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.status-chip {
+  flex: 0 0 auto;
+}
+.status-line .meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .svc-name {
   font-weight: 500;

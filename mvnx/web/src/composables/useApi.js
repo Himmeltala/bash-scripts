@@ -27,11 +27,16 @@ async function call(method, path, body) {
 
 export const api = {
   state: () => call('GET', '/state'),
+  jdks: () => call('GET', '/jdks'),
+  setJdk: (ws, jdk) => call('POST', '/jdk', { ws, jdk }),
   log: (run, page = 0) => call('GET', `/log?run=${encodeURIComponent(run)}&page=${page}`),
+  // EventSource 不能带自定义请求头，地址直接拼出来交给它。
+  logStreamUrl: (run) => `${PREFIX}/log/stream?run=${encodeURIComponent(run)}`,
   // 空路径取家目录这一层，其余取指定目录的下一层子目录。
   dirs: (path = '') => call('GET', `/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   // CPU、内存、磁盘的当前值，取一次算一个点。
   metrics: () => call('GET', '/metrics'),
+  metricsStreamUrl: () => `${PREFIX}/metrics/stream`,
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
   rescan: (ws) => call('POST', '/rescan', { ws }),

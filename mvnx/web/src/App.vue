@@ -6,15 +6,6 @@
       </v-app-bar-title>
       <v-spacer />
       <SystemMonitor :dark="dark" />
-      <v-btn
-        v-if="current"
-        variant="text"
-        prepend-icon="mdi-refresh"
-        :loading="scanning"
-        @click="rescan"
-      >
-        重新扫描
-      </v-btn>
       <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" @click="toggleTheme" />
     </v-app-bar>
 
@@ -39,9 +30,12 @@
             v-if="current"
             :ws="current"
             :dark="dark"
+            :jdks="state.jdks"
+            :current-jdk="state.currentJdk"
             @start="startService"
             @stop="stopService"
             @save="saveService"
+            @setjdk="setWorkspaceJdk"
             @scan="rescan"
             @forget="removeWorkspace"
           />
@@ -73,10 +67,9 @@ const VIEW_KEY = 'mvnx-ws'
 
 const theme = useTheme()
 const dark = computed(() => theme.global.current.value.dark)
-const state = reactive({ workspaces: [] })
+const state = reactive({ workspaces: [], jdks: [], currentJdk: '' })
 const currentId = ref(readView())
 const adding = ref(false)
-const scanning = ref(false)
 const snack = reactive({ on: false, text: '', color: 'grey' })
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
@@ -125,6 +118,16 @@ async function refresh() {
   }
 }
 
+async function loadJdks() {
+  try {
+    const data = await api.jdks()
+    state.jdks = data.jdks || []
+    state.currentJdk = data.current || ''
+  } catch (err) {
+    // 取不到只是下拉里没有候选，手动填路径仍然可用。
+  }
+}
+
 async function act(label, fn) {
   busy += 1
   try {
@@ -167,9 +170,7 @@ async function removeWorkspace(id) {
 
 async function rescan() {
   if (!current.value) return
-  scanning.value = true
   await act('重新扫描', () => api.rescan(current.value.id))
-  scanning.value = false
 }
 
 async function startService(payload) {
@@ -187,8 +188,14 @@ async function saveService({ svc, module, args }) {
   if (ok) toast('参数已保存', 'primary')
 }
 
+async function setWorkspaceJdk({ ws, jdk }) {
+  const ok = await act('设置 JDK', () => api.setJdk(ws, jdk))
+  if (ok) toast(jdk ? 'JDK 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
+}
+
 onMounted(async () => {
   await refresh()
+  loadJdks()
   timer = setInterval(() => {
     // 页面切到后台就不刷了，回来立刻补一次。
     if (!document.hidden) refresh()

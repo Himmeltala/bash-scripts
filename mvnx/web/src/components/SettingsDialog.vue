@@ -2,8 +2,8 @@
   <v-dialog :model-value="modelValue" max-width="760" scrollable @update:model-value="$emit('update:modelValue', $event)">
     <v-card v-if="svc">
       <v-card-title class="d-flex align-center">
-        <span>{{ svc.tag }}</span>
-        <v-chip size="small" class="ml-3" variant="tonal">{{ svc.type === 'package' ? '打包' : svc.type === 'install' ? '安装' : '启动' }}</v-chip>
+        <span>{{ actionName }}-{{ svc.tag }}</span>
+        <v-chip size="small" class="ml-3" variant="tonal">{{ actionName }}</v-chip>
         <v-chip v-if="logStatus" size="small" class="ml-2" variant="outlined">{{ logStatus }}</v-chip>
         <v-spacer />
         <v-btn :icon="true" variant="text" @click="$emit('update:modelValue', false)">
@@ -60,12 +60,12 @@
           <v-spacer />
           <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
         </div>
-        <pre v-if="logText" class="log" :class="{ dark }">{{ logText }}</pre>
+        <pre v-if="logText" class="log" :class="{ dark }">{{ logView }}</pre>
         <p v-else class="log-empty">还没有运行过</p>
       </v-card-text>
 
       <v-card-actions>
-        <span class="hint">参数与模块存到服务上，重启页面不会丢</span>
+        <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一模块的其他动作</span>
         <v-spacer />
         <v-btn variant="text" @click="$emit('update:modelValue', false)">关闭</v-btn>
         <v-btn color="primary" variant="flat" @click="save">保存</v-btn>
@@ -76,7 +76,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { MODE_ITEMS, moduleOf } from '../composables/format'
+import { MODE_ITEMS, TYPE_TEXT, moduleOf } from '../composables/format'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -94,6 +94,7 @@ const args = ref('')
 const mode = ref('auto')
 
 const isService = computed(() => props.svc && (props.svc.type === 'run' || props.svc.type === 'war'))
+const actionName = computed(() => TYPE_TEXT[props.svc && props.svc.type] || '')
 
 const moduleItems = computed(() => props.poms.map((rel) => ({ title: moduleOf(rel), value: moduleOf(rel) })))
 
@@ -125,6 +126,12 @@ const preview = computed(() => {
 })
 
 const logRun = computed(() => (props.svc && props.svc.run ? props.svc.run.id : ''))
+
+// 存的是文件顺序，显示时倒过来，最新一行在最上面。
+const logView = computed(() => {
+  const text = props.logText || ''
+  return text ? text.split('\n').reverse().join('\n') : ''
+})
 
 function save() {
   emit('save', { module: module.value || '', args: (savedArgs.value || '').trim() })
