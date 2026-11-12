@@ -1,0 +1,12 @@
+/* 全局字体：Roboto 只带拉丁字形，中文由后面的系统无衬线字体接住。 */
+html,
+body,
+.v-application {
+  font-family: Roboto, 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+}
+
+/* 差异与路径一律等宽：对齐之后增删行才看得出结构。 */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}
