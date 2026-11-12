@@ -71,7 +71,7 @@ onBeforeUnmount(() => {
   <v-app>
     <v-app-bar density="comfortable" flat border>
       <v-app-bar-title>
-        <span class="title">tokx 用量</span>
+        <span class="title">tokx</span>
         <span class="stamp">{{ stamp }}</span>
       </v-app-bar-title>
       <template #append>
