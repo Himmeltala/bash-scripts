@@ -205,5 +205,32 @@ class SvnWorkspace(unittest.TestCase):
             self.assertIn(b"<html>", resp.read())
 
 
+class SvnRemoteLog(unittest.TestCase):
+    """别人提交了新版本、本地还没更新时，日志里那条要标成远程。"""
+
+    def test_commit_newer_than_wc_marked_remote(self):
+        with tempfile.TemporaryDirectory(prefix="dvcsx-svn-remote-") as tmp:
+            base = Path(tmp)
+            repo = base / "repo"
+            wc = base / "wc"
+            other = base / "other"
+            run(["svnadmin", "create", str(repo)])
+            url = "file://" + str(repo)
+            run(["svn", "checkout", "-q", url, str(wc)])
+            (wc / "a.txt").write_text("a\n", "utf-8")
+            run(["svn", "add", "-q", "a.txt"], cwd=wc)
+            run(["svn", "commit", "-q", "-m", "本地那条", "."], cwd=wc)
+
+            run(["svn", "checkout", "-q", url, str(other)])
+            (other / "b.txt").write_text("b\n", "utf-8")
+            run(["svn", "add", "-q", "b.txt"], cwd=other)
+            run(["svn", "commit", "-q", "-m", "远端那条", "."], cwd=other)
+
+            entries = svnmod.svn_log(str(wc), 5)
+            by_msg = {e["message"]: e for e in entries}
+            self.assertTrue(by_msg["本地那条"]["local"])
+            self.assertFalse(by_msg["远端那条"]["local"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

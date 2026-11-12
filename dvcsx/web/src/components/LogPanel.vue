@@ -1,7 +1,12 @@
 <template>
   <div class="panel">
     <div class="bar">
-      <span class="count">最近 {{ entries.length }} 次提交</span>
+      <span class="count">
+        最近 {{ entries.length }} 次提交
+        <template v-if="remote && remote.upstream">
+          · {{ remote.fetched ? '已同步 ' + remote.upstream : '未同步 ' + remote.upstream }}
+        </template>
+      </span>
       <v-btn
         size="small"
         variant="text"
@@ -15,6 +20,9 @@
     </div>
 
     <p v-if="error" class="hint bad">{{ error }}</p>
+    <p v-if="remote && remote.error" class="hint warn">
+      远端没同步上：{{ remote.error }}，下面是上次同步到的记录。
+    </p>
 
     <div class="split">
       <aside class="revs">
@@ -28,6 +36,9 @@
         >
           <div class="line1">
             <span class="rev mono">{{ revLabel(entry.revision) }}</span>
+            <span class="tag" :class="entry.local ? 'local' : 'remote'">
+              {{ entry.local ? '本地' : '远程' }}
+            </span>
             <span class="author">{{ entry.author || '（无作者）' }}</span>
             <span class="date">{{ when(entry.date) }}</span>
           </div>
@@ -40,6 +51,9 @@
           <div class="commit">
             <div class="commit-head">
               <span class="rev mono">{{ revLabel(current.revision) }}</span>
+              <span class="tag" :class="current.local ? 'local' : 'remote'">
+                {{ current.local ? '本地' : '远程' }}
+              </span>
               <span class="author">{{ current.author || '（无作者）' }}</span>
               <span class="date">{{ when(current.date) }}</span>
               <v-spacer />
@@ -142,6 +156,7 @@ const props = defineProps({
 
 const entries = ref([])
 const current = ref(null)
+const remote = ref(null)
 const activePath = ref('')
 const content = ref({ text: '', truncated: false })
 const loading = ref(false)
@@ -233,6 +248,7 @@ async function load() {
   try {
     const data = await api.log(props.ws.id, 50)
     entries.value = data.entries || []
+    remote.value = data.remote || null
     const hit = entries.value.find((e) => current.value && e.revision === current.value.revision)
     await select(hit || entries.value[0] || null)
   } catch (err) {
@@ -331,6 +347,20 @@ defineExpose({ load })
 .rev {
   font-size: 0.78rem;
   font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+}
+.tag {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+.tag.local {
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.tag.remote {
   color: rgb(var(--v-theme-primary));
 }
 .author {
@@ -508,6 +538,9 @@ defineExpose({ load })
 }
 .hint.bad {
   color: rgb(var(--v-theme-error));
+}
+.hint.warn {
+  color: rgb(var(--v-theme-warning));
 }
 @media (max-width: 900px) {
   .split {

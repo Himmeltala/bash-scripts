@@ -28,6 +28,8 @@ MAX_TEXT = 2 * 1024 * 1024
 MAX_FILE = 512 * 1024
 SVN_TIMEOUT = 30
 GIT_TIMEOUT = 30
+# fetch 是取日志前顺手同步远端，等太久就把页面拖住了，超时先按本地记录出。
+FETCH_TIMEOUT = 20
 LOG_DEFAULT = 50
 LOG_MAX = 200
 
@@ -291,6 +293,74 @@ def parse_log(out):
     return entries
 
 
+def svn_working_revisions(root):
+    """工作副本里每个条目各自的版本。
+
+    根目录的版本只记着上次更新的位置，自己刚提交的文件版本会更高，
+    所以判断“这一版在不在本地”要按文件各自的版本看。
+    """
+    rc, out, err = svn(["info", "--xml", "-R"], cwd=root)
+    if rc != 0:
+        raise ApiError(500, err or "svn info 失败")
+    revs = {}
+    for entry in xml_of(out).iter("entry"):
+        try:
+            revs[entry.get("path", "")] = int(entry.get("revision", ""))
+        except ValueError:
+            continue
+    return revs
+
+
+def svn_entry_local(entry, prefix, revs, top):
+    """这一版里的文件本地都已经是这一版或更新，就算本地已有。"""
+    try:
+        rev = int(entry["revision"])
+    except (TypeError, ValueError):
+        return False
+    checked = 0
+    for item in entry["paths"]:
+        # 目录的版本不随提交往前走，拿它判断会把刚提交的改动误判成远程。
+        if item.get("kind") == "dir":
+            continue
+        path = item.get("path") or ""
+        if prefix:
+            if not path.startswith(prefix + "/"):
+                continue
+            rel = path[len(prefix) + 1:]
+        else:
+            rel = path.lstrip("/")
+        checked += 1
+        if rel in revs:
+            if revs[rel] < rev:
+                return False
+        elif item.get("action") != "D":
+            # 这一版新加或改名的文件本地还没有，说明还没更新到这一版。
+            return False
+    if checked:
+        return True
+    # 这一版只动了目录：按工作副本里最新的版本判断。
+    return top >= rev
+
+
+def svn_log(root, limit):
+    """读日志，并标出哪些提交已经随工作副本更新到了本地。"""
+    # 工作副本根目录本身的 BASE 往往是 r0，直接 svn log 会一条都没有；从 HEAD 往回想。
+    rc, out, err = svn(["log", "--xml", "-v", "-l", str(limit), "-r", "HEAD:1"], cwd=root)
+    if rc != 0:
+        raise ApiError(500, err or "svn log 失败")
+    entries = parse_log(out)
+    revs = svn_working_revisions(root)
+    top = max(revs.values(), default=0)
+    info = svn_info(root)
+    # svn log 给的路径相对仓库根，工作副本在仓库里的位置要从这两个地址里减出来。
+    url_path = urlparse(info["url"]).path.rstrip("/")
+    repo_path = urlparse(info["repo_root"]).path.rstrip("/")
+    prefix = url_path[len(repo_path):].rstrip("/") if repo_path and url_path.startswith(repo_path) else url_path
+    for entry in entries:
+        entry["local"] = svn_entry_local(entry, prefix, revs, top)
+    return entries
+
+
 def safe_rel(rel):
     """接口收到的工作副本内相对路径：不许绝对路径，不许用 .. 跳出工作副本。"""
     rel = (rel or "").strip()
@@ -369,7 +439,7 @@ def revision_diff(root, rev, repo_path=""):
 
 # ---- git 查询 ----
 
-def git(args, cwd=None, timeout=GIT_TIMEOUT):
+def git(args, cwd=None, timeout=GIT_TIMEOUT, env=None):
     """跑一条 git 命令，返回标准输出与错误文本。找不到 git 与超时都按接口错误报出去。"""
     try:
         cp = subprocess.run(
@@ -378,6 +448,7 @@ def git(args, cwd=None, timeout=GIT_TIMEOUT):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         raise ApiError(504, "git 命令超过 %d 秒没跑完：%s" % (timeout, " ".join(args)))
@@ -564,21 +635,76 @@ def parse_git_log(text):
     return entries
 
 
-def git_log(root, limit):
+def git_upstream(root):
+    """当前分支的远端跟踪分支，形如 origin/main；没配远端或游离 HEAD 就为空。"""
+    rc, out, _ = git(
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], cwd=root
+    )
+    name = out.decode("utf-8", "replace").strip()
+    return name if rc == 0 and name else ""
+
+
+def git_ref_exists(root, ref):
+    rc, _, _ = git(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], cwd=root)
+    return rc == 0
+
+
+def git_remote_sync(root):
+    """取日志前先同步一次远端，好让列表带上别人最新的提交。
+
+    只更新 .git 里的远端跟踪分支与对象，不动工作区、暂存区，也不合并。
+    远端连不上或超时就照旧列已有的记录，把原因带回页面。
+    """
+    meta = {"upstream": "", "fetched": False, "error": ""}
+    upstream = git_upstream(root)
+    if not upstream:
+        return meta
+    meta["upstream"] = upstream
+    remote = upstream.split("/", 1)[0]
+    if not remote:
+        return meta
+    # 没人看着终端，别让 git 停在要密码、要口令的提示上。
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    try:
+        rc, _, err = git(
+            ["fetch", "--quiet", remote], cwd=root, timeout=FETCH_TIMEOUT, env=env
+        )
+    except ApiError as exc:
+        meta["error"] = exc.message
+        return meta
+    if rc != 0:
+        meta["error"] = (err or "git fetch 失败").splitlines()[0]
+        return meta
+    meta["fetched"] = True
+    return meta
+
+
+def git_log(root, limit, upstream=""):
     has_head, _ = git_head(root)
     if not has_head:
         return []
+    # 本地分支与远端跟踪分支一起列：还没拉进本地分支的提交也要看得见。
+    revs = ["HEAD"]
+    if upstream and git_ref_exists(root, upstream):
+        revs.append(upstream)
     # -- . 让登记的是仓库子目录时只列这个子目录的提交，跟 svn log 从子目录跑一致。
     rc, out, err = git(
         [
             "log", "-n", str(limit), "--no-color", "--name-status",
-            "--date=iso-strict", "--format=" + LOG_FMT, "--", ".",
+            "--date=iso-strict", "--format=" + LOG_FMT, *revs, "--", ".",
         ],
         cwd=root,
     )
     if rc != 0:
         raise ApiError(500, err or "git log 失败")
-    return parse_git_log(out.decode("utf-8", "replace"))
+    entries = parse_git_log(out.decode("utf-8", "replace"))
+    # 标出哪些提交就在当前分支上，哪些还只在远端分支上。
+    rc, out, _ = git(["rev-list", "HEAD", "--", "."], cwd=root)
+    local = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
+    for entry in entries:
+        entry["local"] = entry["revision"] in local
+    return entries
 
 
 def list_dirs(raw):
@@ -720,12 +846,10 @@ class Handler(BaseHTTPRequestHandler):
             limit = LOG_DEFAULT
         limit = max(1, min(LOG_MAX, limit))
         if ws.get("vcs") == "git":
-            return {"workspace": ws, "entries": git_log(ws["root"], limit)}
-        # 工作副本根目录本身的 BASE 往往是 r0，直接 svn log 会一条都没有；从 HEAD 往回想。
-        rc, out, err = svn(["log", "--xml", "-v", "-l", str(limit), "-r", "HEAD:1"], cwd=ws["root"])
-        if rc != 0:
-            raise ApiError(500, err or "svn log 失败")
-        return {"workspace": ws, "entries": parse_log(out)}
+            remote = git_remote_sync(ws["root"])
+            entries = git_log(ws["root"], limit, remote["upstream"])
+            return {"workspace": ws, "entries": entries, "remote": remote}
+        return {"workspace": ws, "entries": svn_log(ws["root"], limit)}
 
     def _revision(self, query):
         ws = self._ws(query)

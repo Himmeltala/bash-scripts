@@ -147,6 +147,12 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(entries[0]["message"], "second")
         self.assertIn("notes.txt", [p["path"] for p in entries[0]["paths"]])
         self.assertEqual(len(entries[0]["short"]), 7)
+        self.assertTrue(entries[0]["local"])
+
+    def test_log_without_remote_skips_sync(self):
+        # 没配远端就没有可同步的，别让日志页因此报错。
+        meta = gitmod.git_remote_sync(str(self.repo))
+        self.assertEqual(meta, {"upstream": "", "fetched": False, "error": ""})
 
     def test_revision_diff_whole_and_single_path(self):
         whole = gitmod.git_revision_diff(str(self.repo), self.first, "")
@@ -211,6 +217,7 @@ class GitWorkspace(unittest.TestCase):
         status, data = self.call("/log?ws=%s&limit=5" % wid)
         self.assertEqual(status, 200, data)
         self.assertEqual(data["entries"][0]["revision"], self.second)
+        self.assertEqual(data["remote"]["upstream"], "")
 
         status, data = self.call("/revision?ws=%s&rev=%s" % (wid, self.first))
         self.assertEqual(status, 200, data)
@@ -234,6 +241,46 @@ class GitWorkspace(unittest.TestCase):
         with urllib.request.urlopen(self.base.rsplit("/__dvcsx/api", 1)[0] + "/") as resp:
             self.assertEqual(resp.status, 200)
             self.assertIn(b"<html>", resp.read())
+
+
+class GitRemoteLog(unittest.TestCase):
+    """有远端时取日志先同步：别人刚推的提交要列出来，并标成远程。"""
+
+    def test_log_syncs_remote_and_marks_entry(self):
+        with tempfile.TemporaryDirectory(prefix="dvcsx-git-remote-") as tmp:
+            base = Path(tmp)
+            src = base / "src"
+            run(["git", "init", "-q", "-b", "main", str(src)])
+            (src / "a.txt").write_text("a\n", "utf-8")
+            run(["git", "add", "a.txt"], cwd=src)
+            run(["git", "commit", "-qm", "base"], cwd=src)
+            bare = base / "origin.git"
+            run(["git", "clone", "-q", "--bare", str(src), str(bare)])
+
+            work = base / "work"
+            run(["git", "clone", "-q", str(bare), str(work)])
+            other = base / "other"
+            run(["git", "clone", "-q", str(bare), str(other)])
+            (other / "b.txt").write_text("b\n", "utf-8")
+            run(["git", "add", "b.txt"], cwd=other)
+            run(["git", "commit", "-qm", "远端新提交"], cwd=other)
+            run(["git", "push", "-q", "origin", "main"], cwd=other)
+
+            # 同步前，本地记录到的远端还停在 base。
+            before = [e["message"] for e in gitmod.git_log(str(work), 5, "origin/main")]
+            self.assertEqual(before, ["base"])
+
+            meta = gitmod.git_remote_sync(str(work))
+            self.assertTrue(meta["fetched"], meta)
+            self.assertEqual(meta["upstream"], "origin/main")
+
+            entries = gitmod.git_log(str(work), 5, meta["upstream"])
+            by_msg = {e["message"]: e for e in entries}
+            self.assertFalse(by_msg["远端新提交"]["local"])
+            self.assertTrue(by_msg["base"]["local"])
+
+            # 同步只动远端跟踪分支，工作区与暂存区保持原样。
+            self.assertEqual(git_out("status", "--porcelain", cwd=work), "")
 
 
 if __name__ == "__main__":
