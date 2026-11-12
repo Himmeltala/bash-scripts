@@ -134,7 +134,7 @@ function rowProps({ item }) {
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
   font-size: 0.82rem;
 }
 

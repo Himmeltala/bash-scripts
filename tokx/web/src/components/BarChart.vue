@@ -9,6 +9,7 @@ import { fmtMoney, fmtTokens } from '../composables/format'
 
 const PEAK = '高峰'
 const OFF = '空闲'
+const FONT = 'Roboto, sans-serif'
 
 echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -83,12 +84,13 @@ function option() {
     animationDuration: 240,
     // 两个并排的图各自管自己的残影，不清掉旧选项的话换数据后图例会重复叠上去。
     notMerge: true,
+    textStyle: { fontFamily: FONT },
     grid: { left: 8, right: 8, top: 44, bottom: 22, containLabel: true },
     tooltip: {
       trigger: 'item',
       backgroundColor: skin.surface,
       borderColor: line,
-      textStyle: { color: skin['on-surface'] },
+      textStyle: { color: skin['on-surface'], fontFamily: FONT },
       formatter: (item) => {
         const label = labels.value[item.dataIndex] ?? ''
         if (multi.value) {
@@ -101,7 +103,12 @@ function option() {
       },
     },
     title: props.title
-      ? { text: props.title, left: 12, top: 6, textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600 } }
+      ? {
+          text: props.title,
+          left: 12,
+          top: 6,
+          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: FONT },
+        }
       : undefined,
     legend: props.legend
       ? {
@@ -111,7 +118,7 @@ function option() {
           icon: 'roundRect',
           itemWidth: 10,
           itemHeight: 10,
-          textStyle: { color: text, fontSize: 11 },
+          textStyle: { color: text, fontSize: 11, fontFamily: FONT },
           // 图例只管说明颜色，点它不让柱子消失。
           selectedMode: false,
         }
@@ -122,11 +129,22 @@ function option() {
       data: labels.value,
       axisLine: { lineStyle: { color: line } },
       axisTick: { show: false },
-      axisLabel: { color: text, fontSize: 11, interval: 'auto', hideOverlap: true },
+      axisLabel: {
+        color: text,
+        fontSize: 11,
+        fontFamily: FONT,
+        interval: 'auto',
+        hideOverlap: true,
+      },
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: text, fontSize: 11, formatter: (value) => `¥${value}` },
+      axisLabel: {
+        color: text,
+        fontSize: 11,
+        fontFamily: FONT,
+        formatter: (value) => `¥${value}`,
+      },
       splitLine: { lineStyle: { color: line } },
     },
     series,
