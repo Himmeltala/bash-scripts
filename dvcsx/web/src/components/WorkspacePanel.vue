@@ -13,6 +13,10 @@
           <v-icon start size="18">mdi-history</v-icon>
           提交日志
         </v-tab>
+        <v-tab value="sync">
+          <v-icon start size="18">mdi-cloud-sync-outline</v-icon>
+          同步
+        </v-tab>
         <v-tab value="browse">
           <v-icon start size="18">mdi-folder-open-outline</v-icon>
           浏览目录
@@ -21,18 +25,26 @@
     </div>
 
     <div class="tabbody">
-      <ChangesPanel v-if="tab === 'changes'" :ws="ws" @loaded="count = $event" />
-      <LogPanel v-else-if="tab === 'log'" :ws="ws" />
+      <ChangesPanel
+        v-if="tab === 'changes'"
+        :ws="ws"
+        :refresh="changesKey"
+        @loaded="count = $event"
+      />
+      <LogPanel v-else-if="tab === 'log'" :ws="ws" :refresh="repoKey" />
+      <SyncPanel v-else-if="tab === 'sync'" :ws="ws" :refresh="repoKey" />
       <BrowsePanel v-else :ws="ws" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BrowsePanel from './BrowsePanel.vue'
 import ChangesPanel from './ChangesPanel.vue'
 import LogPanel from './LogPanel.vue'
+import SyncPanel from './SyncPanel.vue'
+import { workspaceEventsUrl } from '../composables/useApi'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -40,6 +52,39 @@ const props = defineProps({
 
 const tab = ref('changes')
 const count = ref(0)
+// changes 只影响变更页；repo 是写操作结束，日志与同步信息也要重载。
+const changesKey = ref(0)
+const repoKey = ref(0)
+let events = null
+
+function closeEvents() {
+  if (events) {
+    events.close()
+    events = null
+  }
+}
+
+function openEvents() {
+  closeEvents()
+  if (!props.ws || !props.ws.id) return
+  events = new EventSource(workspaceEventsUrl(props.ws.id))
+  events.addEventListener('changes', (event) => {
+    let data = {}
+    try {
+      data = JSON.parse(event.data)
+    } catch (err) {
+      data = {}
+    }
+    if (typeof data.count === 'number') count.value = data.count
+    changesKey.value += 1
+  })
+  // 一次写操作结束，日志、同步信息与变更都可能变了。
+  events.addEventListener('repo', () => {
+    changesKey.value += 1
+    repoKey.value += 1
+  })
+  // 连接断了 EventSource 会自己重连，不必在这里处理。
+}
 
 // 换工作副本时回到变更页，勾选状态不跟着带到另一个目录。
 watch(
@@ -47,8 +92,11 @@ watch(
   () => {
     tab.value = 'changes'
     count.value = 0
+    openEvents()
   }
 )
+onMounted(openEvents)
+onBeforeUnmount(closeEvents)
 </script>
 
 <style scoped>

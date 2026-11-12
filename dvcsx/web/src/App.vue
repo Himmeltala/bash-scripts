@@ -3,7 +3,6 @@
     <v-app-bar density="comfortable" flat border="b" class="app-bar">
       <v-app-bar-title>
         <span class="brand">dvcsx</span>
-        <span class="tag">工作副本变更、日志与代码浏览</span>
       </v-app-bar-title>
       <v-spacer />
       <v-btn
@@ -28,6 +27,8 @@
             @select="select"
             @add="addWorkspace"
             @remove="removeWorkspace"
+            @changed="refresh"
+            @notice="toast($event.text, $event.color)"
           />
         </aside>
         <main class="content">
@@ -38,7 +39,7 @@
             <v-icon size="56" color="on-surface-variant">mdi-source-branch</v-icon>
             <p class="empty-title">先加一个工作副本</p>
             <p class="empty-hint">
-              选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更、最近的提交日志，也能浏览目录看代码。
+              选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、更新、提交和浏览目录看代码。
             </p>
             <v-btn color="primary" variant="flat" prepend-icon="mdi-folder-plus" @click="addWorkspace()">
               添加工作副本
@@ -165,12 +166,6 @@ function onVisible() {
 .brand {
   font-weight: 600;
   letter-spacing: 0.02em;
-}
-.tag {
-  margin-left: 10px;
-  font-size: 0.78rem;
-  font-weight: 400;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 .shell {
   display: flex;

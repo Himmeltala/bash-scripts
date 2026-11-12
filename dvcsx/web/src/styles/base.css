@@ -1,12 +1,9 @@
-/* 全局字体：Roboto 只带拉丁字形，中文由后面的系统无衬线字体接住。 */
+/* 全局字体一律 Roboto；Roboto 没有中文字形，中文由后面的系统无衬线字体接住。
+   输入框、代码块与日志也走这一套，不再单独用等宽字体。 */
 html,
 body,
-.v-application {
+.v-application,
+.v-application :where(input, textarea, select, option, button, code, kbd, samp, pre, .hljs) {
   font-family: Roboto, 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC',
     'Microsoft YaHei', sans-serif;
-}
-
-/* 差异与路径一律等宽：对齐之后增删行才看得出结构。 */
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }

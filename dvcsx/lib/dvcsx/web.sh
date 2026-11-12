@@ -1,10 +1,11 @@
-# 网页模式：起 python3 转发进程，静态页面与 SVN / Git 查询接口都由它出。
+# 网页模式：起 python3 转发进程，静态页面与 SVN / Git 查询、操作接口都由它出。
 
 # 缺省值在这里定，parse_args 里覆盖，dvcsx -p 9999 web 与 dvcsx web -p 9999 等价。
 RV_PORT=0
 RV_HOST='0.0.0.0'
 RV_OPEN=0
 RV_JSON=0
+RV_ALLOW_WRITE=0
 readonly WEB_ATTACH_TIMEOUT=20
 
 readonly WEB_HOME="$CACHE_DIR/web"
@@ -30,7 +31,7 @@ web_python() {
 
 web_command() {
   local runner child log line='' waited=0 url local_url
-  local -a open_arg=()
+  local -a open_arg=() write_arg=()
   runner=$(web_python) || return
   RV_PORT=${RV_PORT:-0}
   RV_HOST=${RV_HOST:-0.0.0.0}
@@ -45,11 +46,12 @@ web_command() {
   log="$WEB_HOME/runner.log"
   : >"$log"
   ((RV_OPEN)) && open_arg+=(--open)
+  ((RV_ALLOW_WRITE)) && write_arg+=(--allow-write)
 
   "$runner" "$dvcsx_dir/dvcsx/web/server.py" \
     --static "$dvcsx_dir/dvcsx/web/static" \
     --state "$WEB_STATE_FILE" --api "$WEB_API_PREFIX" \
-    --host "$RV_HOST" --port "$RV_PORT" "${open_arg[@]}" >"$log" 2>&1 &
+    --host "$RV_HOST" --port "$RV_PORT" "${open_arg[@]}" "${write_arg[@]}" >"$log" 2>&1 &
   child=$!
   trap 'kill -TERM "$child" 2>/dev/null' INT TERM HUP
 
@@ -76,6 +78,10 @@ web_command() {
   [[ "$url" == "$local_url" ]] || printf '本机 %s\n' "$local_url"
   [[ "$RV_HOST" == '127.0.0.1' || "$RV_HOST" == 'localhost' ]] ||
     printf '页面没有登录，同一网络里能连上的人都能查看工作副本的变更与日志；只想本机用就加 --host 127.0.0.1\n' >&2
+  if ((RV_ALLOW_WRITE)) &&
+    [[ "$RV_HOST" != '127.0.0.1' && "$RV_HOST" != 'localhost' ]]; then
+    printf '已放开写操作：同一网络里能打开页面的人都能拉取、推送、更新与提交，确认网络可信再用 --allow-write\n' >&2
+  fi
   printf '按 Ctrl+C 退出网页服务。\n' >&2
   wait "$child"
 }

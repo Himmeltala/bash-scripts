@@ -26,7 +26,7 @@ bash-scripts/
 │   ├── test/
 │   │   └── run.sh             临时 Node 工作区下的回归测试
 │   └── web/                   网页前端源码，打包产物进 lib/nodex/web/static
-├── dvcsx/                      版本库：网页里看 SVN 工作副本的变更与提交日志
+├── dvcsx/                      版本库：网页里看变更与日志，拉取、推送、更新与提交
 │   ├── README.md
 │   ├── bin/
 │   │   └── dvcsx

@@ -55,6 +55,8 @@ nodex web             起网页界面，左侧添加工作区，右侧点按钮�
 
 页面按工作区分栏：启动服务、打包、安装、模块清单。每栏的参数与日志各归各的，日志从对应行打开。
 
+左侧工作区可以点右键设置别名、复制相对路径或绝对路径。相对路径以家目录为基准；别名存在 `~/.cache/nodex/web/alias.tsv`，不改状态文件。
+
 每个工作区可以单独选 Node 版本：自动扫 `~/.nvm/versions/node`、`~/.local/share/fnm/node-versions`、`~/.volta/tools/image/node` 与 `/usr/local/n/versions/node`，也可以手填版本目录。启动时把选中版本的 `bin` 放到 `PATH` 最前；目录不在了就回退到当前环境。
 
 日志按运行号分开，位于 `~/.cache/nodex/web/logs/<工作区>/<运行号>.log`；状态与 Node 选择在 `~/.cache/nodex/web/` 下。页面通过 SSE 收日志与头部指标。

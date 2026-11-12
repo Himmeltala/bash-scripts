@@ -39,6 +39,7 @@ export const api = {
   metricsStreamUrl: () => `${PREFIX}/metrics/stream`,
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
+  setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),
   rescan: (ws) => call('POST', '/rescan', { ws }),
   start: (payload) => call('POST', '/start', payload),
   stop: (run) => call('POST', '/stop', { run }),

@@ -149,6 +149,12 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(len(entries[0]["short"]), 7)
         self.assertTrue(entries[0]["local"])
 
+    def test_log_skip_pages(self):
+        first_page = gitmod.git_log(str(self.repo), 1)
+        second_page = gitmod.git_log(str(self.repo), 1, skip=1)
+        self.assertEqual([e["revision"] for e in first_page], [self.second])
+        self.assertEqual([e["revision"] for e in second_page], [self.first])
+
     def test_log_without_remote_skips_sync(self):
         # 没配远端就没有可同步的，别让日志页因此报错。
         self.assertEqual(
@@ -184,6 +190,33 @@ class GitWorkspace(unittest.TestCase):
             gitmod.browse_list(str(self.repo), "..")
         with self.assertRaises(gitmod.ApiError):
             gitmod.browse_file(str(self.repo), "../x")
+
+    def test_alias_and_relative_path_in_state(self):
+        wid = self.add()
+        status, data = self.call("/alias", {"ws": wid, "alias": "  我的   仓库 "})
+        self.assertEqual(status, 200, data)
+
+        status, data = self.call("/state")
+        item = next(w for w in data["workspaces"] if w["id"] == wid)
+        self.assertEqual(item["alias"], "我的 仓库")
+        self.assertEqual(
+            item["rel"],
+            os.path.relpath(str(self.repo.resolve()), os.path.expanduser("~")),
+        )
+
+        status, data = self.call("/alias", {"ws": wid, "alias": ""})
+        self.assertEqual(status, 200, data)
+        status, data = self.call("/state")
+        item = next(w for w in data["workspaces"] if w["id"] == wid)
+        self.assertEqual(item["alias"], "")
+        self.call("/forget", {"ws": wid})
+
+    def test_write_guard_only_trusts_loopback(self):
+        self.assertTrue(gitmod.is_loopback("127.0.0.1"))
+        self.assertTrue(gitmod.is_loopback("::1"))
+        self.assertTrue(gitmod.is_loopback("::ffff:127.0.0.1"))
+        self.assertFalse(gitmod.is_loopback("192.168.1.20"))
+        self.assertFalse(gitmod.is_loopback("::ffff:192.168.1.20"))
 
     def test_old_state_defaults_to_svn(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -330,6 +363,125 @@ class GitRemoteLog(unittest.TestCase):
 
             # 同步只动远端跟踪分支，工作区与暂存区保持原样。
             self.assertEqual(git_out("status", "--porcelain", cwd=work), "")
+
+
+class GitOperations(unittest.TestCase):
+    """克隆出来的仓库：拉取、推送、提交详情与同步信息。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-git-op-")
+        base = Path(self.tmp.name)
+        src = base / "src"
+        run(["git", "init", "-q", "-b", "main", str(src)])
+        (src / "a.txt").write_text("a\n", "utf-8")
+        run(["git", "add", "a.txt"], cwd=src)
+        run(["git", "commit", "-qm", "base"], cwd=src)
+        self.bare = base / "origin.git"
+        run(["git", "clone", "-q", "--bare", str(src), str(self.bare)])
+        self.work = base / "work"
+        run(["git", "clone", "-q", str(self.bare), str(self.work)])
+        self.other = base / "other"
+        run(["git", "clone", "-q", str(self.bare), str(self.other)])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def remote_commit(self):
+        (self.other / "b.txt").write_text("b\n", "utf-8")
+        run(["git", "add", "b.txt"], cwd=self.other)
+        run(["git", "commit", "-qm", "远端新提交"], cwd=self.other)
+        run(["git", "push", "-q", "origin", "main"], cwd=self.other)
+
+    def test_pull_fast_forward(self):
+        self.remote_commit()
+        result = gitmod.git_pull(str(self.work), "ff")
+        self.assertTrue(result["ok"], result)
+        self.assertIn("远端新提交", git_out("log", "-1", "--format=%s", cwd=self.work))
+        self.assertTrue((self.work / "b.txt").is_file())
+
+    def test_pull_rejects_unknown_mode(self):
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.git_pull(str(self.work), "whatever")
+
+    def test_push_updates_remote(self):
+        (self.work / "c.txt").write_text("c\n", "utf-8")
+        run(["git", "add", "c.txt"], cwd=self.work)
+        run(["git", "commit", "-qm", "本地提交"], cwd=self.work)
+        result = gitmod.git_push(str(self.work))
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(
+            git_out("rev-parse", "HEAD", cwd=self.work),
+            git_out("rev-parse", "main", cwd=self.bare),
+        )
+
+    def test_push_without_upstream_can_set_it(self):
+        # 去掉跟踪关系但保留同名远端，模拟“刚加 remote、还没设上游”的仓库。
+        run(["git", "remote", "remove", "origin"], cwd=self.work)
+        run(["git", "remote", "add", "origin", str(self.bare)], cwd=self.work)
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.git_push(str(self.work))
+        result = gitmod.git_push(str(self.work), set_upstream=True)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(git_out("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.work), "origin/main")
+
+    def test_commit_detail_keeps_full_message(self):
+        run(["git", "commit", "--allow-empty", "-qm", "标题\n\n正文第一行\n正文第二行"], cwd=self.work)
+        sha = git_out("rev-parse", "HEAD", cwd=self.work)
+        detail = gitmod.git_commit_detail(str(self.work), sha)
+        self.assertEqual(detail["revision"], sha)
+        self.assertEqual(detail["message"], "标题\n\n正文第一行\n正文第二行")
+        self.assertEqual(len(detail["parents"]), 1)
+
+    def test_commit_covers_modified_and_untracked(self):
+        (self.work / "a.txt").write_text("a\nchanged\n", "utf-8")
+        (self.work / "b.txt").write_text("b\n", "utf-8")
+        plan = gitmod.operation_plan(
+            {"id": "x", "root": str(self.work), "vcs": "git"},
+            {"action": "commit", "message": "两处改动", "paths": ["a.txt", "b.txt"]},
+        )
+        self.assertEqual(len(plan["commands"]), 2)
+        for argv in plan["commands"]:
+            run(argv, cwd=plan["cwd"])
+        self.assertEqual(git_out("log", "-1", "--format=%s", cwd=self.work), "两处改动")
+        self.assertEqual(git_out("status", "--porcelain", cwd=self.work), "")
+
+    def test_commit_handles_rename(self):
+        run(["git", "mv", "a.txt", "c.txt"], cwd=self.work)
+        plan = gitmod.operation_plan(
+            {"id": "x", "root": str(self.work), "vcs": "git"},
+            {"action": "commit", "message": "改名", "paths": ["c.txt"]},
+        )
+        for argv in plan["commands"]:
+            run(argv, cwd=plan["cwd"])
+        self.assertEqual(git_out("status", "--porcelain", cwd=self.work), "")
+        shown = git_out("show", "--name-status", "--format=", "HEAD", cwd=self.work)
+        self.assertIn("c.txt", shown)
+        self.assertIn("a.txt", shown)
+
+    def test_commit_refuses_unselected_staged_path(self):
+        (self.work / "a.txt").write_text("a\nchanged\n", "utf-8")
+        (self.work / "b.txt").write_text("b\n", "utf-8")
+        run(["git", "add", "b.txt"], cwd=self.work)
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.operation_plan(
+                {"id": "x", "root": str(self.work), "vcs": "git"},
+                {"action": "commit", "message": "只提交 a", "paths": ["a.txt"]},
+            )
+
+    def test_sync_info_lists_changes(self):
+        (self.work / "a.txt").write_text("a\nchanged\n", "utf-8")
+        (self.work / "b.txt").write_text("b\n", "utf-8")
+        info = gitmod.git_sync_info(str(self.work))
+        items = {item["path"]: item["item"] for item in info["files"]}
+        self.assertEqual(items.get("a.txt"), "modified")
+        self.assertEqual(items.get("b.txt"), "unversioned")
+
+    def test_sync_info_reports_upstream(self):
+        info = gitmod.git_sync_info(str(self.work))
+        self.assertEqual(info["branch"], "main")
+        self.assertEqual(info["upstream"], "origin/main")
+        self.assertEqual(info["remotes"], ["origin"])
+        self.assertFalse(info["detached"])
 
 
 if __name__ == "__main__":

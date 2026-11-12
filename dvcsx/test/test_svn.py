@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """dvcsx 回归：临时 SVN 仓库上的状态解析、差异、日志与网页接口。"""
 
+import http.client
 import importlib.util
 import json
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -248,6 +250,268 @@ class SvnRemoteLog(unittest.TestCase):
             by_msg = {e["message"]: e for e in entries}
             self.assertTrue(by_msg["本地那条"]["local"])
             self.assertFalse(by_msg["远端那条"]["local"])
+
+
+class SvnOperations(unittest.TestCase):
+    """从同一个仓库拉出两份工作副本：更新、提交、冲突与同步信息。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-svn-op-")
+        base = Path(self.tmp.name)
+        self.repo = base / "repo"
+        self.wc = base / "wc"
+        self.other = base / "other"
+        run(["svnadmin", "create", str(self.repo)])
+        self.url = "file://" + str(self.repo)
+        run(["svn", "checkout", "-q", self.url, str(self.wc)])
+        (self.wc / "a.txt").write_text("a\n", "utf-8")
+        run(["svn", "add", "-q", "a.txt"], cwd=self.wc)
+        run(["svn", "commit", "-q", "-m", "base", "."], cwd=self.wc)
+        run(["svn", "checkout", "-q", self.url, str(self.other)])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_update_brings_remote_commit(self):
+        (self.other / "b.txt").write_text("b\n", "utf-8")
+        run(["svn", "add", "-q", "b.txt"], cwd=self.other)
+        run(["svn", "commit", "-q", "-m", "远端新版本", "."], cwd=self.other)
+        result = svnmod.svn_update(str(self.wc))
+        self.assertTrue(result["ok"], result)
+        self.assertTrue((self.wc / "b.txt").is_file())
+        self.assertEqual(svnmod.svn_info(str(self.wc))["revision"], "2")
+
+    def test_commit_selected_paths(self):
+        (self.wc / "a.txt").write_text("a\nchanged\n", "utf-8")
+        result = svnmod.svn_commit(str(self.wc), "改一行", ["a.txt"])
+        self.assertTrue(result["ok"], result)
+        # 工作副本根目录的 BASE 停在提交前的版本，从 HEAD 往回想才看得到刚提交的那条。
+        rc, out, err = svnmod.svn(["log", "--xml", "-v", "-r", "HEAD:1"], cwd=str(self.wc))
+        self.assertEqual(rc, 0, err)
+        entry = svnmod.parse_log(out)[0]
+        self.assertEqual(entry["message"], "改一行")
+        self.assertEqual(entry["revision"], "2")
+
+    def test_commit_detail_keeps_full_message(self):
+        (self.wc / "a.txt").write_text("a\nchanged\n", "utf-8")
+        result = svnmod.svn_commit(str(self.wc), "标题\n\n正文", ["a.txt"])
+        self.assertTrue(result["ok"], result)
+        detail = svnmod.svn_commit_detail(str(self.wc), "2")
+        self.assertEqual(detail["revision"], "2")
+        self.assertEqual(detail["message"], "标题\n\n正文")
+
+    def test_add_then_delete_revision_is_local_after_update(self):
+        # 加一个文件再删掉，更新到删掉之后的版本；加文件那次提交已经在本地生效。
+        (self.wc / "gone.txt").write_text("x\n", "utf-8")
+        run(["svn", "add", "-q", "gone.txt"], cwd=self.wc)
+        run(["svn", "commit", "-q", "-m", "加一个文件", "."], cwd=self.wc)
+        run(["svn", "delete", "-q", "gone.txt"], cwd=self.wc)
+        run(["svn", "commit", "-q", "-m", "删掉它", "."], cwd=self.wc)
+        run(["svn", "update", "-q"], cwd=self.wc)
+        self.assertEqual(svnmod.svn_info(str(self.wc))["revision"], "3")
+        entries, _ = svnmod.svn_log_meta(str(self.wc), 10)
+        by_msg = {entry["message"]: entry for entry in entries}
+        self.assertTrue(by_msg["加一个文件"]["local"], by_msg["加一个文件"])
+        self.assertTrue(by_msg["删掉它"]["local"], by_msg["删掉它"])
+
+    def test_log_skip_pages(self):
+        (self.wc / "a.txt").write_text("a\nchanged\n", "utf-8")
+        result = svnmod.svn_commit(str(self.wc), "第二条", ["a.txt"])
+        self.assertTrue(result["ok"], result)
+        first, _ = svnmod.svn_log_meta(str(self.wc), 1, 0)
+        second, _ = svnmod.svn_log_meta(str(self.wc), 1, 1)
+        self.assertEqual([entry["message"] for entry in first], ["第二条"])
+        self.assertEqual([entry["message"] for entry in second], ["base"])
+
+    def test_commit_rejects_empty_message_and_unversioned(self):
+        with self.assertRaises(svnmod.ApiError):
+            svnmod.svn_commit(str(self.wc), "  ", ["a.txt"])
+        (self.wc / "new.txt").write_text("new\n", "utf-8")
+        with self.assertRaises(svnmod.ApiError):
+            svnmod.svn_commit(str(self.wc), "说明", ["new.txt"])
+
+    def test_conflicted_path_cannot_be_committed(self):
+        # 两份工作副本改同一个文件的同一行，更新时就会冲突。
+        (self.wc / "a.txt").write_text("本地改法\n", "utf-8")
+        (self.other / "a.txt").write_text("远端改法\n", "utf-8")
+        run(["svn", "commit", "-q", "-m", "远端改", "."], cwd=self.other)
+        run(["svn", "update", "-q", "--accept", "postpone"], cwd=self.wc)
+        info = svnmod.svn_sync_info(str(self.wc))
+        self.assertIn("a.txt", info["conflicts"])
+        with self.assertRaises(svnmod.ApiError):
+            svnmod.svn_commit(str(self.wc), "冲突提交", ["a.txt"])
+
+    def test_operation_plan_builds_svn_commit(self):
+        (self.wc / "a.txt").write_text("a\nchanged\n", "utf-8")
+        plan = svnmod.operation_plan(
+            {"id": "x", "root": str(self.wc), "vcs": "svn"},
+            {"action": "commit", "message": "说明", "paths": ["a.txt"]},
+        )
+        self.assertEqual(plan["action"], "commit")
+        self.assertEqual(plan["cwd"], str(self.wc))
+        self.assertEqual(plan["commands"][0][:4], ["svn", "--non-interactive", "commit", "-m"])
+        self.assertEqual(plan["commands"][0][-2:], ["--", "a.txt"])
+        self.assertIn("说明", plan["command"])
+
+    def test_sync_info_lists_changes(self):
+        (self.wc / "a.txt").write_text("a\nchanged\n", "utf-8")
+        (self.wc / "new.txt").write_text("new\n", "utf-8")
+        info = svnmod.svn_sync_info(str(self.wc))
+        items = {item["path"]: item["item"] for item in info["files"]}
+        self.assertEqual(items.get("a.txt"), "modified")
+        # 未纳入版本控制的文件不进提交清单。
+        self.assertNotIn("new.txt", items)
+
+
+class ApiOperation(unittest.TestCase):
+    """网页接口上的写操作：本机请求可执行，结果带回输出。"""
+
+    def test_api_pull_operation(self):
+        with tempfile.TemporaryDirectory(prefix="dvcsx-git-api-op-") as tmp:
+            base = Path(tmp)
+            work = base / "work"
+            run(["git", "init", "-q", "-b", "main", str(work)])
+            run(["git", "config", "user.name", "Alice"], cwd=work)
+            run(["git", "config", "user.email", "a@example.com"], cwd=work)
+            (work / "a.txt").write_text("a\n", "utf-8")
+            run(["git", "add", "a.txt"], cwd=work)
+            # 这个用例借用 server.py 的 Git 分支；临时仓库里没有全局作者信息。
+            run(
+                [
+                    "git",
+                    "-c", "user.name=Alice",
+                    "-c", "user.email=a@example.com",
+                    "commit", "-qm", "base",
+                ],
+                cwd=work,
+            )
+            bare = base / "origin.git"
+            run(["git", "clone", "-q", "--bare", str(work), str(bare)])
+            run(["git", "remote", "add", "origin", str(bare)], cwd=work)
+            run(["git", "push", "-q", "-u", "origin", "main"], cwd=work)
+
+            static = base / "static"
+            static.mkdir()
+            (static / "index.html").write_text("<html></html>", "utf-8")
+            handler = svnmod.Handler
+            handler.static = static.resolve()
+            handler.store = svnmod.Workspaces(str(base / "state.json"))
+            handler.api_prefix = "/__dvcsx/api"
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            url = "http://127.0.0.1:%d/__dvcsx/api" % httpd.server_address[1]
+
+            def call(path, body=None):
+                data = json.dumps(body).encode("utf-8") if body is not None else None
+                headers = {"Content-Type": "application/json"} if data else {}
+                req = urllib.request.Request(url + path, data=data, headers=headers)
+                try:
+                    with urllib.request.urlopen(req) as resp:
+                        return resp.status, json.loads(resp.read().decode("utf-8"))
+                except urllib.error.HTTPError as exc:
+                    return exc.code, json.loads(exc.read().decode("utf-8"))
+
+            try:
+                status, data = call("/workspaces", {"root": str(work)})
+                self.assertEqual(status, 200, data)
+                wid = data["workspace"]["id"]
+                status, data = call("/sync-info?ws=" + wid)
+                self.assertEqual(status, 200, data)
+                self.assertTrue(data["writable"])
+                self.assertEqual(data["upstream"], "origin/main")
+                status, data = call("/operations", {"ws": wid, "action": "pull"})
+                self.assertEqual(status, 200, data)
+                job_id = data["id"]
+                self.assertIn("pull", data["command"])
+                # 操作在后台跑，轮询任务状态等它结束。
+                job = {}
+                deadline = time.time() + 15
+                while time.time() < deadline:
+                    status, job = call("/operations/" + job_id)
+                    self.assertEqual(status, 200, job)
+                    if job.get("done"):
+                        break
+                    time.sleep(0.1)
+                self.assertTrue(job.get("done"), job)
+                self.assertTrue(job["ok"], job)
+                self.assertEqual(job["status"], "done")
+                self.assertIn("pull", job["command"])
+                status, data = call("/operations?ws=" + wid)
+                self.assertEqual(status, 200, data)
+                self.assertTrue(data["job"]["done"], data)
+
+                # 任务结束后再连 SSE，也能从缓冲里拿到输出与结束事件。
+                conn = http.client.HTTPConnection(
+                    "127.0.0.1", httpd.server_address[1], timeout=15
+                )
+                conn.request(
+                    "GET", "/__dvcsx/api/operations/%s/events" % job_id
+                )
+                events = conn.getresponse().read().decode("utf-8")
+                conn.close()
+                self.assertIn("event: done", events)
+                self.assertIn("event: output", events)
+
+                # 不认识的写操作要明确拒绝。
+                status, data = call("/operations", {"ws": wid, "action": "force-push"})
+                self.assertEqual(status, 400, data)
+
+                # 工作副本的长连接先收到 ready，改动文件后收到 changes。
+                conn = http.client.HTTPConnection(
+                    "127.0.0.1", httpd.server_address[1], timeout=12
+                )
+                conn.request("GET", "/__dvcsx/api/events?ws=" + wid)
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+
+                def read_event(name):
+                    deadline = time.time() + 12
+                    while time.time() < deadline:
+                        line = resp.fp.readline()
+                        if not line:
+                            return False
+                        if line.strip() == ("event: " + name).encode("utf-8"):
+                            return True
+                    return False
+
+                self.assertTrue(read_event("ready"), "没有收到 ready 事件")
+                (work / "a.txt").write_text("a\nchanged\n", "utf-8")
+                self.assertTrue(read_event("changes"), "改动后没有收到 changes 事件")
+                conn.close()
+
+                # 网页提交：后台先暂存再提交，任务状态能拿到结果。
+                status, data = call(
+                    "/operations",
+                    {
+                        "ws": wid,
+                        "action": "commit",
+                        "message": "网页提交",
+                        "paths": ["a.txt"],
+                    },
+                )
+                self.assertEqual(status, 200, data)
+                commit_id = data["id"]
+                commit_job = {}
+                deadline = time.time() + 15
+                while time.time() < deadline:
+                    status, commit_job = call("/operations/" + commit_id)
+                    self.assertEqual(status, 200, commit_job)
+                    if commit_job.get("done"):
+                        break
+                    time.sleep(0.1)
+                self.assertTrue(commit_job.get("done"), commit_job)
+                self.assertTrue(commit_job["ok"], commit_job)
+                self.assertEqual(
+                    run(["git", "log", "-1", "--format=%s"], cwd=work).strip(),
+                    "网页提交",
+                )
+
+                # 不存在的工作区在开始推流之前就要报错。
+                status, data = call("/events?ws=no-such-workspace")
+                self.assertEqual(status, 404)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@
             @select="select"
             @add="addWorkspace"
             @remove="removeWorkspace"
+            @changed="refresh"
+            @notice="toast($event.text, $event.color)"
           />
         </aside>
         <main class="content">

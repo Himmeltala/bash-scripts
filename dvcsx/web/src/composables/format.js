@@ -41,11 +41,16 @@ export function dirName(full) {
   return parts.join('/')
 }
 
-// 提交时间形如 2026-11-12T09:30:00.000000Z，页面只显示到分钟。
+// SVN 给 UTC（带 Z），Git 给带偏移的时间；统一按浏览器时区显示到分钟。
 export function when(iso) {
   if (!iso) return ''
-  const text = String(iso).replace('T', ' ').replace(/\.\d+/, '').replace('Z', '')
-  return text.slice(0, 16)
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return String(iso).slice(0, 16)
+  const pad = (value) => String(value).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  )
 }
 
 export function firstLine(text) {

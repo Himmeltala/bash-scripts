@@ -28,15 +28,32 @@ function q(value) {
   return encodeURIComponent(value ?? '')
 }
 
+// SSE 不能走 fetch，地址单独给页面拼。
+export function workspaceEventsUrl(ws) {
+  return `${PREFIX}/events?ws=${q(ws)}`
+}
+
+export function jobEventsUrl(id) {
+  return `${PREFIX}/operations/${q(id)}/events`
+}
+
 export const api = {
   state: () => call('GET', '/state'),
   dirs: (path = '') => call('GET', `/dirs${path ? `?path=${q(path)}` : ''}`),
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
+  setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),
   changes: (ws) => call('GET', `/changes?ws=${q(ws)}`),
   diff: (ws, path, item = '') => call('GET', `/diff?ws=${q(ws)}&path=${q(path)}&item=${q(item)}`),
-  log: (ws, limit = 50) => call('GET', `/log?ws=${q(ws)}&limit=${limit}`),
+  log: (ws, limit = 50, skip = 0, sync = true) =>
+    call('GET', `/log?ws=${q(ws)}&limit=${limit}&skip=${skip}&sync=${sync ? 1 : 0}`),
+  commit: (ws, rev) => call('GET', `/commit?ws=${q(ws)}&rev=${q(rev)}`),
   revision: (ws, rev, path = '') => call('GET', `/revision?ws=${q(ws)}&rev=${q(rev)}&path=${q(path)}`),
+  syncInfo: (ws) => call('GET', `/sync-info?ws=${q(ws)}`),
+  startOperation: (body) => call('POST', '/operations', body),
+  latestOperation: (ws) => call('GET', `/operations?ws=${q(ws)}`),
+  job: (id) => call('GET', `/operations/${q(id)}`),
+  cancelOperation: (id) => call('POST', `/operations/${q(id)}/cancel`, {}),
   tree: (ws, path = '') => call('GET', `/tree?ws=${q(ws)}&path=${q(path)}`),
   file: (ws, path) => call('GET', `/file?ws=${q(ws)}&path=${q(path)}`),
 }

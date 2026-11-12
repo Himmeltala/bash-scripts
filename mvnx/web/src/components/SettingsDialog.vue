@@ -151,7 +151,7 @@ function save() {
   color: rgb(var(--v-theme-on-surface-variant));
 }
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
   font-size: 0.82rem;
   word-break: break-all;
 }

@@ -244,6 +244,68 @@ def attach_nodes(snapshot, store):
     return snapshot
 
 
+class AliasStore:
+    """工作区别名，存在状态文件旁边；状态文件本身仍由 bash 写，这里不碰它。"""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+
+    def _load(self):
+        out = {}
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        for line in text.splitlines():
+            if not line:
+                continue
+            ws, sep, alias = line.partition(FS)
+            if sep and ws and alias:
+                out[ws] = alias
+        return out
+
+    def _save(self, data):
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            text = "".join(ws + FS + alias + "\n" for ws, alias in data.items() if ws and alias)
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            log("写别名失败 %s：%s" % (self.path, exc))
+
+    def all(self):
+        with self._lock:
+            return self._load()
+
+    def set(self, ws, alias):
+        alias = " ".join((alias or "").split()).replace(FS, " ")
+        if len(alias) > 80:
+            raise ApiError(400, "别名太长，最多 80 个字")
+        with self._lock:
+            data = self._load()
+            if alias:
+                data[ws] = alias
+            else:
+                data.pop(ws, None)
+            self._save(data)
+
+
+def attach_alias_rel(snapshot, store):
+    """把别名与相对家目录的路径拼进工作区列表。"""
+    aliases = store.all() if store is not None else {}
+    home = os.path.expanduser("~")
+    for ws in snapshot.get("workspaces", []):
+        ws["alias"] = aliases.get(ws["id"], "")
+        root = ws.get("root", "")
+        try:
+            ws["rel"] = os.path.relpath(root, home)
+        except (TypeError, ValueError):
+            ws["rel"] = root
+    return snapshot
+
+
 # ---------------------------------------------------------------- 状态文件
 
 
@@ -817,6 +879,7 @@ class Handler(BaseHTTPRequestHandler):
     sessions = None
     engine = None
     nodes = None
+    aliases = None
     logs = None
     api_prefix = "/__nodex/api"
 
@@ -872,7 +935,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.engine.call("tick")
             except ApiError as exc:
                 log("tick 失败：%s" % exc.message)
-            return attach_nodes(self.state.snapshot(), self.nodes)
+            return attach_alias_rel(attach_nodes(self.state.snapshot(), self.nodes), self.aliases)
         if route == "log":
             return self._log(query)
         if route == "dirs":
@@ -900,6 +963,14 @@ class Handler(BaseHTTPRequestHandler):
             ws = str(body.get("ws", ""))
             engine.remove_workspace(ws)
             self.nodes.remove(ws)
+            if self.aliases is not None:
+                self.aliases.set(ws, "")
+            return {"ok": True}
+        if route == "alias":
+            ws = str(body.get("ws", "")).strip()
+            if not ws or self.state.find(WS_KIND, ws) is None:
+                raise ApiError(404, "没有这个工作区：%s" % ws)
+            self.aliases.set(ws, str(body.get("alias", "")))
             return {"ok": True}
         if route == "node":
             ws = str(body.get("ws", "")).strip()
@@ -1188,6 +1259,7 @@ def serve(args):
     state = State(args.state)
     sessions = Sessions()
     nodes = NodeStore(Path(args.state).parent / "node.tsv")
+    aliases = AliasStore(Path(args.state).parent / "alias.tsv")
     engine = Engine(os.path.abspath(args.nodex), state, sessions, args.logs, nodes)
 
     Handler.static = static
@@ -1195,6 +1267,7 @@ def serve(args):
     Handler.sessions = sessions
     Handler.engine = engine
     Handler.nodes = nodes
+    Handler.aliases = aliases
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
 

@@ -76,7 +76,7 @@ onMounted(() => {
     disableStdin: true,
     cursorBlink: false,
     scrollback: 5000,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontFamily: 'Roboto, sans-serif',
     fontSize: 12,
     lineHeight: 1.3,
     theme: themeFor(props.dark),
@@ -86,6 +86,10 @@ onMounted(() => {
   term.open(host.value)
   // 弹窗有展开动画，等一帧再按实际宽度算行列。
   requestAnimationFrame(() => term && fit.fit())
+  // Roboto 加载完之后再量一次，比例字体的列宽按真实字形算。
+  document.fonts?.ready.then(() => {
+    if (term) fit.fit()
+  })
   observer = new ResizeObserver(() => {
     if (term) fit.fit()
   })

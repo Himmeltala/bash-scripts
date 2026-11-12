@@ -499,7 +499,7 @@ function onSave({ args }) {
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .cmd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
   font-size: 0.76rem;
   white-space: nowrap;
   overflow: hidden;

@@ -69,6 +69,7 @@ import { baseName, dirName, statusOf } from '../composables/format'
 
 const props = defineProps({
   ws: { type: Object, required: true },
+  refresh: { type: Number, default: 0 },
 })
 const emit = defineEmits(['loaded'])
 
@@ -136,6 +137,7 @@ async function pick(file) {
 }
 
 watch(() => props.ws.id, load)
+watch(() => props.refresh, load)
 onMounted(load)
 
 defineExpose({ load })

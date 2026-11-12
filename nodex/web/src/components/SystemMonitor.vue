@@ -65,7 +65,7 @@ function option(item) {
       backgroundColor: palette().tip,
       borderWidth: 0,
       padding: [4, 8],
-      textStyle: { color: palette().tipText, fontSize: 12 },
+      textStyle: { color: palette().tipText, fontSize: 12, fontFamily: 'Roboto, sans-serif' },
       formatter: (ps) => `${item.name} ${ps[0].axisValue}　${ps[0].value}%`,
     },
     series: [

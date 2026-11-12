@@ -108,6 +108,8 @@ grep -q "^ws${FS}" "$state" && ok '状态里有工作区' || bad '状态缺工�
 grep -q "^svc${FS}.*${FS}dev${FS}" "$state" && ok '状态里有启动服务' || bad '状态缺启动服务'
 grep -q "^pkg${FS}" "$state" && ok '状态里有包清单' || bad '状态缺包清单'
 
+python3 "$repo/nodex/test/test_web_node.py" >/dev/null 2>&1 || bad '网页工作区与别名的测试未通过'
+
 "$nodex" --help >/dev/null 2>&1 && ok '--help 正常' || bad '--help 失败'
 
 ((fail)) && exit 1

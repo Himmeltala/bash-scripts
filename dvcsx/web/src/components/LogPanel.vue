@@ -85,6 +85,11 @@
             </span>
           </div>
         </div>
+        <div v-if="entries.length && !exhausted" class="more">
+          <v-btn size="small" variant="text" color="primary" :loading="moreLoading" @click="more">
+            加载更多
+          </v-btn>
+        </div>
       </aside>
 
       <section class="detail">
@@ -116,7 +121,16 @@
                 整次提交的差异
               </v-btn>
             </div>
-            <pre class="message">{{ current.message || '（没有写提交说明）' }}</pre>
+            <pre class="message">{{ currentMessage }}</pre>
+            <div
+              v-if="detail && (detail.parents.length || detail.refs.length)"
+              class="extra"
+            >
+              <span v-for="mark in detail.refs" :key="mark" class="extra-tag mono">{{ mark }}</span>
+              <span v-if="detail.parents.length" class="extra-parent mono">
+                父提交 {{ detail.parents.map((sha) => sha.slice(0, 7)).join(' ') }}
+              </span>
+            </div>
           </div>
 
           <div
@@ -207,14 +221,19 @@ import { actionOf, firstLine, shortenPath, shortPath, when } from '../composable
 
 const props = defineProps({
   ws: { type: Object, required: true },
+  refresh: { type: Number, default: 0 },
 })
 
+const PAGE = 50
 const entries = ref([])
 const current = ref(null)
+const detail = ref(null)
 const remote = ref(null)
 const activePath = ref('')
 const content = ref({ text: '', truncated: false })
 const loading = ref(false)
+const moreLoading = ref(false)
+const exhausted = ref(false)
 const diffLoading = ref(false)
 const error = ref('')
 const diffError = ref('')
@@ -231,6 +250,13 @@ let startPct = 0
 const isGit = computed(() => props.ws.vcs === 'git')
 // SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
 const pendingCount = computed(() => entries.value.filter((entry) => !entry.local).length)
+// 列表里只放提交说明的第一行，详情取整段；取不到就退回第一行。
+const currentMessage = computed(
+  () =>
+    (detail.value && detail.value.message) ||
+    (current.value && current.value.message) ||
+    '（没有写提交说明）',
+)
 
 // 引用标签照 VS Code 的做法只点在本分支与远端分支所在的提交上。
 function refsOf(entry) {
@@ -357,8 +383,9 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api.log(props.ws.id, 50)
+    const data = await api.log(props.ws.id, PAGE, 0, true)
     entries.value = data.entries || []
+    exhausted.value = entries.value.length < PAGE
     remote.value = data.remote || null
     const hit = entries.value.find((e) => current.value && e.revision === current.value.revision)
     await select(hit || entries.value[0] || null)
@@ -369,14 +396,42 @@ async function load() {
   }
 }
 
+async function more() {
+  if (moreLoading.value || exhausted.value) return
+  moreLoading.value = true
+  try {
+    const data = await api.log(props.ws.id, PAGE, entries.value.length, false)
+    const seen = new Set(entries.value.map((entry) => entry.revision))
+    const fresh = (data.entries || []).filter((entry) => !seen.has(entry.revision))
+    entries.value = entries.value.concat(fresh)
+    exhausted.value = fresh.length < PAGE
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    moreLoading.value = false
+  }
+}
+
 async function select(entry) {
   current.value = entry
+  detail.value = null
   activePath.value = ''
   content.value = { text: '', truncated: false }
   diffError.value = ''
   if (!entry) return
+  loadDetail(entry)
   // 提交里的文件常常好几个，默认打开第一个，省一次点击。
   if (entry.paths.length) await openPath(entry.paths[0].path)
+}
+
+async function loadDetail(entry) {
+  try {
+    const data = await api.commit(props.ws.id, entry.revision)
+    // 连点不同提交时，晚到的旧结果不能盖住当前选中的说明。
+    if (current.value && current.value.revision === entry.revision) detail.value = data
+  } catch (err) {
+    // 取不到就继续用列表里的第一行，不影响看差异。
+  }
 }
 
 async function openPath(path) {
@@ -404,6 +459,7 @@ async function loadDiff(path) {
 }
 
 watch(() => props.ws.id, load)
+watch(() => props.refresh, load)
 onMounted(load)
 
 defineExpose({ load })
@@ -453,6 +509,11 @@ defineExpose({ load })
 /* 本地还没有的提交沿左边描一道，扫列表时能看出从哪条开始是远端的。 */
 .revitem.incoming {
   box-shadow: inset 2px 0 0 rgb(var(--v-theme-modified));
+}
+.more {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 12px;
 }
 .line1 {
   display: flex;
@@ -547,6 +608,24 @@ defineExpose({ load })
   font-size: 0.84rem;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.extra-tag {
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.extra-parent {
+  font-size: 0.7rem;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
 .body {
   flex: 1 1 auto;
