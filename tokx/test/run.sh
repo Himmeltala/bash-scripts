@@ -396,13 +396,11 @@ grep -q '秒数至少为 1' "$tmp/watch3.err" || fail "--watch 0 的提示不对
 grep -q '去掉 --all' "$tmp/watch4.err" || fail "--all 配 --watch 的提示不对"
 ok --watch 拦住写错的参数
 
-# 网页界面：写错的参数要拦住，服务只给本机用。
+# 网页界面：写错的参数要拦住；默认绑所有网卡，本机地址总要给出来。
 "$bin" web >/dev/null 2>&1 && fail "接管道时没报错"
 "$bin" web --port 70000 >/dev/null 2>"$tmp/web1.err" && fail "--port 越界没报错"
 grep -q '0 到 65535' "$tmp/web1.err" || fail "--port 的提示不对: $(cat "$tmp/web1.err")"
 "$bin" web --host example.com >/dev/null 2>&1 && fail "非 IP 的主机名没报错"
-"$bin" web --host 0.0.0.0 --json >/dev/null 2>"$tmp/web2.err" && fail "非回环地址没报错"
-grep -q 'TOKX_WEB_PUBLIC' "$tmp/web2.err" || fail "非回环地址的提示不对"
 ok web 拦住写错的参数
 
 # 起一个真服务，拿到的数据要和 tokx --json 完全一样。
@@ -425,6 +423,11 @@ from urllib.request import urlopen
 web = json.load(open(sys.argv[1]))
 base = web["url"].rstrip("/")
 cli = json.load(open(sys.argv[2]))
+
+# 默认绑所有网卡，局域网里能打开；同时要给出本机地址。
+assert web["host"] == "0.0.0.0", web
+assert web["local"].startswith("http://127.0.0.1:"), web
+assert base.endswith(":%d" % web["port"]), web
 
 
 def get(path):

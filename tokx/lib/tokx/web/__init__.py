@@ -2,7 +2,8 @@
 
 数据都走 cli._collect，与命令行出表是同一份口径：每轮请求都重新现扫、导入账本、
 按当前价格表计价，页面拿到的 rows 与 --json 输出里的 rows 完全一样。
-服务只绑定回环地址，没有写操作，也没有登录。
+服务默认绑所有网卡，局域网里的机器也能打开；只想本机看就用 --host 127.0.0.1。
+页面没有登录，也没有写操作，能连上的人都能看用量。
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import socket
 import sys
 import threading
 from datetime import date
@@ -197,9 +199,44 @@ def is_loopback(host: str) -> bool:
     return ipaddress.ip_address(host).is_loopback
 
 
+def is_any(host: str) -> bool:
+    """0.0.0.0 与 :: 都是"所有网卡"，不能拿来当访问地址。"""
+    return host in ("0.0.0.0", "::")
+
+
+def lan_address() -> str:
+    """猜一个局域网里能用的本机地址；猜不出来就退回回环地址。
+
+    连一下外部地址只是让内核选出口网卡，不真的发数据包，所以断网时可能失败。
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))  # TEST-NET-1，不会真连上
+            address = probe.getsockname()[0]
+        if address and not ipaddress.ip_address(address).is_loopback:
+            return address
+    except OSError:
+        pass
+    try:
+        address = socket.gethostbyname(socket.gethostname())
+        if address and not ipaddress.ip_address(address).is_loopback:
+            return address
+    except OSError:
+        pass
+    return "127.0.0.1"
+
+
+def urls(host: str, port: int) -> tuple[str, str]:
+    """返回 (对外地址, 本机地址)。"""
+    local = f"http://127.0.0.1:{port}/"
+    if is_any(host):
+        return f"http://{lan_address()}:{port}/", local
+    return f"http://{host}:{port}/", local
+
+
 def serve(
     config: Config,
-    host: str = "127.0.0.1",
+    host: str = "0.0.0.0",
     port: int = 0,
     open_browser: bool = False,
     as_json: bool = False,
@@ -208,25 +245,24 @@ def serve(
     if not (0 <= port <= 65535):
         print("tokx: --port 取 0 到 65535", file=sys.stderr)
         return 2
-    # 不绑回环又没开认证，等于把用量和接口地址给局域网里的人看，必须显式承认。
-    if not is_loopback(host) and not os.environ.get("TOKX_WEB_PUBLIC"):
-        print(
-            f"tokx: {host} 不是回环地址，网页没有登录，任何能连上的人都能看用量；"
-            "确实要这样做就设环境变量 TOKX_WEB_PUBLIC=1",
-            file=sys.stderr,
-        )
-        return 2
     try:
         httpd = ThreadingHTTPServer((host, port), _make_handler(config))
     except OSError as exc:
         print(f"tokx: 监听 {host}:{port} 失败：{exc}", file=sys.stderr)
         return 1
     port = httpd.server_address[1]
-    url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/"
+    url, local = urls(host, port)
     if as_json:
-        print(json.dumps({"url": url, "host": host, "port": port}, ensure_ascii=False))
+        print(json.dumps({"url": url, "local": local, "host": host, "port": port}, ensure_ascii=False))
     else:
         print(f"tokx 网页界面：{url}")
+        if url != local:
+            print(f"本机 {local}")
+        if not is_loopback(host):
+            print(
+                "页面没有登录，同一网络里能连上的人都能看用量；只想本机看就加 --host 127.0.0.1",
+                file=sys.stderr,
+            )
         print("按 Ctrl+C 退出。", file=sys.stderr)
     sys.stdout.flush()
     if open_browser:

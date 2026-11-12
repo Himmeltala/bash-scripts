@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("hour", "按一天内的小时分布汇总"),
         ("prices", "打印当前价格表"),
         ("rebuild", "清空账本后全量重扫并重建"),
-        ("web", "在本机浏览器里看用量，定时自动刷新"),
+        ("web", "在浏览器里看用量，定时自动刷新"),
     ):
         child = sub.add_parser(name, parents=[suppressed], help=text, description=text)
         if name in ("daily", "session", "hour"):
@@ -146,7 +146,12 @@ def _add_watch(parser: argparse.ArgumentParser, suppress: bool = False) -> None:
 
 
 def _add_web(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--host", default="127.0.0.1", metavar="地址", help="监听地址，默认 127.0.0.1，只给本机用")
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        metavar="地址",
+        help="监听地址，默认 0.0.0.0，同网络的机器都能访问；只想本机看用 --host 127.0.0.1",
+    )
     parser.add_argument("--port", type=int, default=0, metavar="端口", help="监听端口，默认 0 由系统挑一个空闲的")
     parser.add_argument("--open", action="store_true", help="启动后打开默认浏览器")
 
