@@ -151,6 +151,11 @@ class SvnWorkspace(unittest.TestCase):
         self.assertEqual(entries[0]["message"], "first")
         self.assertIn("/src/a.txt", [p["path"] for p in entries[0]["paths"]])
 
+    def test_log_meta_reports_working_revision(self):
+        entries, meta = svnmod.svn_log_meta(str(self.wc), 5)
+        self.assertEqual(meta["wc_revision"], 1)
+        self.assertTrue(entries[0]["local"])
+
     def test_revision_diff_whole_and_single_path(self):
         whole = svnmod.revision_diff(str(self.wc), "1", "")
         self.assertIn("+hello", whole["text"])

@@ -347,6 +347,12 @@ def svn_entry_local(entry, prefix, revs, top):
 
 def svn_log(root, limit):
     """读日志，并标出哪些提交已经随工作副本更新到了本地。"""
+    entries, _ = svn_log_meta(root, limit)
+    return entries
+
+
+def svn_log_meta(root, limit):
+    """日志连同工作副本的版本位置：文件里最高的版本号。"""
     # 工作副本根目录本身的 BASE 往往是 r0，直接 svn log 会一条都没有；从 HEAD 往回想。
     rc, out, err = svn(["log", "--xml", "-v", "-l", str(limit), "-r", "HEAD:1"], cwd=root)
     if rc != 0:
@@ -361,7 +367,7 @@ def svn_log(root, limit):
     prefix = url_path[len(repo_path):].rstrip("/") if repo_path and url_path.startswith(repo_path) else url_path
     for entry in entries:
         entry["local"] = svn_entry_local(entry, prefix, revs, top)
-    return entries
+    return entries, {"wc_revision": top}
 
 
 def safe_rel(rel):
@@ -708,13 +714,41 @@ def git_ref_exists(root, ref):
     return rc == 0
 
 
+def git_branch(root):
+    """当前分支名；游离 HEAD 时 git 给的是 HEAD，原样带回。"""
+    rc, out, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=root)
+    name = out.decode("utf-8", "replace").strip()
+    return name if rc == 0 else ""
+
+
+def git_ahead_behind(root, upstream):
+    """本地分支与远端跟踪分支各比对方多几个提交，返回 (领先, 落后)。"""
+    rc, out, _ = git(["rev-list", "--left-right", "--count", "HEAD..." + upstream], cwd=root)
+    if rc != 0:
+        return 0, 0
+    parts = out.decode("utf-8", "replace").split()
+    if len(parts) != 2:
+        return 0, 0
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return 0, 0
+
+
 def git_remote_sync(root):
     """取日志前先同步一次远端，好让列表带上别人最新的提交。
 
     只更新 .git 里的远端跟踪分支与对象，不动工作区、暂存区，也不合并。
     远端连不上或超时就照旧列已有的记录，把原因带回页面。
     """
-    meta = {"upstream": "", "fetched": False, "error": ""}
+    meta = {
+        "upstream": "",
+        "fetched": False,
+        "error": "",
+        "branch": git_branch(root),
+        "ahead": 0,
+        "behind": 0,
+    }
     upstream = git_upstream(root)
     if not upstream:
         return meta
@@ -729,24 +763,24 @@ def git_remote_sync(root):
         rc, _, err = git(
             ["fetch", "--quiet", remote], cwd=root, timeout=FETCH_TIMEOUT, env=env
         )
+        if rc != 0:
+            meta["error"] = (err or "git fetch 失败").splitlines()[0]
+        else:
+            meta["fetched"] = True
     except ApiError as exc:
         meta["error"] = exc.message
-        return meta
-    if rc != 0:
-        meta["error"] = (err or "git fetch 失败").splitlines()[0]
-        return meta
-    meta["fetched"] = True
+    # 同步失败也按本地已有的远端跟踪分支算，页面照样能看出差多少。
+    meta["ahead"], meta["behind"] = git_ahead_behind(root, upstream)
     return meta
 
 
 def git_log(root, limit, upstream=""):
-    has_head, _ = git_head(root)
+    has_head, head = git_head(root)
     if not has_head:
         return []
     # 本地分支与远端跟踪分支一起列：还没拉进本地分支的提交也要看得见。
-    revs = ["HEAD"]
-    if upstream and git_ref_exists(root, upstream):
-        revs.append(upstream)
+    tracking = bool(upstream) and git_ref_exists(root, upstream)
+    revs = ["HEAD", upstream] if tracking else ["HEAD"]
     # -- . 让登记的是仓库子目录时只列这个子目录的提交，跟 svn log 从子目录跑一致。
     rc, out, err = git(
         [
@@ -758,11 +792,23 @@ def git_log(root, limit, upstream=""):
     if rc != 0:
         raise ApiError(500, err or "git log 失败")
     entries = parse_git_log(out.decode("utf-8", "replace"))
-    # 标出哪些提交就在当前分支上，哪些还只在远端分支上。
+    # 标出每条提交的位置：在本地分支上、已经进了远端分支，还是只在远端。
     rc, out, _ = git(["rev-list", "HEAD", "--", "."], cwd=root)
     local = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
+    pushed = set()
+    tip = ""
+    if tracking:
+        rc, out, _ = git(["rev-list", upstream, "--", "."], cwd=root)
+        pushed = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
+        rc, out, _ = git(["rev-parse", "--verify", "--quiet", upstream + "^{commit}"], cwd=root)
+        tip = out.decode("utf-8", "replace").strip() if rc == 0 else ""
     for entry in entries:
-        entry["local"] = entry["revision"] in local
+        revision = entry["revision"]
+        entry["local"] = revision in local
+        entry["head"] = revision == head
+        if tracking:
+            entry["pushed"] = revision in pushed
+            entry["remote_tip"] = revision == tip
     return entries
 
 
@@ -912,7 +958,8 @@ class Handler(BaseHTTPRequestHandler):
             remote = git_remote_sync(ws["root"])
             entries = git_log(ws["root"], limit, remote["upstream"])
             return {"workspace": ws, "entries": entries, "remote": remote}
-        return {"workspace": ws, "entries": svn_log(ws["root"], limit)}
+        entries, remote = svn_log_meta(ws["root"], limit)
+        return {"workspace": ws, "entries": entries, "remote": remote}
 
     def _revision(self, query):
         ws = self._ws(query)

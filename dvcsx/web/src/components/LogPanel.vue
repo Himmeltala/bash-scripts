@@ -3,8 +3,30 @@
     <div class="bar">
       <span class="count">
         最近 {{ entries.length }} 次提交
-        <template v-if="remote && remote.upstream">
-          · {{ remote.fetched ? '已同步 ' + remote.upstream : '未同步 ' + remote.upstream }}
+        <template v-if="isGit && remote && remote.branch">
+          · <span class="mono">{{ remote.branch }}</span>
+          <span
+            v-if="remote.ahead"
+            class="ab"
+            :title="`本地分支比 ${remote.upstream} 多 ${remote.ahead} 个提交`"
+          >
+            <v-icon size="12">mdi-arrow-up-bold</v-icon>{{ remote.ahead }}
+          </span>
+          <span
+            v-if="remote.behind"
+            class="ab"
+            :title="`${remote.upstream} 比本地分支多 ${remote.behind} 个提交`"
+          >
+            <v-icon size="12">mdi-arrow-down-bold</v-icon>{{ remote.behind }}
+          </span>
+        </template>
+        <template v-if="isGit && remote && remote.upstream">
+          · <span class="mono">{{ remote.upstream }}</span>
+          {{ remote.fetched ? '已同步' : '未同步' }}
+        </template>
+        <template v-if="!isGit && remote">
+          · 工作副本 r{{ remote.wc_revision }}
+          <template v-if="pendingCount">· {{ pendingCount }} 个版本待更新</template>
         </template>
       </span>
       <v-btn
@@ -31,18 +53,37 @@
           v-for="entry in entries"
           :key="entry.revision"
           class="revitem"
-          :class="{ active: current && current.revision === entry.revision }"
+          :class="{
+            active: current && current.revision === entry.revision,
+            incoming: !entry.local,
+          }"
           @click="select(entry)"
         >
           <div class="line1">
             <span class="rev mono">{{ revLabel(entry.revision) }}</span>
-            <span class="tag" :class="entry.local ? 'local' : 'remote'">
-              {{ entry.local ? '本地' : '远程' }}
-            </span>
             <span class="author">{{ entry.author || '（无作者）' }}</span>
             <span class="date">{{ when(entry.date) }}</span>
           </div>
           <div class="msg">{{ firstLine(entry.message) }}</div>
+          <div v-if="refsOf(entry).length || stateOf(entry)" class="refs">
+            <span
+              v-for="mark in refsOf(entry)"
+              :key="mark.text"
+              class="ref"
+              :class="mark.kind"
+              :title="mark.title"
+            >
+              <v-icon size="11">{{ mark.icon }}</v-icon>{{ mark.text }}
+            </span>
+            <span
+              v-if="stateOf(entry)"
+              class="ref"
+              :class="stateOf(entry).kind"
+              :title="stateOf(entry).title"
+            >
+              <v-icon size="11">{{ stateOf(entry).icon }}</v-icon>{{ stateOf(entry).text }}
+            </span>
+          </div>
         </div>
       </aside>
 
@@ -51,8 +92,22 @@
           <div class="commit">
             <div class="commit-head">
               <span class="rev mono">{{ revLabel(current.revision) }}</span>
-              <span class="tag" :class="current.local ? 'local' : 'remote'">
-                {{ current.local ? '本地' : '远程' }}
+              <span
+                v-for="mark in refsOf(current)"
+                :key="mark.text"
+                class="ref"
+                :class="mark.kind"
+                :title="mark.title"
+              >
+                <v-icon size="11">{{ mark.icon }}</v-icon>{{ mark.text }}
+              </span>
+              <span
+                v-if="stateOf(current)"
+                class="ref"
+                :class="stateOf(current).kind"
+                :title="stateOf(current).title"
+              >
+                <v-icon size="11">{{ stateOf(current).icon }}</v-icon>{{ stateOf(current).text }}
               </span>
               <span class="author">{{ current.author || '（无作者）' }}</span>
               <span class="date">{{ when(current.date) }}</span>
@@ -174,6 +229,62 @@ let startY = 0
 let startPct = 0
 
 const isGit = computed(() => props.ws.vcs === 'git')
+// SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
+const pendingCount = computed(() => entries.value.filter((entry) => !entry.local).length)
+
+// 引用标签照 VS Code 的做法只点在本分支与远端分支所在的提交上。
+function refsOf(entry) {
+  const refs = []
+  if (!isGit.value) return refs
+  if (entry.head) {
+    refs.push({
+      kind: 'head',
+      icon: 'mdi-source-branch',
+      text: (remote.value && remote.value.branch) || 'HEAD',
+      title: '本地分支当前提交',
+    })
+  }
+  if (entry.remote_tip && remote.value && remote.value.upstream) {
+    refs.push({
+      kind: 'upstream',
+      icon: 'mdi-cloud-outline',
+      text: remote.value.upstream,
+      title: '远端跟踪分支的最新提交',
+    })
+  }
+  return refs
+}
+
+// 提交相对本地分支与远端分支的位置；没有远端跟踪分支时不做判断。
+function stateOf(entry) {
+  if (!isGit.value) {
+    if (entry.local) return null
+    return {
+      kind: 'pending',
+      icon: 'mdi-cloud-download-outline',
+      text: '待更新',
+      title: '工作副本还没有这个版本',
+    }
+  }
+  if (entry.pushed === undefined) return null
+  if (!entry.local) {
+    return {
+      kind: 'pending',
+      icon: 'mdi-cloud-download-outline',
+      text: '待拉取',
+      title: '这个提交还只在远端分支上',
+    }
+  }
+  if (!entry.pushed) {
+    return {
+      kind: 'local',
+      icon: 'mdi-cloud-upload-outline',
+      text: '未推送',
+      title: '这个提交还没进远端分支',
+    }
+  }
+  return null
+}
 
 const filesStyle = computed(() =>
   filesCollapsed.value || diffCollapsed.value ? null : { flex: `0 0 ${filePct.value}%` },
@@ -339,6 +450,10 @@ defineExpose({ load })
 .revitem.active {
   background: rgba(var(--v-theme-primary), 0.14);
 }
+/* 本地还没有的提交沿左边描一道，扫列表时能看出从哪条开始是远端的。 */
+.revitem.incoming {
+  box-shadow: inset 2px 0 0 rgb(var(--v-theme-modified));
+}
 .line1 {
   display: flex;
   align-items: baseline;
@@ -349,19 +464,45 @@ defineExpose({ load })
   font-weight: 600;
   color: rgb(var(--v-theme-primary));
 }
-.tag {
-  flex: 0 0 auto;
-  padding: 0 5px;
-  border: 1px solid currentColor;
-  border-radius: 6px;
-  font-size: 0.66rem;
-  line-height: 1.5;
-}
-.tag.local {
+.ab {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 4px;
   color: rgb(var(--v-theme-on-surface-variant));
 }
-.tag.remote {
+.refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+.ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 0.66rem;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.ref.head {
   color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.ref.upstream {
+  color: rgb(var(--v-theme-on-surface-variant));
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+.ref.pending {
+  color: rgb(var(--v-theme-modified));
+  background: rgba(var(--v-theme-modified), 0.12);
+}
+.ref.local {
+  color: rgb(var(--v-theme-on-surface-variant));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.22);
 }
 .author {
   font-size: 0.76rem;

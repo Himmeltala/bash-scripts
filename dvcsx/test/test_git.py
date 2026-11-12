@@ -151,8 +151,17 @@ class GitWorkspace(unittest.TestCase):
 
     def test_log_without_remote_skips_sync(self):
         # 没配远端就没有可同步的，别让日志页因此报错。
-        meta = gitmod.git_remote_sync(str(self.repo))
-        self.assertEqual(meta, {"upstream": "", "fetched": False, "error": ""})
+        self.assertEqual(
+            gitmod.git_remote_sync(str(self.repo)),
+            {
+                "upstream": "",
+                "fetched": False,
+                "error": "",
+                "branch": "main",
+                "ahead": 0,
+                "behind": 0,
+            },
+        )
 
     def test_revision_diff_whole_and_single_path(self):
         whole = gitmod.git_revision_diff(str(self.repo), self.first, "")
@@ -307,11 +316,17 @@ class GitRemoteLog(unittest.TestCase):
             meta = gitmod.git_remote_sync(str(work))
             self.assertTrue(meta["fetched"], meta)
             self.assertEqual(meta["upstream"], "origin/main")
+            self.assertEqual((meta["branch"], meta["ahead"], meta["behind"]), ("main", 0, 1))
 
             entries = gitmod.git_log(str(work), 5, meta["upstream"])
             by_msg = {e["message"]: e for e in entries}
             self.assertFalse(by_msg["远端新提交"]["local"])
             self.assertTrue(by_msg["base"]["local"])
+            # 只在远端的那条标成远端跟踪分支的最新提交，本地那条是 HEAD。
+            self.assertTrue(by_msg["远端新提交"]["remote_tip"])
+            self.assertTrue(by_msg["远端新提交"]["pushed"])
+            self.assertTrue(by_msg["base"]["head"])
+            self.assertFalse(by_msg["base"]["remote_tip"])
 
             # 同步只动远端跟踪分支，工作区与暂存区保持原样。
             self.assertEqual(git_out("status", "--porcelain", cwd=work), "")
