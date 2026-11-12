@@ -13,9 +13,11 @@
 
 import argparse
 import codecs
+import errno
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -409,6 +411,17 @@ def run_info(r):
 # ---------------------------------------------------------------- 进程
 
 
+def sh_shell_argv(argv, env=None):
+    """把没有 shebang 的可执行文件改成交给 /bin/sh 执行；找不到文件时返回 None。"""
+    exe = argv[0]
+    if os.sep not in exe:
+        path = (env if env is not None else os.environ).get("PATH", os.defpath)
+        exe = shutil.which(exe, path=path)
+    if not exe or not os.path.exists(exe):
+        return None
+    return ["/bin/sh", exe] + list(argv[1:])
+
+
 class Sessions:
     """起过的进程：bash 那边的运行记录只认会话号，这里额外握着 Popen，好等它、拿真实退出码。"""
 
@@ -421,15 +434,33 @@ class Sessions:
         log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(os.devnull, "rb") as fh, open(log_path, "wb") as out:
-            proc = subprocess.Popen(
-                argv,
-                cwd=workdir,
-                stdin=fh,
-                stdout=out,
-                stderr=subprocess.STDOUT,
-                env=env,
-                start_new_session=True,
-            )
+            try:
+                proc = subprocess.Popen(
+                    argv,
+                    cwd=workdir,
+                    stdin=fh,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+            except OSError as exc:
+                # pnpm 11 起的启动器有意不写 shebang，靠 execvp 在 ENOEXEC 时退回 shell 执行；
+                # Python 的 subprocess 不退回，这里补上同样的兜底。
+                if exc.errno != errno.ENOEXEC:
+                    raise
+                fallback = sh_shell_argv(argv, env)
+                if fallback is None:
+                    raise
+                proc = subprocess.Popen(
+                    fallback,
+                    cwd=workdir,
+                    stdin=fh,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
         with self.lock:
             self.procs[proc.pid] = proc
         threading.Thread(target=self._reap, args=(proc, log_path), daemon=True).start()
