@@ -3,8 +3,9 @@
 # 服务怎么起来照命令行的判定：同一个模块、同一套参数，网页与终端跑出来的结果一样。
 
 # 缺省值在这里定，parse_args 里覆盖，mvnx -p 9999 web 与 mvnx web -p 9999 等价。
-RV_PORT=8770
-RV_HOST='127.0.0.1'
+# 与 tokx 一致：默认绑所有网卡，同网络的机器能直接打开；端口 0 由系统挑一个空闲的。
+RV_PORT=0
+RV_HOST='0.0.0.0'
 RV_OPEN=0
 # 停止时先 TERM，这么多秒还没退干净再 KILL。
 RV_GRACE=15
@@ -781,12 +782,12 @@ web_engine() {
 # mvnx web：起 python，等它就绪，然后就守着它；Ctrl+C 连 python 一起带走。
 # python 起了它之后一直走管道递请求，实际的动作都在这个进程里跑，扫描结果也一直留着。
 web_command() {
-  local runner child log line='' waited=0 ans url ep
+  local runner child log line='' waited=0 ans url local_url
   local -a open_arg=()
   runner=$(web_python) || return
-  RV_PORT=${RV_PORT:-8770}
-  RV_HOST=${RV_HOST:-127.0.0.1}
-  [[ "$RV_PORT" =~ ^[0-9]+$ ]] && ((RV_PORT >= 1 && RV_PORT <= 65535)) ||
+  RV_PORT=${RV_PORT:-0}
+  RV_HOST=${RV_HOST:-0.0.0.0}
+  [[ "$RV_PORT" =~ ^[0-9]+$ ]] && ((RV_PORT >= 0 && RV_PORT <= 65535)) ||
     { web_fail "端口不对：$RV_PORT" "$EXIT_USAGE"; return; }
   [[ -f "$WEB_PAGE" ]] ||
     { web_fail "缺 ${WEB_PAGE#"$mvnx_dir"/}，前端还没打包（见 mvnx/web/README.md）" "$EXIT_USAGE"; return; }
@@ -817,15 +818,19 @@ web_command() {
   done
   [[ -n "$line" ]] || { web_fail '等网页服务就绪超时'; return; }
 
-  # python 报上来的是「主机:端口」；监听非本机地址时后面还带 ?token=…，原样交给用户。
-  # 拆主机与端口只看第一段，令牌里的字符不影响。
-  url="http://$line"
-  ep=${line%%/\?*}
+  # python 报上来的是「主机:端口」：端口填 0 时它是实际用上的那个，绑所有网卡时主机是猜出来的局域网地址。
+  url="http://$line/"
+  local_url="http://127.0.0.1:${line##*:}/"
   if ((JSON_ONLY)); then
-    printf '{"url":"%s","host":"%s","port":"%s"}\n' "$url" "${ep%:*}" "${ep##*:}"
-  else
-    printf 'mvnx 网页已开：%s\n' "$url"
-    printf 'Ctrl+C 退出网页服务；正在跑的 mvn 在自己会话里，不跟着停，可在网页里停。\n'
+    printf '{"url":"%s","local":"%s","host":"%s","port":"%s"}\n' \
+      "$url" "$local_url" "$RV_HOST" "${line##*:}"
+    return 0
   fi
+  printf 'mvnx 网页界面：%s\n' "$url"
+  [[ "$url" == "$local_url" ]] || printf '本机 %s\n' "$local_url"
+  # 页面没有登录：能连上的人都能起停服务，这一点得说在前面。
+  [[ "$RV_HOST" == '127.0.0.1' || "$RV_HOST" == 'localhost' ]] ||
+    printf '页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1\n' >&2
+  printf '按 Ctrl+C 退出网页服务；正在跑的 mvn 在自己会话里，不跟着停，可在网页里停。\n' >&2
   wait "$child"
 }

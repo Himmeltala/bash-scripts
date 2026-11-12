@@ -15,12 +15,12 @@ import argparse
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
 import webbrowser
-from http import cookies as http_cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -32,8 +32,6 @@ WS_KIND, SVC_KIND, POM_KIND, RUN_KIND = "ws", "svc", "pom", "run"
 LIVE = ("starting", "ready")
 MODES = ("auto", "compile", "no-compile", "rebuild")
 
-COOKIE_NAME = "mvnx_web"
-TOKEN_PARAM = "token"
 # 一次引擎调用的上限：扫描大工程几秒，留足余量。
 ENGINE_TIMEOUT = 120
 # 日志一页行数。
@@ -491,7 +489,6 @@ class Handler(BaseHTTPRequestHandler):
     engine = None
     logs = None
     api_prefix = "/__mvnx/api"
-    token = ""
 
     def log_message(self, fmt, *args):
         # 访问日志默认打到 stderr，被 mvnx 收进 runner.log，轮询一多就长，这里丢掉。
@@ -518,7 +515,6 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if method == "POST":
                 self._check_origin()
-            self._authorize(url)
             body = self._read_json() if method == "POST" else {}
             result = self._dispatch(method, route, parse_qs(url.query), body)
         except ApiError as exc:
@@ -596,25 +592,6 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(origin).netloc != self.headers.get("Host", ""):
             raise ApiError(403, "拒绝跨站写请求")
 
-    def _authorize(self, url):
-        if not self.token:
-            return
-        if self.headers.get("Authorization", "") == "Bearer " + self.token:
-            return
-        jar = http_cookies.SimpleCookie()
-        try:
-            jar.load(self.headers.get("Cookie", ""))
-        except http_cookies.CookieError:
-            jar = {}
-        if COOKIE_NAME in jar and jar[COOKIE_NAME].value == self.token:
-            return
-        supplied = parse_qs(url.query).get(TOKEN_PARAM) or []
-        # 链接里带了令牌就先收进 Cookie，之后浏览器发的请求都带着它。
-        self._set_cookie = bool(supplied and supplied[0] == self.token)
-        if self._set_cookie:
-            return
-        raise ApiError(401, "没有访问令牌，用 mvnx web 打印出来的带令牌的链接打开")
-
     def _read_json(self):
         length = self.headers.get("Content-Length")
         if length is None:
@@ -669,13 +646,6 @@ class Handler(BaseHTTPRequestHandler):
         if cache:
             self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
-        if getattr(self, "_set_cookie", False):
-            morsel = http_cookies.Morsel()
-            morsel.set(COOKIE_NAME, self.token, self.token)
-            morsel["path"] = "/"
-            morsel["httponly"] = True
-            morsel["samesite"] = "Strict"
-            self.send_header("Set-Cookie", morsel.OutputString())
         self.end_headers()
         if not head:
             self.wfile.write(data)
@@ -696,14 +666,13 @@ def tail(path, page=0, lines=LOG_PAGE):
 # ---------------------------------------------------------------- 启动
 
 
-def is_loopback(host):
-    return host in ("127.0.0.1", "localhost", "::1")
+def is_any(host):
+    """0.0.0.0 与 :: 都是「所有网卡」，不能拿来当访问地址。"""
+    return host in ("0.0.0.0", "::", "")
 
 
 def guess_host():
-    """监听全地址时给浏览器一个能点开的地址：取本机出口 IP。"""
-    import socket
-
+    """监听全地址时给浏览器一个能点开的地址：取本机出口 IP，猜不出来就用回环。"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -725,16 +694,12 @@ def serve(args):
     sessions = Sessions()
     engine = Engine(os.path.abspath(args.mvnx), state, sessions, args.logs)
 
-    # 监听非本机地址时必须有令牌，不然同网段谁都能起进程。
-    token = "" if is_loopback(args.host) or args.public else os.urandom(16).hex()
-
     Handler.static = static
     Handler.state = state
     Handler.sessions = sessions
     Handler.engine = engine
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
-    Handler.token = token
 
     try:
         httpd = ThreadingHTTPServer((args.host, args.port), Handler)
@@ -743,15 +708,11 @@ def serve(args):
         return 1
     httpd.daemon_threads = True
     port = httpd.server_address[1]
-    host = args.host if is_loopback(args.host) else guess_host()
+    host = guess_host() if is_any(args.host) else args.host
     url = "http://%s:%d/" % (host, port)
-    if token:
-        url += "?%s=%s" % (TOKEN_PARAM, token)
 
     # mvnx 守着这一行等它就绪；端口填 0 时这里报的是真正用上的那个。
-    # 带令牌时一并交出去：mvnx 把这个地址原样打印给用户，浏览器才能进得来。
-    ready = "%s:%d" % (host, port) + ("/?%s=%s" % (TOKEN_PARAM, token) if token else "")
-    print("MVNX_WEB_READY " + ready, flush=True)
+    print("MVNX_WEB_READY %s:%d" % (host, port), flush=True)
     log("mvnx 网页：%s" % url)
 
     def shutdown(signum, frame):
@@ -777,10 +738,9 @@ def main(argv=None):
     parser.add_argument("--logs", required=True, help="日志目录")
     parser.add_argument("--api", default="/__mvnx/api", help="接口前缀")
     parser.add_argument("--mvnx", required=True, help="mvnx 入口")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8770)
+    parser.add_argument("--host", default="0.0.0.0", help="监听地址，默认所有网卡")
+    parser.add_argument("--port", type=int, default=0, help="监听端口，默认 0 由系统挑")
     parser.add_argument("--open", action="store_true", help="起来后打开浏览器")
-    parser.add_argument("--public", action="store_true", help="监听非本机地址时不设令牌")
     return serve(parser.parse_args(argv))
 
 
