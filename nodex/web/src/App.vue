@@ -57,6 +57,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
 import WorkspaceList from './components/WorkspaceList.vue'
 import ServicePanel from './components/ServicePanel.vue'
@@ -70,7 +71,7 @@ const VIEW_KEY = 'nodex-ws'
 const theme = useTheme()
 const dark = computed(() => theme.global.current.value.dark)
 const state = reactive({ workspaces: [], nodes: [], currentNode: '' })
-const currentId = ref(readView())
+const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
 const snack = reactive({ on: false, text: '', color: 'grey' })
 
@@ -78,22 +79,8 @@ const current = computed(() => state.workspaces.find((w) => w.id === currentId.v
 let timer = null
 let busy = 0
 
-function readView() {
-  try {
-    return localStorage.getItem(VIEW_KEY) || ''
-  } catch (err) {
-    return ''
-  }
-}
-
 function select(id) {
-  currentId.value = id
-  try {
-    if (id) localStorage.setItem(VIEW_KEY, id)
-    else localStorage.removeItem(VIEW_KEY)
-  } catch (err) {
-    // 存不进去只是下次打开没选中，不影响使用。
-  }
+  currentId.value = id || ''
 }
 
 function toast(text, color = 'grey') {

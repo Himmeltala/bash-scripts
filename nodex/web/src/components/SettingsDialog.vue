@@ -1,63 +1,69 @@
 <template>
-  <v-dialog :model-value="modelValue" max-width="760" scrollable @update:model-value="$emit('update:modelValue', $event)">
-    <v-card v-if="svc">
-      <v-card-title class="d-flex align-center">
-        <span>{{ actionName }}-{{ svc.tag }}</span>
-        <v-chip size="small" class="ml-3" variant="tonal">{{ actionName }}</v-chip>
-        <v-chip v-if="logStatus" size="small" class="ml-2" variant="outlined">{{ logStatus }}</v-chip>
-        <v-spacer />
-        <v-btn :icon="true" variant="text" @click="$emit('update:modelValue', false)">
-          <v-icon>mdi-close</v-icon>
-        </v-btn>
-      </v-card-title>
+  <FloatingDialog
+    v-if="svc"
+    :model-value="modelValue"
+    :initial-width="760"
+    :initial-height="620"
+    storage-key="settings"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
+    <template #title>
+      <span>{{ actionName }}-{{ svc.tag }}</span>
+      <v-chip size="small" class="ml-3" variant="tonal">{{ actionName }}</v-chip>
+      <v-chip v-if="logStatus" size="small" class="ml-2" variant="outlined">{{ logStatus }}</v-chip>
+      <v-spacer />
+      <v-btn :icon="true" variant="text" @click="$emit('update:modelValue', false)">
+        <v-icon>mdi-close</v-icon>
+      </v-btn>
+    </template>
 
-      <v-card-text>
-        <div class="where">
-          <span class="label">包</span>
-          <code>{{ svc.display || '.' }}</code>
-          <span class="path" :title="svc.path">{{ svc.path }}</span>
-        </div>
+    <div class="where">
+      <span class="label">包</span>
+      <code>{{ svc.display || '.' }}</code>
+      <span class="path" :title="svc.path">{{ svc.path }}</span>
+    </div>
 
-        <v-textarea
-          v-model="args"
-          label="执行参数"
-          placeholder="run dev"
-          rows="2"
-          auto-grow
-          density="compact"
-          variant="outlined"
-          class="mt-4"
-          hint="第一个词是子命令，后面是它自己的参数；改完保存，下次启动就按这个跑"
-          persistent-hint
-        />
+    <v-textarea
+      v-model="args"
+      label="执行参数"
+      placeholder="run dev"
+      rows="2"
+      auto-grow
+      density="compact"
+      variant="outlined"
+      class="mt-4"
+      hint="第一个词是子命令，后面是它自己的参数；改完保存，下次启动就按这个跑"
+      persistent-hint
+    />
 
-        <div class="preview">
-          <span class="label">将要执行</span>
-          <code>{{ preview }}</code>
-        </div>
+    <div class="preview">
+      <span class="label">将要执行</span>
+      <code>{{ preview }}</code>
+    </div>
 
-        <div class="log-head">
-          <span class="label">日志</span>
-          <v-spacer />
-          <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
-        </div>
-        <LogView v-if="logText" :text="logText" :dark="dark" />
-        <p v-else class="log-empty">还没有运行过</p>
-      </v-card-text>
+    <div class="log-head">
+      <span class="label">日志</span>
+      <v-spacer />
+      <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
+    </div>
+    <div class="log-box">
+      <LogView v-if="logText" :text="logText" :dark="dark" />
+      <p v-else class="log-empty">还没有运行过</p>
+    </div>
 
-      <v-card-actions>
-        <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一个包的其他动作</span>
-        <v-spacer />
-        <v-btn variant="text" @click="$emit('update:modelValue', false)">关闭</v-btn>
-        <v-btn color="primary" variant="flat" @click="save">保存</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+    <template #actions>
+      <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一个包的其他动作</span>
+      <v-spacer />
+      <v-btn variant="text" @click="$emit('update:modelValue', false)">关闭</v-btn>
+      <v-btn color="primary" variant="flat" @click="save">保存</v-btn>
+    </template>
+  </FloatingDialog>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { TYPE_TEXT } from '../composables/format'
+import FloatingDialog from './FloatingDialog.vue'
 import LogView from './LogView.vue'
 
 const props = defineProps({
@@ -99,6 +105,15 @@ function save() {
 </script>
 
 <style scoped>
+.log-box {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+.log-box > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .where {
   display: flex;
   align-items: baseline;
@@ -121,7 +136,6 @@ function save() {
   color: rgb(var(--v-theme-on-surface-variant));
 }
 code {
-  font-family: inherit;
   font-size: 0.82rem;
   word-break: break-all;
   background: rgb(var(--v-theme-surface-variant));
