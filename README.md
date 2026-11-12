@@ -16,6 +16,16 @@ bash-scripts/
 │   └── lib/
 │       ├── mvnx-core.sh      加载器
 │       └── mvnx/             按职责拆的模块，commands/ 下每条命令一个文件
+├── nodex/                       Node 项目：发现工作区里的包并启动、构建、装依赖
+│   ├── README.md
+│   ├── bin/
+│   │   └── nodex
+│   ├── lib/
+│   │   ├── nodex-core.sh      加载器
+│   │   └── nodex/             包扫描、界面、执行、网页服务与命令
+│   ├── test/
+│   │   └── run.sh             临时 Node 工作区下的回归测试
+│   └── web/                   网页前端源码，打包产物进 lib/nodex/web/static
 ├── gradlex/                     Gradle 项目：发现可运行模块并启动或构建
 │   ├── README.md
 │   ├── bin/
@@ -69,7 +79,7 @@ bash-scripts/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
 
 ## 安装
 
