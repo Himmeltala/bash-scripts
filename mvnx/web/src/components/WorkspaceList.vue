@@ -41,25 +41,18 @@
       </v-list-item>
     </v-list>
 
-    <v-dialog v-model="dialog" max-width="560">
+    <v-dialog v-model="dialog" max-width="620">
       <v-card>
         <v-card-title>添加工作区</v-card-title>
         <v-card-text>
-          <p class="tip">填 Maven 工程的目录（带 pom.xml 的那个），也可以填它里面的子目录，会自动往上找。</p>
-          <v-text-field
-            v-model="path"
-            label="工程目录"
-            placeholder="/home/me/pros/项目名"
-            prepend-inner-icon="mdi-folder"
-            autofocus
-            hide-details
-            @keyup.enter="submit"
-          />
+          <DirectoryPicker :key="dialogKey" v-model="path" @update:valid="pathOk = $event" />
         </v-card-text>
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="dialog = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" :disabled="!path.trim()" @click="submit">添加</v-btn>
+          <v-btn color="primary" variant="flat" :disabled="!path.trim() || !pathOk" @click="submit">
+            添加此目录
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -83,6 +76,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import DirectoryPicker from './DirectoryPicker.vue'
 
 defineProps({
   workspaces: { type: Array, required: true },
@@ -93,6 +87,9 @@ const emit = defineEmits(['select', 'add', 'remove'])
 
 const dialog = ref(false)
 const path = ref('')
+const pathOk = ref(false)
+// 每次打开换一个 key，目录树重新从家目录拉，不带着上次展开的状态。
+const dialogKey = ref(0)
 const asking = ref(null)
 
 function baseName(full) {
@@ -102,6 +99,8 @@ function baseName(full) {
 
 function openDialog() {
   path.value = ''
+  pathOk.value = false
+  dialogKey.value += 1
   dialog.value = true
 }
 

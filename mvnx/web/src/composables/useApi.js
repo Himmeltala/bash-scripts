@@ -28,6 +28,10 @@ async function call(method, path, body) {
 export const api = {
   state: () => call('GET', '/state'),
   log: (run, page = 0) => call('GET', `/log?run=${encodeURIComponent(run)}&page=${page}`),
+  // 空路径取家目录这一层，其余取指定目录的下一层子目录。
+  dirs: (path = '') => call('GET', `/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  // CPU、内存、磁盘的当前值，取一次算一个点。
+  metrics: () => call('GET', '/metrics'),
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
   rescan: (ws) => call('POST', '/rescan', { ws }),

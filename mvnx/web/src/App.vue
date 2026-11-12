@@ -3,9 +3,9 @@
     <v-app-bar density="comfortable" flat border="b" class="app-bar">
       <v-app-bar-title>
         <span class="brand">mvnx</span>
-        <span class="brand-sub">工作区</span>
       </v-app-bar-title>
       <v-spacer />
+      <SystemMonitor :dark="dark" />
       <v-btn
         v-if="current"
         variant="text"
@@ -64,6 +64,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useTheme } from 'vuetify'
 import WorkspaceList from './components/WorkspaceList.vue'
 import ServicePanel from './components/ServicePanel.vue'
+import SystemMonitor from './components/SystemMonitor.vue'
 import { api } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
 
@@ -212,11 +213,6 @@ function onVisible() {
 .brand {
   font-weight: 600;
   letter-spacing: 0.02em;
-  margin-right: 8px;
-}
-.brand-sub {
-  font-size: 0.8em;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 .shell {
   display: flex;
