@@ -312,7 +312,6 @@ onMounted(reset)
   flex: 1 1 auto;
   margin: 0;
   padding: 10px 16px 24px 12px;
-  font-family: inherit;
   font-size: 0.78rem;
   line-height: 1.6;
   white-space: pre;

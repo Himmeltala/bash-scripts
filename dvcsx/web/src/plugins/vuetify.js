@@ -3,16 +3,10 @@
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { createVuetify } from 'vuetify'
+import { useLocalStorage } from '@vueuse/core'
 
 const THEME_KEY = 'dvcsx-theme'
-
-function savedTheme() {
-  try {
-    return localStorage.getItem(THEME_KEY) || ''
-  } catch (err) {
-    return ''
-  }
-}
+const saved = useLocalStorage(THEME_KEY, '', { writeDefaults: false })
 
 // 两个色系共用同一份语义色名，浅色偏素，深色提亮一档。
 const light = {
@@ -49,20 +43,15 @@ const dark = {
   },
 }
 
-const wanted = savedTheme()
 export const initialTheme =
-  wanted || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  saved.value || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 
 const vuetify = createVuetify({
   theme: { defaultTheme: initialTheme, themes: { light, dark } },
 })
 
 export function rememberTheme(name) {
-  try {
-    localStorage.setItem(THEME_KEY, name)
-  } catch (err) {
-    // 隐私模式下写不进去，主题只在本次会话里生效。
-  }
+  saved.value = name
 }
 
 export default vuetify

@@ -604,7 +604,6 @@ defineExpose({ load })
 }
 .message {
   margin: 8px 0;
-  font-family: inherit;
   font-size: 0.84rem;
   white-space: pre-wrap;
   word-break: break-word;
