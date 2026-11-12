@@ -70,6 +70,23 @@ printf '{"name":"@f/x","scripts":{"dev":"start"}}\n' >"$field/pkgs/x/package.jso
 out=$(cd "$field" && "$nodex" --list dev)
 grep -q 'yarn run dev' <<<"$out" && ok 'packageManager 字段优先' || bad 'packageManager 没有被采用'
 
+# node_modules 的安装痕迹优先于锁文件：留着 yarn.lock，依赖却是 npm 装的。
+marker="$tmp/marker"
+mkdir -p "$marker/node_modules"
+printf '{"name":"marker","scripts":{"dev":"serve"}}\n' >"$marker/package.json"
+: >"$marker/yarn.lock"
+: >"$marker/node_modules/.package-lock.json"
+out=$(cd "$marker" && "$nodex" --list dev)
+grep -q 'npm run dev' <<<"$out" && ok 'node_modules 痕迹优先于锁文件' || bad '锁文件盖过了实际安装痕迹'
+
+# 作者明写的 packageManager 字段仍排在安装痕迹之前。
+field2="$tmp/field2"
+mkdir -p "$field2/node_modules"
+printf '{"name":"field2","packageManager":"pnpm@9.0.0","scripts":{"dev":"serve"}}\n' >"$field2/package.json"
+: >"$field2/node_modules/.yarn-integrity"
+out=$(cd "$field2" && "$nodex" --list dev)
+grep -q '^field2 .*pnpm run dev$' <<<"$out" && ok 'packageManager 字段压过安装痕迹' || bad '字段没有压过安装痕迹'
+
 # 排除模式与 pnpm-workspace.yaml。
 neg="$tmp/neg"
 mkdir -p "$neg/apps/keep" "$neg/apps/skip"

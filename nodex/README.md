@@ -41,7 +41,7 @@ glob 支持 `*`、`**`、`?`，以 `!` 开头的模式表示排除。`node_modul
 | npm      | `npm install --workspace <包名>` |
 | yarn     | `yarn workspace <包名> install`  |
 
-包管理器按这个顺序判定：`package.json` 的 `packageManager` 字段、`pnpm-lock.yaml`、`yarn.lock`、`package-lock.json`，都没有就用 npm。
+包管理器按这个顺序判定：`package.json` 的 `packageManager` 字段、`node_modules` 里装过依赖的痕迹、`pnpm-lock.yaml`、`yarn.lock`、`package-lock.json`，都没有就用 npm。已经装过依赖时以实际装它的那个为准，因为锁文件常留着过时的那一份。
 
 ## 网页模式
 

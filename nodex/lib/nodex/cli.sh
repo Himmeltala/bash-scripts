@@ -36,7 +36,7 @@ usage() {
 用法: nodex [命令] [选项] [关键词]
 
 在当前目录找 Node 工作区里的包，勾选后执行；不带参数时先选命令。
-包管理器按 packageManager 字段与锁文件判定，认 pnpm、yarn、npm。
+包管理器按 packageManager 字段、依赖安装痕迹与锁文件判定，认 pnpm、yarn、npm。
 
 命令:
 EOF

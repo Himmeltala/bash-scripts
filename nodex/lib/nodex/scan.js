@@ -30,12 +30,33 @@ function detectPM(pkg) {
     const own = dir === root ? pkg : readJson(path.join(dir, 'package.json'))
     const field = own && typeof own.packageManager === 'string' ? own.packageManager.split('@')[0].trim() : ''
     if (field === 'pnpm' || field === 'yarn' || field === 'npm') return field
+  }
+  // 装过依赖才有的痕迹，比锁文件更贴近实际：锁文件常常留着过时的那一份。
+  for (const dir of roots) {
+    const pm = installedPM(dir)
+    if (pm) return pm
+  }
+  for (const dir of roots) {
     // 有多个锁文件时按 pnpm、yarn、npm 的先后取：pnpm 工程里常常也留着 npm 的旧锁。
     if (fs.existsSync(path.join(dir, 'pnpm-lock.yaml'))) return 'pnpm'
     if (fs.existsSync(path.join(dir, 'yarn.lock'))) return 'yarn'
     if (fs.existsSync(path.join(dir, 'package-lock.json'))) return 'npm'
   }
   return 'npm'
+}
+
+// node_modules 里留下的标记：npm 写 .package-lock.json，yarn 写 .yarn-integrity，pnpm 建 .pnpm。
+const INSTALL_MARKERS = [
+  ['.package-lock.json', 'npm'],
+  ['.yarn-integrity', 'yarn'],
+  ['.pnpm', 'pnpm'],
+]
+
+function installedPM(dir) {
+  for (const [marker, pm] of INSTALL_MARKERS) {
+    if (fs.existsSync(path.join(dir, 'node_modules', marker))) return pm
+  }
+  return ''
 }
 
 function patternsOf(pkg) {
