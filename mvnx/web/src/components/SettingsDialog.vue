@@ -60,7 +60,7 @@
           <v-spacer />
           <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
         </div>
-        <pre v-if="logText" class="log" :class="{ dark }">{{ logView }}</pre>
+        <LogView v-if="logText" :text="logText" :dark="dark" />
         <p v-else class="log-empty">还没有运行过</p>
       </v-card-text>
 
@@ -77,6 +77,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { MODE_ITEMS, TYPE_TEXT, moduleOf } from '../composables/format'
+import LogView from './LogView.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -127,12 +128,6 @@ const preview = computed(() => {
 
 const logRun = computed(() => (props.svc && props.svc.run ? props.svc.run.id : ''))
 
-// 存的是文件顺序，显示时倒过来，最新一行在最上面。
-const logView = computed(() => {
-  const text = props.logText || ''
-  return text ? text.split('\n').reverse().join('\n') : ''
-})
-
 function save() {
   emit('save', { module: module.value || '', args: (savedArgs.value || '').trim() })
   emit('update:modelValue', false)
@@ -169,22 +164,6 @@ code {
   display: flex;
   align-items: center;
   margin-bottom: 6px;
-}
-.log {
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
-  padding: 10px;
-  border-radius: 8px;
-  background: #11151c;
-  color: #d6deeb;
-  font-size: 0.76rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.log.dark {
-  background: #0b0e13;
 }
 .log-empty {
   color: rgb(var(--v-theme-on-surface-variant));
