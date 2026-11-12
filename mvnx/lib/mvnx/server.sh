@@ -29,10 +29,11 @@ readonly WEB_VIEW_TRANSITIONS='https://web.dev/bfcache/navigation/*'
 #   ws  |id|root|added
 #   svc |id|ws|type|path|pl|args|display|cmd
 #   pom |id|ws|rel
-#   run |id|ws|type|tag|path|display|pl|args|cmd|pid|port|status|started|code|err
+#   run |id|ws|type|tag|path|pl|display|module|args|cmd|pid|port|status|started|code|err
 # run 的 status 取 starting、ready、exited、failed、stopped；pid 是它的会话号，也是进程组号。
 readonly WS_KIND='ws' SVC_KIND='svc' POM_KIND='pom' RUN_KIND='run'
-readonly RUN_COL_PID=10 RUN_COL_PORT=11 RUN_COL_STATUS=12 RUN_COL_STARTED=13 RUN_COL_CODE=14 RUN_COL_ERR=15
+readonly RUN_COL_PL=7 RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_STARTED=15 RUN_COL_CODE=16 RUN_COL_ERR=17
+# run 行共 17 段：类型、运行号，加下面这 15 个字段。
 # 启动方式的取值与命令行一致；页面按这个直接改参数。
 readonly WEB_MODES='auto compile no-compile rebuild'
 # 引擎进程里预留的那一次启动：预排行、运行号、服务 id、会话代次。只有引擎会用。
@@ -84,7 +85,8 @@ web_unlock() {
 
 # 整份替换写：读的人要么看到旧的整份，要么看到新的整份。
 web_write_lines() {
-  local tmp="$WEB_STATE_FILE.tmp"
+  local tmp="$WEB_STATE_FILE.tmp" line
+  # 一行一个换行；最后一行也补上，免得追加时粘到上一行。
   printf '%s\n' "$@" >"$tmp" && mv -f "$tmp" "$WEB_STATE_FILE"
 }
 
@@ -98,7 +100,8 @@ web_state_load() {
     case ${line%%"$FS"*} in
       "$WS_KIND"|"$POM_KIND") want=4 ;;
       "$SVC_KIND") want=9 ;;
-      "$RUN_KIND") want=16 ;;
+      # run 行 17 段：类型、运行号，加上后 15 个字段。
+      "$RUN_KIND") want=17 ;;
       *) continue ;;
     esac
     web_split "$line"
@@ -110,56 +113,67 @@ web_state_save() {
   web_write_lines "${STATE_LINES[@]+"${STATE_LINES[@]}"}"
 }
 
-# 按列号切行：第 N 段的 [[:start:N]] 填进 FRAG[N]（N 从 0 起，0 段是首列）。
-# $FS 内部没有通配、不是正则、不是反斜杠，当分隔符用是准的；一行只切一次，
-# 不在一行里反复套 $(...)，那种写法会把行末换行带进来，后面几列全串位。
+# 按 $FS 切行，结果放在全局 FRAG（0 起）：记录首列是类型，宽度按类型补齐。
+# 切一次取多列；不在一行里连套几个 $(web_col ...)，那样每取一列都重切一遍。
 web_split() {
   local line=$1 i want=0
-  local -a parts=()
   FRAG=()
-  IFS="$FS" read -r -a parts <<<"$line"
-  for i in "${!parts[@]}"; do FRAG[i]=${parts[i]}; done
-  # 末尾的空列 read 会吞掉，按记录类型补齐。
+  # 直接读进全局数组：中间过一道局部数组时，set -u 下取值会认不出格位。
+  IFS="$FS" read -r -a FRAG <<<"$line"
+  # 末尾的空列 read 会吞掉，按记录类型补齐，列号才对得上。
   case ${line%%"$FS"*} in
     "$WS_KIND"|"$POM_KIND") want=4 ;;
     "$SVC_KIND") want=9 ;;
-    "$RUN_KIND") want=16 ;;
-    *) want=$((${#parts[@]} + 1)) ;;
+    # run 行 17 段：类型、运行号，加上后 15 个字段。
+    "$RUN_KIND") want=17 ;;
+    *) want=${#FRAG[@]} ;;
   esac
-  for ((i = ${#parts[@]}; i < want; i++)); do FRAG[i]=''; done
+  for ((i = ${#FRAG[@]}; i < want; i++)); do FRAG[i]=''; done
   STATE_WIDTH=$want
 }
-
 # 取第 n 列（1 起），空列也认。
 web_col() {
-  # $1 是整行，$2 是第几列（1 起）。数组下标取负是「从末尾数」，
-  # 末尾的空列 bash 会留着，所以 : -2 就是倒数第二列，用不着数总列数。
-  local n cell
-  web_split "$1"
-  # 先减到局部变量再当下标：算术里直接放 $2 时，后面接着访问数组会读错格。
-  n=$2
-  n=$((n - 1 - STATE_WIDTH))
-  # 不能用 ${FRAG[$n]}：set -u 下 bash 只认字面下标，变量下标会被当成「未定义」。
-  cell=${FRAG[0]}
-  [[ "$n" != '0' ]] && eval "cell=\${FRAG[$n]}"
-  printf '%s\n' "$cell"
+  # $1 是整行，$2 是第几列（1 起）。列号越界给空串。
+  # 切一次取多列；在一行里连套几个 $(web_col ...) 也行，每次都在自己那头重切一遍。
+  # 不用 read -a：它在 $( ) 里会把末尾连续的空列并掉；也不用 ${x%%$FS*}：
+  # \x1f 在 C 语言环境里算空白，裸着写进模式会被当成空白分隔符丢掉，连续空列就少算一格。
+  local rest=$1 want=$2 i cut
+  ((want >= 1)) || return 0
+  for ((i = 1; i < want; i++)); do
+    [[ "$rest" == *"$FS"* ]] || return 0
+    rest=${rest#*"$FS"}
+  done
+  cut=${rest%%"$FS"*}
+  if [[ "$cut" == "$rest" ]]; then
+    printf '%s\n' "$rest"
+  else
+    printf '%s\n' "$cut"
+  fi
 }
 
 # 换掉一行里若干列，结果打到标准输出：列号 值 列号 值 ……，列数以该行的类型为准。
 web_row_set() {
-  local line=$1
-  shift
-  local -A want=()
+  # 列号 值 列号 值 ……，换掉后整行打到标准输出。一次换几列都行。
+  local n=$1 line=$2
+  shift 2
+  # 先切行再填词表：web_split 会把 FRAG 清空重建，顺序反了格子就都空了。
+  web_split "$line"
+  local -a want=()
+  local at
   while (($# >= 2)); do
-    want[$1]=$2
+    at=$1
+    want[$at]=$2
     shift 2
   done
-  web_split "$line"
-  local n=$STATE_WIDTH i out='' v
+  local i col out='' v
   for ((i = 0; i < n; i++)); do
-    v=${FRAG[i]}
+    v=${FRAG[i]+${FRAG[i]}}
     ((i > 0)) && out+="$FS"
-    [[ -n "${want[i + 1]+x}" ]] && v=${want[i + 1]}
+    col=$((i + 1))
+    # 这一列要换才盖上去；不能用 ${want[col]-$v}，下标算不出来时它会被当成「取所有元素」。
+    if [[ -n "${want[$col]+x}" ]]; then
+      v=${want[$col]}
+    fi
     out+="$v"
   done
   printf '%s\n' "$out"
@@ -167,7 +181,10 @@ web_row_set() {
 
 # 换掉 STATE_LINES[WEB_AT] 里的若干列，配合 web_locate 用。
 web_set() {
-  STATE_LINES[WEB_AT]=$(web_row_set "${STATE_LINES[WEB_AT]}" "$@")
+  # 列数以这一行自己的类型为准，web_split 会算出 STATE_WIDTH。
+  # ${arr[i]+${arr[i]}}：直接取不存在的下标在 set -u 下会报成未定义变量。
+  web_split "${STATE_LINES[WEB_AT]+${STATE_LINES[WEB_AT]}}"
+  STATE_LINES[WEB_AT]=$(web_row_set "$STATE_WIDTH" "${STATE_LINES[WEB_AT]+${STATE_LINES[WEB_AT]}}" "$@")
 }
 
 # 按首列与 id 找行：位置放 WEB_AT，整行放 WEB_ROW。
@@ -282,8 +299,11 @@ web_ws_remove() {
 # ---- 扫描 ----
 
 # 一条服务写成 svc 行。参数：工作区 id、类型、id 尾、执行目录、-pl 的值、mvn 参数、展示路径、展示命令。
+# 一条服务行：ws|类型|工作目录|-pl 的值|mvn 参数|展示路径|展示命令，前面接 id 与类型。
 web_svc_line() {
-  printf '%s\n' "$SVC_KIND$FS$1.$2.$3$FS$1$FS$2$FS$4$FS$6$FS$5$FS$7$FS$8"
+  # 收的是六列记录：标签、工作目录、-pl 的值、mvn 参数、展示路径、展示命令。
+  # 存的是九段：类型、服务 id、工作区、动作、工作目录、-pl 的值、mvn 参数、展示路径、展示命令。
+  printf '%s\n' "$SVC_KIND$FS$1.$2.$3$FS$1$FS$2$FS$4$FS$5$FS$6$FS$7$FS$8"
 }
 
 # 现扫一个工作区，结果逐行打到标准输出，不碰状态文件。
@@ -327,13 +347,18 @@ web_scan() {
 # 用一个工作区的扫描结果替换旧的服务与 pom 行；工作区与运行记录原样保留。
 # 按服务 id 记下旧值，新扫出来的同一服务沿用，命令行也按新值重拼。
 web_scan_apply() {
-  local id=$1 file=$2 row line sid module args root pl rel
+  local id=$1 file=$2 row line sid module args root pl dir width _sid _pl _ga
   local -a fresh=() keep=() out=()
   local -A saved=()
   [[ -s "$file" ]] && mapfile -t fresh <"$file"
   for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
     if [[ ${row%%"$FS"*} == "$SVC_KIND" ]] && [[ "$(web_col "$row" 3)" == "$id" ]]; then
-      saved[$(web_col "$row" 2)]=$(web_col "$row" 6)$FS$(web_col "$row" 7)
+      # 记旧值：-pl 的值在第 6 列、mvn 参数在第 7 列。
+      # 一行里连套三个 $(web_col ...) 会串位，先各取各的。
+      _sid=$(web_col "$row" 2)
+      _pl=$(web_col "$row" 6)
+      _ga=$(web_col "$row" 7)
+      saved[$_sid]="$_pl$FS$_ga"
     fi
   done
   for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
@@ -348,17 +373,16 @@ web_scan_apply() {
     if [[ ${line%%"$FS"*} == "$SVC_KIND" ]]; then
       sid=$(web_col "$line" 2)
       if [[ -n "${saved[$sid]+x}" ]]; then
-        module=$(web_col "${saved[$sid]}" 1)
-        args=$(web_col "${saved[$sid]}" 2)
-        [[ -n "$module" ]] && line=$(web_row_set "$line" 6 "$module")
-        [[ -n "$args" ]] && line=$(web_row_set "$line" 7 "$args")
-        rel=''
-        if [[ -n "$module" ]] && [[ "$(web_col "$line" 5)" != "$root" ]]; then
-          rel="$(basename "$(web_col "$line" 5)")/"
-        fi
-        pl=''
-        [[ -n "$module" ]] && pl=" -pl $rel$module"
-        line=$(web_row_set "$line" 9 "mvn$pl $args")
+        web_split "$line"
+        width=$STATE_WIDTH
+        # 旧值同样是「-pl 的值|mvn 参数」；页面上改过的是参数，模块位按 -pl 的值放回去。
+        pl=${saved[$sid]%%"$FS"*}
+        args=${saved[$sid]#*"$FS"}
+        dir=$(web_col "$line" 5)
+        # 服务行九段：第 6 列是 -pl 的值、第 7 列是 mvn 参数、第 9 列是展示命令。
+        # 命令照更新参数时的同一套拼法，两处拼出来的才对得上。
+        line=$(web_row_set "$width" "$line" 6 "$pl" 7 "$args" \
+          9 "$(web_cmd_text "$pl" "$dir" "$root" "$args")")
       fi
     fi
     out+=("$line")
@@ -419,20 +443,31 @@ web_group_alive() {
 
 # 从日志里找服务端口：Tomcat 与 Jetty 启动时都会打一行。
 # 正则先放变量里：直接用 [[ =~ ]] 写带空格的分支，bash 会报语法错。
+# 回退的 URL 匹配只认本机地址：Maven 会在报错里列出仓库地址，带端口的仓库
+# （如 http://11.1.1.136:5000/repository/...）不是服务端口；本机 Nexus 那种
+# 地址同样带端口，再按「仓库」字样挡一层。
 web_detect_port() {
-  local file=$1 text re_pair re_any port
+  local file=$1 text re_pair re_any port line
   [[ -f "$file" ]] || return 1
   text=$(tail -n 60 "$file" 2>/dev/null)
-  re_pair='(Tomcat|Jetty) started on port\(s\)?: ?([0-9]+)'
-  re_any='https?://[^ \t]*:([0-9]{2,5})'
-  if [[ "$text" =~ $re_pair ]]; then
-    port=${BASH_REMATCH[2]}
-  elif [[ "$text" =~ $re_any ]]; then
-    port=${BASH_REMATCH[1]}
-  else
-    return 1
-  fi
-  [[ -n "$port" ]] && printf '%s\n' "$port"
+  # 「port 8080」「port(s): 8080」「ports: 8080」三种写法都要认：
+  # (s) 与 s 各自可选，冒号也可选；端口落在第 3 个分组。
+  re_pair='(Tomcat|Jetty) started on port(\(s\)|s)?:? ?([0-9]+)'
+  re_any='https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):([0-9]{2,5})'
+  while IFS= read -r line; do
+    if [[ "$line" =~ $re_pair ]]; then
+      printf '%s\n' "${BASH_REMATCH[3]}"
+      return 0
+    fi
+  done <<<"$text"
+  while IFS= read -r line; do
+    [[ "$line" == *'/repository/'* || "$line" == *'from the repositories'* ]] && continue
+    if [[ "$line" =~ $re_any ]]; then
+      printf '%s\n' "${BASH_REMATCH[2]}"
+      return 0
+    fi
+  done <<<"$text"
+  return 1
 }
 
 # 日志里第一条 [ERROR]，页面直接展示，省得去翻日志。
@@ -441,7 +476,8 @@ web_error_text() {
   [[ -f "$file" ]] || return 0
   while IFS= read -r line; do
     [[ "$line" == *'[ERROR]'* ]] || continue
-    line=${line#*[ERROR]}
+    # 去掉前缀 '[ERROR]'：不转义时它是 glob 的字符类，只会吃掉一个字母。
+    line=${line#*'[ERROR]'}
     line=${line#"${line%%[![:space:]]*}"}
     printf '%s\n' "${line:0:300}"
     return 0
@@ -451,7 +487,9 @@ web_error_text() {
 # python 写的退出码文件。
 web_exit_code() {
   local code
-  code=$(<"$1.code" 2>/dev/null) || return 0
+  # $(<文件) 只有「命令替换里光有一个重定向」才是读文件；再挂 2>/dev/null 就成了一条
+  # 只有重定向的空命令，输出永远为空。错误重定向要放到替换外面。
+  code=$(<"$1.code") 2>/dev/null || return 0
   code=${code//[^0-9-]/}
   printf '%s\n' "$code"
 }
@@ -605,11 +643,13 @@ web_tag() {
 web_run_line() {
   local svc=$1 id=$2 pid=$3 module=$4 args=$5 cmd
   # 先各取各的：${:-} 里带引号时会把后面的替换一起吞进去，拼出来的命令错位。
-  local ws type tag path display root rel
+  local ws type tag path display root rel pl
   ws=$(web_col "$svc" 3)
   type=$(web_col "$svc" 4)
   tag=$(web_tag "$svc")
   path=$(web_col "$svc" 5)
+  # 第 6 列是 -pl 的值，运行行也得照着服务行的列序留这一格，少一格后面全串位。
+  pl=$(web_col "$svc" 6)
   display=$(web_col "$svc" 8)
   root=$(web_ws_root_of "$ws")
   # -pl 相对服务自己的目录算，这里直接拼好，不再套一层命令行。
@@ -620,10 +660,14 @@ web_run_line() {
   fi
   cmd="mvn$rel $args"
   # 一行一行拼：长替换串里嵌 $FS 容易被吞，踩过一次。
-  local out="$RUN_KIND$FS$id$FS$ws$FS$type$FS$tag$FS$path$FS$display$FS$module$FS$args$FS$cmd$FS$pid"
+  # 列序：类型|运行号|工作区|服务类型|标签|工作目录|-pl 的值|展示路径|模块|参数|命令|会话号|端口|状态|开始|退出码|错误
+  local out="$RUN_KIND$FS$id$FS$ws$FS$type$FS$tag$FS$path$FS$pl$FS$display$FS$module$FS$args$FS$cmd$FS$pid$FS"
+  # 别的值都进变量再拼；单引号夹在串里会原样落进状态文件，读回来状态就不认了。
+  local starting_state='starting'
   local now
   now=$(date +%s)
-  printf '%s\n' "$out$FS$FS'starting'$FS$now$FS$FS"
+  # $out 到会话号为止且末尾带一个分隔符，端口这一格此刻还是空的，再补一个分隔符占位。
+  printf '%s\n' "$out$FS$starting_state$FS$now$FS$FS"
 }
 
 # 预排交给引擎：写进临时文件并回一个代次，引擎读走后删掉。
@@ -684,8 +728,10 @@ web_launched() {
   local sid=$1 gen=$2 line out='' i v
   # 预排是 reserve 留下的临时文件，谁先读到算谁的；读不到说明已经作废或被人收走。
   web_pend_load || { printf 'mvnx: 这次启动已作废\n' >&2; return 1; }
-  for ((i = 1; i <= 15; i++)); do
-    v=$(web_col "$PEND_LINE" "$i")
+  # 按整行实际宽度走：末尾两列本来就是空的，循环少了会丢列，多了会多出分隔符。
+  web_split "$PEND_LINE"
+  for ((i = 1; i <= STATE_WIDTH; i++)); do
+    v=${FRAG[i - 1]}
     [[ $i == "$RUN_COL_PID" ]] && v=$sid
     ((i > 1)) && out+="$FS"
     out+="$v"
@@ -746,7 +792,7 @@ web_update() {
 # 请求走标准输入、回话走标准输出，都按行、$FS 分列：先回一行 ok，有数据时紧跟第二行。
 # 页面每两秒来一条 tick，顺手把在跑的记录收拾一遍，页面看到的就是最新状态。
 web_engine() {
-  local line req op out rc
+  local line req op out rc _id _mod _extra _mode
   if ! IFS= read -r line <&0 || [[ "$line" != "hello$FS"* ]]; then
     web_fail '控制通道握手不对，网页服务与 mvnx 版本不一致'
     return
@@ -762,7 +808,11 @@ web_engine() {
       add) web_ws_add "$(web_col "$req" 2)" || rc=$? ;;
       remove) web_ws_remove "$(web_col "$req" 2)" || rc=$? ;;
       scan) web_ws_scan "$(web_col "$req" 2)" || rc=$? ;;
-      reserve) out=$(web_reserve "$(web_col "$req" 2)" "$(web_col "$req" 3)" "$(web_col "$req" 4)" "$(web_col "$req" 5)") || rc=$? ;;
+      reserve)
+        # 先各取各的：一行里连套几个 $(...) 时，后面的会把前面的参数带乱。
+        _id=$(web_col "$req" 2); _mod=$(web_col "$req" 3); _extra=$(web_col "$req" 4); _mode=$(web_col "$req" 5)
+        out=$(web_reserve "$_id" "$_mod" "$_extra" "$_mode") || rc=$?
+        ;;
       launched) web_launched "$(web_col "$req" 2)" "$(web_col "$req" 3)" || rc=$? ;;
       stop) web_stop "$(web_col "$req" 2)" || rc=$? ;;
       update) web_update "$(web_col "$req" 2)" "$(web_col "$req" 3)" "$(web_col "$req" 4)" || rc=$? ;;

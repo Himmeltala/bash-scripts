@@ -14,6 +14,7 @@
 import argparse
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -30,7 +31,20 @@ FS = "\x1f"
 # 状态行的列，与 lib/mvnx/server.sh 里的 web_col 一致，0 起。
 WS_KIND, SVC_KIND, POM_KIND, RUN_KIND = "ws", "svc", "pom", "run"
 LIVE = ("starting", "ready")
+# 运行号是「服务 id.纳秒」：去掉末尾那一段就是服务 id。
+RUN_PREFIX_RE = re.compile(r"\.[0-9]+$")
 MODES = ("auto", "compile", "no-compile", "rebuild")
+# 行内列号（0 起）。svc 行与 run 行的公共段：id 1、工作区 2、类型 3。
+CO_ID, CO_WS, CO_TYPE = 1, 2, 3
+# svc 行：-pl 的值第 5 列、mvn 参数第 6 列。
+SVC_MODULE, SVC_ARGS = 5, 6
+# run 行（17 段，0 起）：展示路径第 7 列、会话号 11、端口 12、状态 13。
+RUN_DISPLAY = 7
+RUN_PID, RUN_PORT, RUN_STATUS = 11, 12, 13
+# run 行第 1 段是类型 run，第 2 段起依次是这 16 个字段，顺序与 lib/mvnx/server.sh 的 web_run_line 一致。
+RUN_FIELDS = ("id", "ws", "type", "tag", "path", "pl", "display", "module", "args",
+              "cmd", "pid", "port", "status", "started", "code", "err")
+
 
 # 一次引擎调用的上限：扫描大工程几秒，留足余量。
 ENGINE_TIMEOUT = 120
@@ -55,6 +69,8 @@ class Row:
         self.f = parts
 
     def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return self.f[idx]
         return self.f[idx] if idx < len(self.f) else ""
 
     @property
@@ -66,7 +82,8 @@ class Row:
         return self[2]
 
 
-WS_WIDTH, SVC_WIDTH, POM_WIDTH, RUN_WIDTH = 4, 9, 4, 16
+WS_WIDTH, SVC_WIDTH, POM_WIDTH, RUN_WIDTH = 4, 9, 4, 17
+WIDTHS = {WS_KIND: WS_WIDTH, SVC_KIND: SVC_WIDTH, POM_KIND: POM_WIDTH, RUN_KIND: RUN_WIDTH}
 
 
 def parse_rows(text):
@@ -75,14 +92,8 @@ def parse_rows(text):
         if not line:
             continue
         parts = line.split(FS)
-        kind, width = parts[0], len(parts)
-        if kind == WS_KIND and width == WS_WIDTH:
-            rows.append(parts)
-        elif kind == SVC_KIND and width == SVC_WIDTH:
-            rows.append(parts)
-        elif kind == POM_KIND and width == POM_WIDTH:
-            rows.append(parts)
-        elif kind == RUN_KIND and width == RUN_WIDTH:
+        # 列数必须正好对上：多一段少一段都是写坏了，用它会整行错位，不如丢掉。
+        if len(parts) == WIDTHS.get(parts[0]):
             rows.append(parts)
     return rows
 
@@ -147,7 +158,8 @@ class State:
             elif r[0] == POM_KIND:
                 poms.setdefault(r[2], []).append(r[3])
             elif r[0] == RUN_KIND:
-                runs[r[1]] = Row(r)
+                # 一个服务跑过多次会留下多条记录，留下最新的一条。
+                runs[RUN_PREFIX_RE.sub("", r[1])] = Row(r)
 
         for r in self.rows():
             if r[0] != SVC_KIND:
@@ -177,23 +189,10 @@ class State:
 
 
 def run_info(r):
-    return {
-        "id": r[1],
-        "ws": r[2],
-        "type": r[3],
-        "tag": r[4],
-        "path": r[5],
-        "display": r[6],
-        "module": r[7],
-        "args": r[8],
-        "cmd": r[9],
-        "pid": r[10],
-        "port": r[11],
-        "status": r[12],
-        "started": r[13],
-        "code": r[14],
-        "err": r[15],
-    }
+    # Row 的 self.f 是整行，第 1 段是类型；列表切片不走 __getitem__，用 .f 取。
+    d = dict(zip(RUN_FIELDS, r.f[1:]))
+    d.setdefault("pl", "")
+    return d
 
 
 # ---------------------------------------------------------------- 进程
@@ -403,8 +402,8 @@ class Engine:
 
     def remove_workspace(self, ws):
         for run in self.state.runs(ws):
-            if run[12] in LIVE:
-                self.sessions.kill_group(run[10])
+            if run[RUN_STATUS] in LIVE:
+                self.sessions.kill_group(run[RUN_PID])
         # 正在跑的先停，再让 bash 删登记。
         self.call("remove", ws)
 
@@ -413,7 +412,8 @@ class Engine:
         row = self.state.find(SVC_KIND, svc)
         if row is None:
             raise ApiError(404, "没有这个服务：%s" % svc)
-        module = str(body.get("module", "") or "").strip()
+        # 模块位是 -pl 的值，页面不传就沿用服务行里的，别把它清空。
+        module = str(body.get("module", "") or "").strip() or row[SVC_MODULE]
         extra = str(body.get("extra", "") or "").strip()
         mode = str(body.get("mode", "auto") or "auto")
         if mode not in MODES:
@@ -422,24 +422,27 @@ class Engine:
         # 同一模块上一个动作还在跑：启动与打包读同一个 target，重复跑只会互相盖。
         parent = svc.rsplit(".", 1)[0]
         for run in self.state.runs():
-            if run[12] not in LIVE:
+            if run[RUN_STATUS] not in LIVE:
                 continue
-            if run[1] == svc or run[1].startswith(parent + "."):
-                raise ApiError(409, "「%s」正在跑，先停掉" % run[6])
+            if run[CO_ID] == svc or run[CO_ID].startswith(parent + "."):
+                raise ApiError(409, "「%s」正在跑，先停掉" % run[RUN_DISPLAY])
 
         # 页面上的参数改动要算数：先存进服务行，自动判编译与拼命令都按它来。
-        args = (row[6] + " " + extra).strip() if extra else row[6]
-        if module != row[5] or args != row[6]:
+        args = (row[SVC_ARGS] + " " + extra).strip() if extra else row[SVC_ARGS]
+        if module != row[SVC_MODULE] or args != row[SVC_ARGS]:
             self.call("update", svc, module, args)
 
         first = self.call("reserve", svc, module, extra, mode)
         parts = first.split(FS)
-        if len(parts) < 6:
+        # 回话是「运行号|目录|参数|预排行|代次」：预排行自己带着分隔符，段数不定。
+        # 前四段取头部，代次取最后一段，中间那串就是预排行。
+        if len(parts) < 5:
             raise ApiError(500, "mvnx 没有给出启动参数：%r" % first)
-        # 回话是「运行号|目录|参数|预排行|代次」，数据行前面可能还有一个分隔符。
         if parts[0] == "":
             parts = parts[1:]
-        runid, path, mvn_args, row_line, gen = parts[0], parts[1], parts[2], parts[3], parts[4]
+        runid, path, mvn_args = parts[0], parts[1], parts[2]
+        gen = parts[-1]
+        row_line = FS.join(parts[3:-1])
 
         log_path = self.logs / runid.split(".", 1)[0] / (runid + ".log")
         argv = ["mvn"] + [w for w in mvn_args.split() if w]
@@ -452,13 +455,184 @@ class Engine:
 
     def stop(self, runid):
         run = self.state.find(RUN_KIND, runid)
-        if run is None or run[12] not in LIVE:
+        if run is None or run[RUN_STATUS] not in LIVE:
             raise ApiError(409, "这个服务没有在跑")
-        self.sessions.kill_group(run[10])
+        self.sessions.kill_group(run[RUN_PID])
         self.call("stop", runid)
 
 
 # ---------------------------------------------------------------- 页面与接口
+
+
+# ---------------------------------------------------------------- 目录浏览
+
+# 一次最多回多少子目录：家目录之外也可能有几千项的目录，超过就截断并告诉页面。
+MAX_DIRS = 1000
+
+
+def _inside(path, home):
+    return path == home or home in path.parents
+
+
+def _is_dir_entry(entry, home):
+    """这一项算不算能进的家目录子目录：符号链接要落到家目录里面才算。"""
+    try:
+        if entry.is_symlink():
+            real = Path(entry.path).resolve()
+            return _inside(real, home) and real.is_dir()
+        return entry.is_dir(follow_symlinks=False)
+    except OSError:
+        return False
+
+
+def list_dirs(raw):
+    """列家目录内某一层的子目录；空路径就是家目录本身。"""
+    home = Path.home().resolve()
+    text = (raw or "").strip()
+    target = Path(os.path.expanduser(text)) if text else home
+    if not target.is_absolute():
+        target = home / target
+    try:
+        target = target.resolve()
+    except OSError as exc:
+        raise ApiError(400, "解析目录失败：%s" % exc)
+    if not _inside(target, home):
+        raise ApiError(400, "只能浏览家目录内的目录：%s" % home)
+    if not target.is_dir():
+        raise ApiError(400, "不是目录：%s" % text)
+
+    entries = []
+    truncated = False
+    try:
+        with os.scandir(target) as it:
+            for entry in it:
+                if entry.name.startswith("."):
+                    continue
+                if not _is_dir_entry(entry, home):
+                    continue
+                entries.append({"name": entry.name, "path": str(Path(entry.path))})
+                if len(entries) >= MAX_DIRS:
+                    truncated = True
+                    break
+    except PermissionError:
+        raise ApiError(403, "没有权限读取：%s" % target)
+    except OSError as exc:
+        raise ApiError(400, "读取目录失败：%s" % exc)
+    entries.sort(key=lambda item: item["name"].casefold())
+
+    return {
+        "home": str(home),
+        "path": str(target),
+        "parent": None if target == home else str(target.parent),
+        "entries": entries,
+        "truncated": truncated,
+    }
+
+
+def _percent(used, total):
+    if not total:
+        return None
+    return round(100.0 * used / total, 1)
+
+
+class Metrics:
+    """CPU、内存、磁盘占用，页面头部那三张小图用。
+
+    只用 /proc 与 statvfs，不引第三方库。CPU 占用只有两次采样之间才算得出来：
+    第一次请求时先取一次、等 200ms 再取一次，之后每次请求都用上一次留下的计数器，
+    间隔就是页面的刷新周期。
+    """
+
+    SAMPLE_PAUSE = 0.2
+
+    def __init__(self, home=None):
+        self.home = Path(home) if home else Path.home()
+        self.mount = self._mount_of(self.home)
+        self._lock = threading.Lock()
+        self._prev = None
+
+    @staticmethod
+    def _counters():
+        with open("/proc/stat", "r") as fh:
+            parts = fh.readline().split()[1:]
+        nums = [int(x) for x in parts]
+        # 空闲算 idle 加 iowait，其余（user、system、irq 等）都算忙。
+        idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
+        return idle, sum(nums)
+
+    @staticmethod
+    def _mount_of(path):
+        target = str(path.resolve())
+        best = "/"
+        try:
+            with open("/proc/mounts", "r") as fh:
+                for line in fh:
+                    fields = line.split()
+                    if len(fields) < 2:
+                        continue
+                    point = fields[1]
+                    prefix = point.rstrip("/") + "/"
+                    if target == point or target.startswith(prefix):
+                        if len(point) > len(best):
+                            best = point
+        except OSError:
+            pass
+        return best
+
+    def cpu(self):
+        with self._lock:
+            prev = self._prev
+            cur = self._counters()
+            if prev is None:
+                time.sleep(self.SAMPLE_PAUSE)
+                prev, cur = cur, self._counters()
+            self._prev = cur
+        idle, total = cur[0] - prev[0], cur[1] - prev[1]
+        if total <= 0:
+            return None
+        return round(min(100.0, max(0.0, 100.0 * (total - idle) / total)), 1)
+
+    def mem(self):
+        info = {}
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                key, _, rest = line.partition(":")
+                fields = rest.split()
+                if key and fields:
+                    info[key] = int(fields[0]) * 1024
+        total = info.get("MemTotal", 0)
+        avail = info.get("MemAvailable")
+        if avail is None:  # 老内核没有 MemAvailable，退回三项相加
+            avail = info.get("MemFree", 0) + info.get("Buffers", 0) + info.get("Cached", 0)
+        used = max(0, total - avail)
+        return {"used": used, "total": total, "percent": _percent(used, total)}
+
+    def disk(self):
+        st = os.statvfs(str(self.home))
+        total = st.f_frsize * st.f_blocks
+        free = st.f_frsize * st.f_bfree
+        avail = st.f_frsize * st.f_bavail
+        used = max(0, total - free)
+        return {
+            "used": used,
+            "total": total,
+            "avail": avail,
+            "percent": _percent(used, total),
+            "mount": self.mount,
+        }
+
+    def snapshot(self):
+        out = {"time": int(time.time())}
+        for key in ("cpu", "mem", "disk"):
+            try:
+                out[key] = getattr(self, key)()
+            except (OSError, ValueError) as exc:
+                log("取 %s 指标失败：%s" % (key, exc))
+                out[key] = None
+        return out
+
+
+METRICS = Metrics()
 
 
 CONTENT_TYPES = {
@@ -530,9 +704,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method, route, query, body):
         if route == "state":
+            # 页面每两秒取一次状态，顺手让引擎收拾在跑的记录：端口、退出码、状态都靠这一趟更新。
+            # 引擎自己出问题时照旧把状态给出去，页面不至于连列表都打不开。
+            try:
+                self.engine.call("tick")
+            except ApiError as exc:
+                log("tick 失败：%s" % exc.message)
             return self.state.snapshot()
         if route == "log":
             return self._log(query)
+        if route == "dirs":
+            return list_dirs((query.get("path") or [""])[0])
+        if route == "metrics":
+            return METRICS.snapshot()
         if method != "POST":
             raise ApiError(405, "这个接口只接受 POST")
         engine = self.engine
