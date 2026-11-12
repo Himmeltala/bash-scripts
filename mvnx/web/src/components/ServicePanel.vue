@@ -288,10 +288,9 @@ const rows = computed(() => {
     .map((svc) => {
       const run = svc.run
       const live = !!run && LIVE.includes(run.status)
-      // 同一模块上的另一个动作在跑时不能起：打包与启动抢同一个 target。
-      const parent = svc.id.slice(0, svc.id.lastIndexOf('.'))
+      // 同一模块上的另一个动作在跑时不能起：打包与启动抢同一个 target；同工作区的别的模块不受影响。
       const blocked = props.ws.services.some(
-        (o) => o !== svc && o.run && LIVE.includes(o.run.status) && (o.id === svc.id || o.id.startsWith(parent + '.')),
+        (o) => o !== svc && o.run && LIVE.includes(o.run.status) && o.tag === svc.tag,
       )
       return {
         key: svc.id,

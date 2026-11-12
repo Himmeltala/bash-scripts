@@ -35,8 +35,8 @@ LIVE = ("starting", "ready")
 # 运行号是「服务 id.纳秒」：去掉末尾那一段就是服务 id。
 RUN_PREFIX_RE = re.compile(r"\.[0-9]+$")
 MODES = ("auto", "compile", "no-compile", "rebuild")
-# 行内列号（0 起）。svc 行与 run 行的公共段：id 1、工作区 2、类型 3。
-CO_ID, CO_WS, CO_TYPE = 1, 2, 3
+# 行内列号（0 起）。svc 行与 run 行的公共段：id 1、工作区 2、类型 3、标签 4。
+CO_ID, CO_WS, CO_TYPE, CO_TAG = 1, 2, 3, 4
 # svc 行：-pl 的值第 5 列、mvn 参数第 6 列。
 SVC_MODULE, SVC_ARGS = 5, 6
 # run 行（17 段，0 起）：展示路径第 7 列、会话号 11、端口 12、状态 13。
@@ -398,6 +398,15 @@ class Sessions:
             pass
 
 
+def mvn_argv(module, mvn_args):
+    """拼 mvn 命令行。模块单列存放，执行时才拼 -pl，与命令行那边的做法一致。"""
+    argv = ["mvn"]
+    if module:
+        argv += ["-pl", module]
+    argv += [w for w in mvn_args.split() if w]
+    return argv
+
+
 def group_alive(sid):
     try:
         os.killpg(sid, 0)
@@ -439,6 +448,8 @@ class Engine:
         self.logs = Path(logs)
         self.jdks = jdks
         self.lock = threading.Lock()
+        # reserve 到 launched 之间靠 bash 端一个临时文件交接，两次启动不能交错。
+        self.start_lock = threading.Lock()
         self.proc = None
         # 逐字节读回话时拼行用；上一次没读完的残行在下个请求前丢掉。
         self._buffer = b""
@@ -545,6 +556,11 @@ class Engine:
         self.call("remove", ws)
 
     def start(self, body):
+        """两次启动错开走：reserve 与 launched 之间共用一个临时文件，交错就对不上号。"""
+        with self.start_lock:
+            return self._start(body)
+
+    def _start(self, body):
         svc = str(body.get("svc", "")).strip()
         row = self.state.find(SVC_KIND, svc)
         if row is None:
@@ -557,11 +573,14 @@ class Engine:
             raise ApiError(400, "启动方式不认识：%s" % mode)
 
         # 同一模块上一个动作还在跑：启动与打包读同一个 target，重复跑只会互相盖。
-        parent = svc.rsplit(".", 1)[0]
+        # 服务 id 是「工作区.动作.标签」，标签里可能带点，从第二段之后整段取；
+        # 挡的是同一工作区的同一个模块，同工作区的别的模块照常各起各的。
+        parts = svc.split(".", 2)
+        tag = parts[2] if len(parts) == 3 else ""
         for run in self.state.runs():
             if run[RUN_STATUS] not in LIVE:
                 continue
-            if run[CO_ID] == svc or run[CO_ID].startswith(parent + "."):
+            if run[CO_WS] == row[CO_WS] and run[CO_TAG] == tag:
                 raise ApiError(409, "「%s」正在跑，先停掉" % run[RUN_DISPLAY])
 
         # 页面上的参数改动要算数：先存进服务行，自动判编译与拼命令都按它来。
@@ -582,7 +601,7 @@ class Engine:
         row_line = FS.join(parts[3:-1])
 
         log_path = self.logs / runid.split(".", 1)[0] / (runid + ".log")
-        argv = ["mvn"] + [w for w in mvn_args.split() if w]
+        argv = mvn_argv(module, mvn_args)
         raw_jdk = self.jdks.get(row[CO_WS]) if self.jdks else ""
         jdk = effective_jdk(raw_jdk)
         if raw_jdk and not jdk:
