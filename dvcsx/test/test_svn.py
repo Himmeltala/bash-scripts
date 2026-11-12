@@ -124,6 +124,19 @@ class SvnWorkspace(unittest.TestCase):
         self.assertNotIn("extra/node_modules/x.js", paths)
         self.assertFalse(truncated)
 
+    def test_browse_lists_and_reads_files(self):
+        data = svnmod.browse_list(str(self.wc), "")
+        types = {e["name"]: e["type"] for e in data["entries"]}
+        self.assertEqual(types.get("src"), "dir")
+        self.assertEqual(types.get("b.txt"), "file")
+        # 工作副本内部目录不列出来。
+        self.assertNotIn(".svn", types)
+        data = svnmod.browse_list(str(self.wc), "extra")
+        names = [e["name"] for e in data["entries"]]
+        self.assertIn("one.txt", names)
+        self.assertNotIn("node_modules", names)
+        self.assertEqual(svnmod.browse_file(str(self.wc), "b.txt"), "new\n")
+
     def test_diff_rejects_path_outside(self):
         with self.assertRaises(svnmod.ApiError):
             svnmod.change_diff(str(self.wc), "../etc/passwd")

@@ -2,7 +2,8 @@
 """dvcsx 网页模式的转发进程：静态页面加 SVN / Git 查询接口，只用标准库。
 
 页面要的东西都由这里现跑 svn 或 git 命令取：工作副本变更、单个文件的差异、
-提交日志、某次提交里某个文件的差异。所有查询都是只读的，不动工作副本。
+提交日志、某次提交里某个文件的差异，以及直接浏览工作副本的目录与文件内容。
+所有查询都是只读的，不动工作副本。
 """
 
 import argparse
@@ -32,6 +33,8 @@ GIT_TIMEOUT = 30
 FETCH_TIMEOUT = 20
 LOG_DEFAULT = 50
 LOG_MAX = 200
+# 浏览目录时一层最多回这么多项，再多的目录列出来也翻不动。
+BROWSE_MAX = 500
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -383,6 +386,62 @@ def clip(text):
     if len(text) <= MAX_TEXT:
         return text, False
     return text[:MAX_TEXT] + "\n…（差异太长，后面的没有显示）\n", True
+
+
+# 浏览目录时跳过的东西：版本库内部目录、依赖与产物目录、IDE 配置。
+BROWSE_SKIP = UNVERSIONED_SKIP | {"target", ".idea"}
+
+
+def browse_rel(rel):
+    """浏览接口的路径：空串表示登记的目录本身，其余按工作副本内相对路径校验。"""
+    rel = (rel or "").strip()
+    if not rel:
+        return ""
+    return safe_rel(rel)
+
+
+def browse_list(root, rel):
+    """列一层目录，目录在前、文件在后；只认登记目录底下的东西。"""
+    rel = browse_rel(rel).rstrip("/")
+    target = os.path.join(root, rel) if rel else root
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if not os.path.isdir(target):
+        raise ApiError(404, "目录不存在：%s" % (rel or "根目录"))
+    entries = []
+    try:
+        with os.scandir(target) as it:
+            for entry in it:
+                if entry.name in BROWSE_SKIP:
+                    continue
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=True)
+                except OSError:
+                    is_dir = False
+                item = {
+                    "name": entry.name,
+                    "path": (rel + "/" + entry.name) if rel else entry.name,
+                    "type": "dir" if is_dir else "file",
+                }
+                if not is_dir:
+                    try:
+                        item["size"] = entry.stat(follow_symlinks=True).st_size
+                    except OSError:
+                        item["size"] = 0
+                entries.append(item)
+    except OSError as exc:
+        raise ApiError(403, "读不了目录：%s" % exc)
+    entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
+    truncated = len(entries) > BROWSE_MAX
+    return {"path": rel, "entries": entries[:BROWSE_MAX], "truncated": truncated}
+
+
+def browse_file(root, rel):
+    """读工作副本里的一个文件，大小、编码与二进制的限制跟未纳管文件预览一致。"""
+    rel = browse_rel(rel)
+    if not rel:
+        raise ApiError(400, "没给文件路径")
+    return read_unversioned(root, rel)
 
 
 def read_unversioned(root, rel):
@@ -791,6 +850,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._log(query)
         if route == "revision":
             return self._revision(query)
+        if route == "tree":
+            return self._tree(query)
+        if route == "file":
+            return self._file(query)
         if method != "POST":
             raise ApiError(405, "这个接口只接受 POST")
         if route == "workspaces":
@@ -861,6 +924,16 @@ class Handler(BaseHTTPRequestHandler):
             result = revision_diff(ws["root"], rev, repo_path)
         result.update({"kind": "diff", "rev": rev, "path": repo_path})
         return result
+
+    def _tree(self, query):
+        ws = self._ws(query)
+        rel = (query.get("path") or [""])[0]
+        return {"workspace": ws, **browse_list(ws["root"], rel)}
+
+    def _file(self, query):
+        ws = self._ws(query)
+        rel = (query.get("path") or [""])[0]
+        return {"workspace": ws, "path": rel, "text": browse_file(ws["root"], rel)}
 
     # ---- 安全与请求体
 

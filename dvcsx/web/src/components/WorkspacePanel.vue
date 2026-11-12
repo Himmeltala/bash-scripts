@@ -13,18 +13,24 @@
           <v-icon start size="18">mdi-history</v-icon>
           提交日志
         </v-tab>
+        <v-tab value="browse">
+          <v-icon start size="18">mdi-folder-open-outline</v-icon>
+          浏览目录
+        </v-tab>
       </v-tabs>
     </div>
 
     <div class="tabbody">
       <ChangesPanel v-if="tab === 'changes'" :ws="ws" @loaded="count = $event" />
-      <LogPanel v-else :ws="ws" />
+      <LogPanel v-else-if="tab === 'log'" :ws="ws" />
+      <BrowsePanel v-else :ws="ws" />
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, watch } from 'vue'
+import BrowsePanel from './BrowsePanel.vue'
 import ChangesPanel from './ChangesPanel.vue'
 import LogPanel from './LogPanel.vue'
 

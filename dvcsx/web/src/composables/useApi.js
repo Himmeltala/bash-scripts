@@ -37,4 +37,6 @@ export const api = {
   diff: (ws, path, item = '') => call('GET', `/diff?ws=${q(ws)}&path=${q(path)}&item=${q(item)}`),
   log: (ws, limit = 50) => call('GET', `/log?ws=${q(ws)}&limit=${limit}`),
   revision: (ws, rev, path = '') => call('GET', `/revision?ws=${q(ws)}&rev=${q(rev)}&path=${q(path)}`),
+  tree: (ws, path = '') => call('GET', `/tree?ws=${q(ws)}&path=${q(path)}`),
+  file: (ws, path) => call('GET', `/file?ws=${q(ws)}&path=${q(path)}`),
 }

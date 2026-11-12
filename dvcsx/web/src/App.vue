@@ -3,7 +3,7 @@
     <v-app-bar density="comfortable" flat border="b" class="app-bar">
       <v-app-bar-title>
         <span class="brand">dvcsx</span>
-        <span class="tag">工作副本变更与提交日志</span>
+        <span class="tag">工作副本变更、日志与代码浏览</span>
       </v-app-bar-title>
       <v-spacer />
       <v-btn
@@ -38,7 +38,7 @@
             <v-icon size="56" color="on-surface-variant">mdi-source-branch</v-icon>
             <p class="empty-title">先加一个工作副本</p>
             <p class="empty-hint">
-              选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更，以及最近的提交日志，点文件就能看差异。
+              选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更、最近的提交日志，也能浏览目录看代码。
             </p>
             <v-btn color="primary" variant="flat" prepend-icon="mdi-folder-plus" @click="addWorkspace()">
               添加工作副本

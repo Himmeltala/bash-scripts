@@ -160,6 +160,22 @@ class GitWorkspace(unittest.TestCase):
         one = gitmod.git_revision_diff(str(self.repo), self.first, "sub/a.txt")
         self.assertIn("+hello", one["text"])
 
+    def test_browse_lists_and_reads_files(self):
+        data = gitmod.browse_list(str(self.repo), "")
+        types = {e["name"]: e["type"] for e in data["entries"]}
+        self.assertEqual(types.get("sub"), "dir")
+        self.assertEqual(types.get("notes.txt"), "file")
+        # 版本库内部目录不列出来，目录排在文件前面。
+        self.assertNotIn(".git", types)
+        self.assertEqual(data["entries"][0]["name"], "sub")
+        self.assertEqual(gitmod.browse_file(str(self.repo), "notes.txt"), "note\n")
+
+    def test_browse_rejects_path_outside(self):
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.browse_list(str(self.repo), "..")
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.browse_file(str(self.repo), "../x")
+
     def test_old_state_defaults_to_svn(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
@@ -228,6 +244,24 @@ class GitWorkspace(unittest.TestCase):
         )
         self.assertEqual(status, 200, data)
         self.assertIn("+hello", data["text"])
+        self.call("/forget", {"ws": wid})
+
+    def test_api_tree_and_file(self):
+        wid = self.add()
+        status, data = self.call("/tree?ws=" + wid)
+        self.assertEqual(status, 200, data)
+        self.assertIn("sub", [e["name"] for e in data["entries"]])
+
+        status, data = self.call("/tree?ws=%s&path=sub" % wid)
+        self.assertEqual(status, 200, data)
+        self.assertIn("a.txt", [e["name"] for e in data["entries"]])
+
+        status, data = self.call("/file?ws=%s&path=sub/untracked.txt" % wid)
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["text"], "new\n")
+
+        status, data = self.call("/file?ws=%s&path=../x" % wid)
+        self.assertEqual(status, 400)
         self.call("/forget", {"ws": wid})
 
     def test_api_rejects_foreign_dir(self):
