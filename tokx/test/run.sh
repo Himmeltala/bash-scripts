@@ -264,6 +264,41 @@ assert any("出处标为缓存" in line for line in lines), lines[-3:]
 print("ok - 表里标出缓存来源")
 PY
 
+# 回显的记录也要按日期范围过滤：跨天会话只取范围内的那一天。
+mkdir -p "$tmp/home2/.claude/projects/-tmp-span"
+python3 - "$tmp/home2" <<'PY'
+import json, sys
+from pathlib import Path
+home = Path(sys.argv[1])
+lines = [
+    {"type": "assistant", "timestamp": "2026-10-26T01:00:00.000Z", "sessionId": "sess-span",
+     "cwd": "/tmp/span", "message": {"id": "span-a", "model": "deepseek-flash",
+     "usage": {"input_tokens": 1000000, "cache_read_input_tokens": 0,
+               "cache_creation_input_tokens": 0, "output_tokens": 0}}},
+    {"type": "assistant", "timestamp": "2026-10-27T05:00:00.000Z", "sessionId": "sess-span",
+     "cwd": "/tmp/span", "message": {"id": "span-b", "model": "deepseek-flash",
+     "usage": {"input_tokens": 1000000, "cache_read_input_tokens": 0,
+               "cache_creation_input_tokens": 0, "output_tokens": 0}}},
+]
+(home / ".claude/projects/-tmp-span/sess-span.jsonl").write_text(
+    "\n".join(json.dumps(item) for item in lines) + "\n", encoding="utf-8")
+PY
+HOME="$tmp/home2" "$bin" --all >/dev/null || fail "跨天会话首次入账失败"
+rm -f "$tmp/home2/.claude/projects/-tmp-span/sess-span.jsonl"
+rm -f "$tmp/home2/.local/state/tokx/cache/claude.json"
+# 只查 10-27；10-26 那条从账本回显出来时也必须被范围挡掉。
+span=$(HOME="$tmp/home2" "$bin" hour --since 2026-10-27 --until 2026-10-27 --json) ||
+  fail "跨天回显范围查询失败"
+python3 - "$span" <<'PY' || exit 1
+import json, sys
+payload = json.loads(sys.argv[1])
+rows = payload["rows"]
+assert rows and sum(row["requests"] for row in rows) == 1, payload
+assert [row["hour"] for row in rows] == [13], rows
+assert {row["origin"] for row in rows} == {"cache"}, rows
+print("ok - 回显记录按日期范围过滤")
+PY
+
 # 同一份数据再跑两遍，账本不会重复累加。
 first=$("$bin" --all --json) || fail "第二次运行失败"
 second=$("$bin" --all --json) || fail "第三次运行失败"

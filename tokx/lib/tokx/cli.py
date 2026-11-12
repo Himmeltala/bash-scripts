@@ -247,7 +247,8 @@ def _collect(
         _forget(config, kept)
 
     records = [record for record in records if _in_range(record.at, config.book, since, until)]
-    records.extend(recalled)
+    # 回显的记录同样按范围筛：跨天会话只留范围内的行，免得昨天的请求混进今天的报表。
+    records.extend(record for record in recalled if _in_range(record.at, config.book, since, until))
     for record in records:
         record.api = config.api.address(record.source, record.provider)
     records.sort(key=lambda record: record.at)
