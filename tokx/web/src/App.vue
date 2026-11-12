@@ -2,14 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { COMMANDS, EVERY, RANGES, SOURCES, view } from './composables/useView'
-import { busy, data, error, load, loadedAt } from './composables/useUsage'
+import { busy, close as closeStream, data, error, load, loadedAt, subscribe } from './composables/useUsage'
 import { rememberTheme } from './plugins/vuetify'
 import SummaryCards from './components/SummaryCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
 
 const theme = useTheme()
-let timer = 0
 // 没手动切过深浅色时跟着系统走，系统换主题页面当场跟上。
 if (!localStorage.getItem('tokx-theme')) {
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', (event) => {
@@ -30,17 +29,14 @@ const notice = computed(() => {
 
 const hasRows = computed(() => !!data.value?.rows.length)
 
-function reload() {
-  view.sort = { key: '', desc: true }
-  load()
+function refresh() {
+  if (view.every) subscribe(view.every)
+  else load()
 }
 
-function schedule() {
-  clearInterval(timer)
-  if (!view.every) return
-  timer = setInterval(() => {
-    if (!document.hidden) load()
-  }, view.every * 1000)
+function reload() {
+  view.sort = { key: '', desc: true }
+  refresh()
 }
 
 function flipTheme() {
@@ -48,21 +44,24 @@ function flipTheme() {
   rememberTheme(theme.global.name.value)
 }
 
-watch(() => view.every, schedule)
+watch(() => view.every, (every) => {
+  if (every) subscribe(every)
+  else closeStream()
+})
 watch(() => [view.command, view.range, view.since, view.until, view.sources.join(',')], reload)
 
 function onVisible() {
-  if (!document.hidden) load()
+  if (document.hidden) closeStream()
+  else refresh()
 }
 
 onMounted(() => {
-  schedule()
   document.addEventListener('visibilitychange', onVisible)
-  load()
+  refresh()
 })
 
 onBeforeUnmount(() => {
-  clearInterval(timer)
+  closeStream()
   document.removeEventListener('visibilitychange', onVisible)
 })
 </script>

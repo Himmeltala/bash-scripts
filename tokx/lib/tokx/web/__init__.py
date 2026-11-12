@@ -1,4 +1,4 @@
-"""tokx 的网页界面：只读的标准库 HTTP 服务，页面由浏览器定时取 JSON 自己画。
+"""tokx 的网页界面：只读的标准库 HTTP 服务，用量由服务端按 SSE 推给页面。
 
 数据都走 cli._collect，与命令行出表是同一份口径：每轮请求都重新现扫、导入账本、
 按当前价格表计价，页面拿到的 rows 与 --json 输出里的 rows 完全一样。
@@ -16,6 +16,7 @@ import os
 import socket
 import sys
 import threading
+import time
 from datetime import date
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,7 +24,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from .. import cli
-from ..config import Config
+from ..config import Config, load
 from ..sources import SOURCE_ORDER
 
 # vite 把 web/ 打包成 lib/tokx/web/static，这里只认打包产物；开发时用 web/README.md 里的代理。
@@ -77,7 +78,25 @@ def _args(config: Config, query: dict[str, list[str]]) -> tuple[argparse.Namespa
     return args, *cli._range(args, config.book)
 
 
+def _current(config: Config) -> Config:
+    """每轮请求重读配置，改了设置文件或价格表不必重启服务。"""
+    return load(str(config.path) if config.path else None)
+
+
+def _stream_seconds(query: dict[str, list[str]]) -> int:
+    """推送间隔，默认 5 秒；0 表示只手动刷新，不接受。"""
+    text = (query.get("every") or ["5"])[0] or "5"
+    try:
+        every = int(text)
+    except ValueError as exc:
+        raise cli.UsageError(f"every {text} 不是整数") from exc
+    if not 1 <= every <= 60:
+        raise cli.UsageError("every 取 1 到 60 秒")
+    return every
+
+
 def _payload(config: Config, query: dict[str, list[str]]) -> dict:
+    config = _current(config)
     args, since, until = _args(config, query)
     data = cli._collect(args.command, args, config, since, until)
     data["now"] = cli.datetime.now(config.book.tz).isoformat(timespec="seconds")
@@ -124,8 +143,10 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
             query = parse_qs(url.query)
             if url.path == "/api/usage":
                 self._json(lambda: _payload(config, query))
+            elif url.path == "/api/usage/stream":
+                self._stream_usage(config, query)
             elif url.path == "/api/prices":
-                self._json(lambda: cli._price_data(config.book))
+                self._json(lambda: cli._price_data(_current(config).book))
             elif url.path.startswith("/api/"):
                 self._error(HTTPStatus.NOT_FOUND, f"没有 {url.path}")
             else:
@@ -171,6 +192,45 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+
+        def _stream_usage(self, config: Config, query: dict[str, list[str]]) -> None:
+            """一条长连接按间隔推用量：连上先推当前值，之后每轮重算并重读配置。"""
+            try:
+                every = _stream_seconds(query)
+                with LOCK:
+                    payload = _payload(config, query)
+            except cli.UsageError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            except Exception as exc:  # noqa: BLE001 - 首次采集失败按普通接口报错
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
+                return
+
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.close_connection = True
+            try:
+                self._sse_send(payload, "usage")
+                while True:
+                    time.sleep(every)
+                    try:
+                        with LOCK:
+                            payload = _payload(config, query)
+                    except Exception as exc:  # noqa: BLE001 - 单轮失败不掐断流
+                        self._sse_send({"error": f"{type(exc).__name__}: {exc}"}, "failure")
+                        continue
+                    self._sse_send(payload, "usage")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        def _sse_send(self, payload: dict, event: str) -> None:
+            body = f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+            self.wfile.write(body.encode("utf-8"))
+            self.wfile.flush()
 
         def _error(self, status: HTTPStatus, message: str) -> None:
             body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")

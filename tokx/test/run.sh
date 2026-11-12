@@ -472,7 +472,7 @@ def get(path):
 
 res, raw = get("/")
 assert res.status == 200 and "text/html" in res.headers["Content-Type"], res.headers
-assert "tokx 用量" in raw.decode("utf-8"), raw[:200]
+assert "<title>tokx</title>" in raw.decode("utf-8"), raw[:200]
 assert res.headers["Cache-Control"] == "no-cache", res.headers
 # 页面是 vite 打包出来的，资源名带内容哈希；从首页里取出实际引用的地址再逐个取一遍。
 assets = re.findall(r'(?:src|href)="\.(/assets/[^"]+)"', raw.decode("utf-8"))
@@ -525,6 +525,114 @@ PY
 then
   kill "$web_pid" 2>/dev/null
   fail "网页接口检查没通过"
+fi
+kill "$web_pid" 2>/dev/null
+wait "$web_pid" 2>/dev/null
+
+# 改了设置文件里的 ANTHROPIC_BASE_URL，不用重启网页服务，下一次请求就按新地址出表。
+"$bin" web --json --port 0 >"$tmp/web-reload.json" 2>"$tmp/web-reload.err" &
+web_pid=$!
+for _ in $(seq 50); do
+  grep -q '"url"' "$tmp/web-reload.json" 2>/dev/null && break
+  sleep 0.1
+done
+if ! grep -q '"url"' "$tmp/web-reload.json" 2>/dev/null; then
+  kill "$web_pid" 2>/dev/null
+  fail "web 没有打出地址: $(cat "$tmp/web-reload.err")"
+fi
+if ! python3 - "$tmp/web-reload.json" "$HOME" <<'PY'
+import json, sys
+from pathlib import Path
+from urllib.request import urlopen
+
+web = json.load(open(sys.argv[1]))
+home = Path(sys.argv[2])
+base = web["url"].rstrip("/")
+
+def claude_api():
+    with urlopen(base + "/api/usage?command=daily&days=30", timeout=60) as res:
+        rows = json.loads(res.read())["rows"]
+    return next(row["api"] for row in rows if row["source"] == "claude")
+
+assert claude_api() == "http://127.0.0.1:9000", claude_api()
+(home / ".claude/settings.json").write_text(
+    json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9002"}}), encoding="utf-8")
+assert claude_api() == "http://127.0.0.1:9002", claude_api()
+(home / ".claude/settings.json").write_text(
+    json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9000"}}), encoding="utf-8")
+print("ok - 网页每次请求重读接口地址")
+PY
+then
+  kill "$web_pid" 2>/dev/null
+  fail "网页没有重读接口地址"
+fi
+kill "$web_pid" 2>/dev/null
+wait "$web_pid" 2>/dev/null
+
+# 网页走 SSE：连上先推一条，之后按间隔推；改了设置文件，同一条连接的下一条就变。
+"$bin" web --json --port 0 >"$tmp/web-sse.json" 2>"$tmp/web-sse.err" &
+web_pid=$!
+for _ in $(seq 50); do
+  grep -q '"url"' "$tmp/web-sse.json" 2>/dev/null && break
+  sleep 0.1
+done
+if ! grep -q '"url"' "$tmp/web-sse.json" 2>/dev/null; then
+  kill "$web_pid" 2>/dev/null
+  fail "web 没有打出地址: $(cat "$tmp/web-sse.err")"
+fi
+if ! python3 - "$tmp/web-sse.json" "$HOME" <<'PY'
+import json, sys
+from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import urlopen
+
+web = json.load(open(sys.argv[1]))
+home = Path(sys.argv[2])
+base = web["url"].rstrip("/")
+
+def read_usage(stream):
+    event, data = None, []
+    while True:
+        line = stream.readline().decode("utf-8")
+        assert line, "流提前结束"
+        line = line.rstrip("\r\n")
+        if not line:
+            if event == "usage":
+                return json.loads("\n".join(data))
+            event, data = None, []
+        elif line.startswith("event: "):
+            event = line[7:]
+        elif line.startswith("data: "):
+            data.append(line[6:])
+
+res = urlopen(base + "/api/usage/stream?command=daily&days=30&every=1", timeout=60)
+assert "text/event-stream" in res.headers["Content-Type"], res.headers
+first = read_usage(res)
+claude = next(row for row in first["rows"] if row["source"] == "claude")
+assert claude["api"] == "http://127.0.0.1:9000", claude
+
+(home / ".claude/settings.json").write_text(
+    json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9003"}}), encoding="utf-8")
+second = read_usage(res)
+claude = next(row for row in second["rows"] if row["source"] == "claude")
+assert claude["api"] == "http://127.0.0.1:9003", claude
+res.close()
+(home / ".claude/settings.json").write_text(
+    json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9000"}}), encoding="utf-8")
+
+for path, status in (("/api/usage/stream?command=bogus", 400), ("/api/usage/stream?every=0", 400)):
+    try:
+        urlopen(base + path, timeout=60)
+    except HTTPError as exc:
+        assert exc.code == status, (path, exc.code)
+        assert "error" in json.loads(exc.read()), path
+    else:
+        raise AssertionError(f"{path} 应该返回 {status}")
+print("ok - 网页 SSE 推送")
+PY
+then
+  kill "$web_pid" 2>/dev/null
+  fail "网页 SSE 检查没通过"
 fi
 kill "$web_pid" 2>/dev/null
 wait "$web_pid" 2>/dev/null

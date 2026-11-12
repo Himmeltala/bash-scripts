@@ -1,5 +1,5 @@
-// 取数：每轮请求都由服务端现扫、写账本、按当前价格表计价，前端只负责画。
-// 前一轮没回来时不再发新的，避免几个请求排队把服务端堵住。
+// 取数：页面保持一条 SSE 长连接，服务端按间隔推来整份报表，前端只负责画。
+// 手动刷新仍走一次 /api/usage；断线由 EventSource 自己重连，重连后服务端先推当前值。
 
 import { ref } from 'vue'
 import { query } from './useView'
@@ -9,6 +9,14 @@ export const error = ref('')
 export const busy = ref(false)
 export const loadedAt = ref('')
 
+let source = null
+
+function apply(payload) {
+  data.value = payload
+  loadedAt.value = payload.now
+  error.value = ''
+}
+
 export async function load() {
   if (busy.value) return
   busy.value = true
@@ -17,11 +25,41 @@ export async function load() {
     const res = await fetch(`/api/usage?${query()}`, { cache: 'no-store' })
     const payload = await res.json()
     if (!res.ok || payload.error) throw new Error(payload.error || res.statusText)
-    data.value = payload
-    loadedAt.value = payload.now
+    apply(payload)
   } catch (err) {
     error.value = err.message
   } finally {
     busy.value = false
   }
+}
+
+// 换筛选条件或推送间隔时先关旧连接，再按新参数连；every 为 0 表示不自动更新。
+export function subscribe(every = 5) {
+  close()
+  if (!every) return
+  const params = query({ every: String(every) })
+  source = new EventSource(`/api/usage/stream?${params}`)
+  source.addEventListener('usage', (event) => {
+    try {
+      apply(JSON.parse(event.data))
+    } catch (err) {
+      error.value = '推送的数据解析失败'
+    }
+  })
+  source.addEventListener('failure', (event) => {
+    try {
+      error.value = JSON.parse(event.data).error || '服务端推送失败'
+    } catch (err) {
+      error.value = '服务端推送失败'
+    }
+  })
+  source.addEventListener('error', () => {
+    // 断线后 EventSource 会自己重连；只有它放弃重连时才留下提示。
+    if (source && source.readyState === EventSource.CLOSED) error.value = '推送连接已断开'
+  })
+}
+
+export function close() {
+  if (source) source.close()
+  source = null
 }
