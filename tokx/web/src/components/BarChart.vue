@@ -13,11 +13,14 @@ const OFF = '空闲'
 echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const props = defineProps({
-  // items: [{ label, value, peak, tokens }]，按传入顺序画柱子。
+  // 单系列：items: [{ label, value, peak, tokens }]，柱子按档位染成高峰或空闲色。
   items: { type: Array, default: () => [] },
-  // 标题与图例写在图内左上角，跟命令行报表的写法一致。
+  // 多系列：categories 是横轴刻度，series 是 [{ name, color, data }]，一个名字一组柱子并排。
+  categories: { type: Array, default: () => [] },
+  series: { type: Array, default: () => [] },
+  // 标题与图例写在图内，跟命令行报表的写法一致。
   title: { type: String, default: '' },
-  // 给了图例就在图内右上角画「高峰 / 空闲」两项，说明柱子颜色的含义。
+  // 图例说明柱子颜色的含义，单系列是「高峰 / 空闲」，多系列是各组自己的名字。
   legend: { type: Boolean, default: false },
   // 图的像素高度，卡片的宽度由栅格给，高度得自己定，否则 canvas 没有可用尺寸。
   height: { type: Number, default: 260 },
@@ -32,14 +35,50 @@ const theme = useTheme()
 const colors = computed(() => theme.current.value.colors)
 const dark = computed(() => theme.current.value.dark)
 
+const multi = computed(() => props.series.length > 0)
+
+// 横轴刻度：多系列时用给好的类别，单系列用每根柱子自己的短名。
+const labels = computed(() =>
+  multi.value ? props.categories : props.items.map((item) => item.short || item.label),
+)
+
+function seriesOf(skin) {
+  if (multi.value) {
+    return props.series.map((item) => ({
+      type: 'bar',
+      name: item.name,
+      barMaxWidth: 16,
+      data: item.data,
+      itemStyle: { color: item.color, borderRadius: [2, 2, 0, 0] },
+    }))
+  }
+  // 每根柱子的档位不一定相同，所以高峰、空闲各占一条系列，同一时刻只有一条有值。
+  return [
+    {
+      type: 'bar',
+      name: PEAK,
+      barMaxWidth: 28,
+      barGap: '-100%',
+      data: props.items.map((item) => (item.peak ? item.value : null)),
+      itemStyle: { color: skin.peak, borderRadius: [2, 2, 0, 0] },
+    },
+    {
+      type: 'bar',
+      name: OFF,
+      barMaxWidth: 28,
+      barGap: '-100%',
+      data: props.items.map((item) => (item.peak ? null : item.value)),
+      itemStyle: { color: skin.off, borderRadius: [2, 2, 0, 0] },
+    },
+  ]
+}
+
 function option() {
   const skin = colors.value
   const night = dark.value
   const text = skin['on-surface-variant']
   const line = night ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)'
-  const peakColor = skin.peak
-  const offColor = skin.off
-  const max = Math.max(...props.items.map((item) => item.value), 0.000001)
+  const series = seriesOf(skin)
   return {
     animationDuration: 240,
     // 两个并排的图各自管自己的残影，不清掉旧选项的话换数据后图例会重复叠上去。
@@ -51,6 +90,10 @@ function option() {
       borderColor: line,
       textStyle: { color: skin['on-surface'] },
       formatter: (item) => {
+        const label = labels.value[item.dataIndex] ?? ''
+        if (multi.value) {
+          return `${label}<br/>${item.marker}${item.seriesName} ¥${fmtMoney(item.value)}`
+        }
         const picked = props.items[item.dataIndex]
         if (!picked) return ''
         const tokens = picked.tokens == null ? '' : `<br/>${fmtTokens(picked.tokens)} token`
@@ -62,7 +105,7 @@ function option() {
       : undefined,
     legend: props.legend
       ? {
-          data: [PEAK, OFF],
+          data: series.map((item) => item.name),
           right: 12,
           top: 8,
           icon: 'roundRect',
@@ -76,7 +119,7 @@ function option() {
     xAxis: {
       type: 'category',
       // 标注用短名，完整名字放到悬停提示里，免得拥挤时刻度全被跳过。
-      data: props.items.map((item) => item.short || item.label),
+      data: labels.value,
       axisLine: { lineStyle: { color: line } },
       axisTick: { show: false },
       axisLabel: { color: text, fontSize: 11, interval: 'auto', hideOverlap: true },
@@ -86,26 +129,7 @@ function option() {
       axisLabel: { color: text, fontSize: 11, formatter: (value) => `¥${value}` },
       splitLine: { lineStyle: { color: line } },
     },
-    // 每根柱子的档位不一定相同，所以高峰、空闲各占一条系列，同一时刻只有一条有值。
-    // 图例说的就是这两条系列的颜色。
-    series: [
-      {
-        type: 'bar',
-        name: PEAK,
-        barMaxWidth: 28,
-        barGap: '-100%',
-        data: props.items.map((item) => (item.peak ? item.value : null)),
-        itemStyle: { color: peakColor, borderRadius: [2, 2, 0, 0] },
-      },
-      {
-        type: 'bar',
-        name: OFF,
-        barMaxWidth: 28,
-        barGap: '-100%',
-        data: props.items.map((item) => (item.peak ? null : item.value)),
-        itemStyle: { color: offColor, borderRadius: [2, 2, 0, 0] },
-      },
-    ],
+    series,
   }
 }
 
@@ -129,7 +153,7 @@ onMounted(() => {
   window.addEventListener('resize', fit)
 })
 
-watch(() => props.items, draw, { deep: true })
+watch(() => [props.items, props.categories, props.series], draw, { deep: true })
 watch(theme.current, draw, { deep: true })
 
 onBeforeUnmount(() => {

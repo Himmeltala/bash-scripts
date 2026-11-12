@@ -1,10 +1,10 @@
 // 列定义与格式化：列顺序沿用命令行的出表顺序，数字口径与 tokx 报表一致。
 
-// 三个来源的显示名与标记，标题栏的勾选框与表里的来源列共用。
+// 三个来源的显示名、标记与图表配色，标题栏的勾选框、表里的来源列、按来源分色的图共用。
 export const SOURCE_LIST = [
-  { key: 'claude', name: 'Claude Code', short: 'Claude', mark: 'C' },
-  { key: 'opencode', name: 'opencode', short: 'oc', mark: 'O' },
-  { key: 'dsh', name: 'DeepSeek Harness', short: 'Harness', mark: 'D' },
+  { key: 'claude', name: 'Claude Code', short: 'Claude', mark: 'C', color: '#8b5cf6' },
+  { key: 'opencode', name: 'opencode', short: 'oc', mark: 'O', color: '#f97316' },
+  { key: 'dsh', name: 'DeepSeek Harness', short: 'Harness', mark: 'D', color: '#0ea5e9' },
 ]
 
 export const nf = new Intl.NumberFormat('zh-CN')
@@ -61,7 +61,7 @@ const TAIL = ['requests', 'input', 'cache_read', 'output', 'total_tokens', 'cost
 export const COLUMNS = {
   daily: ['source', 'origin', 'date', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
   session: ['source', 'origin', 'session', 'project', 'start', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
-  hour: ['slot', 'label', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
+  hour: ['slot', 'label', 'source', 'model', 'api', ...TAIL].map((key) => HEAD[key]),
   // 合计行与命令行一致：非数字列留空，"合计"两字放在最后一格（合计费用）上，数字列逐列对齐。
   totalsFor(command) {
     const front = command === 'session' ? 7 : 5

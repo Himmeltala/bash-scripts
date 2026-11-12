@@ -9,7 +9,7 @@ from pathlib import PurePath
 
 from .model import Record, Usage
 from .pricing import PriceBook
-from .sources import SOURCE_ORDER
+from .sources import SOURCE_LABELS, SOURCE_ORDER
 
 MONEY = "¥"
 
@@ -199,27 +199,31 @@ def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
 
 
 def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    buckets: dict[tuple[int, str, str, str], Bucket] = {}
+    # 同一个小时里，各来源、各模型、各接口分开算，各算各的。
+    buckets: dict[tuple[int, str, str, str, str], Bucket] = {}
     for record in records:
         local = record.at.astimezone(book.tz)
-        key = (local.hour, _model_name(record, book), record.api, _origin(record))
+        key = (local.hour, record.source, _model_name(record, book), record.api, _origin(record))
         buckets.setdefault(key, Bucket()).add(record, book)
 
+    order = {name: index for index, name in enumerate(SOURCE_ORDER)}
     rows = []
-    for (hour, model, api, origin), bucket in sorted(
+    for (hour, source, model, api, origin), bucket in sorted(
         buckets.items(),
         key=lambda item: (
             item[0][0],
+            order.get(item[0][1], 9),
             *_cost_key(item[1]),
-            item[0][1],
             item[0][2],
             item[0][3],
+            item[0][4],
         ),
     ):
         row = _row(f"{hour:02d}:00", _slot_label(hour, book), bucket, model, api, origin)
         row["slot"] = row.pop("date")
         row["label"] = row.pop("source")
         row["hour"] = hour
+        row["source"] = source
         rows.append(row)
     return rows, _totals(rows)
 
@@ -458,6 +462,7 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
         [
             row["slot"],
             row["label"],
+            SOURCE_LABELS.get(row["source"], row["source"]),
             row["model"],
             row["api"] or "-",
             _number(row["requests"]),
@@ -475,6 +480,7 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
         [
             "时段",
             "档位",
+            "来源",
             "模型",
             "API 地址",
             "请求",
@@ -487,7 +493,21 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "合计",
         ],
         body,
-        ["left", "left", "left", "left", "right", "right", "right", "right", "right", "right", "right", "right"],
+        [
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+        ],
     ) + _unpriced_note(unpriced or [], False)
 
 
