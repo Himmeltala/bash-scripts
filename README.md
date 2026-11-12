@@ -26,6 +26,16 @@ bash-scripts/
 │   ├── test/
 │   │   └── run.sh             临时 Node 工作区下的回归测试
 │   └── web/                   网页前端源码，打包产物进 lib/nodex/web/static
+├── dvcsx/                      版本库：网页里看 SVN 工作副本的变更与提交日志
+│   ├── README.md
+│   ├── bin/
+│   │   └── dvcsx
+│   ├── lib/
+│   │   ├── dvcsx-core.sh      加载器
+│   │   └── dvcsx/             命令行、网页服务与 SVN 查询
+│   ├── test/
+│   │   └── run.sh             临时 SVN 仓库下的回归测试
+│   └── web/                   网页前端源码，打包产物进 lib/dvcsx/web/static
 ├── gradlex/                     Gradle 项目：发现可运行模块并启动或构建
 │   ├── README.md
 │   ├── bin/
@@ -79,7 +89,7 @@ bash-scripts/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`dvcsx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
 
 ## 安装
 
@@ -187,6 +197,7 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 | 命令 | 目录 | 说明 |
 | --- | --- | --- |
 | `mvnx` | mvnx | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数时先选命令再选目标，启动方式有自动判定、强制编译、跳过编译、先 clean 四种 |
+| `dvcsx` | dvcsx | 网页里看 SVN 工作副本：未提交变更按改动类型列出，点文件看差异；提交日志按版本列出，点开看整次提交或单个路径的差异。只读查询，不做提交与更新 |
 | `gradlex` | gradlex | 递归发现 Gradle 构建与可运行模块，勾选后执行 `bootRun` 或 `run`，或者 `bootJar` 或 `assemble`；支持 `--rebuild` 与 `--refresh`，自动选 wrapper 或系统 Gradle |
 | `zipx` | zipx | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
 | `portx` | portx | 按端口查询占用它的应用与进程，或浏览当前监听端口；默认只读，加 `-k` 才结束进程，系统级端口需 `--force`；不带参数进入终端菜单 |
@@ -198,4 +209,4 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 
 ## 环境要求
 
-需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex` 与 `tokx` 的界面都在终端里自绘，探不到终端时退回编号输入。`tokx` 的统计部分用 Python 3.11 以上，读 DeepSeek Harness 的会话日志需要 `zstd`。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`portx` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
+需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`dvcsx` 需要 `svn` 在 PATH 里与 Python 3.7 以上，界面在网页里，前端产物随仓库提供。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex` 与 `tokx` 的界面都在终端里自绘，探不到终端时退回编号输入。`tokx` 的统计部分用 Python 3.11 以上，读 DeepSeek Harness 的会话日志需要 `zstd`。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`portx` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
