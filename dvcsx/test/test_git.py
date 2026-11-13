@@ -191,6 +191,29 @@ class GitWorkspace(unittest.TestCase):
         with self.assertRaises(gitmod.ApiError):
             gitmod.browse_file(str(self.repo), "../x")
 
+    def test_browse_search_name_and_content(self):
+        by_name = gitmod.browse_search(str(self.repo), "", "NOTES", "name")
+        self.assertEqual([m["path"] for m in by_name["matches"]], ["notes.txt"])
+        by_content = gitmod.browse_search(str(self.repo), "", "world", "content")
+        self.assertEqual(
+            [(m["path"], m["line"], m["text"]) for m in by_content["matches"]],
+            [("sub/a.txt", 2, "world")],
+        )
+        # 二进制文件不按内容搜。
+        blob = self.repo / "blob.bin"
+        blob.write_bytes(b"world\x00")
+        try:
+            again = gitmod.browse_search(str(self.repo), "", "world", "content")
+            self.assertEqual([m["path"] for m in again["matches"]], ["sub/a.txt"])
+        finally:
+            blob.unlink()
+
+    def test_browse_search_scoped_and_rejects_outside(self):
+        hit = gitmod.browse_search(str(self.repo), "sub", "a.txt", "name")
+        self.assertEqual([m["path"] for m in hit["matches"]], ["sub/a.txt"])
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.browse_search(str(self.repo), "..", "x", "name")
+
     def test_alias_and_relative_path_in_state(self):
         wid = self.add()
         status, data = self.call("/alias", {"ws": wid, "alias": "  我的   仓库 "})
@@ -304,6 +327,14 @@ class GitWorkspace(unittest.TestCase):
 
         status, data = self.call("/file?ws=%s&path=../x" % wid)
         self.assertEqual(status, 400)
+
+        status, data = self.call("/search?ws=%s&q=world&mode=content" % wid)
+        self.assertEqual(status, 200, data)
+        self.assertEqual([(m["path"], m["line"]) for m in data["matches"]], [("sub/a.txt", 2)])
+
+        status, data = self.call("/search?ws=%s&q=notes&mode=name" % wid)
+        self.assertEqual(status, 200, data)
+        self.assertEqual([m["path"] for m in data["matches"]], ["notes.txt"])
         self.call("/forget", {"ws": wid})
 
     def test_api_rejects_foreign_dir(self):

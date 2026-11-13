@@ -60,4 +60,9 @@ export const api = {
   cancelOperation: (id) => call('POST', `/operations/${q(id)}/cancel`, {}),
   tree: (ws, path = '') => call('GET', `/tree?ws=${q(ws)}&path=${q(path)}`),
   file: (ws, path) => call('GET', `/file?ws=${q(ws)}&path=${q(path)}`),
+  search: (ws, text, mode = 'name', path = '') =>
+    call(
+      'GET',
+      `/search?ws=${q(ws)}&q=${q(text)}&mode=${q(mode)}&path=${q(path)}`
+    ),
 }

@@ -46,8 +46,8 @@
       远端没同步上：{{ remote.error }}，下面是上次同步到的记录。
     </p>
 
-    <div class="split">
-      <aside class="revs">
+    <div ref="splitRef" class="split" :class="{ resizing }">
+      <aside class="revs" :style="{ '--list-width': `${listWidth}px` }">
         <p v-if="!loading && !entries.length" class="none">还没有提交记录。</p>
         <div
           v-for="entry in entries"
@@ -91,6 +91,15 @@
           </v-btn>
         </div>
       </aside>
+
+      <div
+        class="vgutter"
+        title="拖动调整两侧宽度，双击还原"
+        @pointerdown="startSplit"
+        @dblclick="resetSplit"
+      >
+        <span class="grip" />
+      </div>
 
       <section class="detail">
         <template v-if="current">
@@ -176,7 +185,7 @@
               :class="{ disabled: filesCollapsed || diffCollapsed }"
               title="拖动调整两块区域的高度，双击还原"
               @pointerdown="startDrag"
-              @dblclick="resetSplit"
+              @dblclick="resetFiles"
             >
               <span class="grip" />
             </div>
@@ -246,6 +255,12 @@ const dragging = ref(false)
 const filePct = ref(35)
 let startY = 0
 let startPct = 0
+// 左侧提交列表的宽度随分隔条拖动改变，双击分隔条还原。
+const splitRef = ref(null)
+const listWidth = ref(320)
+const resizing = ref(false)
+let startX = 0
+let startWidth = 0
 
 const isGit = computed(() => props.ws.vcs === 'git')
 // SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
@@ -358,11 +373,41 @@ function endDrag() {
   window.removeEventListener('pointermove', onDragMove)
 }
 
-function resetSplit() {
+function resetFiles() {
   filePct.value = 35
 }
 
-onBeforeUnmount(endDrag)
+function startSplit(event) {
+  if (event.button !== 0 || !splitRef.value) return
+  resizing.value = true
+  startX = event.clientX
+  startWidth = listWidth.value
+  event.preventDefault()
+  window.addEventListener('pointermove', onSplitMove)
+  window.addEventListener('pointerup', endSplit, { once: true })
+}
+
+function onSplitMove(event) {
+  const total = splitRef.value ? splitRef.value.clientWidth : 0
+  if (!total) return
+  // 右侧至少留 320 像素看提交详情与差异，左侧不窄于 200 像素。
+  const max = Math.max(200, total - 320)
+  listWidth.value = Math.min(Math.max(startWidth + event.clientX - startX, 200), max)
+}
+
+function endSplit() {
+  resizing.value = false
+  window.removeEventListener('pointermove', onSplitMove)
+}
+
+function resetSplit() {
+  listWidth.value = 320
+}
+
+onBeforeUnmount(() => {
+  endDrag()
+  endSplit()
+})
 
 // SVN 的版本号前面带 r，Git 给的是完整 sha，列表上只显示前 7 位。
 function revLabel(rev) {
@@ -489,11 +534,38 @@ defineExpose({ load })
   display: flex;
   min-height: 0;
 }
+.split.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
 .revs {
-  width: 320px;
-  flex: 0 0 320px;
+  width: var(--list-width, 320px);
+  flex: 0 0 var(--list-width, 320px);
   overflow: auto;
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+.vgutter {
+  flex: 0 0 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+.vgutter .grip {
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: rgba(var(--v-theme-on-surface), 0.22);
+}
+.vgutter:hover,
+.split.resizing .vgutter {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.vgutter:hover .grip,
+.split.resizing .vgutter .grip {
+  background: rgb(var(--v-theme-primary));
 }
 .revitem {
   padding: 8px 10px;
@@ -769,8 +841,10 @@ defineExpose({ load })
     width: 100%;
     flex: 0 0 auto;
     max-height: 220px;
-    border-right: none;
     border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  }
+  .vgutter {
+    display: none;
   }
 }
 </style>

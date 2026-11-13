@@ -42,6 +42,10 @@ LOG_MAX = 200
 LOG_SKIP_MAX = 1000
 # 浏览目录时一层最多回这么多项，再多的目录列出来也翻不动。
 BROWSE_MAX = 500
+# 浏览目录的搜索：命中与扫过的文件都设上限，大工作副本不至于把页面拖住。
+SEARCH_MAX = 300
+SEARCH_FILES_MAX = 20000
+SEARCH_LINE_MAX = 240
 # 拉取、推送、更新与提交都要连远端，超时比查询宽松。
 OPERATION_TIMEOUT = 300
 COMMIT_MESSAGE_MAX = 8000
@@ -948,6 +952,79 @@ def browse_list(root, rel):
     return {"path": rel, "entries": entries[:BROWSE_MAX], "truncated": truncated}
 
 
+def search_lines(path, needle):
+    """逐行找内容，跳过二进制、超大与不是 UTF-8 的文件，产出 (行号, 行文本)。"""
+    try:
+        if os.path.getsize(path) > MAX_FILE:
+            return
+        data = Path(path).read_bytes()
+    except OSError:
+        return
+    if b"\x00" in data:
+        return
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return
+    for number, line in enumerate(text.splitlines(), 1):
+        if needle in line.lower():
+            yield number, line.strip()[:SEARCH_LINE_MAX]
+
+
+def browse_search(root, rel, query, mode):
+    """在工作副本里按文件名或文件内容找。
+
+    文件名按工作副本内的相对路径做不区分大小写的包含匹配；内容逐行找，只读预览
+    得了的文本文件。命中或扫过的文件到上限就停，truncated 说明还有没扫完的。
+    """
+    base = browse_rel(rel).rstrip("/")
+    target = os.path.join(root, base) if base else root
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if not os.path.isdir(target):
+        raise ApiError(404, "目录不存在：%s" % (rel or "根目录"))
+    needle = (query or "").strip()
+    if mode not in ("name", "content"):
+        mode = "name"
+    if not needle:
+        return {"query": "", "mode": mode, "matches": [], "truncated": False}
+    low = needle.lower()
+    matches = []
+    scanned = 0
+    truncated = False
+    for dirpath, dirnames, filenames in os.walk(target):
+        dirnames[:] = sorted(d for d in dirnames if d not in BROWSE_SKIP)
+        for name in sorted(filenames):
+            path = os.path.join(dirpath, name)
+            # 链接指到工作副本外的不看，免得搜到别人的文件。
+            if not inside(root, path):
+                continue
+            relpath = os.path.relpath(path, root).replace(os.sep, "/")
+            scanned += 1
+            if mode == "name":
+                if low in relpath.lower():
+                    matches.append({"path": relpath, "name": name})
+            else:
+                for number, line in search_lines(path, low):
+                    matches.append(
+                        {"path": relpath, "name": name, "line": number, "text": line}
+                    )
+                    if len(matches) > SEARCH_MAX:
+                        break
+            if len(matches) > SEARCH_MAX or scanned >= SEARCH_FILES_MAX:
+                truncated = True
+                break
+        if truncated:
+            break
+    return {
+        "query": needle,
+        "mode": mode,
+        "matches": matches[:SEARCH_MAX],
+        "truncated": truncated,
+        "scanned": scanned,
+    }
+
+
 def browse_file(root, rel):
     """读工作副本里的一个文件，大小、编码与二进制的限制跟未纳管文件预览一致。"""
     rel = browse_rel(rel)
@@ -1680,6 +1757,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._tree(query)
         if route == "file":
             return self._file(query)
+        if route == "search":
+            return self._search(query)
         if route == "operations" and method == "GET":
             return self._latest_job(query)
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)", route)
@@ -1784,6 +1863,13 @@ class Handler(BaseHTTPRequestHandler):
         ws = self._ws(query)
         rel = (query.get("path") or [""])[0]
         return {"workspace": ws, "path": rel, "text": browse_file(ws["root"], rel)}
+
+    def _search(self, query):
+        ws = self._ws(query)
+        rel = (query.get("path") or [""])[0]
+        text = (query.get("q") or [""])[0]
+        mode = (query.get("mode") or ["name"])[0]
+        return {"workspace": ws, **browse_search(ws["root"], rel, text, mode)}
 
     def _commit_detail(self, query):
         ws = self._ws(query)
