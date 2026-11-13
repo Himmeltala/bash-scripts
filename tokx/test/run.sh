@@ -178,18 +178,49 @@ err=$("$bin" --all 2>&1 >/dev/null) || fail "运行失败"
 [[ -z "$err" ]] || fail "不该再往 stderr 写提示: $err"
 ok 没有多余的 stderr 提示
 
-# tokx 配置里的 [apis] 优先于日志与各工具配置。
+# 接口地址随请求入库：换了地址，老记录保留原地址，只有新入库的用新地址。
+api_home="$tmp/home3"
+mkdir -p "$api_home/.claude/projects/-tmp-api"
+printf '%s' '{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9000"}}' >"$api_home/.claude/settings.json"
+write_api_session() {
+  python3 - "$api_home" "$1" "$2" <<'PY'
+import json, sys
+from pathlib import Path
+home, session, stamp = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+lines = [
+    {"type": "assistant", "timestamp": stamp, "sessionId": session,
+     "cwd": "/tmp/api", "message": {"id": f"msg-{session}", "model": "deepseek-flash",
+     "usage": {"input_tokens": 1000, "cache_read_input_tokens": 0,
+               "cache_creation_input_tokens": 0, "output_tokens": 0}}},
+]
+path = home / ".claude/projects/-tmp-api" / f"{session}.jsonl"
+path.write_text("\n".join(json.dumps(item) for item in lines) + "\n", encoding="utf-8")
+PY
+}
+write_api_session sess-old "2026-10-29T01:00:00.000Z"
+HOME="$api_home" "$bin" --all --json >/dev/null || fail "接口地址测试首次入库失败"
 cat >"$tmp/apis.toml" <<'EOF'
 [apis]
-"deepseek-official" = "http://relay.local/v1"
+anthropic = "http://relay.local/anthropic"
 EOF
-output=$("$bin" --all --json --config "$tmp/apis.toml") || fail "带 [apis] 配置运行失败"
-python3 - "$output" <<'PY' || exit 1
-import json, sys
+write_api_session sess-new "2026-10-29T02:00:00.000Z"
+output=$(HOME="$api_home" "$bin" --all --json --config "$tmp/apis.toml") || fail "带 [apis] 配置运行失败"
+python3 - "$output" "$api_home" <<'PY' || exit 1
+import json, sqlite3, sys
+from pathlib import Path
 rows = json.loads(sys.argv[1])["rows"]
-dsh = next(row for row in rows if row["source"] == "dsh")
-assert dsh["api"] == "http://relay.local/v1", dsh
-print("ok - tokx 配置覆盖接口地址")
+by_api = {row["api"]: row["requests"] for row in rows}
+assert by_api.get("http://127.0.0.1:9000") == 1, rows
+assert by_api.get("http://relay.local/anthropic") == 1, rows
+# 地址确实落在账本里，老记录没被后来的配置改写。
+db = Path(sys.argv[2]) / ".local/state/tokx/usage.db"
+with sqlite3.connect(db) as con:
+    stored = dict(con.execute("select session, api from request").fetchall())
+assert stored == {
+    "sess-old": "http://127.0.0.1:9000",
+    "sess-new": "http://relay.local/anthropic",
+}, stored
+print("ok - 接口地址随请求入库，换配置不改老记录")
 PY
 
 # 来源过滤与日期过滤。
@@ -545,7 +576,7 @@ fi
 kill "$web_pid" 2>/dev/null
 wait "$web_pid" 2>/dev/null
 
-# 改了设置文件里的 ANTHROPIC_BASE_URL，不用重启网页服务，下一次请求就按新地址出表。
+# 改了设置文件里的 ANTHROPIC_BASE_URL，已入库记录的接口地址不会被改写。
 "$bin" web --json --port 0 >"$tmp/web-reload.json" 2>"$tmp/web-reload.err" &
 web_pid=$!
 for _ in $(seq 50); do
@@ -573,19 +604,20 @@ def claude_api():
 assert claude_api() == "http://127.0.0.1:9000", claude_api()
 (home / ".claude/settings.json").write_text(
     json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9002"}}), encoding="utf-8")
-assert claude_api() == "http://127.0.0.1:9002", claude_api()
+# 接口地址随请求入库，改配置不会改写已经入库的记录。
+assert claude_api() == "http://127.0.0.1:9000", claude_api()
 (home / ".claude/settings.json").write_text(
     json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9000"}}), encoding="utf-8")
-print("ok - 网页每次请求重读接口地址")
+print("ok - 改接口配置不改写已入库的地址")
 PY
 then
   kill "$web_pid" 2>/dev/null
-  fail "网页没有重读接口地址"
+  fail "网页改写了已入库的接口地址"
 fi
 kill "$web_pid" 2>/dev/null
 wait "$web_pid" 2>/dev/null
 
-# 网页走 SSE：连上先推一条，之后按间隔推；改了设置文件，同一条连接的下一条就变。
+# 网页走 SSE：连上先推一条，之后按间隔推；接口地址按入库时的那份，不随设置文件变。
 "$bin" web --json --port 0 >"$tmp/web-sse.json" 2>"$tmp/web-sse.err" &
 web_pid=$!
 for _ in $(seq 50); do
@@ -631,7 +663,7 @@ assert claude["api"] == "http://127.0.0.1:9000", claude
     json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9003"}}), encoding="utf-8")
 second = read_usage(res)
 claude = next(row for row in second["rows"] if row["source"] == "claude")
-assert claude["api"] == "http://127.0.0.1:9003", claude
+assert claude["api"] == "http://127.0.0.1:9000", claude
 res.close()
 (home / ".claude/settings.json").write_text(
     json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9000"}}), encoding="utf-8")

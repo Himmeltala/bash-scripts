@@ -32,7 +32,7 @@ const WIDTH = {
   project: 120,
   start: 136,
   model: 132,
-  api: 200,
+  api: 240,
 }
 
 const headers = computed(() =>

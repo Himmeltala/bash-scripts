@@ -247,8 +247,10 @@ def _collect(
             records = stored
 
     records = [record for record in records if _in_range(record.at, config.book, since, until)]
+    # 老账本里的记录没有存地址，读出来时按当前配置补一次；新记录一律用入库时那份。
     for record in records:
-        record.api = config.api.address(record.source, record.provider)
+        if not record.api:
+            record.api = config.api.address(record.source, record.provider)
     records.sort(key=lambda record: record.at)
 
     book = config.book
@@ -323,6 +325,10 @@ def _scan(config: Config, sources: list[str]):
         except (SourceError, OSError) as exc:
             print(f"tokx: 跳过 {SOURCE_LABELS[source]}: {exc}", file=sys.stderr)
             found = []
+        # 接口地址随请求一起入库：换过地址之后，老记录仍按当时的地址显示。
+        for record in found:
+            if not record.api:
+                record.api = config.api.address(source, record.provider)
         records.extend(found)
         batches[source] = _by_session(found)
     return records, batches, snapshots

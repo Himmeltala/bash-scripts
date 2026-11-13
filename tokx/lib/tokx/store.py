@@ -1,7 +1,8 @@
 """用量账本：把每条请求按天落进 sqlite，会话文件删掉以后还能回显。
 
 账本只作追加，口径与现扫一致：一行一条请求，主键 (来源, 会话, 去重键) 重复导入
-不会翻倍。接口地址与费用不入账，出表时按当前配置与当前价格表现算。
+不会翻倍。接口地址随请求入库，换了地址之后老记录保留原地址；费用不入账，出表时
+按当前价格表现算。
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ SCHEMA = (
         source      TEXT    NOT NULL,
         session     TEXT    NOT NULL,
         project     TEXT    NOT NULL DEFAULT '',
+        api         TEXT    NOT NULL DEFAULT '',
         day         TEXT    NOT NULL,
         at          INTEGER NOT NULL,
         provider    TEXT    NOT NULL DEFAULT '',
@@ -50,15 +52,22 @@ SCHEMA = (
 # 账本里的记录带一个去重键，现扫的记录靠来源模块自己保证不重复，两者分开走。
 _INSERT = """
 INSERT OR IGNORE INTO request
-    (source, session, project, day, at, provider, model, key,
+    (source, session, project, api, day, at, provider, model, key,
      input, cache_read, cache_write, output, reasoning, loud, seen_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 _TOUCH = """
 INSERT INTO session_seen (source, session, last_at) VALUES (?, ?, ?)
 ON CONFLICT (source, session) DO UPDATE SET last_at = excluded.last_at
 """
+
+
+def _migrate(con: sqlite3.Connection) -> None:
+    """老账本没有 api 列，补上；已有记录留空，出表时按当前配置回填。"""
+    columns = {row[1] for row in con.execute("pragma table_info(request)")}
+    if "api" not in columns:
+        con.execute("alter table request add column api text not null default ''")
 
 
 class StoreError(Exception):
@@ -80,6 +89,7 @@ class Store:
             con = sqlite3.connect(str(self.path))
             for statement in SCHEMA:
                 con.execute(statement)
+            _migrate(con)
             con.commit()
         except (OSError, sqlite3.Error) as exc:
             raise StoreError(f"打不开账本 {self.path}: {exc}") from exc
@@ -124,6 +134,7 @@ class Store:
                             source,
                             session,
                             record.project,
+                            record.api,
                             record.at.astimezone(self.tz).date().isoformat(),
                             int(record.at.timestamp() * 1000),
                             record.provider,
@@ -231,7 +242,7 @@ class Store:
             params.append(int(end))
         try:
             rows = self.con.execute(
-                "select source, session, project, at, provider, model, key,"
+                "select source, session, project, api, at, provider, model, key,"
                 " input, cache_read, cache_write, output, reasoning"
                 " from request where " + " and ".join(where),
                 params,
@@ -242,18 +253,19 @@ class Store:
             Record(
                 source=str(row[0]),
                 session=str(row[1]),
-                at=datetime.fromtimestamp(int(row[3]) / 1000, tz=timezone.utc),
-                model=str(row[5]),
-                provider=str(row[4]),
+                at=datetime.fromtimestamp(int(row[4]) / 1000, tz=timezone.utc),
+                model=str(row[6]),
+                provider=str(row[5]),
                 project=str(row[2]),
+                api=str(row[3]),
                 usage=Usage(
-                    input=int(row[7]),
-                    cache_read=int(row[8]),
-                    cache_write=int(row[9]),
-                    output=int(row[10]),
-                    reasoning=int(row[11]),
+                    input=int(row[8]),
+                    cache_read=int(row[9]),
+                    cache_write=int(row[10]),
+                    output=int(row[11]),
+                    reasoning=int(row[12]),
                 ),
-                key=str(row[6]),
+                key=str(row[7]),
             )
             for row in rows
         ]
