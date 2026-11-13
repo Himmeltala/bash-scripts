@@ -13,6 +13,8 @@ readonly WEB_ATTACH_TIMEOUT=20
 readonly WEB_HOME="$CACHE_DIR/web"
 readonly WEB_STATE_FILE="$WEB_HOME/state.tsv"
 readonly WEB_LOCK_DIR="$WEB_HOME/lock"
+# 锁目录里记一个持有者：拿锁的进程没了，这个锁就作废，不用等人来删。
+readonly WEB_LOCK_PID="$WEB_LOCK_DIR/pid"
 readonly WEB_PEND_FILE="$WEB_HOME/pending"
 readonly WEB_LOG_DIR="$WEB_HOME/logs"
 # 用户自己加的命令不在 package.json 里，单独存一份，每次扫描后重新挂回服务行。
@@ -57,22 +59,65 @@ web_python() {
 
 # ---- 状态文件 ----
 
+# 记下的持有者还在不在跑。僵尸进程也算没了：它不会再放锁，最多等着被回收。
+web_lock_owner_alive() {
+  local stat
+  [[ "$1" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$1" 2>/dev/null || return 1
+  stat=$(ps -o stat= -p "$1" 2>/dev/null) || return 1
+  [[ "$stat" != Z* ]]
+}
+
+# 清掉一个确认没人管的锁：先删 pid 再删目录，这中间要是有人抢到并写了新 pid，目录就删不动，不会误伤。
+web_lock_reap() {
+  if [[ -z "$1" || "$(cat "$WEB_LOCK_PID" 2>/dev/null)" == "$1" ]]; then
+    rm -f "$WEB_LOCK_PID" 2>/dev/null || :
+  fi
+  rmdir "$WEB_LOCK_DIR" 2>/dev/null || :
+  return 0
+}
+
 web_lock() {
-  local n=0
+  local n=0 pid miss=0
   [[ -d "$WEB_HOME" ]] || mkdir -p "$WEB_HOME"
   until mkdir "$WEB_LOCK_DIR" 2>/dev/null; do
     n=$((n + 1))
     if ((n > 2000)); then
-      web_fail "等锁 $WEB_LOCK_DIR 超时，确认没有残留的锁目录" "$EXIT_FAIL"
+      pid=$(cat "$WEB_LOCK_PID" 2>/dev/null) || pid=''
+      web_fail "等锁 $WEB_LOCK_DIR 超时，持锁进程是 ${pid:-不详}，看看它是不是卡住了" "$EXIT_FAIL"
       return
+    fi
+    pid=''
+    if [[ -s "$WEB_LOCK_PID" ]]; then
+      IFS= read -r pid <"$WEB_LOCK_PID" || true
+    fi
+    if [[ -n "$pid" ]]; then
+      miss=0
+      if ! web_lock_owner_alive "$pid"; then
+        # 拿锁的进程中途没了，剩下一个空目录，清掉重抢。
+        web_lock_reap "$pid"
+        continue
+      fi
+    else
+      # 刚建好锁、还没写进 pid 的那一瞬间也没有 pid：给半秒宽限，过了还没有就是建锁的人没了。
+      miss=$((miss + 1))
+      if ((miss > 10)); then
+        web_lock_reap ''
+        miss=0
+        continue
+      fi
     fi
     sleep 0.05
   done
+  # $$ 在 $(...) 里取到的仍是引擎自己，不是那层子壳：引擎没了才该作废这个锁。
+  printf '%s\n' "$$" >"$WEB_LOCK_PID" 2>/dev/null || :
   set -e
 }
 
 web_unlock() {
-  rmdir "$WEB_LOCK_DIR" 2>/dev/null
+  rm -f "$WEB_LOCK_PID" 2>/dev/null || :
+  # 目录已经被人清掉也算放开了：set -e 开着，这里失败会一路退到退出整个引擎。
+  rmdir "$WEB_LOCK_DIR" 2>/dev/null || :
   return 0
 }
 
