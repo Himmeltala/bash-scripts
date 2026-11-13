@@ -125,6 +125,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import DirectoryPicker from './DirectoryPicker.vue'
 import { api } from '../composables/useApi'
+import { copyText } from '../composables/clipboard'
 
 defineProps({
   workspaces: { type: Array, required: true },
@@ -177,32 +178,6 @@ async function saveAlias() {
     emit('notice', { text: `保存别名失败：${err.message}`, color: 'error' })
   } finally {
     aliasSaving.value = false
-  }
-}
-
-async function copyText(text) {
-  if (!text) return false
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch (err) {
-    // HTTP 页面拿不到 Clipboard API，退回下面的 textarea。
-  }
-  try {
-    const area = document.createElement('textarea')
-    area.value = text
-    area.setAttribute('readonly', '')
-    area.style.position = 'fixed'
-    area.style.top = '-1000px'
-    document.body.appendChild(area)
-    area.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(area)
-    return ok
-  } catch (err) {
-    return false
   }
 }
 

@@ -28,7 +28,7 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 FS = "\x1f"
 
@@ -39,7 +39,7 @@ def one_line(value):
 
 
 # 状态行的列，与 lib/nodex/server.sh 里的 web_col 一致，0 起。
-WS_KIND, SVC_KIND, PKG_KIND, RUN_KIND = "ws", "svc", "pkg", "run"
+WS_KIND, SVC_KIND, SCRIPT_KIND, RUN_KIND = "ws", "svc", "script", "run"
 LIVE = ("starting", "ready")
 # 运行号是「服务 id.纳秒」：去掉末尾那一段就是服务 id。
 RUN_PREFIX_RE = re.compile(r"\.[0-9]+$")
@@ -47,7 +47,7 @@ RUN_PREFIX_RE = re.compile(r"\.[0-9]+$")
 CO_ID, CO_WS, CO_TYPE = 1, 2, 3
 # svc 行：执行目录第 4 列、相对路径第 5 列、参数第 6 列、展示命令第 8 列、包管理器第 9 列。
 SVC_DIR, SVC_REL, SVC_ARGS, SVC_CMD, SVC_PM = 4, 5, 6, 8, 9
-# run 行（17 段，0 起）：包相对路径第 6 列、展示路径第 7 列、会话号 11、端口 12、状态 13。
+# run 行（17 段，0 起）：脚本目录的相对路径第 6 列、展示路径第 7 列、会话号 11、端口 12、状态 13。
 RUN_REL = 6
 RUN_DISPLAY = 7
 RUN_PID, RUN_PORT, RUN_STATUS = 11, 12, 13
@@ -92,8 +92,8 @@ class Row:
         return self[2]
 
 
-WS_WIDTH, SVC_WIDTH, PKG_WIDTH, RUN_WIDTH = 4, 10, 4, 17
-WIDTHS = {WS_KIND: WS_WIDTH, SVC_KIND: SVC_WIDTH, PKG_KIND: PKG_WIDTH, RUN_KIND: RUN_WIDTH}
+WS_WIDTH, SVC_WIDTH, SCRIPT_WIDTH, RUN_WIDTH = 4, 10, 4, 17
+WIDTHS = {WS_KIND: WS_WIDTH, SVC_KIND: SVC_WIDTH, SCRIPT_KIND: SCRIPT_WIDTH, RUN_KIND: RUN_WIDTH}
 
 
 def parse_rows(text):
@@ -302,7 +302,7 @@ class AliasStore:
 
 
 class CustomStore:
-    """自定义命令的登记表，每行：工作区|类型|包目录|名称|完整命令。这里只用来标记哪些服务是自定义的。"""
+    """自定义命令的登记表，每行：工作区|类型|脚本目录|名称|完整命令。这里只用来标记哪些服务是自定义的。"""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -335,7 +335,7 @@ def attach_alias_rel(snapshot, store):
 
 
 def state_payload(state, nodes, aliases, custom):
-    """页面要的整份状态：工作区、包、服务、运行记录，加上别名与 Node 选择。"""
+    """页面要的整份状态：工作区、脚本、服务、运行记录，加上别名与 Node 选择。"""
     return attach_alias_rel(attach_nodes(state.snapshot(custom), nodes), aliases)
 
 
@@ -388,17 +388,17 @@ class State:
 
     def snapshot(self, custom=None):
         custom_ids = custom.ids() if custom is not None else set()
-        packages = {}
+        scripts = {}
         runs = {}
         workspaces = []
         by_id = {}
         for r in self.rows():
             if r[0] == WS_KIND:
-                item = {"id": r[1], "root": r[2], "added": r[3], "packages": [], "services": []}
+                item = {"id": r[1], "root": r[2], "added": r[3], "scripts": [], "services": []}
                 by_id[r[1]] = item
                 workspaces.append(item)
-            elif r[0] == PKG_KIND:
-                packages.setdefault(r[2], []).append({"rel": r[1], "name": r[3]})
+            elif r[0] == SCRIPT_KIND:
+                scripts.setdefault(r[2], []).append({"rel": r[1], "name": r[3]})
             elif r[0] == RUN_KIND:
                 # 一个服务跑过多次会留下多条记录，留下最新的一条。
                 runs[RUN_PREFIX_RE.sub("", r[1])] = Row(r)
@@ -427,9 +427,9 @@ class State:
             )
 
         for ws in workspaces:
-            items = packages.get(ws["id"], [])
+            items = scripts.get(ws["id"], [])
             items.sort(key=lambda item: (item["rel"] != ".", item["rel"]))
-            ws["packages"] = items
+            ws["scripts"] = items
             ws["services"].sort(key=lambda s: (s["display"], s["id"]))
         return {"workspaces": workspaces, "now": int(time.time())}
 
@@ -691,12 +691,12 @@ class Engine:
             raise ApiError(404, "没有这个服务：%s" % svc)
         extra = str(body.get("extra", "") or "").strip()
 
-        # 同一个包的另一个动作还在跑：dev 与 build 读写同一份 dist，重复跑只会互相盖。
-        # 不同包的开发服务可以同时开，端口各自不同。
+        # 同一个服务不重复起，同时点两下也只留一条。
+        # 同一个包上的启动与打包互不影响：跑着开发服务照样可以打包。
         for run in self.state.runs():
             if run[RUN_STATUS] not in LIVE:
                 continue
-            if run[CO_WS] == row[CO_WS] and run[RUN_REL] == row[SVC_REL]:
+            if RUN_PREFIX_RE.sub("", run[CO_ID]) == row[CO_ID]:
                 raise ApiError(409, "「%s」正在跑，先停掉" % run[RUN_DISPLAY])
             # 同一个工作区里的 install 也要串行：pnpm 的存储与锁文件只有一份。
             if row[CO_TYPE] == "install" and run[CO_TYPE] == "install" and run[CO_WS] == row[CO_WS]:
@@ -809,6 +809,147 @@ def list_dirs(raw):
         "entries": entries,
         "truncated": truncated,
     }
+
+
+# ---------------------------------------------------------------- 压缩
+
+
+# 与 zipx 的默认排除一致：树里列出来但置灰，勾不上。
+ZIP_EXCLUDES = (".git", ".svn", ".idea", "node_modules", "target")
+# 一层最多回这么多个条目：几千个文件的目录摊开会把页面卡住。
+MAX_ENTRIES = 2000
+# 压缩任务的运行号，日志目录名也跟着它。
+ZIP_RUN_RE = re.compile(r"^zip\.[0-9]+$")
+
+
+def ws_root(state, ws):
+    """工作区的根目录，取出来时解析掉符号链接，后面的包含判断都按真实路径比。"""
+    row = state.find(WS_KIND, str(ws or "").strip())
+    if row is None:
+        raise ApiError(404, "没有这个工作区：%s" % ws)
+    try:
+        return Path(row[2]).resolve()
+    except OSError as exc:
+        raise ApiError(400, "工作区目录读不了：%s" % exc)
+
+
+def resolve_in_root(root, rel, what="路径"):
+    """把相对路径落到工作区里，跳出工作区的一律拒绝。"""
+    text = str(rel or "").strip()
+    if not text:
+        raise ApiError(400, "没给%s" % what)
+    target = Path(os.path.expanduser(text))
+    if not target.is_absolute():
+        target = root / target
+    try:
+        target = target.resolve()
+    except OSError as exc:
+        raise ApiError(400, "解析%s失败：%s" % (what, exc))
+    if not _inside(target, root):
+        raise ApiError(400, "%s要落在工作区里：%s" % (what, rel))
+    return target
+
+
+def list_entries(state, ws, rel):
+    """列工作区里某一层的内容：目录与文件分开，排除项原样带上，页面自己置灰。"""
+    root = ws_root(state, ws)
+    base = resolve_in_root(root, rel or ".", "目录")
+    if not base.is_dir():
+        raise ApiError(400, "不是目录：%s" % rel)
+
+    dirs = []
+    files = []
+    truncated = False
+    try:
+        with os.scandir(base) as it:
+            for entry in it:
+                if len(dirs) + len(files) >= MAX_ENTRIES:
+                    truncated = True
+                    break
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=True)
+                    size = 0 if is_dir else entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    # 断掉的链接读不了属性，照样列出来，交给打包那步报错。
+                    is_dir, size = False, 0
+                item = {
+                    "name": entry.name,
+                    "rel": Path(entry.path).relative_to(root).as_posix(),
+                    "dir": is_dir,
+                    "size": size,
+                    "excluded": entry.name in ZIP_EXCLUDES,
+                }
+                (dirs if is_dir else files).append(item)
+    except PermissionError:
+        raise ApiError(403, "没有权限读取：%s" % base)
+    except OSError as exc:
+        raise ApiError(400, "读取目录失败：%s" % exc)
+
+    def order(item):
+        return item["name"].casefold()
+
+    dirs.sort(key=order)
+    files.sort(key=order)
+    return {
+        "root": str(root),
+        "rel": rel or ".",
+        "entries": dirs + files,
+        "excluded": list(ZIP_EXCLUDES),
+        "truncated": truncated,
+    }
+
+
+def zip_name(root, name):
+    """包名默认取工作区目录名；没写后缀就补 .zip，落点必须在工作区里。"""
+    text = str(name or "").strip() or "%s.zip" % root.name
+    if not text.lower().endswith(".zip"):
+        text += ".zip"
+    target = resolve_in_root(root, text, "包名")
+    if target == root or target.is_dir():
+        raise ApiError(400, "包名要落到具体文件：%s" % text)
+    if not target.parent.is_dir():
+        raise ApiError(400, "保存目录不存在：%s" % target.parent)
+    return text, target
+
+
+def zip_entries(root, entries):
+    """校验勾选的条目，返回 zip 命令要的相对路径：被祖先目录盖住的去掉，重复的去掉。"""
+    if not isinstance(entries, list) or not entries:
+        raise ApiError(400, "一个条目都没选")
+    rels = []
+    for rel in entries:
+        text = str(rel or "").strip()
+        if not text:
+            continue
+        if "\n" in text:
+            raise ApiError(400, "名字里有换行，处理不了")
+        target = resolve_in_root(root, text, "条目")
+        if not target.exists():
+            raise ApiError(404, "条目不存在：%s" % text)
+        hit = target.relative_to(root).as_posix() if target != root else "."
+        if hit not in rels:
+            rels.append(hit)
+    if not rels:
+        raise ApiError(400, "一个条目都没选")
+    # 选了 src 又选 src/a.js 时只传 src，zip 本来就会带上下面的内容。
+    keep = []
+    for rel in rels:
+        if rel == ".":
+            keep = ["."]
+            break
+        covered = any(rel == other or rel.startswith(other + "/") for other in rels if other != rel)
+        if not covered:
+            keep.append(rel)
+    return keep
+
+
+def find_zipx(nodex_path):
+    """优先用与 nodex 同目录的 zipx，没有再走 PATH。"""
+    if nodex_path:
+        sibling = Path(nodex_path).parent / "zipx"
+        if sibling.is_file() and os.access(str(sibling), os.X_OK):
+            return str(sibling)
+    return shutil.which("zipx") or ""
 
 
 def _percent(used, total):
@@ -1073,6 +1214,9 @@ class Handler(BaseHTTPRequestHandler):
     state_stream = None
     metrics_stream = None
     api_prefix = "/__nodex/api"
+    # 压缩任务的包名与落点，按运行号记着，页面问状态时回给它。
+    zip_jobs = {}
+    zip_lock = threading.Lock()
 
     def log_message(self, fmt, *args):
         # 访问日志默认打到 stderr，被 nodex 收进 runner.log，轮询一多就长，这里丢掉。
@@ -1135,6 +1279,16 @@ class Handler(BaseHTTPRequestHandler):
             return list_dirs((query.get("path") or [""])[0])
         if route == "nodes":
             return {"nodes": discover_nodes(), "current": current_node_version()}
+        if route == "entries":
+            return list_entries(
+                self.state,
+                (query.get("ws") or [""])[0],
+                (query.get("rel") or [""])[0],
+            )
+        if route == "zip" and method != "POST":
+            return self._zip_status((query.get("run") or [""])[0])
+        if route == "download":
+            return self._download(query, head=(method == "HEAD"))
         if route == "metrics/stream":
             self._sse([(self.metrics_stream, "metrics")])
             return STREAMED
@@ -1178,6 +1332,8 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": True}
         if route == "start":
             return engine.start(body)
+        if route == "zip":
+            return self._zip_start(body)
         if route == "stop":
             engine.stop(str(body.get("run", "")))
             return {"ok": True}
@@ -1326,6 +1482,144 @@ class Handler(BaseHTTPRequestHandler):
             "page": page,
             "more": more,
         }
+
+    # ---- 压缩
+
+    def _zip_start(self, body):
+        """勾好的条目交给 zipx 打成一个包，日志走与启动服务同一套目录。"""
+        ws = str(body.get("ws", "")).strip()
+        root = ws_root(self.state, ws)
+        name, target = zip_name(root, body.get("name", ""))
+        rels = zip_entries(root, body.get("entries"))
+        exe = find_zipx(self.engine.nodex if self.engine else "")
+        if not exe:
+            raise ApiError(500, "找不到 zipx，确认它和 nodex 装在同一个 bin 目录")
+        if target.exists():
+            # 同名包直接覆盖。zip 的 -r 对已有包是补条目、旧条目会留着，
+            # 所以先把旧包删掉，再让 zipx 重新打一份；--overwrite 照样带上。
+            if not target.is_file():
+                raise ApiError(400, "包名要落到具体文件：%s" % name)
+            try:
+                target.unlink()
+            except OSError as exc:
+                raise ApiError(403, "删不掉旧的包：%s" % exc)
+        argv = [exe, "pack", "-o", str(target)] + rels + ["--overwrite"]
+        runid = "zip.%d" % time.time_ns()
+        log_path = Path(self.logs) / "zip" / (runid + ".log")
+        node = effective_node(self.nodes.get(ws)) if self.nodes else ""
+        try:
+            self.sessions.spawn(str(root), argv, log_path, env=build_env(node))
+        except OSError as exc:
+            raise ApiError(500, "起 zipx 失败：%s" % exc)
+        with self.zip_lock:
+            self.zip_jobs[runid] = {"name": name, "path": str(target)}
+        return {"run": runid, "name": name, "path": str(target), "entries": len(rels)}
+
+    def _zip_status(self, runid):
+        """这次压缩还在不在跑：进程退出后 zipx 的退出码落在日志旁边的 .code 文件里。"""
+        if not ZIP_RUN_RE.match(runid or ""):
+            raise ApiError(400, "运行号不对")
+        log_path = Path(self.logs) / "zip" / (runid + ".log")
+        try:
+            code = int(Path(str(log_path) + ".code").read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            code = None
+        with self.zip_lock:
+            job = dict(self.zip_jobs.get(runid, {}))
+        size = 0
+        if job.get("path"):
+            try:
+                size = os.path.getsize(job["path"])
+            except OSError:
+                size = 0
+        return {
+            "run": runid,
+            "running": code is None,
+            "code": code,
+            "name": job.get("name", ""),
+            "path": job.get("path", ""),
+            "size": size,
+        }
+
+    def _download(self, query, head=False):
+        """把打好的包吐给浏览器：认单范围 Range，断了下一次能从断点接着来。"""
+        ws = (query.get("ws") or [""])[0]
+        name = (query.get("name") or [""])[0]
+        root = ws_root(self.state, ws)
+        target = resolve_in_root(root, name, "包名")
+        if not target.is_file():
+            raise ApiError(404, "这个包不在了：%s" % name)
+        try:
+            stat = target.stat()
+            size = stat.st_size
+            handle = open(target, "rb")
+        except OSError as exc:
+            raise ApiError(403, "读不了这个包：%s" % exc)
+        # 大小加修改时间当版本号：包被重打过，续传就得从头来，不能把两版拼一起。
+        etag = '"%d-%d"' % (size, stat.st_mtime_ns)
+        last_modified = self.date_time_string(stat.st_mtime)
+
+        start, end, status = 0, max(0, size - 1), 200
+        spec = self.headers.get("Range", "").strip()
+        if not self._if_range_matches(etag, last_modified):
+            spec = ""
+        if spec.startswith("bytes="):
+            first, _, last = spec[6:].split(",")[0].strip().partition("-")
+            try:
+                if first:
+                    start = int(first)
+                    end = int(last) if last else size - 1
+                elif last:
+                    # bytes=-N：最后 N 个字节。
+                    start = max(0, size - int(last))
+                    end = size - 1
+                end = min(end, size - 1)
+            except ValueError:
+                start, end = 0, max(0, size - 1)
+            if start >= size or start > end:
+                # 够不着这个范围：按 RFC 回 416，并告诉对方总共多大。
+                handle.close()
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % size)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return STREAMED
+            status = 206
+
+        length = 0 if size == 0 else end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("ETag", etag)
+        self.send_header("Last-Modified", last_modified)
+        if status == 206:
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+        self.send_header("Content-Disposition", "attachment; filename*=UTF-8''%s" % quote(target.name))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if head:
+            handle.close()
+            return STREAMED
+        try:
+            with handle:
+                handle.seek(start)
+                left = length
+                while left > 0:
+                    chunk = handle.read(min(65536, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        return STREAMED
+
+    def _if_range_matches(self, etag, last_modified):
+        """If-Range 没带就照常；带了且与当前这份对不上，整份重发。"""
+        given = self.headers.get("If-Range", "").strip()
+        return not given or given == etag or given == last_modified
 
     # ---- 安全与请求体
 

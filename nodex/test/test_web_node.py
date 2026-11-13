@@ -119,11 +119,11 @@ class AttachNodesTest(unittest.TestCase):
 
 
 class SnapshotTest(unittest.TestCase):
-    def test_packages_services_and_latest_run(self):
+    def test_scripts_services_and_latest_run(self):
         rows = [
             ["ws", "w1", "/tmp/demo", "1"],
-            ["pkg", ".", "w1", "demo"],
-            ["pkg", "packages/a", "w1", "@demo/a"],
+            ["script", ".", "w1", "demo"],
+            ["script", "packages/a", "w1", "@demo/a"],
             ["svc", "w1.dev.@demo/a", "w1", "dev", "/tmp/demo/packages/a", "packages/a",
              "run dev", "packages/a", "pnpm run dev", "pnpm"],
             ["run", "w1.dev.@demo/a.111", "w1", "dev", "@demo/a", "/tmp/demo/packages/a",
@@ -139,8 +139,8 @@ class SnapshotTest(unittest.TestCase):
             snap = server.State(path).snapshot()
 
             ws = snap["workspaces"][0]
-            self.assertEqual([p["rel"] for p in ws["packages"]], [".", "packages/a"])
-            self.assertEqual(ws["packages"][0]["name"], "demo")
+            self.assertEqual([p["rel"] for p in ws["scripts"]], [".", "packages/a"])
+            self.assertEqual(ws["scripts"][0]["name"], "demo")
             svc = ws["services"][0]
             self.assertEqual(svc["pm"], "pnpm")
             self.assertEqual(svc["module"], "packages/a")
@@ -252,6 +252,51 @@ class StateSseTest(unittest.TestCase):
             finally:
                 httpd.shutdown()
                 httpd.server_close()
+
+
+class ZipHelpersTest(unittest.TestCase):
+    """压缩栏用的几个纯函数：列目录、包名校验、条目去重。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name) / "proj"
+        (root / "src").mkdir(parents=True)
+        (root / "src" / "a.js").write_text("a", encoding="utf-8")
+        (root / "node_modules" / "x").mkdir(parents=True)
+        (root / "README.md").write_text("hi", encoding="utf-8")
+        self.root = root.resolve()
+        state = Path(self.tmp.name) / "state.tsv"
+        state.write_text(server.FS.join(["ws", "w1", str(self.root), "1"]) + "\n", encoding="utf-8")
+        self.state = server.State(state)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_entries_list_dirs_first_and_mark_excluded(self):
+        data = server.list_entries(self.state, "w1", "")
+        self.assertEqual([item["name"] for item in data["entries"]], ["node_modules", "src", "README.md"])
+        self.assertEqual([item["name"] for item in data["entries"] if item["excluded"]], ["node_modules"])
+        self.assertTrue(data["entries"][1]["dir"])
+        nested = server.list_entries(self.state, "w1", "src")
+        self.assertEqual([item["rel"] for item in nested["entries"]], ["src/a.js"])
+
+    def test_entries_rejects_paths_outside_workspace(self):
+        with self.assertRaises(server.ApiError):
+            server.list_entries(self.state, "w1", "..")
+
+    def test_zip_name_defaults_and_guards(self):
+        self.assertEqual(server.zip_name(self.root, "")[0], "proj.zip")
+        self.assertEqual(server.zip_name(self.root, "out")[0], "out.zip")
+        with self.assertRaises(server.ApiError):
+            server.zip_name(self.root, "../x.zip")
+
+    def test_zip_entries_drops_covered_and_rejects_escape(self):
+        picked = server.zip_entries(self.root, ["src", "README.md", "src/a.js"])
+        self.assertEqual(picked, ["src", "README.md"])
+        with self.assertRaises(server.ApiError):
+            server.zip_entries(self.root, ["../x"])
+        with self.assertRaises(server.ApiError):
+            server.zip_entries(self.root, [])
 
 
 if __name__ == "__main__":

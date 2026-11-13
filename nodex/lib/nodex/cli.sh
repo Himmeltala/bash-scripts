@@ -2,9 +2,9 @@
 # 注册表每行四列以竖线分隔且内容不能含竖线：命令名|说明|收集函数|名词。
 
 readonly COMMANDS=(
-  'dev|启动开发服务|collect_dev|可启动包'
-  'build|构建包|collect_build|可构建包'
-  'install|安装依赖|collect_install|包'
+  'dev|启动开发服务|collect_dev|可启动的脚本'
+  'build|构建脚本|collect_build|可构建的脚本'
+  'install|安装依赖|collect_install|脚本'
 )
 readonly DEFAULT_COMMAND='dev'
 
@@ -35,7 +35,7 @@ usage() {
   cat <<'EOF'
 用法: nodex [命令] [选项] [关键词]
 
-在当前目录找 Node 工作区里的包，勾选后执行；不带参数时先选命令。
+在当前目录找 Node 工作区里的脚本，勾选后执行；不带参数时先选命令。
 包管理器按 packageManager 字段、依赖安装痕迹与锁文件判定，认 pnpm、yarn、npm。
 
 命令:
@@ -48,7 +48,7 @@ EOF
   cat <<'EOF'
 
 网页命令:
-  nodex web       起网页界面，左侧添加工作区，右侧点按钮启动、打包、装依赖
+  nodex web       起网页界面，左侧添加工作区，右侧点按钮启动、打包、装依赖、压缩
       --host 地址  监听地址，默认 0.0.0.0，同一网络里的机器都能开；只想本机用 --host 127.0.0.1
   -p, --port 端口  监听端口，默认 0 由系统挑一个空闲的
   -o, --open     起来后打开默认浏览器
@@ -60,11 +60,11 @@ EOF
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
 
-带关键词时跳过勾选，按子串匹配标签、路径或包目录后执行。
+带关键词时跳过勾选，按子串匹配标签、路径或脚本目录后执行。
 
 启动脚本优先取 dev，其次 start，最后 serve；都没有时收 dev:、start:、serve: 开头的变体，
 各有几个就列几个。构建先认 build，没有就收 build: 开头的变体。
-安装默认 npm install：工作区根装全部，子包用 --workspace 只装自己；网页里可以整条改。
+安装默认 npm install：工作区根装全部，子目录用 --workspace 只装自己；网页里可以整条改。
 
 退出码: 0 成功，1 找到了目标但执行失败，2 用法错误，3 用户取消。
 EOF
@@ -144,16 +144,16 @@ run_action() {
 
   root=$(find_package_root "$PWD") ||
     die "当前目录及其上级都没有 package.json，不是 Node 项目"
-  prepare_packages "$root"
+  prepare_scripts "$root"
 
   local -a recs=()
   mapfile -t recs < <("$collector" | assign_tags)
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
 
-  local rec tag workdir pkgrel args display cmdtext
+  local rec tag workdir rel args display cmdtext
   if ((LIST_ONLY)); then
     for rec in "${recs[@]}"; do
-      IFS=$FS read -r tag workdir pkgrel args display cmdtext <<< "$rec"
+      IFS=$FS read -r tag workdir rel args display cmdtext <<< "$rec"
       printf '%-40s %s\n' "$tag" "$cmdtext"
     done
     return 0
@@ -164,7 +164,7 @@ run_action() {
   if [[ -n "$kw" ]]; then
     local lower="${kw,,}"
     for rec in "${recs[@]}"; do
-      IFS=$FS read -r tag workdir pkgrel args display cmdtext <<< "$rec"
+      IFS=$FS read -r tag workdir rel args display cmdtext <<< "$rec"
       if [[ "${tag,,}" == *"$lower"* ]] ||
          [[ "${display,,}" == *"$lower"* ]] ||
          [[ "${workdir,,}" == *"$lower"* ]]; then

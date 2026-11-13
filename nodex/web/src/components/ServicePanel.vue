@@ -20,7 +20,7 @@
           :title="nodeTitle"
           @update:model-value="pickNode"
         />
-        <v-chip size="small" variant="tonal">{{ ws.packages.length }} 个包</v-chip>
+        <v-chip size="small" variant="tonal">{{ ws.scripts.length }} 个脚本</v-chip>
         <v-chip v-if="running" size="small" color="ready" variant="tonal">{{ running }} 个在跑</v-chip>
         <v-btn size="small" variant="text" prepend-icon="mdi-refresh" @click="$emit('scan')">重新扫描</v-btn>
         <v-btn size="small" variant="text" color="error" @click="$emit('forget', ws.id)">移出</v-btn>
@@ -40,28 +40,21 @@
         <v-chip v-if="count(t.value)" size="x-small" class="count" variant="text">{{ count(t.value) }}</v-chip>
       </v-btn>
       <v-spacer />
-      <v-text-field
-        v-model="filter"
-        density="compact"
-        variant="solo"
-        flat
-        hide-details
-        placeholder="按包名筛"
-        prepend-inner-icon="mdi-magnify"
-        clearable
-        class="filter"
-      />
-      <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">添加命令</v-btn>
+      <v-btn v-if="tab !== 'zip'" size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">
+        添加命令
+      </v-btn>
     </div>
 
-    <div v-if="!rows.length" class="none">
-      这一栏没有可执行的包，换个栏目看看，或者添加一条自己的命令。
+    <ZipPanel v-show="tab === 'zip'" :ws="ws" :dark="dark" :active="tab === 'zip'" />
+
+    <div v-if="tab !== 'zip' && !rows.length" class="none">
+      这一栏没有可执行的脚本，换个栏目看看，或者添加一条自己的命令。
     </div>
 
-    <v-table v-else density="compact" class="table">
+    <v-table v-else-if="tab !== 'zip'" density="compact" class="table">
       <thead>
         <tr>
-          <th style="width: 42%">包</th>
+          <th style="width: 42%">脚本</th>
           <th>参数</th>
           <th style="width: 200px">状态</th>
           <th style="width: 230px"></th>
@@ -114,7 +107,6 @@
                 size="small"
                 color="primary"
                 variant="flat"
-                :disabled="row.blocked"
                 :loading="row.starting"
                 @click="start(row)"
               >
@@ -156,10 +148,10 @@
           />
           <v-select
             v-model="add.rel"
-            :items="pkgItems"
+            :items="scriptItems"
             item-title="label"
             item-value="rel"
-            label="包"
+            label="脚本"
             density="compact"
             variant="outlined"
             class="mb-4"
@@ -222,6 +214,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import SettingsDialog from './SettingsDialog.vue'
+import ZipPanel from './ZipPanel.vue'
 import { api } from '../composables/useApi'
 import {
   LIVE,
@@ -244,9 +237,9 @@ const tabs = [
   { value: 'service', title: '启动服务' },
   { value: 'package', title: '打包' },
   { value: 'install', title: '安装' },
+  { value: 'zip', title: '压缩' },
 ]
 const tab = ref('service')
-const filter = ref('')
 const stopping = ref({})
 const starting = ref({})
 
@@ -262,9 +255,9 @@ const ADD_META = {
 }
 const TAB_TYPE = { service: 'dev', package: 'build', install: 'install' }
 
-// 自定义命令可以指向工作区根，也可以指向某个子包。
-const pkgItems = computed(() =>
-  props.ws.packages.map((item) => ({ rel: item.rel, label: item.rel === '.' ? item.name : `${item.name}（${item.rel}）` })),
+// 自定义命令可以指向工作区根，也可以指向某个子目录。
+const scriptItems = computed(() =>
+  props.ws.scripts.map((item) => ({ rel: item.rel, label: item.rel === '.' ? item.name : `${item.name}（${item.rel}）` })),
 )
 
 const CUSTOM = '__nodex_custom__'
@@ -312,27 +305,17 @@ function typeTab(type) {
   return type
 }
 
-function matches(text) {
-  const q = filter.value.trim()
-  return !q || String(text || '').includes(q)
-}
-
 function count(value) {
-  return props.ws.services.filter((s) => typeTab(s.type) === value && matches(s.tag)).length
+  return props.ws.services.filter((s) => typeTab(s.type) === value).length
 }
 
-// 列表按栏目拼：每个动作只看自己的包，日志也从这一行打开。
+// 列表按栏目拼：每个动作只看自己的脚本，日志也从这一行打开。
 const rows = computed(() => {
   return props.ws.services
     .filter((s) => typeTab(s.type) === tab.value)
-    .filter((s) => matches(s.tag) || matches(s.display))
     .map((svc) => {
       const run = svc.run
       const live = !!run && LIVE.includes(run.status)
-      // 同一个包上的另一个动作在跑时不能起：启动与打包抢同一份 dist。
-      const blocked = props.ws.services.some(
-        (o) => o !== svc && o.run && LIVE.includes(o.run.status) && o.module === svc.module,
-      )
       return {
         key: svc.id,
         svc,
@@ -342,7 +325,6 @@ const rows = computed(() => {
         cmd: svc.cmd,
         action: TYPE_TEXT[svc.type] || '执行',
         live,
-        blocked,
         statusText: run ? STATUS_TEXT[run.status] || run.status : '',
         color: run ? STATUS_COLOR[run.status] || 'grey' : 'grey',
         icon: run ? iconOf(run.status) : 'mdi-circle-outline',
@@ -390,7 +372,7 @@ function openAdd() {
   add.action = meta.action
   add.placeholder = meta.placeholder
   add.tag = ''
-  add.rel = props.ws.packages.some((item) => item.rel === '.') ? '.' : (props.ws.packages[0] || {}).rel || '.'
+  add.rel = props.ws.scripts.some((item) => item.rel === '.') ? '.' : (props.ws.scripts[0] || {}).rel || '.'
   add.args = ''
 }
 
@@ -551,9 +533,6 @@ function onSave({ args }) {
 }
 .count {
   margin-left: 6px;
-}
-.filter {
-  max-width: 220px;
 }
 .table {
   background: rgb(var(--v-theme-surface));

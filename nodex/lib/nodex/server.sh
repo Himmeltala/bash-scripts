@@ -1,6 +1,6 @@
 # 网页模式：bash 端。状态文件与一把目录锁在这里，页面与接口由 python3 转发（见 web/server.py）。
 # 状态按行存、$FS 分列：bash 读写它不必管 JSON 转义，接口每轮请求现读现拼。
-# 包怎么找、命令怎么拼，与命令行同源：同一个包、同一套参数，网页与终端跑出来的结果一样。
+# 脚本怎么找、命令怎么拼，与命令行同源：同一批脚本、同一套参数，网页与终端跑出来的结果一样。
 
 # 缺省值在这里定，parse_args 里覆盖，nodex -p 9999 web 与 nodex web -p 9999 等价。
 RV_PORT=0
@@ -16,18 +16,18 @@ readonly WEB_LOCK_DIR="$WEB_HOME/lock"
 readonly WEB_PEND_FILE="$WEB_HOME/pending"
 readonly WEB_LOG_DIR="$WEB_HOME/logs"
 # 用户自己加的命令不在 package.json 里，单独存一份，每次扫描后重新挂回服务行。
-# 每行：工作区|类型|包目录|名称|完整命令。
+# 每行：工作区|类型|脚本目录|名称|完整命令。
 readonly WEB_CUSTOM_FILE="$WEB_HOME/custom.tsv"
 readonly WEB_PAGE="$nodex_dir/nodex/web/static/index.html"
 readonly WEB_API_PREFIX='/__nodex/api'
 
 # 状态行首列决定这是什么，读写两侧照这张表：
 #   ws  |id|root|added
-#   pkg |rel|ws|name
+#   script |rel|ws|name
 #   svc |id|ws|type|dir|rel|args|display|cmd|pm
 #   run |id|ws|type|tag|dir|rel|display|module|args|cmd|pid|port|status|started|code|err
 # run 的 status 取 starting、ready、exited、failed、stopped；pid 是它的会话号，也是进程组号。
-readonly WS_KIND='ws' SVC_KIND='svc' PKG_KIND='pkg' RUN_KIND='run'
+readonly WS_KIND='ws' SVC_KIND='svc' SCRIPT_KIND='script' RUN_KIND='run'
 readonly RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_STARTED=15 RUN_COL_CODE=16 RUN_COL_ERR=17
 # svc 行共 10 段：类型、服务 id，加下面这 8 个字段。
 # 位置见这里，读写两侧都按它取。
@@ -87,7 +87,7 @@ web_state_load() {
   [[ -f "$WEB_STATE_FILE" ]] || return 0
   while IFS= read -r line; do
     case ${line%%"$FS"*} in
-      "$WS_KIND"|"$PKG_KIND") want=4 ;;
+      "$WS_KIND"|"$SCRIPT_KIND") want=4 ;;
       "$SVC_KIND") want=10 ;;
       "$RUN_KIND") want=17 ;;
       *) continue ;;
@@ -107,7 +107,7 @@ web_split() {
   FRAG=()
   IFS="$FS" read -r -a FRAG <<<"$line"
   case ${line%%"$FS"*} in
-    "$WS_KIND"|"$PKG_KIND") want=4 ;;
+    "$WS_KIND"|"$SCRIPT_KIND") want=4 ;;
     "$SVC_KIND") want=10 ;;
     "$RUN_KIND") want=17 ;;
     *) want=${#FRAG[@]} ;;
@@ -256,12 +256,12 @@ web_ws_remove() {
   rm -rf "${WEB_LOG_DIR:?}/$id"
 }
 
-# 删掉属于某个工作区的包行；它们的第 2 列是相对路径，按工作区 id 删的那支认不出来。
+# 删掉属于某个工作区的脚本行；它们的第 2 列是相对路径，按工作区 id 删的那支认不出来。
 web_drop_ws() {
   local ws=$1 row keep=()
   for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
     case ${row%%"$FS"*} in
-      "$PKG_KIND") [[ "$(web_col "$row" 3)" == "$ws" ]] && continue ;;
+      "$SCRIPT_KIND") [[ "$(web_col "$row" 3)" == "$ws" ]] && continue ;;
     esac
     keep+=("$row")
   done
@@ -281,7 +281,7 @@ web_scan() {
   local id=$1 root=$2
   local rec tag dir rel args display cmdtext name
 
-  prepare_packages "$root"
+  prepare_scripts "$root"
 
   while IFS= read -r rec; do
     IFS="$FS" read -r tag dir rel args display cmdtext <<<"$rec"
@@ -298,9 +298,9 @@ web_scan() {
     web_svc_line "$id" install "$tag" "$dir" "$rel" "$args" "$display" "$cmdtext" "$NODE_PM"
   done < <(collect_install | assign_tags)
 
-  for rel in "${NODE_PKGS[@]}"; do
-    name=${PKG_NAME[$rel]}
-    printf '%s\n' "$PKG_KIND$FS$rel$FS$id$FS$name"
+  for rel in "${NODE_SCRIPTS[@]}"; do
+    name=${SCRIPT_NAME[$rel]}
+    printf '%s\n' "$SCRIPT_KIND$FS$rel$FS$id$FS$name"
   done
   return 0
 }
@@ -323,7 +323,7 @@ web_legacy_args() {
 }
 
 # ---- 自定义命令 ----
-# 登记表每行：工作区|类型|包目录|名称|完整命令；状态里的服务行由它生成，扫描后重新挂回去。
+# 登记表每行：工作区|类型|脚本目录|名称|完整命令；状态里的服务行由它生成，扫描后重新挂回去。
 
 web_custom_append() {
   local ws=$1 type=$2 rel=$3 tag=$4 args=$5
@@ -390,7 +390,7 @@ web_txn_custom_add() {
   root=$(web_col "$WEB_ROW" 3)
   rel=${rel:-.}
   if [[ "$rel" == '.' ]]; then dir=$root; else dir="$root/$rel"; fi
-  [[ -d "$dir" ]] || { web_fail "包目录不存在：$rel" "$EXIT_USAGE"; return 1; }
+  [[ -d "$dir" ]] || { web_fail "脚本目录不存在：$rel" "$EXIT_USAGE"; return 1; }
   id="$ws.$type.$tag"
   web_locate "$SVC_KIND" "$id" && { web_fail "已经有同名命令：$tag" "$EXIT_USAGE"; return 1; }
   line="$SVC_KIND$FS$id$FS$ws$FS$type$FS$dir$FS$rel$FS$args$FS$rel$FS$args$FS"
@@ -425,7 +425,7 @@ web_txn_custom_del() {
 
 web_custom_del() { web_txn web_txn_custom_del "$@"; }
 
-# 用一个工作区的扫描结果替换旧的服务与包行；工作区与运行记录原样保留。
+# 用一个工作区的扫描结果替换旧的服务与脚本行；工作区与运行记录原样保留。
 web_scan_apply() {
   local id=$1 file=$2 row line sid rel args pm width type _sid _rel _args
   local -a fresh=() keep=() out=()
@@ -441,7 +441,7 @@ web_scan_apply() {
   done
   for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
     case ${row%%"$FS"*} in
-      "$SVC_KIND"|"$PKG_KIND") [[ "$(web_col "$row" 3)" == "$id" ]] && continue ;;
+      "$SVC_KIND"|"$SCRIPT_KIND") [[ "$(web_col "$row" 3)" == "$id" ]] && continue ;;
     esac
     keep+=("$row")
   done

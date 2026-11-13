@@ -97,7 +97,7 @@ printf '{"name":"skip","scripts":{"build":"b"}}\n' >"$neg/apps/skip/package.json
 out=$(cd "$neg" && "$nodex" --list build)
 grep -q '^keep ' <<<"$out" && ! grep -q '^skip ' <<<"$out" && ok '排除模式生效' || bad '排除模式没生效'
 
-# 网页引擎：add 之后状态文件里要有 ws、svc 与 pkg 行。
+# 网页引擎：add 之后状态文件里要有 ws、svc 与 script 行。
 cache="$tmp/cache"
 mkdir -p "$cache"
 printf 'hello\x1f1\nreqfrom\x1fadd\x1f%s\nreqfrom\x1ftick\n' "$multi" |
@@ -106,7 +106,7 @@ state="$cache/nodex/web/state.tsv"
 [[ -f "$state" ]] && ok '引擎写出状态文件' || bad '引擎没有写状态文件'
 grep -q "^ws${FS}" "$state" && ok '状态里有工作区' || bad '状态缺工作区'
 grep -q "^svc${FS}.*${FS}dev${FS}" "$state" && ok '状态里有启动服务' || bad '状态缺启动服务'
-grep -q "^pkg${FS}" "$state" && ok '状态里有包清单' || bad '状态缺包清单'
+grep -q "^script${FS}" "$state" && ok '状态里有脚本清单' || bad '状态缺脚本清单'
 
 # 自定义命令：加两条，删一条，状态与登记表里只留剩下那条。
 wsid=$(printf '%s' "$multi" | md5sum | cut -c1-12)

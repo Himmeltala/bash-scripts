@@ -1,4 +1,4 @@
-# 执行侧：记录里的参数就是完整命令，进包目录直接执行；单条记录 exec 顶替进程，多条记录后台共用终端。
+# 执行侧：记录里的参数就是完整命令，进脚本所在目录直接执行；单条记录 exec 顶替进程，多条记录后台共用终端。
 
 # 进目录后 exec 成记录里的那条命令；在子 shell 里调用即后台执行，因为 exec 只替换那个子 shell。
 launch_one() {
@@ -22,9 +22,9 @@ run_one() {
 
 # 串行执行多条记录，前一条失败就停。
 run_serial() {
-  local rec tag workdir pkgrel args display cmdtext
+  local rec tag workdir rel args display cmdtext
   for rec in "$@"; do
-    IFS=$FS read -r tag workdir pkgrel args display cmdtext <<< "$rec"
+    IFS=$FS read -r tag workdir rel args display cmdtext <<< "$rec"
     printf '执行 %s\n' "$cmdtext" >&2
     run_one "$workdir" "$args" || return 1
   done
@@ -33,10 +33,10 @@ run_serial() {
 
 launch_records() {
   local -a recs=("$@")
-  local rec tag workdir pkgrel args display cmdtext
+  local rec tag workdir rel args display cmdtext
 
   if [[ ${#recs[@]} -eq 1 ]]; then
-    IFS=$FS read -r tag workdir pkgrel args display cmdtext <<< "${recs[0]}"
+    IFS=$FS read -r tag workdir rel args display cmdtext <<< "${recs[0]}"
     printf '在 %s 执行 %s\n' "$workdir" "$cmdtext" >&2
     launch_one "$workdir" "$args"
     return 1
@@ -46,7 +46,7 @@ launch_records() {
   # 中断只收掉等待，子进程照常收到内核发出的 SIGINT 并优雅退出。
   trap ':' INT TERM
   for rec in "${recs[@]}"; do
-    IFS=$FS read -r tag workdir pkgrel args display cmdtext <<< "$rec"
+    IFS=$FS read -r tag workdir rel args display cmdtext <<< "$rec"
     printf '后台执行 %s\n' "$cmdtext" >&2
     ( launch_one "$workdir" "$args" ) &
     pids+=($!)

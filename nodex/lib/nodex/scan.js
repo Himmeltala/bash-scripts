@@ -1,13 +1,13 @@
-// 扫描 Node 工作区：包管理器、工作区里的包与各自的脚本，按行输出给 bash 读。
-// 输出用 \x1f 分列：meta<FS>包管理器，pkg<FS>相对路径<FS>包名<FS>启动脚本<FS>构建脚本。
-// 脚本列可以是空格分隔的多个名字，表示这个包有多个同义脚本；为空表示没有，不参与那一类动作。
+// 扫描 Node 工作区：包管理器和工作区里的脚本，按行输出给 bash 读。
+// 输出用 \x1f 分列：meta<FS>包管理器，script<FS>相对路径<FS>脚本名<FS>启动脚本<FS>构建脚本。
+// 脚本列可以是空格分隔的多个名字，表示这个目录有多个同义脚本；为空表示没有，不参与那一类动作。
 
 const fs = require('fs')
 const path = require('path')
 
 const FS = '\x1f'
 const root = path.resolve(process.argv[2] || '.')
-// 锁文件与 packageManager 可能在工作区根上，扫描根只负责圈定这一轮看哪些包。
+// 锁文件与 packageManager 可能在工作区根上，扫描根只负责圈定这一轮看哪些目录。
 const pmRoot = path.resolve(process.argv[3] || root)
 
 // 不往这些目录里找包：依赖、版本库与构建产物里就算有 package.json 也不是工作区成员。
@@ -122,7 +122,7 @@ function walk(dir, rel, out) {
   }
 }
 
-// 一个包可能有多个同类脚本：精确名字优先，没有就收带冒号的变体（dev:pcsp-web 这种）。
+// 一个目录可能有多个同类脚本：精确名字优先，没有就收带冒号的变体（dev:pcsp-web 这种）。
 function scriptsOf(scripts, names) {
   if (!scripts || typeof scripts !== 'object') return []
   for (const name of names) {
@@ -159,7 +159,7 @@ if (includes.length) {
   }
 }
 
-// 根自己也算一个包：单包工程只有它，工作区根也可能带脚本。
+// 根自己也算一条：单包工程只有它，工作区根也可能带脚本。
 if (!found.includes('.')) found.unshift('.')
 
 const rows = []
@@ -176,5 +176,5 @@ for (const rel of found) {
 rows.sort((a, b) => (a[0] === '.' ? -1 : b[0] === '.' ? 1 : a[0].localeCompare(b[0])))
 
 const lines = ['meta' + FS + pm]
-for (const row of rows) lines.push(['pkg', ...row].join(FS))
+for (const row of rows) lines.push(['script', ...row].join(FS))
 process.stdout.write(lines.join('\n') + '\n')

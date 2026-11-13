@@ -56,7 +56,7 @@
           <div v-else class="empty">
             <v-icon size="56" color="on-surface-variant">mdi-view-dashboard-outline</v-icon>
             <p class="empty-title">先加一个工作区</p>
-            <p class="empty-hint">填 Node 工程里带 package.json 的目录，加了之后这里列出能启动、打包、安装的包。</p>
+            <p class="empty-hint">填 Node 工程里带 package.json 的目录，加了之后这里列出能启动、打包、安装的脚本。</p>
             <v-btn color="primary" variant="flat" prepend-icon="mdi-folder-plus" @click="addWorkspace()">
               添加工作区
             </v-btn>
@@ -181,7 +181,7 @@ async function addWorkspace(root) {
   await refresh()
   const hit = state.workspaces.find((w) => w.root === path || w.root === path.replace(/\/+$/, ''))
   if (hit) select(hit.id)
-  toast('已添加，正在列出包', 'primary')
+  toast('已添加，正在列出脚本', 'primary')
 }
 
 async function removeWorkspace(id) {

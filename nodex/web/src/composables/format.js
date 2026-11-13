@@ -40,6 +40,20 @@ export function ago(sec) {
   return `${Math.floor(diff / 86400)} 天前`
 }
 
+// 路径的最后一段，压缩包名默认就用工作区目录名。
+export function baseName(full) {
+  const parts = String(full || '').split('/').filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : String(full || '')
+}
+
+// 文件大小：不到 1 KB 按字节写，往上两位小数取 KB、MB。
+export function sizeText(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(2)} MB`
+}
+
 export function tailPath(full) {
   const parts = String(full || '').split('/').filter(Boolean)
   return parts.slice(-3).join('/') || full

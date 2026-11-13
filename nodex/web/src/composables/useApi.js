@@ -20,7 +20,10 @@ async function call(method, path, body) {
   }
   if (!resp.ok) {
     const msg = (data && data.error) || `请求失败（${resp.status}）`
-    throw new ApiError(msg)
+    const err = new ApiError(msg)
+    // 页面偶尔要按状态码区别对待，比如打包撞上同名包先问一句。
+    err.status = resp.status
+    throw err
   }
   return data
 }
@@ -47,4 +50,11 @@ export const api = {
   update: (svc, args) => call('POST', '/update', { svc, args }),
   addCommand: (payload) => call('POST', '/addcmd', payload),
   removeCommand: (svc) => call('POST', '/delcmd', { svc }),
+  // 压缩栏：列工作区里一层的内容、起打包、问这次打包跑完没有。
+  entries: (ws, rel = '') => call('GET', `/entries?ws=${encodeURIComponent(ws)}&rel=${encodeURIComponent(rel)}`),
+  zip: (payload) => call('POST', '/zip', payload),
+  zipStatus: (run) => call('GET', `/zip?run=${encodeURIComponent(run)}`),
+  // 打好的包直接交给浏览器下，链接带下载头，点一下就是另存为。
+  downloadUrl: (ws, name) =>
+    `${PREFIX}/download?ws=${encodeURIComponent(ws)}&name=${encodeURIComponent(name)}`,
 }

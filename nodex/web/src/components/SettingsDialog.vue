@@ -18,7 +18,7 @@
     </template>
 
     <div class="where">
-      <span class="label">包</span>
+      <span class="label">脚本</span>
       <code>{{ svc.display || '.' }}</code>
       <span class="path" :title="svc.path">{{ svc.path }}</span>
     </div>
@@ -52,7 +52,7 @@
     </div>
 
     <template #actions>
-      <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一个包的其他动作</span>
+      <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一个脚本的其他动作</span>
       <v-spacer />
       <v-btn variant="text" @click="$emit('update:modelValue', false)">关闭</v-btn>
       <v-btn color="primary" variant="flat" @click="save">保存</v-btn>
@@ -64,7 +64,6 @@
 import { computed, ref, watch } from 'vue'
 import { TYPE_TEXT } from '../composables/format'
 import FloatingDialog from './FloatingDialog.vue'
-import LogView from './LogView.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
