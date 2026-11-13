@@ -13,7 +13,6 @@
       <div class="bar-actions">
         <v-btn-toggle
           v-model="mode"
-          density="compact"
           variant="text"
           divided
           mandatory

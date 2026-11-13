@@ -131,6 +131,10 @@ class SvnWorkspace(unittest.TestCase):
             self.assertNotIn(" line 1\n", short["text"])
             self.assertIn(" line 1\n", full["text"])
             self.assertIn("+line 30 changed", full["text"])
+            run(["svn", "commit", "-q", "-m", "change", "."], cwd=wc)
+            rev_full = svnmod.revision_diff(str(wc), "2", "/big.txt", full=True)
+            self.assertIn(" line 1\n", rev_full["text"])
+            self.assertIn("+line 30 changed", rev_full["text"])
 
     def test_unversioned_file_reads_as_content(self):
         self.assertEqual(svnmod.read_unversioned(str(self.wc), "b.txt"), "new\n")

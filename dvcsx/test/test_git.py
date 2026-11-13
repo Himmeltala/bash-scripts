@@ -190,6 +190,11 @@ class GitWorkspace(unittest.TestCase):
             self.assertNotIn(" line 1\n", short["text"])
             self.assertIn(" line 1\n", full["text"])
             self.assertIn("+line 30 changed", full["text"])
+            run(["git", "commit", "-qam", "change"], cwd=tmp)
+            sha = git_out("rev-parse", "HEAD", cwd=tmp)
+            rev_full = gitmod.git_revision_diff(tmp, sha, "big.txt", full=True)
+            self.assertIn(" line 1\n", rev_full["text"])
+            self.assertIn("+line 30 changed", rev_full["text"])
 
     def test_browse_lists_and_reads_files(self):
         data = gitmod.browse_list(str(self.repo), "")
@@ -326,6 +331,12 @@ class GitWorkspace(unittest.TestCase):
 
         status, data = self.call(
             "/revision?ws=%s&rev=%s&path=sub/a.txt" % (wid, self.first)
+        )
+        self.assertEqual(status, 200, data)
+        self.assertIn("+hello", data["text"])
+
+        status, data = self.call(
+            "/revision?ws=%s&rev=%s&path=sub/a.txt&full=1" % (wid, self.first)
         )
         self.assertEqual(status, 200, data)
         self.assertIn("+hello", data["text"])

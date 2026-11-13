@@ -1079,14 +1079,17 @@ def change_diff(root, rel, rev=None, full=False):
     return diff_of(root, args)
 
 
-def revision_diff(root, rev, repo_path=""):
+def revision_diff(root, rev, repo_path="", full=False):
     if not (rev or "").isdigit():
         raise ApiError(400, "版本号不对：%s" % rev)
+    args = ["diff"]
+    if full:
+        # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
+        args += ["-x", "-U1000000"]
+    args += ["-c", rev]
     if repo_path:
         # 日志里的路径是仓库内绝对路径，^/ 是 svn 在工作副本里认出仓库根的写法。
-        args = ["diff", "-c", rev, "--", "^" + repo_path]
-    else:
-        args = ["diff", "-c", rev]
+        args += ["--", "^" + repo_path]
     return diff_of(root, args)
 
 
@@ -1242,11 +1245,13 @@ def git_change_diff(root, rel, full=False):
     return git_diff_of(root, args)
 
 
-def git_revision_diff(root, sha, repo_path=""):
+def git_revision_diff(root, sha, repo_path="", full=False):
     if not re.fullmatch(r"[0-9a-fA-F]{4,40}", sha or ""):
         raise ApiError(400, "提交号不对：%s" % sha)
     # 日志里的路径相对仓库根，:/ 让 git 也按仓库根解释，工作区是子目录时也对得上。
     args = ["show", "--format=", "--no-color", "--find-renames", sha]
+    if full:
+        args.insert(1, "--unified=1000000")
     if repo_path:
         args += ["--", ":/" + repo_path.lstrip("/")]
     return git_diff_of(root, args)
@@ -1856,10 +1861,11 @@ class Handler(BaseHTTPRequestHandler):
         ws = self._ws(query)
         rev = (query.get("rev") or [""])[0]
         repo_path = (query.get("path") or [""])[0]
+        full = (query.get("full") or ["0"])[0] == "1"
         if ws.get("vcs") == "git":
-            result = git_revision_diff(ws["root"], rev, repo_path)
+            result = git_revision_diff(ws["root"], rev, repo_path, full)
         else:
-            result = revision_diff(ws["root"], rev, repo_path)
+            result = revision_diff(ws["root"], rev, repo_path, full)
         result.update({"kind": "diff", "rev": rev, "path": repo_path})
         return result
 

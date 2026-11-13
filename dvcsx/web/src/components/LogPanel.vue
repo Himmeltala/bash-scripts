@@ -29,16 +29,28 @@
           <template v-if="pendingCount">· {{ pendingCount }} 个版本待更新</template>
         </template>
       </span>
-      <v-btn
-        size="small"
-        variant="text"
-        color="primary"
-        prepend-icon="mdi-refresh"
-        :loading="loading"
-        @click="load"
-      >
-        刷新
-      </v-btn>
+      <div class="bar-actions">
+        <v-btn-toggle
+          v-model="logDiffScope"
+          density="compact"
+          variant="text"
+          divided
+          mandatory
+        >
+          <v-btn value="hunks" size="small" title="只显示改动的片段">差异</v-btn>
+          <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整文件</v-btn>
+        </v-btn-toggle>
+        <v-btn
+          size="small"
+          variant="text"
+          color="primary"
+          prepend-icon="mdi-refresh"
+          :loading="loading"
+          @click="load"
+        >
+          刷新
+        </v-btn>
+      </div>
     </div>
 
     <p v-if="error" class="hint bad">{{ error }}</p>
@@ -149,33 +161,74 @@
           >
             <div class="pane files" :class="{ collapsed: filesCollapsed }" :style="filesStyle">
               <div class="pane-head">
-                <span class="pane-title">改动的文件</span>
-                <span class="pane-count">{{ current.paths.length }}</span>
-                <v-spacer />
-                <v-btn
-                  icon
-                  size="x-small"
-                  variant="text"
-                  :title="filesCollapsed ? '展开文件列表' : '收起文件列表'"
-                  @click="toggleFiles"
-                >
-                  <v-icon size="18">
-                    {{ filesCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}
-                  </v-icon>
-                </v-btn>
+                <div class="head-left">
+                  <span class="pane-title">改动的文件</span>
+                  <span class="pane-count">{{ current.paths.length }}</span>
+                </div>
+                <div class="head-right">
+                  <v-btn-toggle
+                    v-model="logFilesMode"
+                    class="files-mode"
+                    variant="text"
+                    divided
+                    mandatory
+                  >
+                    <v-btn
+                      value="flat"
+                      size="x-small"
+                      icon="mdi-view-list-outline"
+                      title="平铺列表"
+                    />
+                    <v-btn
+                      value="tree"
+                      size="x-small"
+                      icon="mdi-file-tree-outline"
+                      title="目录树"
+                    />
+                  </v-btn-toggle>
+                  <v-btn
+                    icon
+                    size="x-small"
+                    variant="text"
+                    :title="filesCollapsed ? '展开文件列表' : '收起文件列表'"
+                    @click="toggleFiles"
+                  >
+                    <v-icon size="18">
+                      {{ filesCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}
+                    </v-icon>
+                  </v-btn>
+                </div>
               </div>
               <div v-show="!filesCollapsed" class="paths">
-                <div
-                  v-for="item in current.paths"
-                  :key="item.path + item.action"
-                  class="path"
-                  :class="{ active: activePath === item.path }"
-                  :title="item.path"
-                  @click="openPath(item.path)"
-                >
-                  <span class="letter" :style="{ color: tone(item.action) }">{{ item.action }}</span>
-                  <span class="mono name">{{ shortenPath(shortPath(item.path), 60) }}</span>
-                </div>
+                <template v-for="row in pathRows" :key="row.kind + ':' + row.path">
+                  <div
+                    v-if="row.kind === 'dir'"
+                    class="path dir"
+                    :style="{ paddingLeft: 6 + row.depth * 14 + 'px' }"
+                    :title="row.path"
+                    @click="toggleDir(row.path)"
+                  >
+                    <v-icon size="14" class="chev">
+                      {{ collapsedDirs[row.path] ? 'mdi-chevron-right' : 'mdi-chevron-down' }}
+                    </v-icon>
+                    <v-icon size="14" class="dir-icon">mdi-folder-outline</v-icon>
+                    <span class="mono name">{{ row.name }}</span>
+                    <span class="dir-count">{{ row.count }}</span>
+                  </div>
+                  <div
+                    v-else
+                    class="path"
+                    :class="{ active: activePath === row.path }"
+                    :style="{ paddingLeft: 6 + row.depth * 14 + 'px' }"
+                    :title="row.path"
+                    @click="openPath(row.path)"
+                  >
+                    <span class="letter" :style="{ color: tone(row.item.action) }">
+                      {{ row.item.action }}
+                    </span>
+                    <span class="mono name">{{ row.label }}</span>
+                  </div>
+                </template>
                 <p v-if="!current.paths.length" class="none">这次提交没有列出变更路径。</p>
               </div>
             </div>
@@ -207,11 +260,14 @@
                 </template>
               </DiffView>
               <div v-else class="pane-head">
-                <span class="pane-title mono folded-title" :title="diffTitle">{{ diffTitle }}</span>
-                <v-spacer />
-                <v-btn icon size="x-small" variant="text" title="展开差异" @click="toggleDiff">
-                  <v-icon size="18">mdi-chevron-up</v-icon>
-                </v-btn>
+                <div class="head-left">
+                  <span class="pane-title mono folded-title" :title="diffTitle">{{ diffTitle }}</span>
+                </div>
+                <div class="head-right">
+                  <v-btn icon size="x-small" variant="text" title="展开差异" @click="toggleDiff">
+                    <v-icon size="18">mdi-chevron-up</v-icon>
+                  </v-btn>
+                </div>
               </div>
             </div>
           </div>
@@ -223,15 +279,21 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import DiffView from './DiffView.vue'
 import { api } from '../composables/useApi'
 import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'
+import { usePreferencesStore } from '../stores/preferences'
 
 const props = defineProps({
   ws: { type: Object, required: true },
   refresh: { type: Number, default: 0 },
 })
+
+// 差异口径与文件列表的查看方式记在全局偏好里，换工作副本也保持。
+const preferences = usePreferencesStore()
+const { logDiffScope, logFilesMode } = storeToRefs(preferences)
 
 const PAGE = 50
 const entries = ref([])
@@ -261,6 +323,80 @@ const listWidth = ref(320)
 const resizing = ref(false)
 let startX = 0
 let startWidth = 0
+let diffSeq = 0
+
+// 「改动的文件」两种查看方式，目录树默认全部展开。
+const collapsedDirs = reactive({})
+
+function buildTree(list) {
+  const root = { path: '', dirs: new Map(), files: [] }
+  for (const item of list) {
+    const parts = String(item.path || '').split('/').filter(Boolean)
+    if (!parts.length) continue
+    let node = root
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      const name = parts[i]
+      let child = node.dirs.get(name)
+      if (!child) {
+        child = {
+          name,
+          path: node.path ? `${node.path}/${name}` : name,
+          dirs: new Map(),
+          files: [],
+        }
+        node.dirs.set(name, child)
+      }
+      node = child
+    }
+    node.files.push({ ...item, name: parts[parts.length - 1] })
+  }
+  return root
+}
+
+function countIn(node) {
+  let total = node.files.length
+  for (const child of node.dirs.values()) total += countIn(child)
+  return total
+}
+
+function flattenTree(node, depth) {
+  const out = []
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  for (const dir of dirs) {
+    out.push({ kind: 'dir', name: dir.name, path: dir.path, depth, count: countIn(dir) })
+    if (!collapsedDirs[dir.path]) out.push(...flattenTree(dir, depth + 1))
+  }
+  const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  for (const file of files) {
+    out.push({
+      kind: 'file',
+      name: file.name,
+      path: file.path,
+      label: shortenPath(file.name, 40),
+      depth,
+      item: file,
+    })
+  }
+  return out
+}
+
+const pathRows = computed(() => {
+  const list = current.value ? current.value.paths : []
+  if (logFilesMode.value !== 'tree') {
+    return list.map((item) => ({
+      kind: 'file',
+      path: item.path,
+      label: shortenPath(shortPath(item.path), 60),
+      depth: 0,
+      item,
+    }))
+  }
+  return flattenTree(buildTree(list), 0)
+})
+
+function toggleDir(path) {
+  collapsedDirs[path] = !collapsedDirs[path]
+}
 
 const isGit = computed(() => props.ws.vcs === 'git')
 // SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
@@ -491,18 +627,31 @@ async function wholeCommit() {
 }
 
 async function loadDiff(path) {
+  const mine = ++diffSeq
   diffLoading.value = true
   diffError.value = ''
   try {
-    content.value = await api.revision(props.ws.id, current.value.revision, path)
+    const data = await api.revision(
+      props.ws.id,
+      current.value.revision,
+      path,
+      logDiffScope.value === 'file'
+    )
+    // 连点提交或来回切口径时，晚到的旧结果不能盖住当前这一份。
+    if (mine === diffSeq) content.value = data
   } catch (err) {
+    if (mine !== diffSeq) return
     content.value = { text: '', truncated: false }
     diffError.value = err.message
   } finally {
-    diffLoading.value = false
+    if (mine === diffSeq) diffLoading.value = false
   }
 }
 
+// 切换差异口径时按当前看的内容重新取一遍。
+watch(logDiffScope, () => {
+  if (current.value) loadDiff(activePath.value)
+})
 watch(() => props.ws.id, load)
 watch(() => props.refresh, load)
 onMounted(load)
@@ -521,13 +670,27 @@ defineExpose({ load })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 6px 12px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
+/* 分支、上游这些字可以截断，右边两个切换钮不跟着缩，免得挤成滚动条。 */
 .count {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.76rem;
   color: rgb(var(--v-theme-on-surface-variant));
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bar-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: auto;
 }
 .split {
   flex: 1 1 auto;
@@ -726,16 +889,43 @@ defineExpose({ load })
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
   min-height: 32px;
   padding: 0 6px 0 12px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
+/* 左边标题让位截断，右边两个切换钮和收起按钮按自身宽度占位。 */
+.head-left {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.head-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 切换钮里这两个图标按钮不许被压小，否则图标会被裁掉。 */
+.files-mode :deep(.v-btn) {
+  flex: 0 0 auto;
+}
 .pane-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.76rem;
   color: rgb(var(--v-theme-on-surface-variant));
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .pane-count {
+  flex: 0 0 auto;
   padding: 0 6px;
   border-radius: 8px;
   font-size: 0.72rem;
@@ -813,9 +1003,29 @@ defineExpose({ load })
   font-weight: 600;
 }
 .name {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.chev {
+  flex: 0 0 14px;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.dir-icon {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-primary));
+}
+.dir-count {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  text-align: center;
+  font-size: 0.66rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 .none {
   padding: 12px 16px;

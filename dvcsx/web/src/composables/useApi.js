@@ -53,7 +53,11 @@ export const api = {
   log: (ws, limit = 50, skip = 0, sync = true) =>
     call('GET', `/log?ws=${q(ws)}&limit=${limit}&skip=${skip}&sync=${sync ? 1 : 0}`),
   commit: (ws, rev) => call('GET', `/commit?ws=${q(ws)}&rev=${q(rev)}`),
-  revision: (ws, rev, path = '') => call('GET', `/revision?ws=${q(ws)}&rev=${q(rev)}&path=${q(path)}`),
+  revision: (ws, rev, path = '', full = false) =>
+    call(
+      'GET',
+      `/revision?ws=${q(ws)}&rev=${q(rev)}&path=${q(path)}&full=${full ? 1 : 0}`
+    ),
   syncInfo: (ws) => call('GET', `/sync-info?ws=${q(ws)}`),
   startOperation: (body) => call('POST', '/operations', body),
   latestOperation: (ws) => call('GET', `/operations?ws=${q(ws)}`),
