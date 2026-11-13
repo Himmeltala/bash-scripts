@@ -118,6 +118,7 @@
         :loader="loadFile"
         :saver="saveFile"
         @navigate="reveal"
+        @saved="onSaved"
       />
     </div>
   </div>
@@ -190,15 +191,16 @@ async function openHit(hit) {
   await editorRef.value?.open(hit.path, hit.line || 0)
 }
 
-async function save() {
-  const path = activePath.value
-  const data = await editorRef.value?.save()
-  if (!data) return
+function save() {
+  editorRef.value?.save()
+}
+
+// 保存成功后刷新：文件大小与目录树里记着的那一份要跟上。
+function onSaved({ path, data }) {
   // 保存期间可能已经换到别的文件，那边的内容不能被这份草稿盖掉。
   if (activePath.value === path && activeNode.value) {
     activeNode.value = { ...activeNode.value, size: data.size }
   }
-  // 目录树里记着文件大小，保存后把这一层重新列一遍。
   treeRef.value?.reloadDir(dirName(path))
 }
 

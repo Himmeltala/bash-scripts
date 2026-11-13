@@ -79,7 +79,7 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 
 ### FileEditor
 
-`components/FileEditor/` 收编辑器全部相关代码：外壳、面包屑、行号与高亮输入区、未保存确认对话框、草稿与保存状态、配套样式。`loader(path)` 与 `saver(path, text)` 由调用方传，组件不认具体接口；`rootName` 与 `size` 只管显示。`navigate` 事件在点根目录或面包屑时带出目标路径。`defineExpose` 给出 `open(path, line) / reload / close / save / confirmLeave / cancelLeave / dirty`：换文件前先 `confirmLeave()`，保存走 `save()` 并拿回接口结果。
+`components/FileEditor/` 收编辑器全部相关代码：外壳、面包屑、行号与高亮输入区、未保存确认对话框、草稿与保存状态、配套样式。`loader(path)` 与 `saver(path, text)` 由调用方传，组件不认具体接口；`rootName` 与 `size` 只管显示。`navigate` 事件在点根目录或面包屑时带出目标路径。有未保存改动时头部出现「未保存」与保存/放弃，放弃退回打开时那份内容；保存成功后发 `saved` 事件，带 `{ path, data }`，目录树之类的调用方拿它刷新。`defineExpose` 给出 `open(path, line) / reload / close / save / discard / confirmLeave / cancelLeave / dirty`：换文件前先 `confirmLeave()`，保存走 `save()` 并拿回接口结果。
 
 ### DiffView
 

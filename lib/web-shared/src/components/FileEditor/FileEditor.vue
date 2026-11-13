@@ -6,7 +6,25 @@
       :path="path"
       :size="size"
       @navigate="emit('navigate', $event)"
-    />
+    >
+      <template #actions>
+        <div v-if="dirty && !state.loading" class="actions">
+          <v-chip size="x-small" variant="flat" color="warning">未保存</v-chip>
+          <v-btn
+            size="small"
+            variant="text"
+            color="primary"
+            :loading="state.saving"
+            @click="save"
+          >
+            保存
+          </v-btn>
+          <v-btn size="small" variant="text" :disabled="state.saving" @click="discard">
+            放弃
+          </v-btn>
+        </div>
+      </template>
+    </FileHead>
 
     <p v-if="state.loading" class="hint">正在读取文件…</p>
     <p v-else-if="state.error" class="hint bad">{{ state.error }}</p>
@@ -40,13 +58,35 @@ const props = defineProps({
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate'])
+const emit = defineEmits(['navigate', 'saved'])
 
-const { path, state, dirty, lineCount, highlighted, load, save, reset } = useFileEditor({
+const {
+  path,
+  state,
+  dirty,
+  lineCount,
+  highlighted,
+  load,
+  save: saveDraft,
+  discard: discardDraft,
+  reset,
+} = useFileEditor({
   loader: props.loader,
   saver: props.saver,
 })
 const paneRef = ref(null)
+
+// 保存成功后把结果交给调用方：目录树里的文件大小、差异都要跟着刷新。
+async function save() {
+  const target = path.value
+  const data = await saveDraft()
+  if (data) emit('saved', { path: target, data })
+  return data
+}
+
+function discard() {
+  discardDraft()
+}
 
 const leaveAsk = ref(false)
 let leaveResolve = null
@@ -96,7 +136,7 @@ function cancelLeave() {
 
 onBeforeUnmount(() => answerLeave(false))
 
-defineExpose({ open, reload, close, save, confirmLeave, cancelLeave, dirty })
+defineExpose({ open, reload, close, save, discard, confirmLeave, cancelLeave, dirty })
 </script>
 
 <style scoped src="./FileEditor.css"></style>
