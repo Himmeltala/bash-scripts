@@ -93,7 +93,7 @@ class SvnWorkspace(unittest.TestCase):
         self.assertEqual(status, 200, data)
         return data["workspace"]["id"]
 
-    # ---- 直接调查询函数
+    # 直接调查询函数
 
     def test_info_reads_working_copy(self):
         info = svnmod.svn_info(str(self.wc))
@@ -199,7 +199,7 @@ class SvnWorkspace(unittest.TestCase):
         one = svnmod.revision_diff(str(self.wc), "1", "/src/a.txt")
         self.assertIn("+hello", one["text"])
 
-    # ---- 接口
+    # 接口
 
     def test_api_add_state_forget(self):
         wid = self.add()

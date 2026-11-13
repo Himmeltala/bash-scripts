@@ -159,8 +159,6 @@ class WebHandler(BaseHTTPRequestHandler):
             raise ApiError(400, "请求体要是一个对象")
         return data
 
-    # ---- 静态页面
-
     def _static(self, path, head=False):
         rel = path.lstrip("/") or "index.html"
         target = (self.static / rel).resolve()

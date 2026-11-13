@@ -411,7 +411,7 @@ def log(msg):
     print(time.strftime("%H:%M:%S"), msg, file=sys.stderr, flush=True)
 
 
-# ---- 工作副本登记 ----
+# 工作副本登记
 
 class Workspaces:
     """登记过的工作副本，存在 state.json 里；读写都加锁，多个请求并发加同一目录也只落一条。"""
@@ -521,7 +521,7 @@ class Workspaces:
         return out
 
 
-# ---- svn 查询 ----
+# svn 查询
 
 def svn(args, cwd=None, timeout=SVN_TIMEOUT):
     """跑一条 svn 命令，返回标准输出与错误文本。找不到 svn 与超时都按接口错误报出去。"""
@@ -1111,7 +1111,7 @@ def revision_diff(root, rev, repo_path="", full=False):
     return diff_of(root, args)
 
 
-# ---- git 查询 ----
+# git 查询
 
 def git(args, cwd=None, timeout=GIT_TIMEOUT, env=None):
     """跑一条 git 命令，返回标准输出与错误文本。找不到 git 与超时都按接口错误报出去。"""
@@ -1700,7 +1700,7 @@ def list_dirs(raw):
     return {"home": home, "path": target, "entries": entries}
 
 
-# ---- HTTP ----
+# HTTP
 
 
 class Handler(WebHandler):
@@ -1946,7 +1946,7 @@ class Handler(WebHandler):
         job.cancel()
         return {"ok": True}
 
-    # ---- SSE
+    # SSE
 
     def _sse_headers(self):
         self.send_response(200)
@@ -2045,13 +2045,12 @@ class Handler(WebHandler):
                     return
                 last_ping = time.monotonic()
 
-    # ---- 安全与请求体
+    # 安全与请求体
 
     def _check_write(self):
         if self.allow_write or is_loopback(self.client_address[0]):
             return
         raise ApiError(403, "写操作只允许本机发起；要放开给其他机器，用 --allow-write 启动")
-
 
 
 def serve(args):

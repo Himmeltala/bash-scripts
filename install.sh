@@ -19,16 +19,14 @@ readonly MARK_LINE='# bash-scripts 装的工具'
 readonly INSTALL_DIR="${BASH_SCRIPTS_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-scripts}"
 readonly BIN_DIR="${BASH_SCRIPTS_BIN_DIR:-$HOME/.local/bin}"
 
-# 系统默认配置里已经给了 PATH 时就不用再写 .bashrc。两种都认：
-# Debian/Ubuntu 的 ~/.profile 里有一句，只要 ~/.local/bin 在就加进 PATH；
-# /etc/environment 是 PAM 在会话开始时读的。
-# 两种文件只要有一种已经把链接目录加进 PATH，就不改 .bashrc。
+# 系统默认配置已经给出 PATH 时就不写 .bashrc：Debian/Ubuntu 的 ~/.profile 里有一句，
+# /etc/environment 由 PAM 在会话开始时读；两种文件有一种覆盖了链接目录就不改。
 readonly PROFILE_FILE="$HOME/.profile"
 readonly ENVIRONMENT_FILE='/etc/environment'
 # 核对 /etc/environment 用哪个文件，可以换掉，测试用。
 readonly ENVIRONMENT_PATH="${BASH_SCRIPTS_ENVIRONMENT:-$ENVIRONMENT_FILE}"
 
-# 默认链接目录 + ~/.profile 里的那句 = 登录时自动进 PATH，不必改 .bashrc。
+# 默认链接目录配合 ~/.profile 里的那句，登录时自动进 PATH，不必改 .bashrc。
 default_bin_covered() {
   [[ "$BIN_DIR" == "$HOME/.local/bin" ]] || return 1
   [[ -f "$PROFILE_FILE" ]] || return 1

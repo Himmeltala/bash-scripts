@@ -107,7 +107,7 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(status, 200, data)
         return data["workspace"]["id"]
 
-    # ---- 直接调查询函数
+    # 直接调查询函数
 
     def test_info_reads_repo(self):
         info = gitmod.git_info(str(self.repo))
@@ -294,7 +294,7 @@ class GitWorkspace(unittest.TestCase):
             data = gitmod.git_changes(tmp)
             self.assertEqual([f["item"] for f in data["files"]], ["unversioned"])
 
-    # ---- 接口
+    # 接口
 
     def test_api_add_state_forget(self):
         wid = self.add()

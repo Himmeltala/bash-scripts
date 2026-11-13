@@ -268,10 +268,7 @@ def is_any(host: str) -> bool:
 
 
 def lan_address() -> str:
-    """猜一个局域网里能用的本机地址；猜不出来就退回回环地址。
-
-    连一下外部地址只是让内核选出口网卡，不真的发数据包，所以断网时可能失败。
-    """
+    """猜一个局域网里能用的本机地址，猜不出来退回回环地址；连外部地址只让内核选出口网卡，断网时可能失败。"""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))  # TEST-NET-1，不会真连上

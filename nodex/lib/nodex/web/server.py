@@ -83,7 +83,7 @@ def parse_rows(text):
     return rows
 
 
-# ---------------------------------------------------------------- 按工作区选 Node
+# 按工作区选 Node
 
 # 自动扫描的四处：nvm、fnm、volta、n。别处的 Node 由页面手填路径。
 NODE_ROOTS = (
@@ -107,10 +107,7 @@ def _version_key(name):
 
 
 def discover_nodes(roots=None):
-    """扫已装的 Node。符号链接跳过：current 之类的别名指向真实目录，列出来只是重复。
-
-    fnm 把可执行文件放在 <版本>/installation 下，nvm、volta、n 直接放在 <版本> 下。
-    """
+    """扫已装的 Node，符号链接跳过（current 之类的别名只是重复）；fnm 装在 <版本>/installation，nvm、volta、n 直接放 <版本> 下。"""
     out = []
     seen = set()
     for root in (roots if roots is not None else NODE_ROOTS):
@@ -266,14 +263,11 @@ def state_payload(state, nodes, aliases, custom):
     return attach_alias_rel(attach_nodes(state.snapshot(custom), nodes), aliases)
 
 
-# ---------------------------------------------------------------- 状态文件
+# 状态文件
 
 
 class State:
-    """状态文件只读：写全在 bash 那边，写的时候整体替换，这里读到的总是完整的一份。
-
-    页面轮询很密，先比 mtime，没变就不重新解析。
-    """
+    """状态文件只读：写全在 bash 那边、整体替换；页面轮询很密，先比 mtime，没变就不重新解析。"""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -368,7 +362,7 @@ def run_info(r):
     return d
 
 
-# ---------------------------------------------------------------- 进程
+# 进程
 
 
 def sh_shell_argv(argv, env=None):
@@ -475,17 +469,13 @@ def group_alive(sid):
     return True
 
 
-# ---------------------------------------------------------------- 引擎
+# 引擎
 
 
 
 
 class Engine:
-    """一条长命的 bash：``nodex --engine`` 一直守着请求流，页面来一个它做一个。
-
-    一次请求一个进程的写法看着简单，代价大：扫描一个工程几秒，每次都要重新加载，
-    而且启动进程的事得另找地方做。所以这里保持一个常驻，断了自己再拉起来。
-
+    """一条长命的 bash：``nodex --engine`` 守着请求流，断了再拉起来；扫描工程要几秒，不复用就每次重载。
     reserve 是唯一回两行的：先 ok，再一行数据（运行号、目录、参数、预排行、会话代次）。
     """
 
@@ -594,7 +584,7 @@ class Engine:
                 self._spawn()
             return self._request(op, *params)
 
-    # ---- 页面的动作
+    # 页面的动作
 
     def add_workspace(self, root):
         self.call("add", root)
@@ -665,10 +655,10 @@ class Engine:
         self.call("stop", runid)
 
 
-# ---------------------------------------------------------------- 页面与接口
+# 页面与接口
 
 
-# ---------------------------------------------------------------- 目录浏览
+# 目录浏览
 
 # 一次最多回多少子目录：家目录之外也可能有几千项的目录，超过就截断并告诉页面。
 MAX_DIRS = 1000
@@ -733,7 +723,7 @@ def list_dirs(raw):
     }
 
 
-# ---------------------------------------------------------------- 压缩
+# 压缩
 
 
 # 与 zipx 的默认排除一致：树里列出来但置灰，勾不上。
@@ -895,7 +885,7 @@ class Handler(SSEMixin, WebHandler):
     zip_jobs = {}
     zip_lock = threading.Lock()
 
-    # ---- 路由
+    # 路由
 
     def _dispatch(self, method, route, query, body):
         if route == "log/stream":
@@ -1017,7 +1007,7 @@ class Handler(SSEMixin, WebHandler):
             "more": more,
         }
 
-    # ---- 压缩
+    # 压缩
 
     def _zip_start(self, body):
         """勾好的条目交给 zipx 打成一个包，日志走与启动服务同一套目录。"""

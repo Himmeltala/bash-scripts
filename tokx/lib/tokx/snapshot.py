@@ -20,11 +20,7 @@ _DSH_FILE = re.compile(r"^session(?:\.v(?P<version>\d+))?\.jsonl(?:\.[A-Za-z0-9]
 
 
 class Snapshot:
-    """一个来源的现扫结果快照。
-
-    值形如 {"size", "mtime", "files"?, "records": [[...], ...]}。记录第一格存会话 id，
-    还原时不拿缓存键充当会话，按文件缓存的条目也能还原出正确的会话。
-    """
+    """一个来源的现扫结果快照：{"size", "mtime", "files"?, "records"}；还原时按记录里的会话 id，不拿缓存键充当会话。"""
 
     def __init__(self, source: str, path: Path | None) -> None:
         self.source = source
@@ -128,10 +124,7 @@ class Snapshot:
 
 
 def dsh_generations(root: Path) -> dict[str, tuple[Path, list[str]]]:
-    """每个会话取最高版本那一代日志，返回 {会话: (要解析的文件, 这一代全部文件名)}。
-
-    版本切换时上一代可能还在，只读最高一代既与 DSH 的会话内容一致，也不会重复计数。
-    """
+    """每个会话取最高版本那一代日志，返回 {会话: (要解析的文件, 这一代全部文件名)}；上一代可能还在，只读最高代不重复计数。"""
     groups: dict[str, dict[int, list[Path]]] = {}
     for path in root.rglob("session*.jsonl*"):
         match = _DSH_FILE.match(path.name)

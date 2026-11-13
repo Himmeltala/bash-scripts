@@ -112,10 +112,7 @@ class Store:
 
     def insert(self, batches: dict[str, dict[str, list[Record]]]) -> int:
         """把现扫结果写进账本，返回实际新增的行数。
-
-        batches 形如 {来源: {会话: [记录, ...]}}，只放本次真正采到的会话。同一会话这
-        次采到的条数比账本里见过的最大值（loud）少，说明会话文件被重写或者截断过，账本里
-        多出来的旧行已经不成立，先删掉再写，免得把消失的请求当成历史回显。
+        batches 形如 {来源: {会话: [记录, ...]}}；本次条数少于账本见过的 loud 时先删旧行，免得截断掉的请求被当历史回显。
         """
         now = int(time.time() * 1000)
         rows = []
@@ -174,11 +171,7 @@ class Store:
         return int(row[0] or 0) if row else 0
 
     def sessions(self, sources: Iterable[str]) -> dict[tuple[str, str], dict]:
-        """账本里已采到的会话及其采集情况。
-
-        每个会话给出三个数：last_at 是最后一次采到这个会话的时间，stored 是账本里
-        现有多少条；loudest 先留 0，由调用方用本次现扫的条数把上限抬高。
-        """
+        """账本里已采到的会话：last_at 是最后采集时间，stored 是现有条数，loudest 由调用方抬高上限。"""
         wanted = tuple(sources)
         if not wanted:
             return {}
@@ -289,11 +282,7 @@ class Store:
             raise StoreError(f"写账本失败: {exc}") from exc
 
     def stale(self, sources: Iterable[str], keep_days: int) -> list[tuple[str, str]]:
-        """超过 keep_days 天没再采到的会话。
-
-        按会话的请求时间算，不按采集时间算：老会话还会被一次次扫到、一次次刷新采集时间，
-        但里面早就不再有新请求，按采集时间算永远清不掉。
-        """
+        """超过 keep_days 天没再采到的会话；按请求时间算而非采集时间，否则老会话反复被扫到就永远清不掉。"""
         wanted = tuple(sources)
         if not wanted:
             return []

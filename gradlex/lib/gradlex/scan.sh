@@ -137,7 +137,6 @@ prepare_build_roots() {
     fi
   fi
 
-  # 去重，保持顺序。
   local -A seen=()
   BUILD_ROOTS=()
   for dir in "${roots[@]}"; do

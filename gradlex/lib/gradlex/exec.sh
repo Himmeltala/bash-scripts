@@ -22,9 +22,8 @@ wrapper_has_crlf() {
   grep -q $'\r' "$1" 2>/dev/null
 }
 
-# Gradle 入口优先级：GRADLEX_GRADLE > 最近的 gradlew > PATH 里的 gradle。
-# 结果写进数组 GRADLE_CMD；wrapper 不可执行时用 sh 调。
-# wrapper 是 CRLF 时 Sh 也跑不起来，改为警告后使用系统 gradle，不静默替换。
+# Gradle 入口优先级：GRADLEX_GRADLE > 最近的 gradlew > PATH 里的 gradle；结果写进 GRADLE_CMD。
+# wrapper 不可执行时用 sh 调，CRLF 时 sh 也跑不起来，改为警告后用系统 gradle，不静默替换。
 GRADLE_CMD=()
 build_gradle_argv() {
   local dir=$1 wrapper

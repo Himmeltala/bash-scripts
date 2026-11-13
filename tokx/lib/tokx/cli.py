@@ -232,10 +232,7 @@ def _collect(
     since: date | None,
     until: date | None,
 ) -> dict:
-    """一次出表要的全部数据：本次范围的记录、聚合好的行与合计、未计价模型。
-
-    --json 和网页界面都拿这份结构，行里的字段直接就是 JSON 里的字段。
-    """
+    """一次出表要的全部数据：本次范围的记录、聚合行与合计、未计价模型；--json 与网页共用。"""
     sources = _pick_sources(getattr(args, "source", None))
 
     records, batches, snapshots = _scan(config, sources)
@@ -308,10 +305,7 @@ def _report_command(
 
 
 def _scan(config: Config, sources: list[str]):
-    """现扫三个来源，顺手把现扫结果存进快照缓存。
-
-    返回 (记录, {来源: {会话: [记录]}}, {来源: 快照})。
-    """
+    """现扫三个来源并落盘快照缓存，返回 (记录, {来源: {会话: [记录]}}, {来源: 快照})。"""
     records: list[Record] = []
     batches: dict[str, dict[str, list[Record]]] = {}
     snapshots: dict[str, Snapshot] = {}
@@ -346,10 +340,7 @@ def _remember(
     batches: dict[str, dict[str, list[Record]]],
     snapshots: dict[str, Snapshot],
 ) -> bool:
-    """把现扫结果写进账本，并把快照缓存落盘。
-
-    返回账本能不能作为出表的数据源；关掉账本或写不进去时退回纯现扫。
-    """
+    """把现扫结果写进账本并落盘快照，返回账本能否作为出表数据源；关掉或写不进去时退回纯现扫。"""
     for snapshot in snapshots.values():
         snapshot.save()
     if not config.store.enabled:

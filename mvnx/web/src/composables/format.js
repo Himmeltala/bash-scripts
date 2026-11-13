@@ -19,7 +19,6 @@ export const STATUS_COLOR = {
 // 打包与安装跑完就结束，运行记录留在列表里，点开日志能看到结果。
 export const LIVE = ['starting', 'ready']
 
-// 工作区里正在启动或已经跑起来的进程数。
 export function runningCount(ws) {
   return (ws.services || []).filter((s) => s.run && LIVE.includes(s.run.status)).length
 }

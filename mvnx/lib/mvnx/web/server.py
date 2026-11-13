@@ -84,7 +84,7 @@ def parse_rows(text):
     return rows
 
 
-# ---------------------------------------------------------------- 按工作区选 JDK
+# 按工作区选 JDK
 
 # 自动扫描的两处：SDKMAN 装的与发行版软件包装的。别处的 JDK 由页面手填路径。
 JDK_ROOTS = (Path.home() / ".sdkman" / "candidates" / "java", Path("/usr/lib/jvm"))
@@ -237,14 +237,11 @@ def state_payload(state, jdks, aliases):
     return attach_alias_rel(attach_jdks(state.snapshot(), jdks), aliases)
 
 
-# ---------------------------------------------------------------- 状态文件
+# 状态文件
 
 
 class State:
-    """状态文件只读：写全在 bash 那边，写的时候整体替换，这里读到的总是完整的一份。
-
-    页面轮询很密，先比 mtime，没变就不重新解析。
-    """
+    """状态文件只读：写全在 bash 那边、整体替换；页面轮询很密，先比 mtime，没变就不重新解析。"""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -334,7 +331,7 @@ def run_info(r):
     return d
 
 
-# ---------------------------------------------------------------- 进程
+# 进程
 
 
 class Sessions:
@@ -421,17 +418,13 @@ def group_alive(sid):
     return True
 
 
-# ---------------------------------------------------------------- 引擎
+# 引擎
 
 
 
 
 class Engine:
-    """一条长命的 bash：``mvnx --engine`` 一直守着请求流，页面来一个它做一个。
-
-    一次请求一个进程的写法看着简单，代价大：扫描一个工程几秒，每次都要重新加载，
-    而且启动进程的事得另找地方做。所以这里保持一个常驻，断了自己再拉起来。
-
+    """一条长命的 bash：``mvnx --engine`` 守着请求流，断了再拉起来；扫描工程要几秒，不复用就每次重载。
     reserve 是唯一回两行的：先 ok，再一行数据（运行号、目录、参数、预排行、会话代次）。
     """
 
@@ -542,7 +535,7 @@ class Engine:
                 self._spawn()
             return self._request(op, *params)
 
-    # ---- 页面的动作
+    # 页面的动作
 
     def add_workspace(self, root):
         self.call("add", root)
@@ -571,9 +564,8 @@ class Engine:
         if mode not in MODES:
             raise ApiError(400, "启动方式不认识：%s" % mode)
 
-        # 同一模块上一个动作还在跑：启动与打包读同一个 target，重复跑只会互相盖。
-        # 服务 id 是「工作区.动作.标签」，标签里可能带点，从第二段之后整段取；
-        # 挡的是同一工作区的同一个模块，同工作区的别的模块照常各起各的。
+        # 同一模块上的动作不能并跑：启动与打包读同一个 target，同工作区的别的模块不受影响。
+        # 服务 id 是「工作区.动作.标签」，标签可能带点，从第二段之后整段取。
         parts = svc.split(".", 2)
         tag = parts[2] if len(parts) == 3 else ""
         for run in self.state.runs():
@@ -621,10 +613,10 @@ class Engine:
         self.call("stop", runid)
 
 
-# ---------------------------------------------------------------- 页面与接口
+# 页面与接口
 
 
-# ---------------------------------------------------------------- 目录浏览
+# 目录浏览
 
 # 一次最多回多少子目录：家目录之外也可能有几千项的目录，超过就截断并告诉页面。
 MAX_DIRS = 1000
@@ -707,7 +699,7 @@ class Handler(SSEMixin, WebHandler):
     api_prefix = "/__mvnx/api"
 
 
-    # ---- 路由
+    # 路由
 
     def _dispatch(self, method, route, query, body):
         if route == "log/stream":

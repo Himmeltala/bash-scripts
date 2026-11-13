@@ -57,7 +57,7 @@ web_python() {
   printf '%s\n' "$runner"
 }
 
-# ---- 状态文件 ----
+# 状态文件
 
 # 记下的持有者还在不在跑。僵尸进程也算没了：它不会再放锁，最多等着被回收。
 web_lock_owner_alive() {
@@ -245,7 +245,7 @@ web_txn() {
   return "$rc"
 }
 
-# ---- 工作区 ----
+# 工作区
 
 web_ws_id() {
   printf '%s\n' "$(printf '%s' "$1" | md5sum | cut -c1-12)"
@@ -313,7 +313,7 @@ web_drop_ws() {
   STATE_LINES=("${keep[@]+"${keep[@]}"}")
 }
 
-# ---- 扫描 ----
+# 扫描
 
 # 一条服务行：类型、服务 id、工作区、动作、包目录、相对路径、参数、展示路径、展示命令、包管理器。
 web_svc_line() {
@@ -367,7 +367,7 @@ web_legacy_args() {
   esac
 }
 
-# ---- 自定义命令 ----
+# 自定义命令
 # 登记表每行：工作区|类型|脚本目录|名称|完整命令；状态里的服务行由它生成，扫描后重新挂回去。
 
 web_custom_append() {
@@ -555,7 +555,7 @@ web_ws_scan() {
   rm -f "$tmp"
 }
 
-# ---- 运行记录 ----
+# 运行记录
 
 web_log_file() {
   printf '%s/%s/%s.log\n' "$WEB_LOG_DIR" "$1" "$2"
@@ -700,7 +700,7 @@ web_stop_group() {
   return 0
 }
 
-# ---- 启动 ----
+# 启动
 
 # 页面改过参数就按页面给的走，否则用服务行里存着的。
 web_launch_args() {
@@ -836,7 +836,7 @@ web_update() {
   web_txn web_txn_svc_set "$id" "$args"
 }
 
-# ---- web 命令 ----
+# web 命令
 
 # 引擎：接住 python 递过来的请求流，一条请求一行。
 web_engine() {

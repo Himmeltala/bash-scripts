@@ -39,7 +39,6 @@ class DiscoverNodesTest(unittest.TestCase):
             paths = [item["path"] for item in found]
             self.assertIn(str(nvm.resolve()), paths)
             self.assertIn(str(fnm.resolve()), paths)
-            # 版本号新的排前面。
             self.assertEqual([item["version"] for item in found], ["21.7.3", "20.11.1", "18.19.0"])
 
     def test_skips_symlink_and_missing_node_binary(self):

@@ -62,7 +62,7 @@ web_python() {
   printf '%s\n' "$runner"
 }
 
-# ---- 状态文件 ----
+# 状态文件
 
 # 记下的持有者还在不在跑。僵尸进程也算没了：它不会再放锁，最多等着被回收。
 web_lock_owner_alive() {
@@ -178,10 +178,8 @@ web_split() {
 }
 # 取第 n 列（1 起），空列也认。
 web_col() {
-  # $1 是整行，$2 是第几列（1 起）。列号越界给空串。
-  # 切一次取多列；在一行里连套几个 $(web_col ...) 也行，每次都在自己那头重切一遍。
-  # 不用 read -a：它在 $( ) 里会把末尾连续的空列并掉；也不用 ${x%%$FS*}：
-  # \x1f 在 C 语言环境里算空白，裸着写进模式会被当成空白分隔符丢掉，连续空列就少算一格。
+  # $1 是整行，$2 是第几列（1 起），越界给空串；切一次取多列，连套几个 web_col 也行。
+  # 不用 read -a：它在 $( ) 里会并掉末尾空列；\x1f 在 C 语言环境里算空白，裸写进模式会丢格。
   local rest=$1 want=$2 i cut
   ((want >= 1)) || return 0
   for ((i = 1; i < want; i++)); do
@@ -273,7 +271,7 @@ web_txn() {
   return "$rc"
 }
 
-# ---- 工作区 ----
+# 工作区
 
 web_ws_id() {
   printf '%s\n' "$(printf '%s' "$1" | md5sum | cut -c1-12)"
@@ -341,7 +339,7 @@ web_ws_remove() {
   rm -rf "${WEB_LOG_DIR:?}/$id"
 }
 
-# ---- 扫描 ----
+# 扫描
 
 # 一条服务写成 svc 行。参数：工作区 id、类型、id 尾、执行目录、-pl 的值、mvn 参数、展示路径、展示命令。
 # 一条服务行：ws|类型|工作目录|-pl 的值|mvn 参数|展示路径|展示命令，前面接 id 与类型。
@@ -456,7 +454,7 @@ web_ws_scan() {
   rm -f "$tmp"
 }
 
-# ---- 运行记录 ----
+# 运行记录
 
 # 一次运行的日志：<日志目录>/<工作区>/<运行号>.log；python 起进程时同一路径收起输出。
 # 失败与正常结束会单独写一个 .code，内容是进程退出码，命令行那边看不到进程了就靠它判结果。
@@ -479,7 +477,6 @@ web_session_alive() {
   return 1
 }
 
-# 进程组还在不在。
 web_group_alive() {
   local pgid=${1:-}
   [[ "$pgid" =~ ^[0-9]+$ ]] || return 1
@@ -487,10 +484,7 @@ web_group_alive() {
 }
 
 # 从日志里找服务端口：Tomcat 与 Jetty 启动时都会打一行。
-# 正则先放变量里：直接用 [[ =~ ]] 写带空格的分支，bash 会报语法错。
-# 回退的 URL 匹配只认本机地址：Maven 会在报错里列出仓库地址，带端口的仓库
-# （如 http://11.1.1.136:5000/repository/...）不是服务端口；本机 Nexus 那种
-# 地址同样带端口，再按「仓库」字样挡一层。
+# 正则先放变量里，直接在 [[ =~ ]] 里写带空格的分支会报语法错；URL 只认本机地址，仓库与 Nexus 地址不是服务端口。
 web_detect_port() {
   local file=$1 text re_pair re_any port line
   [[ -f "$file" ]] || return 1
@@ -614,7 +608,7 @@ web_stop_group() {
 }
 
 
-# ---- 启动 ----
+# 启动
 
 # 把它算好的参数换成页面给的 -pl：参数里不出现 -pl，模块单列存放，执行时才拼成 -pl 参数，路径带空格也不拆。
 web_args_no_pl() {
@@ -731,11 +725,8 @@ web_pend_load() {
   [[ -n "$PEND_LINE" ]]
 }
 
-# 启动的第一半：拼参数，把运行号、执行目录、mvn 参数、预排好的一行交回 python。
-# 运行号是服务 id 接时间，同一服务反复启动时日志按运行号分开。
-# 预排那一行此刻不落盘：进程还没起来，会话号得等 python 起好再回填。
-# 发起处是 out=$(web_reserve ...)：$( ) 是子进程，在这里设的 PEND_* 带不回引擎，
-# 所以回话里夹带一个临时文件，引擎读走后再由 web_launched 从这里取。
+# 启动的第一半：拼参数，把运行号、执行目录、mvn 参数、预排行交回 python。
+# 运行号是服务 id 接时间；$( ) 是子进程，PEND_* 带不回引擎，所以用临时文件交接，由 web_launched 取走。
 web_reserve() {
   local id=$1 module=${2:-} extra=${3:-} mode=${4:-} svc path args runid line gen
   [[ -n "$mode" ]] || mode=auto
@@ -831,11 +822,10 @@ web_update() {
 }
 
 
-# ---- web 命令 ----
+# web 命令
 
-# 引擎：接住 python 递过来的请求流，一条请求一行。
-# 请求走标准输入、回话走标准输出，都按行、$FS 分列：先回一行 ok，有数据时紧跟第二行。
-# 页面每两秒来一条 tick，顺手把在跑的记录收拾一遍，页面看到的就是最新状态。
+# 引擎：接住 python 递过来的请求流，一条请求一行；先回一行 ok，有数据时紧跟第二行。
+# 页面每两秒来一条 tick，顺手把在跑的记录收拾一遍。
 web_engine() {
   local line req op out rc _id _mod _extra _mode
   if ! IFS= read -r line <&0 || [[ "$line" != "hello$FS"* ]]; then
