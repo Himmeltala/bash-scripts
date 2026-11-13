@@ -196,6 +196,7 @@ import {
   TYPE_TEXT,
   ago,
   moduleOf,
+  runningCount,
 } from '../composables/format'
 
 const props = defineProps({
@@ -253,7 +254,7 @@ function saveCustom() {
   custom.on = false
 }
 
-const running = computed(() => props.ws.services.filter((s) => s.run && LIVE.includes(s.run.status)).length)
+const running = computed(() => runningCount(props.ws))
 
 function baseName(full) {
   const parts = String(full || '').split('/').filter(Boolean)

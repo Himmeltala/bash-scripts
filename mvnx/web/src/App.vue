@@ -5,6 +5,17 @@
         <span class="brand">mvnx</span>
       </v-app-bar-title>
       <v-spacer />
+      <v-chip
+        v-if="state.workspaces.length"
+        size="small"
+        variant="tonal"
+        class="running"
+        :color="running ? 'ready' : undefined"
+        prepend-icon="mdi-play-circle-outline"
+        :title="running ? `所有工作区共 ${running} 个进程在跑` : '所有工作区都没有在跑的进程'"
+      >
+        {{ running }} 个在跑
+      </v-chip>
       <SystemMonitor :dark="dark" />
       <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" @click="toggleTheme" />
     </v-app-bar>
@@ -63,6 +74,7 @@ import WorkspaceList from './components/WorkspaceList.vue'
 import ServicePanel from './components/ServicePanel.vue'
 import SystemMonitor from './components/SystemMonitor.vue'
 import { api } from './composables/useApi'
+import { runningCount } from './composables/format'
 import { rememberTheme } from './plugins/vuetify'
 
 const POLL_MS = 2000
@@ -76,6 +88,7 @@ const adding = ref(false)
 const snack = reactive({ on: false, text: '', color: 'grey' })
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
+const running = computed(() => state.workspaces.reduce((sum, ws) => sum + runningCount(ws), 0))
 let timer = null
 let busy = 0
 
@@ -209,6 +222,9 @@ function onVisible() {
 .brand {
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+.running {
+  margin-right: 10px;
 }
 .shell {
   display: flex;
