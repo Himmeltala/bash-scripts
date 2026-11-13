@@ -23,6 +23,7 @@
           :key="child.path"
           :node="child"
           :selected="selected"
+          :loader="loader"
           @pick="$emit('pick', $event)"
         />
         <p v-if="!node.children.length" class="hint">没有子目录</p>
