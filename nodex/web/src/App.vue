@@ -16,7 +16,7 @@
       >
         {{ running }} 个在跑
       </v-chip>
-      <SystemMonitor :dark="dark" :metrics="metrics" />
+      <Metrics :dark="dark" :metrics="metrics" />
       <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" @click="toggleTheme" />
     </v-app-bar>
 
@@ -73,7 +73,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
 import WorkspaceList from './components/WorkspaceList.vue'
 import ServicePanel from './components/ServicePanel.vue'
-import SystemMonitor from './components/SystemMonitor.vue'
+import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api } from './composables/useApi'
 import { runningCount } from './composables/format'
 import { rememberTheme } from './plugins/vuetify'
@@ -140,7 +140,6 @@ function connectState() {
     try {
       metrics.value = JSON.parse(ev.data)
     } catch (err) {
-      // 同上，坏的一条跳过。
     }
   })
 }

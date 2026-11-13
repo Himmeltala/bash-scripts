@@ -1,0 +1,50 @@
+.file-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+.crumbs {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.seg {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.78rem;
+  color: rgb(var(--v-theme-primary));
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seg:hover {
+  text-decoration: underline;
+}
+.seg.last {
+  color: rgb(var(--v-theme-on-surface));
+  cursor: default;
+}
+.seg.last:hover {
+  text-decoration: none;
+}
+.sep {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.78rem;
+}
+.meta {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
