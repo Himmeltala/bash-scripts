@@ -29,7 +29,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useDialogLayoutStore } from '../stores/dialogLayout'
+import { useDialogLayout } from '../../composables/useDialogLayout'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -39,12 +39,14 @@ const props = defineProps({
   minHeight: { type: Number, default: 380 },
   // 同一个 key 的弹窗共用一份位置与大小；留空就只在这次会话里用。
   storageKey: { type: String, default: '' },
+  // 存在浏览器里的位置表名，各工程各用一份。
+  storage: { type: String, default: 'dialog-layouts' },
 })
 const emit = defineEmits(['update:modelValue'])
 
 // 窗口不被布局居中，而是用固定定位摆在 pos 上；拖动标题改 pos，拖右下角改尺寸。
-const layoutStore = useDialogLayoutStore()
-const saved = layoutStore.get(props.storageKey)
+const layout = useDialogLayout(props.storage)
+const saved = layout.get(props.storageKey)
 const size = ref(saved ? { w: saved.w, h: saved.h } : fitSize())
 const pos = ref(saved ? { x: saved.x, y: saved.y } : { x: 0, y: 0 })
 // 用户拖过之后，下次打开停在原处；没拖过就每次居中。
@@ -161,7 +163,7 @@ function end() {
 
 // 大小与位置只在拖完时落一次，拖动过程中不写存储。
 function save() {
-  layoutStore.remember(props.storageKey, {
+  layout.remember(props.storageKey, {
     x: pos.value.x,
     y: pos.value.y,
     w: size.value.w,

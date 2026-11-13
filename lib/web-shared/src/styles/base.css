@@ -17,3 +17,8 @@ pre,
   font-family: 'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Sarasa Mono SC',
     'Cascadia Mono', Consolas, Menlo, 'Liberation Mono', monospace;
 }
+
+/* 拖动分隔条时整页不选文字，拖出容器也不会带出一片选中。 */
+body.web-shared-resizing {
+  user-select: none;
+}

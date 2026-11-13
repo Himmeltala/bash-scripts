@@ -274,7 +274,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import DiffView from './DiffView.vue'
+import DiffView from '@bash-scripts/web-shared/diff'
 import { api } from '../composables/useApi'
 import { SplitHandle } from '@bash-scripts/web-shared'
 import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'

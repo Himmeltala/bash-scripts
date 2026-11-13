@@ -33,6 +33,20 @@ class Row:
         return self[2]
 
 
+def attach_alias_rel(snapshot, store):
+    """把别名与相对家目录的路径拼进工作区列表。"""
+    aliases = store.all() if store is not None else {}
+    home = os.path.expanduser("~")
+    for ws in snapshot.get("workspaces", []):
+        ws["alias"] = aliases.get(ws["id"], "")
+        root = ws.get("root", "")
+        try:
+            ws["rel"] = os.path.relpath(root, home)
+        except (TypeError, ValueError):
+            ws["rel"] = root
+    return snapshot
+
+
 class AliasStore:
     """工作区别名，存在状态文件旁边；状态文件本身仍由 bash 写，这里不碰它。"""
 

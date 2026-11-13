@@ -12,7 +12,9 @@
   "exports": {
     ".": "./dist/index.js",
     "./highlight": "./dist/highlight.js",
+    "./diff": "./dist/diff.js",
     "./metrics": "./dist/metrics.js",
+    "./theme": "./dist/theme.js",
     "./style.css": "./dist/web-shared.css"
   },
   "scripts": {
@@ -23,7 +25,8 @@
     "@xterm/xterm": "^6.0.0",
     "echarts": "^6.0.0",
     "highlight.js": "^11.12.0",
-    "vue": "^3.5.0"
+    "vue": "^3.5.0",
+    "vuetify": "^3.13.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.10",
@@ -32,13 +35,20 @@
     "echarts": "^6.1.0",
     "highlight.js": "^11.12.0",
     "vite": "^8.3.6",
-    "vue": "^3.5.44"
+    "vue": "^3.5.44",
+    "vuetify": "^3.13.7"
   },
   "peerDependenciesMeta": {
     "highlight.js": {
       "optional": true
     },
     "echarts": {
+      "optional": true
+    },
+    "@xterm/xterm": {
+      "optional": true
+    },
+    "@xterm/addon-fit": {
       "optional": true
     }
   }

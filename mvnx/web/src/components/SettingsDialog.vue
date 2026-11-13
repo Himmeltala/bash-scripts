@@ -5,6 +5,7 @@
     :initial-width="760"
     :initial-height="620"
     storage-key="settings"
+    storage="mvnx.dialog-layouts"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <template #title>
@@ -83,7 +84,7 @@
 import { computed, ref, watch } from 'vue'
 import { MODE_ITEMS, TYPE_TEXT, moduleOf } from '../composables/format'
 import { colorize } from '../composables/logColor'
-import FloatingDialog from './FloatingDialog.vue'
+import { FloatingDialog } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

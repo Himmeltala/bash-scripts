@@ -38,7 +38,7 @@
           color="primary"
           prepend-icon="mdi-refresh"
           :loading="loading"
-          @click="load"
+          @click="refreshNow"
         >
           刷新
         </v-btn>
@@ -96,7 +96,9 @@
       <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
       <section class="view">
+        <p v-if="saveError" class="hint bad">{{ saveError }}</p>
         <DiffView
+          ref="diffRef"
           :title="diffTitle"
           :path="selected ? selected.path : ''"
           :text="content.text"
@@ -104,16 +106,44 @@
           :truncated="content.truncated"
           :loading="diffLoading"
           :error="diffError"
-        />
+          :editable="diffEditable"
+          :base-text="editState.baseText"
+          :read-only-reason="readOnlyReason"
+          @dirty="onDirty"
+        >
+          <template #actions>
+            <template v-if="dirty">
+              <v-chip size="x-small" variant="flat" color="modified">未保存</v-chip>
+              <v-btn size="small" variant="text" color="primary" :loading="saving" @click="saveNow">
+                保存
+              </v-btn>
+              <v-btn size="small" variant="text" :disabled="saving" @click="discard">放弃</v-btn>
+            </template>
+          </template>
+        </DiffView>
       </section>
     </div>
+
+    <v-dialog v-model="asking" max-width="420" persistent>
+      <v-card title="还没保存">
+        <v-card-text>当前文件在差异里改过，还没写回工作副本。</v-card-text>
+        <v-card-actions>
+          <v-btn variant="text" @click="answerLeave('cancel')">取消</v-btn>
+          <v-spacer />
+          <v-btn variant="text" color="error" @click="answerLeave('drop')">放弃改动</v-btn>
+          <v-btn variant="flat" color="primary" :loading="saving" @click="answerLeave('save')">
+            保存
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import DiffView from './DiffView.vue'
+import DiffView from '@bash-scripts/web-shared/diff'
 import { api } from '../composables/useApi'
 import { SplitHandle, fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../composables/format'
@@ -136,6 +166,17 @@ const loading = ref(false)
 const diffLoading = ref(false)
 const error = ref('')
 const diffError = ref('')
+const diffRef = ref(null)
+// 差异行里直接改：工作副本快照给行内容与写回位置，读不出来就只能看。
+const editState = ref({ editable: false, baseText: '', reason: '' })
+const dirty = ref(false)
+const saving = ref(false)
+const saveError = ref('')
+const asking = ref(false)
+let pendingRefresh = false
+let pickSeq = 0
+let askResolve = null
+let revertingScope = false
 
 // 查看方式来自全局偏好，所有工作区共用；树形默认全部展开。
 const preferences = usePreferencesStore()
@@ -157,6 +198,16 @@ const revText = computed(() => {
   const rev = info.value.revision
   if (!rev) return ''
   return isGit.value ? rev : `r${rev}`
+})
+
+const diffEditable = computed(
+  () => editState.value.editable && !content.value.truncated && !diffLoading.value,
+)
+
+const readOnlyReason = computed(() => {
+  if (!selected.value || diffLoading.value || diffError.value || !content.value.text) return ''
+  if (content.value.truncated) return '差异已截断，不能直接在差异里编辑'
+  return editState.value.reason
 })
 
 function tone(file) {
@@ -210,32 +261,167 @@ async function load() {
   }
 }
 
-async function pick(file) {
-  selected.value = file
-  diffLoading.value = true
-  diffError.value = ''
+// 读一份工作副本快照：改的是这份内容，写回也按它的行号定位。
+async function snapshotOf(file) {
+  if (file.item === 'deleted' || file.item === 'missing') {
+    return { editable: false, baseText: '', reason: '文件已删除，没有可改的内容' }
+  }
   try {
-    content.value = await api.diff(
-      props.ws.id,
-      file.path,
-      file.item,
-      diffScope.value === 'file'
-    )
+    const data = await api.file(props.ws.id, file.path)
+    return { editable: true, baseText: (data.text || '').replace(/\r\n?/g, '\n'), reason: '' }
   } catch (err) {
-    content.value = { text: '', kind: 'diff', truncated: false }
-    diffError.value = err.message
-  } finally {
-    diffLoading.value = false
+    return { editable: false, baseText: '', reason: err.message }
   }
 }
 
-// 切换差异口径时按当前文件重新取一遍。
-watch(diffScope, () => {
-  if (selected.value) pick(selected.value)
+async function pick(file, { skipGuard = false } = {}) {
+  if (!skipGuard && !(await confirmLeave())) return
+  const mine = ++pickSeq
+  selected.value = file
+  diffLoading.value = true
+  diffError.value = ''
+  saveError.value = ''
+  editState.value = { editable: false, baseText: '', reason: '' }
+  try {
+    const [data, snap] = await Promise.all([
+      api.diff(props.ws.id, file.path, file.item, diffScope.value === 'file'),
+      snapshotOf(file),
+    ])
+    if (mine !== pickSeq) return
+    content.value = data
+    editState.value = data.truncated
+      ? { editable: false, baseText: snap.baseText, reason: '差异已截断，不能直接在差异里编辑' }
+      : snap
+  } catch (err) {
+    if (mine !== pickSeq) return
+    content.value = { text: '', kind: 'diff', truncated: false }
+    diffError.value = err.message
+  } finally {
+    if (mine === pickSeq) diffLoading.value = false
+  }
+}
+
+function onDirty(value) {
+  dirty.value = value
+  if (value || !pendingRefresh) return
+  pendingRefresh = false
+  load()
+}
+
+function discard() {
+  pendingRefresh = false
+  saveError.value = ''
+  diffRef.value?.resetEdits()
+  dirty.value = false
+}
+
+// 只写回工作副本；先重读一遍，和进入编辑时的快照对不上就不写，免得盖掉别人的改动。
+async function persist() {
+  if (!dirty.value || !selected.value || !diffRef.value || saving.value) return false
+  saving.value = true
+  saveError.value = ''
+  try {
+    const snap = await api.file(props.ws.id, selected.value.path)
+    const disk = (snap.text || '').replace(/\r\n?/g, '\n')
+    if (disk !== editState.value.baseText) {
+      throw new Error('文件在编辑期间被改过，先刷新再改')
+    }
+    await api.save(props.ws.id, selected.value.path, diffRef.value.collect())
+    pendingRefresh = false
+    diffRef.value.resetEdits()
+    dirty.value = false
+    return true
+  } catch (err) {
+    saveError.value = err.message
+    return false
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveNow() {
+  if (!(await persist())) return false
+  await load()
+  if (selected.value) await pick(selected.value, { skipGuard: true })
+  return true
+}
+
+async function refreshNow() {
+  const outcome = await confirmLeave()
+  if (!outcome || outcome === 'saved') return
+  await load()
+}
+
+// 换文件、刷新、换差异口径前都问一句，别把没写的改动丢了。
+function confirmLeave() {
+  if (!dirty.value) return Promise.resolve(true)
+  if (asking.value) return Promise.resolve(false)
+  asking.value = true
+  return new Promise((resolve) => {
+    askResolve = resolve
+  })
+}
+
+function resolveLeave(value) {
+  const resolve = askResolve
+  askResolve = null
+  asking.value = false
+  if (resolve) resolve(value)
+}
+
+async function answerLeave(kind) {
+  if (kind === 'cancel') {
+    resolveLeave(false)
+    return
+  }
+  if (kind === 'drop') {
+    discard()
+    resolveLeave('dropped')
+    return
+  }
+  resolveLeave((await saveNow()) ? 'saved' : false)
+}
+
+function onKeySave(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+  if (!dirty.value || saving.value) return
+  event.preventDefault()
+  saveNow()
+}
+
+// 切换差异口径时按当前文件重新取一遍；取消就把开关拨回去。
+watch(diffScope, async (now, before) => {
+  if (revertingScope) {
+    revertingScope = false
+    return
+  }
+  if (!selected.value) return
+  const outcome = await confirmLeave()
+  if (!outcome) {
+    revertingScope = true
+    diffScope.value = before
+    return
+  }
+  if (selected.value) await pick(selected.value, { skipGuard: true })
 })
 watch(() => props.ws.id, load)
-watch(() => props.refresh, load)
-onMounted(load)
+// 外部变化（含刚保存的那次）不打断正在改的内容，等改完再刷新。
+watch(() => props.refresh, () => {
+  if (saving.value) return
+  if (dirty.value) {
+    pendingRefresh = true
+    return
+  }
+  load()
+})
+onMounted(() => {
+  document.addEventListener('keydown', onKeySave)
+  load()
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeySave)
+  if (askResolve) resolveLeave(false)
+})
 
 defineExpose({ load })
 </script>

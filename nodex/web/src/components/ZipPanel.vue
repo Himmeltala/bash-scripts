@@ -98,10 +98,9 @@
 
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { FileTree } from '@bash-scripts/web-shared'
+import { FileTree, copyText } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import { colorize } from '../composables/logColor'
-import { copyText } from '../composables/clipboard'
 import { baseName, sizeText } from '../composables/format'
 
 const props = defineProps({
