@@ -31,6 +31,12 @@ from urllib.parse import parse_qs, urlparse
 
 FS = "\x1f"
 
+
+def one_line(value):
+    """命令与名称都压成一行：引擎按行收请求，换行会把协议打断。"""
+    return " ".join(str(value or "").split())
+
+
 # 状态行的列，与 lib/nodex/server.sh 里的 web_col 一致，0 起。
 WS_KIND, SVC_KIND, PKG_KIND, RUN_KIND = "ws", "svc", "pkg", "run"
 LIVE = ("starting", "ready")
@@ -294,6 +300,25 @@ class AliasStore:
             self._save(data)
 
 
+class CustomStore:
+    """自定义命令的登记表，每行：工作区|类型|包目录|名称|完整命令。这里只用来标记哪些服务是自定义的。"""
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def ids(self):
+        out = set()
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        for line in text.splitlines():
+            parts = line.split(FS)
+            if len(parts) >= 4 and parts[0] and parts[1] and parts[3]:
+                out.add("%s.%s.%s" % (parts[0], parts[1], parts[3]))
+        return out
+
+
 def attach_alias_rel(snapshot, store):
     """把别名与相对家目录的路径拼进工作区列表。"""
     aliases = store.all() if store is not None else {}
@@ -355,7 +380,8 @@ class State:
             out.append(Row(r))
         return out
 
-    def snapshot(self):
+    def snapshot(self, custom=None):
+        custom_ids = custom.ids() if custom is not None else set()
         packages = {}
         runs = {}
         workspaces = []
@@ -389,6 +415,7 @@ class State:
                     "cmd": r[8],
                     "pm": r[9],
                     "tag": r[1].split(".", 2)[-1],
+                    "custom": r[1] in custom_ids,
                     "run": run_info(run) if run else None,
                 }
             )
@@ -686,7 +713,10 @@ class Engine:
         gen = parts[-1]
 
         log_path = self.logs / runid.split(".", 1)[0] / (runid + ".log")
-        argv = [row[SVC_PM]] + [w for w in run_args.split() if w]
+        # 记录里的参数就是完整命令，包管理器由用户填在命令里。
+        argv = [w for w in run_args.split() if w]
+        if not argv:
+            raise ApiError(500, "这个服务没有可执行的命令，先在参数里填一条")
         raw_node = self.nodes.get(row[CO_WS]) if self.nodes else ""
         node = effective_node(raw_node)
         if raw_node and not node:
@@ -695,7 +725,7 @@ class Engine:
         try:
             sid = self.sessions.spawn(path, argv, log_path, env=env)
         except OSError as exc:
-            raise ApiError(500, "起 %s 失败：%s" % (row[SVC_PM], exc))
+            raise ApiError(500, "起 %s 失败：%s" % (argv[0], exc))
         self.call("launched", sid, gen)
         return {"run": runid}
 
@@ -911,6 +941,7 @@ class Handler(BaseHTTPRequestHandler):
     engine = None
     nodes = None
     aliases = None
+    custom = None
     logs = None
     api_prefix = "/__nodex/api"
 
@@ -966,7 +997,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.engine.call("tick")
             except ApiError as exc:
                 log("tick 失败：%s" % exc.message)
-            return attach_alias_rel(attach_nodes(self.state.snapshot(), self.nodes), self.aliases)
+            snapshot = self.state.snapshot(self.custom)
+            return attach_alias_rel(attach_nodes(snapshot, self.nodes), self.aliases)
         if route == "log":
             return self._log(query)
         if route == "dirs":
@@ -1023,8 +1055,21 @@ class Handler(BaseHTTPRequestHandler):
             engine.call(
                 "update",
                 str(body.get("svc", "")),
-                str(body.get("args", "") or ""),
+                one_line(body.get("args", "")),
             )
+            return {"ok": True}
+        if route == "addcmd":
+            engine.call(
+                "addcmd",
+                str(body.get("ws", "")).strip(),
+                str(body.get("type", "")).strip(),
+                str(body.get("rel", "") or ".").strip(),
+                one_line(body.get("tag", "")),
+                one_line(body.get("args", "")),
+            )
+            return {"ok": True}
+        if route == "delcmd":
+            engine.call("delcmd", str(body.get("svc", "")).strip())
             return {"ok": True}
         raise ApiError(404, "没有这个接口：%s" % route)
 
@@ -1291,6 +1336,7 @@ def serve(args):
     sessions = Sessions()
     nodes = NodeStore(Path(args.state).parent / "node.tsv")
     aliases = AliasStore(Path(args.state).parent / "alias.tsv")
+    custom = CustomStore(Path(args.custom)) if args.custom else None
     engine = Engine(os.path.abspath(args.nodex), state, sessions, args.logs, nodes)
 
     Handler.static = static
@@ -1299,6 +1345,7 @@ def serve(args):
     Handler.engine = engine
     Handler.nodes = nodes
     Handler.aliases = aliases
+    Handler.custom = custom
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
 
@@ -1336,6 +1383,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="nodex-web", description="nodex 网页模式的转发进程")
     parser.add_argument("--static", required=True, help="打包好的页面目录")
     parser.add_argument("--state", required=True, help="状态文件")
+    parser.add_argument("--custom", default="", help="自定义命令登记表")
     parser.add_argument("--logs", required=True, help="日志目录")
     parser.add_argument("--api", default="/__nodex/api", help="接口前缀")
     parser.add_argument("--nodex", required=True, help="nodex 入口")

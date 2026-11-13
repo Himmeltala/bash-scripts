@@ -29,17 +29,12 @@ glob 支持 `*`、`**`、`?`，以 `!` 开头的模式表示排除。`node_modul
 
 | 命令      | 目标                               | 执行                                                       |
 | --------- | ---------------------------------- | ---------------------------------------------------------- |
-| `dev`     | 有 `dev`、`start`、`serve` 或带冒号变体的包 | 进包目录执行 `pnpm run dev`（脚本名按实际有的取，多个变体各列一条） |
-| `build`   | 有 `build` 或 `build:` 变体的包     | 进包目录执行 `pnpm run build`                              |
-| `install` | 工作区根与所有子包                 | 根执行 `pnpm install`；子包执行 `pnpm --filter <包名> install` |
+| `dev`     | 有 `dev`、`start`、`serve` 或带冒号变体的包 | 进包目录执行 `<包管理器> run dev`（脚本名按实际有的取，多个变体各列一条） |
+| `build`   | 有 `build` 或 `build:` 变体的包     | 进包目录执行 `<包管理器> run build`                        |
+| `install` | 工作区根与所有子包                 | 根执行 `npm install`；子包执行 `npm install --workspace <包名>` |
 
-`install` 的三家写法：
-
-| 包管理器 | 子包安装命令                     |
-| -------- | -------------------------------- |
-| pnpm     | `pnpm --filter <包名> install`   |
-| npm      | `npm install --workspace <包名>` |
-| yarn     | `yarn workspace <包名> install`  |
+启动与打包的默认命令用识别出的包管理器；安装默认用 npm。网页里每条命令都能整条改，
+改完存着，下次还按它跑。识别不出脚本的包，可以在网页里自己添加启动、打包或安装命令。
 
 包管理器按这个顺序判定：`package.json` 的 `packageManager` 字段、`node_modules` 里装过依赖的痕迹、`pnpm-lock.yaml`、`yarn.lock`、`package-lock.json`，都没有就用 npm。已经装过依赖时以实际装它的那个为准，因为锁文件常留着过时的那一份。
 

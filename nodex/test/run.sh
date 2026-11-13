@@ -41,8 +41,8 @@ grep -q '^@demo/a .*pnpm run build$' <<<"$out" && grep -q '^@demo/b .*pnpm run b
 grep -q '@demo/c' <<<"$out" && bad '没有 build 脚本的包出现在打包里' || ok '没有 build 脚本的包不进打包'
 
 out=$(cd "$multi" && "$nodex" --list install)
-grep -q '^demo-root .*pnpm install$' <<<"$out" && ok '安装有工作区根一行' || bad '安装缺工作区根'
-grep -q '^@demo/a .*pnpm --filter @demo/a install$' <<<"$out" && ok '子包按 pnpm 选择器安装' || bad 'pnpm 子包安装命令不对'
+grep -q '^demo-root .*npm install$' <<<"$out" && ok '安装有工作区根一行' || bad '安装缺工作区根'
+grep -q '^@demo/a .*npm install --workspace @demo/a$' <<<"$out" && ok '子包按 npm 选择器安装' || bad 'npm 子包安装命令不对'
 grep -q '^@demo/c ' <<<"$out" && ok '没有脚本的包也能装依赖' || bad '安装漏了没有脚本的包'
 
 # 从子包目录执行时只认最近的 package.json。
@@ -107,6 +107,19 @@ state="$cache/nodex/web/state.tsv"
 grep -q "^ws${FS}" "$state" && ok '状态里有工作区' || bad '状态缺工作区'
 grep -q "^svc${FS}.*${FS}dev${FS}" "$state" && ok '状态里有启动服务' || bad '状态缺启动服务'
 grep -q "^pkg${FS}" "$state" && ok '状态里有包清单' || bad '状态缺包清单'
+
+# 自定义命令：加两条，删一条，状态与登记表里只留剩下那条。
+wsid=$(printf '%s' "$multi" | md5sum | cut -c1-12)
+mkdir -p "$cache/nodex/web"
+printf 'hello\x1f1\nreqfrom\x1fadd\x1f%s\nreqfrom\x1faddcmd\x1f%s\x1fdev\x1f.\x1fmock\x1fnpm run mock\nreqfrom\x1faddcmd\x1f%s\x1fbuild\x1f.\x1fpack\x1fnpm run pack\nreqfrom\x1fdelcmd\x1f%s.dev.mock\nreqfrom\x1ftick\n' \
+  "$multi" "$wsid" "$wsid" "$wsid" |
+  XDG_CACHE_HOME="$cache" bash -c 'source "$1/nodex/lib/nodex-core.sh"; web_engine' _ "$repo" >/dev/null 2>&1
+grep -q "^svc${FS}$wsid.build.pack${FS}.*${FS}npm run pack${FS}" "$state" &&
+  ok '自定义命令写进状态' || bad '自定义命令没写进状态'
+grep -q "^svc${FS}$wsid.dev.mock" "$state" && bad '删掉的自定义命令还在状态里' || ok '删掉的自定义命令从状态消失'
+custom="$cache/nodex/web/custom.tsv"
+grep -q "pack" "$custom" && ! grep -q "mock" "$custom" &&
+  ok '登记表只留没删的命令' || bad '登记表与删除结果不一致'
 
 python3 "$repo/nodex/test/test_web_node.py" >/dev/null 2>&1 || bad '网页工作区与别名的测试未通过'
 

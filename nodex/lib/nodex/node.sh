@@ -97,10 +97,10 @@ pkg_dir() {
   printf '%s/%s\n' "$NODE_ROOT" "$rel"
 }
 
-# 一条动作记录：标签、工作目录、包目录、参数、展示路径、展示命令。
+# 一条动作记录：标签、工作目录、包目录、完整命令、展示路径、展示命令。
 emit_action_record() {
   local dir=$1 rel=$2 name=$3 script=$4
-  emit_record "$name" "$dir" "$rel" "run $script" "$rel" "$NODE_PM run $script"
+  emit_record "$name" "$dir" "$rel" "$NODE_PM run $script" "$rel" "$NODE_PM run $script"
 }
 
 each_package_do() {
@@ -137,27 +137,18 @@ has_build() { [[ -n "${PKG_BUILD[$1]:-}" ]]; }
 emit_build_record() { emit_script_records "$1" "$2" "$3" "${PKG_BUILD[$2]}"; }
 collect_build() { each_package_do has_build emit_build_record; }
 
-# 安装依赖：根一行装整个工作区；子包各一行，按包管理器的选择器只装这个包。
-# 三种包管理器都从根目录执行，选择器的写法各不相同。
-install_args_for() {
-  local name=$1
-  case "$NODE_PM" in
-    pnpm) printf '%s\n' "--filter $name install" ;;
-    yarn) printf '%s\n' "workspace $name install" ;;
-    *) printf '%s\n' "install --workspace $name" ;;
-  esac
-}
-
+# 安装依赖：命令默认 npm install，用户可以在网页里改成 pnpm 或 yarn 的写法。
+# 根一行装整个工作区；子包各一行，用 npm 的工作区选择器只装这个包。
 collect_install() {
   local rel name args base
   base=${PKG_NAME[.]:-$(basename "$NODE_ROOT")}
-  emit_record "$base" "$NODE_ROOT" '' 'install' '.' "$NODE_PM install"
+  emit_record "$base" "$NODE_ROOT" '' 'npm install' '.' 'npm install'
 
   for rel in "${NODE_PKGS[@]}"; do
     [[ "$rel" == '.' ]] && continue
     name=${PKG_NAME[$rel]}
-    args=$(install_args_for "$name")
-    emit_record "$name" "$NODE_ROOT" "$rel" "$args" "$rel" "$NODE_PM $args"
+    args="npm install --workspace $name"
+    emit_record "$name" "$NODE_ROOT" "$rel" "$args" "$rel" "$args"
   done
   return 0
 }

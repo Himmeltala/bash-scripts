@@ -15,6 +15,9 @@ readonly WEB_STATE_FILE="$WEB_HOME/state.tsv"
 readonly WEB_LOCK_DIR="$WEB_HOME/lock"
 readonly WEB_PEND_FILE="$WEB_HOME/pending"
 readonly WEB_LOG_DIR="$WEB_HOME/logs"
+# 用户自己加的命令不在 package.json 里，单独存一份，每次扫描后重新挂回服务行。
+# 每行：工作区|类型|包目录|名称|完整命令。
+readonly WEB_CUSTOM_FILE="$WEB_HOME/custom.tsv"
 readonly WEB_PAGE="$nodex_dir/nodex/web/static/index.html"
 readonly WEB_API_PREFIX='/__nodex/api'
 
@@ -302,9 +305,129 @@ web_scan() {
   return 0
 }
 
+# 老状态里存的是包管理器后面的那一截，补成完整命令；新写入的参数本来就是完整命令。
+web_legacy_args() {
+  local type=$1 pm=$2 args=$3
+  case "$type" in
+    dev|build)
+      if [[ "$args" == 'run '* ]]; then printf '%s\n' "$pm $args"; else printf '%s\n' "$args"; fi
+      ;;
+    install)
+      case "$args" in
+        'install'|'install '*|'--filter '*|'workspace '*) printf '%s\n' "$pm $args" ;;
+        *) printf '%s\n' "$args" ;;
+      esac
+      ;;
+    *) printf '%s\n' "$args" ;;
+  esac
+}
+
+# ---- 自定义命令 ----
+# 登记表每行：工作区|类型|包目录|名称|完整命令；状态里的服务行由它生成，扫描后重新挂回去。
+
+web_custom_append() {
+  local ws=$1 type=$2 rel=$3 tag=$4 args=$5
+  mkdir -p "$WEB_HOME"
+  printf '%s\n' "$ws$FS$type$FS$rel$FS$tag$FS$args" >>"$WEB_CUSTOM_FILE"
+}
+
+web_custom_rewrite() {
+  local tmp="$WEB_CUSTOM_FILE.tmp"
+  if (($#)); then
+    printf '%s\n' "$@" >"$tmp"
+  else
+    : >"$tmp"
+  fi
+  mv -f "$tmp" "$WEB_CUSTOM_FILE"
+}
+
+web_custom_has() {
+  local ws=$1 type=$2 tag=$3 line
+  [[ -f "$WEB_CUSTOM_FILE" ]] || return 1
+  while IFS= read -r line; do
+    [[ "$(web_col "$line" 1)" == "$ws" && "$(web_col "$line" 2)" == "$type" && "$(web_col "$line" 4)" == "$tag" ]] &&
+      return 0
+  done <"$WEB_CUSTOM_FILE"
+  return 1
+}
+
+web_custom_set_args() {
+  local ws=$1 type=$2 tag=$3 args=$4 line rel keep=()
+  [[ -f "$WEB_CUSTOM_FILE" ]] || return 0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    if [[ "$(web_col "$line" 1)" == "$ws" && "$(web_col "$line" 2)" == "$type" && "$(web_col "$line" 4)" == "$tag" ]]; then
+      rel=$(web_col "$line" 3)
+      keep+=("$ws$FS$type$FS$rel$FS$tag$FS$args")
+    else
+      keep+=("$line")
+    fi
+  done <"$WEB_CUSTOM_FILE"
+  web_custom_rewrite "${keep[@]+"${keep[@]}"}"
+}
+
+web_custom_remove() {
+  local ws=$1 type=$2 tag=$3 line keep=()
+  [[ -f "$WEB_CUSTOM_FILE" ]] || return 0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$(web_col "$line" 1)" == "$ws" && "$(web_col "$line" 2)" == "$type" && "$(web_col "$line" 4)" == "$tag" ]] && continue
+    keep+=("$line")
+  done <"$WEB_CUSTOM_FILE"
+  web_custom_rewrite "${keep[@]+"${keep[@]}"}"
+}
+
+web_txn_custom_add() {
+  local ws=$1 type=$2 rel=$3 tag=$4 args=$5 root dir id line
+  case "$type" in
+    dev|build|install) ;;
+    *) web_fail "命令类型不对：$type" "$EXIT_USAGE"; return 1 ;;
+  esac
+  [[ -n "$tag" && -n "$args" ]] || { web_fail '名称与命令都要填' "$EXIT_USAGE"; return 1; }
+  [[ "$tag" != *"$FS"* && "$tag" != */* ]] ||
+    { web_fail '名称里不能有斜杠或分隔符' "$EXIT_USAGE"; return 1; }
+  web_locate "$WS_KIND" "$ws" || { web_fail "没有这个工作区：$ws" "$EXIT_USAGE"; return 1; }
+  root=$(web_col "$WEB_ROW" 3)
+  rel=${rel:-.}
+  if [[ "$rel" == '.' ]]; then dir=$root; else dir="$root/$rel"; fi
+  [[ -d "$dir" ]] || { web_fail "包目录不存在：$rel" "$EXIT_USAGE"; return 1; }
+  id="$ws.$type.$tag"
+  web_locate "$SVC_KIND" "$id" && { web_fail "已经有同名命令：$tag" "$EXIT_USAGE"; return 1; }
+  line="$SVC_KIND$FS$id$FS$ws$FS$type$FS$dir$FS$rel$FS$args$FS$rel$FS$args$FS"
+  STATE_LINES+=("$line")
+  web_custom_append "$ws" "$type" "$rel" "$tag" "$args"
+  return 0
+}
+
+web_custom_add() { web_txn web_txn_custom_add "$@"; }
+
+web_txn_custom_del() {
+  local id=$1 row keep=() ws type tag
+  web_locate "$SVC_KIND" "$id" || { web_fail "没有这个服务：$id" "$EXIT_USAGE"; return 1; }
+  ws=$(web_col "$WEB_ROW" 3)
+  type=$(web_col "$WEB_ROW" 4)
+  tag=$(web_tag "$WEB_ROW")
+  web_custom_has "$ws" "$type" "$tag" || { web_fail '内置命令不能删，只能改' "$EXIT_USAGE"; return 1; }
+  for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
+    [[ ${row%%"$FS"*} == "$RUN_KIND" && "$(web_col "$row" 2)" == "$id".* ]] || continue
+    case "$(web_col "$row" "$RUN_COL_STATUS")" in
+      starting|ready) web_fail '命令还在跑，先停掉再删' "$EXIT_USAGE"; return 1 ;;
+    esac
+  done
+  for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
+    [[ ${row%%"$FS"*} == "$SVC_KIND" && "$(web_col "$row" 2)" == "$id" ]] && continue
+    keep+=("$row")
+  done
+  STATE_LINES=("${keep[@]+"${keep[@]}"}")
+  web_custom_remove "$ws" "$type" "$tag"
+  return 0
+}
+
+web_custom_del() { web_txn web_txn_custom_del "$@"; }
+
 # 用一个工作区的扫描结果替换旧的服务与包行；工作区与运行记录原样保留。
 web_scan_apply() {
-  local id=$1 file=$2 row line sid rel args pm width _sid _rel _args
+  local id=$1 file=$2 row line sid rel args pm width type _sid _rel _args
   local -a fresh=() keep=() out=()
   local -A saved=()
   [[ -s "$file" ]] && mapfile -t fresh <"$file"
@@ -331,12 +454,39 @@ web_scan_apply() {
         rel=${saved[$sid]%%"$FS"*}
         args=${saved[$sid]#*"$FS"}
         pm=$(web_col "$line" "$SVC_COL_PM")
+        type=$(web_col "$line" 4)
+        args=$(web_legacy_args "$type" "$pm" "$args")
         line=$(web_row_set "$width" "$line" "$SVC_COL_REL" "$rel" "$SVC_COL_ARGS" "$args" \
-          "$SVC_COL_CMD" "$pm $args")
+          "$SVC_COL_CMD" "$args")
       fi
     fi
     out+=("$line")
   done
+
+  # 自定义命令不在 package.json 里，扫描后按登记表补回来。
+  local croot='' cws ctype crel ctag cargs cid cdir cline
+  web_locate "$WS_KIND" "$id" && croot=$(web_col "$WEB_ROW" 3)
+  if [[ -n "$croot" && -f "$WEB_CUSTOM_FILE" ]]; then
+    local -A taken=()
+    for line in "${out[@]+"${out[@]}"}"; do
+      [[ ${line%%"$FS"*} == "$SVC_KIND" ]] && taken["$(web_col "$line" 2)"]=1
+    done
+    while IFS= read -r cline; do
+      [[ -n "$cline" ]] || continue
+      cws=$(web_col "$cline" 1)
+      [[ "$cws" == "$id" ]] || continue
+      ctype=$(web_col "$cline" 2)
+      crel=$(web_col "$cline" 3)
+      ctag=$(web_col "$cline" 4)
+      cargs=$(web_col "$cline" 5)
+      cid="$id.$ctype.$ctag"
+      [[ -n "${taken[$cid]+x}" ]] && continue
+      if [[ "$crel" == '.' ]]; then cdir=$croot; else cdir="$croot/$crel"; fi
+      out+=("$SVC_KIND$FS$cid$FS$id$FS$ctype$FS$cdir$FS$crel$FS$cargs$FS$crel$FS$cargs$FS")
+      taken[$cid]=1
+    done <"$WEB_CUSTOM_FILE"
+  fi
+
   STATE_LINES=("${keep[@]+"${keep[@]}"}" "${out[@]+"${out[@]}"}")
 }
 
@@ -551,7 +701,7 @@ web_pend_load() {
 
 # 启动的第一半：拼参数，把运行号、执行目录、参数、预排好的一行交回 python。
 web_reserve() {
-  local id=$1 extra=${2:-} svc dir base args pm runid line gen
+  local id=$1 extra=${2:-} svc dir base args pm type runid line gen
   web_lock || return
   web_state_load
   if ! web_locate "$SVC_KIND" "$id"; then
@@ -562,14 +712,15 @@ web_reserve() {
   svc=$WEB_ROW
   web_unlock
 
-  local type
   type=$(web_col "$svc" 4)
   dir=$(web_col "$svc" "$SVC_COL_DIR")
   base=$(web_col "$svc" "$SVC_COL_ARGS")
   pm=$(web_col "$svc" "$SVC_COL_PM")
+  # 升级前的旧参数只有包管理器后面的一截，启动时也补一次，等下次扫描写回状态。
+  base=$(web_legacy_args "$type" "$pm" "$base")
   args=$(web_launch_args "$base" "$extra") || return
   runid="$id.$(date +%s%N)"
-  line=$(web_run_line "$svc" "$runid" '' "$args" "$pm $args")
+  line=$(web_run_line "$svc" "$runid" '' "$args" "$args")
 
   gen=$(web_pend_save "$runid" "$line") || return
   printf '%s\n' "ok$FS$runid$FS$dir$FS$args$FS$line$FS$gen"
@@ -622,10 +773,17 @@ web_stop() {
 }
 
 web_txn_svc_set() {
-  local id=$1 args=$2 pm
+  local id=$1 args=$2 ws type tag
   web_locate "$SVC_KIND" "$id" || return 1
-  pm=$(web_col "$WEB_ROW" "$SVC_COL_PM")
-  web_set "$SVC_COL_ARGS" "$args" "$SVC_COL_CMD" "$pm $args"
+  ws=$(web_col "$WEB_ROW" 3)
+  type=$(web_col "$WEB_ROW" 4)
+  tag=$(web_tag "$WEB_ROW")
+  web_set "$SVC_COL_ARGS" "$args" "$SVC_COL_CMD" "$args"
+  # 自定义命令的真身在登记表里，改完要同步过去，否则下次扫描又变回旧命令。
+  if web_custom_has "$ws" "$type" "$tag"; then
+    web_custom_set_args "$ws" "$type" "$tag" "$args"
+  fi
+  return 0
 }
 
 web_update() {
@@ -661,6 +819,11 @@ web_engine() {
       launched) web_launched "$(web_col "$req" 2)" "$(web_col "$req" 3)" || rc=$? ;;
       stop) web_stop "$(web_col "$req" 2)" || rc=$? ;;
       update) web_update "$(web_col "$req" 2)" "$(web_col "$req" 3)" || rc=$? ;;
+      addcmd)
+        web_custom_add "$(web_col "$req" 2)" "$(web_col "$req" 3)" "$(web_col "$req" 4)" \
+          "$(web_col "$req" 5)" "$(web_col "$req" 6)" || rc=$?
+        ;;
+      delcmd) web_custom_del "$(web_col "$req" 2)" || rc=$? ;;
       *) web_fail "网页请求不认识：$op" "$EXIT_USAGE" || rc=$? ;;
     esac
     web_poll ''
@@ -693,7 +856,8 @@ web_command() {
 
   "$runner" "$nodex_dir/nodex/web/server.py" \
     --static "$nodex_dir/nodex/web/static" \
-    --state "$WEB_STATE_FILE" --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX" \
+    --state "$WEB_STATE_FILE" --custom "$WEB_CUSTOM_FILE" \
+    --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX" \
     --nodex "${NODEX_SELF:-$nodex_dir/../bin/nodex}" \
     --host "$RV_HOST" --port "$RV_PORT" "${open_arg[@]}" >"$log" 2>&1 &
   child=$!

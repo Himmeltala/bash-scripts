@@ -1,6 +1,6 @@
-# 执行侧：进包目录后用包管理器跑脚本；单条记录 exec 顶替进程，多条记录后台共用终端。
+# 执行侧：记录里的参数就是完整命令，进包目录直接执行；单条记录 exec 顶替进程，多条记录后台共用终端。
 
-# 进目录后 exec 成 pnpm/npm/yarn；在子 shell 里调用即后台执行，因为 exec 只替换那个子 shell。
+# 进目录后 exec 成记录里的那条命令；在子 shell 里调用即后台执行，因为 exec 只替换那个子 shell。
 launch_one() {
   local workdir=$1 args=$2
   cd "$workdir" || return 1
@@ -9,7 +9,7 @@ launch_one() {
   if [[ -n "$args" ]]; then
     read -r -a argv <<< "$args"
   fi
-  exec "$NODE_PM" "${argv[@]}"
+  exec "${argv[@]}"
 }
 
 # 不 exec，跑完回到调用方。装依赖要串行：同一个工作区里两条 install 同时跑会抢锁。
@@ -17,7 +17,7 @@ run_one() {
   local workdir=$1 args=$2
   local -a argv=()
   [[ -n "$args" ]] && read -r -a argv <<< "$args"
-  ( cd "$workdir" && exec "$NODE_PM" "${argv[@]}" )
+  ( cd "$workdir" && exec "${argv[@]}" )
 }
 
 # 串行执行多条记录，前一条失败就停。

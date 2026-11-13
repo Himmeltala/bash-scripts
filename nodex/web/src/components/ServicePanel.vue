@@ -51,27 +51,12 @@
         clearable
         class="filter"
       />
+      <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">添加命令</v-btn>
     </div>
 
     <div v-if="!rows.length" class="none">
-      <template v-if="tab === 'packages'">没扫到 package.json</template>
-      <template v-else>这一栏没有可执行的包，换个栏目看看，或点重新扫描。</template>
+      这一栏没有可执行的包，换个栏目看看，或者添加一条自己的命令。
     </div>
-
-    <v-table v-else-if="tab === 'packages'" density="compact" class="table">
-      <thead>
-        <tr>
-          <th>包</th>
-          <th>路径</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.key">
-          <td class="svc-name">{{ row.title }}</td>
-          <td class="svc-path" :title="row.path">{{ row.path }}</td>
-        </tr>
-      </tbody>
-    </v-table>
 
     <v-table v-else density="compact" class="table">
       <thead>
@@ -142,10 +127,60 @@
                 日志
               </v-btn>
             </template>
+            <v-btn
+              v-if="row.svc.custom && !row.live"
+              size="small"
+              variant="text"
+              :icon="true"
+              title="删除自定义命令"
+              @click="dropCommand(row)"
+            >
+              <v-icon size="20">mdi-trash-can-outline</v-icon>
+            </v-btn>
           </td>
         </tr>
       </tbody>
     </v-table>
+
+    <v-dialog v-model="add.on" max-width="540">
+      <v-card>
+        <v-card-title>添加{{ add.action }}命令</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="add.tag"
+            label="名称"
+            placeholder="例如 mock"
+            density="compact"
+            variant="outlined"
+            class="mb-4"
+          />
+          <v-select
+            v-model="add.rel"
+            :items="pkgItems"
+            item-title="label"
+            item-value="rel"
+            label="包"
+            density="compact"
+            variant="outlined"
+            class="mb-4"
+          />
+          <v-text-field
+            v-model="add.args"
+            label="完整命令"
+            :placeholder="add.placeholder"
+            density="compact"
+            variant="outlined"
+            @keyup.enter="saveCommand"
+          />
+          <p v-if="add.error" class="add-error">{{ add.error }}</p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="add.on = false">取消</v-btn>
+          <v-btn color="primary" variant="flat" :loading="add.saving" @click="saveCommand">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <SettingsDialog
       v-model="settings.on"
@@ -194,6 +229,7 @@ import {
   STATUS_TEXT,
   TYPE_TEXT,
   ago,
+  runningCount,
 } from '../composables/format'
 
 const props = defineProps({
@@ -202,13 +238,12 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   currentNode: { type: String, default: '' },
 })
-const emit = defineEmits(['start', 'stop', 'save', 'setnode', 'scan', 'forget'])
+const emit = defineEmits(['start', 'stop', 'save', 'setnode', 'scan', 'forget', 'notice'])
 
 const tabs = [
   { value: 'service', title: '启动服务' },
   { value: 'package', title: '打包' },
   { value: 'install', title: '安装' },
-  { value: 'packages', title: '模块清单' },
 ]
 const tab = ref('service')
 const filter = ref('')
@@ -217,7 +252,20 @@ const starting = ref({})
 
 const settings = reactive({ on: false, svc: null, log: '', more: false, page: 0, logStatus: '' })
 const custom = reactive({ on: false, path: '' })
+const add = reactive({ on: false, saving: false, error: '', type: 'dev', action: '启动', tag: '', rel: '.', args: '', placeholder: '' })
 let logSource = null
+
+const ADD_META = {
+  dev: { action: '启动', placeholder: 'npm run dev' },
+  build: { action: '打包', placeholder: 'npm run build' },
+  install: { action: '安装', placeholder: 'npm install' },
+}
+const TAB_TYPE = { service: 'dev', package: 'build', install: 'install' }
+
+// 自定义命令可以指向工作区根，也可以指向某个子包。
+const pkgItems = computed(() =>
+  props.ws.packages.map((item) => ({ rel: item.rel, label: item.rel === '.' ? item.name : `${item.name}（${item.rel}）` })),
+)
 
 const CUSTOM = '__nodex_custom__'
 
@@ -251,7 +299,7 @@ function saveCustom() {
   custom.on = false
 }
 
-const running = computed(() => props.ws.services.filter((s) => s.run && LIVE.includes(s.run.status)).length)
+const running = computed(() => runningCount(props.ws))
 
 function baseName(full) {
   const parts = String(full || '').split('/').filter(Boolean)
@@ -270,18 +318,11 @@ function matches(text) {
 }
 
 function count(value) {
-  if (value === 'packages') return 0
   return props.ws.services.filter((s) => typeTab(s.type) === value && matches(s.tag)).length
 }
 
 // 列表按栏目拼：每个动作只看自己的包，日志也从这一行打开。
 const rows = computed(() => {
-  if (tab.value === 'packages') {
-    return props.ws.packages
-      .filter((item) => matches(item.name) || matches(item.rel))
-      .map((item) => ({ key: item.rel, title: item.name, path: item.rel }))
-  }
-
   return props.ws.services
     .filter((s) => typeTab(s.type) === tab.value)
     .filter((s) => matches(s.tag) || matches(s.display))
@@ -337,6 +378,50 @@ async function stop(row) {
   setTimeout(() => {
     stopping.value[row.svc.id] = false
   }, 3000)
+}
+
+function openAdd() {
+  const type = TAB_TYPE[tab.value]
+  const meta = ADD_META[type]
+  add.on = true
+  add.saving = false
+  add.error = ''
+  add.type = type
+  add.action = meta.action
+  add.placeholder = meta.placeholder
+  add.tag = ''
+  add.rel = props.ws.packages.some((item) => item.rel === '.') ? '.' : (props.ws.packages[0] || {}).rel || '.'
+  add.args = ''
+}
+
+async function saveCommand() {
+  const tag = add.tag.trim()
+  const args = add.args.trim()
+  if (!tag || !args) {
+    add.error = '名称与命令都要填'
+    return
+  }
+  add.saving = true
+  add.error = ''
+  try {
+    await api.addCommand({ ws: props.ws.id, type: add.type, rel: add.rel, tag, args })
+    add.on = false
+    emit('scan')
+  } catch (err) {
+    add.error = err.message
+  } finally {
+    add.saving = false
+  }
+}
+
+async function dropCommand(row) {
+  if (!window.confirm(`删除自定义命令「${row.title}」？`)) return
+  try {
+    await api.removeCommand(row.svc.id)
+    emit('scan')
+  } catch (err) {
+    emit('notice', err.message, 'error')
+  }
 }
 
 function openSettings(row) {
@@ -517,6 +602,11 @@ function onSave({ args }) {
 .ops {
   text-align: right;
   white-space: nowrap;
+}
+.add-error {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: rgb(var(--v-theme-error));
 }
 .none {
   padding: 28px 8px;

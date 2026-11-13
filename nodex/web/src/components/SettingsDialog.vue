@@ -25,14 +25,14 @@
 
     <v-textarea
       v-model="args"
-      label="执行参数"
-      placeholder="run dev"
+      label="执行命令"
+      :placeholder="placeholder"
       rows="2"
       auto-grow
       density="compact"
       variant="outlined"
       class="mt-4"
-      hint="第一个词是子命令，后面是它自己的参数；改完保存，下次启动就按这个跑"
+      hint="整条命令按这里执行，第一个词写包管理器或程序；改完保存，下次就按这个跑"
       persistent-hint
     />
 
@@ -91,9 +91,15 @@ watch(
 const preview = computed(() => {
   if (!props.svc) return ''
   const dir = props.svc.path || props.svc.display || '.'
-  const pm = props.svc.pm || ''
-  const body = [pm, args.value.trim()].filter(Boolean).join(' ')
-  return `cd ${dir} && ${body}`
+  const body = args.value.trim()
+  return body ? `cd ${dir} && ${body}` : ''
+})
+
+const placeholder = computed(() => {
+  const type = props.svc && props.svc.type
+  if (type === 'install') return 'npm install'
+  if (type === 'build') return 'npm run build'
+  return 'npm run dev'
 })
 
 const logRun = computed(() => (props.svc && props.svc.run ? props.svc.run.id : ''))

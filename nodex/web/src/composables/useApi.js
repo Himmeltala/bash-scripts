@@ -44,4 +44,6 @@ export const api = {
   start: (payload) => call('POST', '/start', payload),
   stop: (run) => call('POST', '/stop', { run }),
   update: (svc, args) => call('POST', '/update', { svc, args }),
+  addCommand: (payload) => call('POST', '/addcmd', payload),
+  removeCommand: (svc) => call('POST', '/delcmd', { svc }),
 }
