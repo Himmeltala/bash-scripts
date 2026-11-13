@@ -113,6 +113,25 @@ class SvnWorkspace(unittest.TestCase):
         self.assertIn("+world", result["text"])
         self.assertIn("src/a.txt", result["text"])
 
+    def test_diff_full_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            wc = Path(tmp) / "wc"
+            run(["svnadmin", "create", str(repo)])
+            run(["svn", "checkout", "-q", "file://" + str(repo), str(wc)])
+            lines = "".join("line %d\n" % i for i in range(1, 61))
+            path = wc / "big.txt"
+            path.write_text(lines, "utf-8")
+            run(["svn", "add", "-q", "big.txt"], cwd=wc)
+            run(["svn", "commit", "-q", "-m", "init", "."], cwd=wc)
+            path.write_text(lines.replace("line 30\n", "line 30 changed\n"), "utf-8")
+            short = svnmod.change_diff(str(wc), "big.txt")
+            full = svnmod.change_diff(str(wc), "big.txt", full=True)
+            # 默认只带改行附近几行上下文，整文件模式连第一行都带上。
+            self.assertNotIn(" line 1\n", short["text"])
+            self.assertIn(" line 1\n", full["text"])
+            self.assertIn("+line 30 changed", full["text"])
+
     def test_unversioned_file_reads_as_content(self):
         self.assertEqual(svnmod.read_unversioned(str(self.wc), "b.txt"), "new\n")
 

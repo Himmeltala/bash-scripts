@@ -1063,15 +1063,20 @@ def diff_of(root, args):
     return {"text": text, "truncated": truncated, "error": err if rc != 0 else ""}
 
 
-def change_diff(root, rel, rev=None):
+def change_diff(root, rel, rev=None, full=False):
     rel = safe_rel(rel)
     target = os.path.join(root, rel)
     if not inside(root, target):
         raise ApiError(400, "路径要在工作副本里：%s" % rel)
     # 相对工作副本根跑，差异里显示的就是工作副本内的相对路径。
+    args = ["diff"]
+    if full:
+        # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
+        args += ["-x", "-U1000000"]
     if rev:
-        return diff_of(root, ["diff", "-c", str(rev), "--", rel])
-    return diff_of(root, ["diff", "--", rel])
+        args += ["-c", str(rev)]
+    args += ["--", rel]
+    return diff_of(root, args)
 
 
 def revision_diff(root, rev, repo_path=""):
@@ -1223,7 +1228,7 @@ def git_diff_of(root, args):
     return {"text": text, "truncated": truncated, "error": err if rc != 0 else ""}
 
 
-def git_change_diff(root, rel):
+def git_change_diff(root, rel, full=False):
     """未提交的改动：工作区加暂存区对 HEAD，口径跟 SVN 对 BASE 一致。"""
     has_head, _ = git_head(root)
     if has_head:
@@ -1231,6 +1236,9 @@ def git_change_diff(root, rel):
     else:
         # 空仓库还没有 HEAD，暂存区里的算新增。
         args = ["diff", "--cached", "--", ":/" + rel]
+    if full:
+        # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
+        args.insert(1, "--unified=1000000")
     return git_diff_of(root, args)
 
 
@@ -1811,14 +1819,15 @@ class Handler(BaseHTTPRequestHandler):
         rel = safe_rel((query.get("path") or [""])[0])
         rev = (query.get("rev") or [""])[0] or None
         item = (query.get("item") or [""])[0]
+        full = (query.get("full") or ["0"])[0] == "1"
         # 未纳入版本控制的文件没有差异，读整份内容按新增显示。
         if not rev and item == "unversioned":
             text, truncated = clip(read_unversioned(workspace_paths(ws), rel))
             return {"kind": "file", "path": rel, "text": text, "truncated": truncated}
         if ws.get("vcs") == "git":
-            result = git_change_diff(ws["root"], rel)
+            result = git_change_diff(ws["root"], rel, full)
         else:
-            result = change_diff(ws["root"], rel, rev)
+            result = change_diff(ws["root"], rel, rev, full)
         result.update({"kind": "diff", "path": rel})
         return result
 

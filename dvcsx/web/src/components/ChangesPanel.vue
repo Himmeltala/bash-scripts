@@ -22,6 +22,17 @@
           <v-btn value="flat" size="small" icon="mdi-view-list-outline" title="平铺列表" />
           <v-btn value="tree" size="small" icon="mdi-file-tree-outline" title="目录树" />
         </v-btn-toggle>
+        <v-btn-toggle
+          v-model="diffScope"
+          density="compact"
+          variant="text"
+          divided
+          mandatory
+          class="scopes"
+        >
+          <v-btn value="hunks" size="small" title="只显示改动的片段">差异</v-btn>
+          <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整文件</v-btn>
+        </v-btn-toggle>
         <v-btn
           size="small"
           variant="text"
@@ -133,7 +144,7 @@ const diffError = ref('')
 
 // 查看方式来自全局偏好，所有工作区共用；树形默认全部展开，收起过的目录记在这里。
 const preferences = usePreferencesStore()
-const { changesMode: mode } = storeToRefs(preferences)
+const { changesMode: mode, diffScope } = storeToRefs(preferences)
 const collapsedDirs = reactive({})
 // 左侧列表的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
@@ -285,7 +296,12 @@ async function pick(file) {
   diffLoading.value = true
   diffError.value = ''
   try {
-    content.value = await api.diff(props.ws.id, file.path, file.item)
+    content.value = await api.diff(
+      props.ws.id,
+      file.path,
+      file.item,
+      diffScope.value === 'file'
+    )
   } catch (err) {
     content.value = { text: '', kind: 'diff', truncated: false }
     diffError.value = err.message
@@ -294,6 +310,10 @@ async function pick(file) {
   }
 }
 
+// 切换差异口径时按当前文件重新取一遍。
+watch(diffScope, () => {
+  if (selected.value) pick(selected.value)
+})
 watch(() => props.ws.id, load)
 watch(() => props.refresh, load)
 onMounted(load)

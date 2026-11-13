@@ -156,11 +156,13 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import BrowseTree from './BrowseTree.vue'
 import { api } from '../composables/useApi'
 import { fileIcon } from '../composables/fileIcons'
 import { dirName } from '../composables/format'
 import { highlightCode, languageOf } from '../composables/highlight'
+import { usePreferencesStore } from '../stores/preferences'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -179,8 +181,9 @@ const resizing = ref(false)
 let startX = 0
 let startWidth = 0
 // 搜索：query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
+const preferences = usePreferencesStore()
+const { searchMode: mode } = storeToRefs(preferences)
 const query = ref('')
-const mode = ref('name')
 const searching = computed(() => query.value.trim() !== '')
 const search = reactive({ loading: false, error: '', matches: [], truncated: false, mode: 'name' })
 let searchSeq = 0

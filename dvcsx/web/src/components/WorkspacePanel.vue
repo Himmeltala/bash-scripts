@@ -40,17 +40,21 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import BrowsePanel from './BrowsePanel.vue'
 import ChangesPanel from './ChangesPanel.vue'
 import LogPanel from './LogPanel.vue'
 import SyncPanel from './SyncPanel.vue'
 import { workspaceEventsUrl } from '../composables/useApi'
+import { usePreferencesStore } from '../stores/preferences'
 
 const props = defineProps({
   ws: { type: Object, required: true },
 })
 
-const tab = ref('changes')
+// 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
+const preferences = usePreferencesStore()
+const { activeTab: tab } = storeToRefs(preferences)
 const count = ref(0)
 // changes 只影响变更页；repo 是写操作结束，日志与同步信息也要重载。
 const changesKey = ref(0)
@@ -86,11 +90,10 @@ function openEvents() {
   // 连接断了 EventSource 会自己重连，不必在这里处理。
 }
 
-// 换工作副本时回到变更页，勾选状态不跟着带到另一个目录。
+// 换工作副本时清掉上一个目录的变更数，页签保持不动。
 watch(
   () => props.ws.id,
   () => {
-    tab.value = 'changes'
     count.value = 0
     openEvents()
   }

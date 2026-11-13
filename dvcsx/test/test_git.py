@@ -175,6 +175,22 @@ class GitWorkspace(unittest.TestCase):
         one = gitmod.git_revision_diff(str(self.repo), self.first, "sub/a.txt")
         self.assertIn("+hello", one["text"])
 
+    def test_change_diff_full_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run(["git", "init", "-q", str(tmp)])
+            lines = "".join("line %d\n" % i for i in range(1, 61))
+            path = Path(tmp) / "big.txt"
+            path.write_text(lines, "utf-8")
+            run(["git", "add", "-A"], cwd=tmp)
+            run(["git", "commit", "-qm", "init"], cwd=tmp)
+            path.write_text(lines.replace("line 30\n", "line 30 changed\n"), "utf-8")
+            short = gitmod.git_change_diff(tmp, "big.txt")
+            full = gitmod.git_change_diff(tmp, "big.txt", full=True)
+            # 默认只带改行附近三行上下文，整文件模式连第一行都带上。
+            self.assertNotIn(" line 1\n", short["text"])
+            self.assertIn(" line 1\n", full["text"])
+            self.assertIn("+line 30 changed", full["text"])
+
     def test_browse_lists_and_reads_files(self):
         data = gitmod.browse_list(str(self.repo), "")
         types = {e["name"]: e["type"] for e in data["entries"]}
@@ -281,6 +297,10 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(items.get("sub/a.txt"), "modified")
 
         status, data = self.call("/diff?ws=%s&path=sub/a.txt&item=modified" % wid)
+        self.assertEqual(status, 200, data)
+        self.assertIn("+world", data["text"])
+
+        status, data = self.call("/diff?ws=%s&path=sub/a.txt&item=modified&full=1" % wid)
         self.assertEqual(status, 200, data)
         self.assertIn("+world", data["text"])
 
