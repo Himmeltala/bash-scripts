@@ -235,6 +235,20 @@ class GitWorkspace(unittest.TestCase):
         with self.assertRaises(gitmod.ApiError):
             gitmod.browse_search(str(self.repo), "..", "x", "name")
 
+    def test_browse_save_keeps_line_endings(self):
+        target = self.repo / "save.txt"
+        target.write_bytes(b"a\r\nb\r\n")
+        try:
+            data = gitmod.save_file(str(self.repo), "save.txt", "x\ny\n")
+            self.assertEqual(data["size"], len(b"x\r\ny\r\n"))
+            self.assertEqual(target.read_bytes(), b"x\r\ny\r\n")
+        finally:
+            target.unlink()
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.save_file(str(self.repo), "../x", "x")
+        with self.assertRaises(gitmod.ApiError):
+            gitmod.save_file(str(self.repo), "sub", "x")
+
     def test_alias_and_relative_path_in_state(self):
         wid = self.add()
         status, data = self.call("/alias", {"ws": wid, "alias": "  我的   仓库 "})
@@ -366,6 +380,25 @@ class GitWorkspace(unittest.TestCase):
         status, data = self.call("/search?ws=%s&q=notes&mode=name" % wid)
         self.assertEqual(status, 200, data)
         self.assertEqual([m["path"] for m in data["matches"]], ["notes.txt"])
+        self.call("/forget", {"ws": wid})
+
+    def test_api_save_file(self):
+        wid = self.add()
+        target = self.repo / "sub" / "save.txt"
+        target.write_text("old\n", "utf-8")
+        try:
+            status, data = self.call(
+                "/save", {"ws": wid, "path": "sub/save.txt", "text": "new\nline\n"}
+            )
+            self.assertEqual(status, 200, data)
+            self.assertEqual(target.read_text("utf-8"), "new\nline\n")
+
+            status, data = self.call("/save", {"ws": wid, "path": "../x", "text": "x"})
+            self.assertEqual(status, 400)
+            status, data = self.call("/save", {"ws": wid, "path": "sub", "text": "x"})
+            self.assertEqual(status, 400)
+        finally:
+            target.unlink()
         self.call("/forget", {"ws": wid})
 
     def test_api_rejects_foreign_dir(self):

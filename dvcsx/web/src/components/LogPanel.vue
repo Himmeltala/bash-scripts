@@ -247,6 +247,7 @@
               <DiffView
                 v-if="!diffCollapsed"
                 :title="diffTitle"
+                :path="activePath"
                 :text="content.text"
                 kind="diff"
                 :truncated="content.truncated"

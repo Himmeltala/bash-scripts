@@ -23,7 +23,7 @@
           <span class="ln">{{ row.old }}</span>
           <span class="ln">{{ row.new }}</span>
           <span class="sign">{{ row.sign }}</span>
-          <span class="text">{{ row.text }}</span>
+          <span class="text" v-html="row.html" />
         </template>
       </div>
     </div>
@@ -32,11 +32,13 @@
 
 <script setup>
 import { computed } from 'vue'
+import { MAX_HIGHLIGHT, highlightCode, languageOf } from '../composables/highlight'
 
 const props = defineProps({
   text: { type: String, default: '' },
   kind: { type: String, default: 'diff' },
   title: { type: String, default: '' },
+  path: { type: String, default: '' },
   truncated: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
@@ -47,12 +49,18 @@ const rows = computed(() => {
   const text = props.text || ''
   if (!text) return []
   const lines = text.split('\n')
+  // 行多或整体太大时不做语法着色，逐行解析的开销不值当。
+  const language =
+    lines.length <= 2000 && text.length <= MAX_HIGHLIGHT ? languageOf(props.path) : ''
+  const code = (row) => ({ ...row, html: highlightCode(row.text, language) })
   const out = []
   let oldNo = 0
   let newNo = 0
 
   if (props.kind === 'file') {
-    return lines.map((line, i) => ({ type: 'add', sign: '+', old: '', new: i + 1, text: line }))
+    return lines.map((line, i) =>
+      code({ type: 'add', sign: '+', old: '', new: i + 1, text: line }),
+    )
   }
 
   for (const line of lines) {
@@ -74,15 +82,15 @@ const rows = computed(() => {
       continue
     }
     if (line.startsWith('+')) {
-      out.push({ type: 'add', sign: '+', old: '', new: newNo++, text: line.slice(1) })
+      out.push(code({ type: 'add', sign: '+', old: '', new: newNo++, text: line.slice(1) }))
       continue
     }
     if (line.startsWith('-')) {
-      out.push({ type: 'del', sign: '-', old: oldNo++, new: '', text: line.slice(1) })
+      out.push(code({ type: 'del', sign: '-', old: oldNo++, new: '', text: line.slice(1) }))
       continue
     }
     if (line.startsWith(' ')) {
-      out.push({ type: 'ctx', sign: '', old: oldNo++, new: newNo++, text: line.slice(1) })
+      out.push(code({ type: 'ctx', sign: '', old: oldNo++, new: newNo++, text: line.slice(1) }))
       continue
     }
     out.push({ type: 'meta', text: line })
@@ -183,6 +191,42 @@ const rows = computed(() => {
 .text {
   flex: 1 1 auto;
   padding-right: 16px;
+}
+/* 差异里的代码按浏览目录同一套颜色着色。 */
+.text :deep(.hljs-comment),
+.text :deep(.hljs-quote) {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-style: italic;
+}
+.text :deep(.hljs-keyword),
+.text :deep(.hljs-selector-tag),
+.text :deep(.hljs-built_in),
+.text :deep(.hljs-type) {
+  color: rgb(var(--v-theme-primary));
+}
+.text :deep(.hljs-string),
+.text :deep(.hljs-regexp),
+.text :deep(.hljs-addition) {
+  color: rgb(var(--v-theme-added));
+}
+.text :deep(.hljs-number),
+.text :deep(.hljs-literal),
+.text :deep(.hljs-attr),
+.text :deep(.hljs-attribute),
+.text :deep(.hljs-property) {
+  color: rgb(var(--v-theme-modified));
+}
+.text :deep(.hljs-title),
+.text :deep(.hljs-section),
+.text :deep(.hljs-name) {
+  color: rgb(var(--v-theme-primary));
+}
+.text :deep(.hljs-tag),
+.text :deep(.hljs-meta) {
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.text :deep(.hljs-deletion) {
+  color: rgb(var(--v-theme-deleted));
 }
 .wide {
   padding: 0 4px;

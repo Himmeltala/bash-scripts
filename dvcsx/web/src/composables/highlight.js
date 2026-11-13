@@ -50,7 +50,7 @@ const BY_EXT = {
 }
 
 // 整份着色很吃时间，超过这个长度按纯文本显示。
-const MAX_HIGHLIGHT = 200 * 1024
+export const MAX_HIGHLIGHT = 200 * 1024
 
 export function languageOf(path) {
   const name = String(path || '').split('/').pop() || ''

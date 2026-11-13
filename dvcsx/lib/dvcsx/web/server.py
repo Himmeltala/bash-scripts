@@ -1054,6 +1054,42 @@ def read_unversioned(root, rel):
         raise ApiError(415, "这个文件的编码不是 UTF-8，看不了内容")
 
 
+def save_file(root, rel, text):
+    """把浏览目录里改过的文件按 UTF-8 写回，换行风格跟原来保持一致。"""
+    rel = browse_rel(rel)
+    if not rel:
+        raise ApiError(400, "没给文件路径")
+    target = os.path.join(root, rel)
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if os.path.isdir(target):
+        raise ApiError(400, "这是目录，不能按文件保存")
+    if not os.path.isfile(target):
+        raise ApiError(404, "文件不存在：%s" % rel)
+    try:
+        old = Path(target).read_bytes()
+    except OSError as exc:
+        raise ApiError(403, "读不了这个文件：%s" % exc)
+    # 只覆盖能被预览的文本，二进制与别的编码不碰。
+    if b"\x00" in old:
+        raise ApiError(415, "这是二进制文件，不能按文本保存")
+    try:
+        old.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ApiError(415, "这个文件的编码不是 UTF-8，不能按文本保存")
+    crlf = b"\r\n" in old
+    body = text.replace("\r\n", "\n").replace("\r", "\n")
+    if crlf:
+        body = body.replace("\n", "\r\n")
+    raw = body.encode("utf-8")
+    try:
+        with open(target, "wb") as handle:
+            handle.write(raw)
+    except OSError as exc:
+        raise ApiError(403, "写不了这个文件：%s" % exc)
+    return {"path": rel, "size": len(raw)}
+
+
 def diff_of(root, args):
     rc, out, err = svn(args, cwd=root)
     text = out.decode("utf-8", "replace")
@@ -1794,6 +1830,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(404, "没有这个工作区")
             self.store.set_alias(ws["id"], str(body.get("alias", "")))
             return {"ok": True}
+        if route == "save":
+            return self._save(body)
         if route == "operations":
             return self._start_operation(body)
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/cancel", route)
@@ -1878,6 +1916,17 @@ class Handler(BaseHTTPRequestHandler):
         ws = self._ws(query)
         rel = (query.get("path") or [""])[0]
         return {"workspace": ws, "path": rel, "text": browse_file(ws["root"], rel)}
+
+    def _save(self, body):
+        self._check_write()
+        ws = self.store.find(str(body.get("ws", "")))
+        if ws is None:
+            raise ApiError(404, "没有这个工作区")
+        rel = str(body.get("path", ""))
+        text = body.get("text", "")
+        if not isinstance(text, str):
+            raise ApiError(400, "文件内容要是文本")
+        return {"workspace": ws, **save_file(ws["root"], rel, text)}
 
     def _search(self, query):
         ws = self._ws(query)

@@ -105,6 +105,7 @@
       <section class="view">
         <DiffView
           :title="diffTitle"
+          :path="selected ? selected.path : ''"
           :text="content.text"
           :kind="content.kind"
           :truncated="content.truncated"

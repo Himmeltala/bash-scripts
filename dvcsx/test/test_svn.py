@@ -162,6 +162,18 @@ class SvnWorkspace(unittest.TestCase):
         self.assertNotIn("node_modules", names)
         self.assertEqual(svnmod.browse_file(str(self.wc), "b.txt"), "new\n")
 
+    def test_browse_save_file(self):
+        target = self.wc / "save.txt"
+        target.write_text("old\n", "utf-8")
+        try:
+            data = svnmod.save_file(str(self.wc), "save.txt", "new\n")
+            self.assertEqual(data["size"], 4)
+            self.assertEqual(target.read_text("utf-8"), "new\n")
+        finally:
+            target.unlink()
+        with self.assertRaises(svnmod.ApiError):
+            svnmod.save_file(str(self.wc), "../x", "x")
+
     def test_diff_rejects_path_outside(self):
         with self.assertRaises(svnmod.ApiError):
             svnmod.change_diff(str(self.wc), "../etc/passwd")
@@ -233,6 +245,22 @@ class SvnWorkspace(unittest.TestCase):
         status, data = self.call("/revision?ws=%s&rev=1&path=/src/a.txt" % wid)
         self.assertEqual(status, 200, data)
         self.assertIn("+hello", data["text"])
+        self.call("/forget", {"ws": wid})
+
+    def test_api_save_file(self):
+        wid = self.add()
+        target = self.wc / "save.txt"
+        target.write_text("old\n", "utf-8")
+        try:
+            status, data = self.call(
+                "/save", {"ws": wid, "path": "save.txt", "text": "new\n"}
+            )
+            self.assertEqual(status, 200, data)
+            self.assertEqual(target.read_text("utf-8"), "new\n")
+            status, data = self.call("/save", {"ws": wid, "path": "../x", "text": "x"})
+            self.assertEqual(status, 400)
+        finally:
+            target.unlink()
         self.call("/forget", {"ws": wid})
 
     def test_api_rejects_foreign_dir(self):

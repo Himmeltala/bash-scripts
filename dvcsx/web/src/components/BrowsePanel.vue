@@ -1,5 +1,5 @@
 <template>
-  <div class="panel">
+  <div class="panel" @keydown.ctrl.s.prevent="save">
     <div class="bar">
       <div class="left">
         <v-text-field
@@ -136,21 +136,48 @@
 
         <p v-if="file.loading" class="hint">正在读取文件…</p>
         <p v-else-if="file.error" class="hint bad">{{ file.error }}</p>
-        <template v-else-if="activeNode">
-          <p v-if="!displayText" class="hint">文件是空的。</p>
-          <div v-else ref="codeWrapRef" class="code-wrap">
-            <div v-if="hitBand" class="hitband" :style="hitBand" />
+        <div v-else-if="activeNode" class="edit-wrap">
+          <p v-if="edit.error" class="hint bad edit-error">{{ edit.error }}</p>
+          <div class="edit-body">
             <div ref="gutterRef" class="gutter" aria-hidden="true">
-              <div v-for="n in lineCount" :key="n" class="ln" :class="{ hitline: n === hitLine }">
-                {{ n }}
-              </div>
+              <div v-for="n in lineCount" :key="n" class="ln">{{ n }}</div>
             </div>
-            <pre class="code"><code v-html="highlighted"></code></pre>
+            <div class="edit-stage">
+              <pre class="layer-code" aria-hidden="true"><code ref="codeRef" v-html="highlighted"></code></pre>
+              <textarea
+                ref="editorRef"
+                v-model="edit.draft"
+                class="editor"
+                wrap="off"
+                spellcheck="false"
+                @scroll="onEditorScroll"
+                @keydown.tab.prevent="insertTab"
+              />
+            </div>
           </div>
-        </template>
+        </div>
         <div v-else class="none">从左边选一个文件，右边显示它的内容。</div>
       </section>
     </div>
+
+    <v-dialog
+      :model-value="leaveAsk"
+      max-width="440"
+      @update:model-value="(open) => !open && answerLeave(false)"
+    >
+      <v-card>
+        <v-card-title>文件还没保存</v-card-title>
+        <v-card-text>
+          {{ activePath || '当前文件' }}
+          <p class="tip">换过去之后这次的修改就没了，要保留就先按 Ctrl+S 保存。</p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="answerLeave(false)">留在这里</v-btn>
+          <v-btn color="error" variant="flat" @click="answerLeave(true)">丢掉修改</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -188,11 +215,11 @@ const searching = computed(() => query.value.trim() !== '')
 const search = reactive({ loading: false, error: '', matches: [], truncated: false, mode: 'name' })
 let searchSeq = 0
 let searchTimer = 0
-// 内容命中的行号，打开文件后滚到那一行并把行号标出来。
-const hitLine = ref(0)
-const hitBand = ref(null)
-const codeWrapRef = ref(null)
 const gutterRef = ref(null)
+const codeRef = ref(null)
+// 文件一打开就能直接改：草稿与磁盘上的内容分开，行尾统一成 \n 再比较。
+const editorRef = ref(null)
+const edit = reactive({ base: '', draft: '', saving: false, error: '' })
 
 const rootName = computed(
   () => String(props.ws.root || '').replace(/\/+$/, '').split('/').pop() || '/',
@@ -208,13 +235,13 @@ const crumbs = computed(() => {
   })
 })
 const language = computed(() => languageOf(activePath.value))
-// 末尾的换行不占一行，去掉之后行号与内容才对得上。
-const displayText = computed(() => {
-  const text = file.text || ''
-  return text.endsWith('\n') ? text.slice(0, -1) : text
-})
-const lineCount = computed(() => (displayText.value ? displayText.value.split('\n').length : 0))
-const highlighted = computed(() => highlightCode(displayText.value, language.value))
+// 末尾的换行只对应编辑框里多出来的空行，行号按编辑框的实际行数走。
+const draftText = computed(() =>
+  edit.draft.endsWith('\n') ? edit.draft.slice(0, -1) : edit.draft,
+)
+const lineCount = computed(() => edit.draft.split('\n').length)
+const highlighted = computed(() => highlightCode(draftText.value, language.value))
+const dirty = computed(() => edit.draft !== edit.base)
 const sizeText = computed(() => {
   if (!activeNode.value || activeNode.value.size === undefined) return ''
   const bytes = Number(activeNode.value.size) || 0
@@ -257,35 +284,99 @@ async function reveal(dirPath) {
   }
 }
 
-function pick(node) {
-  hitLine.value = 0
-  hitBand.value = null
+async function pick(node) {
+  if (!(await leaveFile())) return
   activeNode.value = node
   openFile()
 }
 
-function openHit(hit) {
+async function openHit(hit) {
+  if (!(await leaveFile())) return
   activeNode.value = { name: hit.name, path: hit.path, type: 'file' }
   openFile(hit.line || 0)
 }
 
-// 内容命中的行滚到可视区上三分之一处，行号标出来，整行再垫一层底色。
-async function scrollToLine(line) {
-  await nextTick()
-  const wrap = codeWrapRef.value
-  const gutter = gutterRef.value
-  const cell = gutter ? gutter.children[line - 1] : null
-  if (!wrap || !gutter || !cell) return
-  const box = wrap.getBoundingClientRect()
-  const row = cell.getBoundingClientRect()
-  // 先按内容坐标记下这一行的位置，再滚，行高与行号列一致。
-  hitBand.value = {
-    top: `${row.top - box.top + wrap.scrollTop}px`,
-    left: `${gutter.offsetWidth}px`,
-    height: `${row.height}px`,
-    right: '0',
+// 换文件前统一问一句，没改过就直接走。
+let leaveResolve = null
+const leaveAsk = ref(false)
+
+function leaveFile() {
+  if (!dirty.value) return Promise.resolve(true)
+  if (leaveAsk.value) return Promise.resolve(false)
+  leaveAsk.value = true
+  return new Promise((resolve) => {
+    leaveResolve = resolve
+  })
+}
+
+function answerLeave(drop) {
+  leaveAsk.value = false
+  if (!leaveResolve) return
+  const resolve = leaveResolve
+  leaveResolve = null
+  resolve(drop)
+}
+
+async function save() {
+  if (edit.saving || !dirty.value) return
+  edit.saving = true
+  edit.error = ''
+  const path = activePath.value
+  try {
+    const data = await api.save(props.ws.id, path, edit.draft)
+    // 保存期间可能已经换到别的文件，那边的内容不能被这份草稿盖掉。
+    if (activePath.value === path) {
+      edit.base = edit.draft
+      file.text = edit.draft
+      if (activeNode.value) activeNode.value = { ...activeNode.value, size: data.size }
+    }
+    // 目录树里记着文件大小，保存后把这一层重新列一遍。
+    loadDir(dirName(path), true)
+  } catch (err) {
+    edit.error = err.message
+  } finally {
+    edit.saving = false
   }
-  wrap.scrollTop += row.top - box.top - wrap.clientHeight / 3
+}
+
+// 编辑器里 Tab 插入四个空格，而不是把焦点移走。
+function insertTab(event) {
+  const el = event.target
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  edit.draft = `${edit.draft.slice(0, start)}    ${edit.draft.slice(end)}`
+  nextTick(() => {
+    el.selectionStart = start + 4
+    el.selectionEnd = start + 4
+  })
+}
+
+// 高亮层与行号列跟着编辑框一起滚，三层始终对在同一位置。
+function syncEditorScroll(el) {
+  if (codeRef.value) {
+    codeRef.value.style.transform = `translate(${-el.scrollLeft}px, ${-el.scrollTop}px)`
+  }
+  if (gutterRef.value) gutterRef.value.scrollTop = el.scrollTop
+}
+
+function onEditorScroll(event) {
+  syncEditorScroll(event.target)
+}
+
+// 内容命中的行选中，并滚到可视区上三分之一处。
+async function locateLine(line) {
+  await nextTick()
+  const el = editorRef.value
+  if (!el) return
+  const lines = edit.draft.split('\n')
+  const index = Math.min(Math.max(Number(line) || 1, 1), lines.length)
+  let start = 0
+  for (let i = 0; i < index - 1; i += 1) start += lines[i].length + 1
+  el.focus()
+  el.setSelectionRange(start, start + lines[index - 1].length)
+  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20
+  el.scrollTop = Math.max(0, (index - 1) * lineHeight - el.clientHeight / 3)
+  syncEditorScroll(el)
 }
 
 async function openFile(line = 0) {
@@ -293,22 +384,31 @@ async function openFile(line = 0) {
   const mine = ++seq
   file.loading = true
   file.error = ''
-  hitBand.value = null
+  edit.error = ''
   try {
     const data = await api.file(props.ws.id, activeNode.value.path)
     if (mine !== seq) return
     file.text = data.text || ''
-    hitLine.value = line
+    edit.base = file.text.replace(/\r\n?/g, '\n')
+    edit.draft = edit.base
   } catch (err) {
     if (mine !== seq) return
     file.text = ''
+    edit.base = ''
+    edit.draft = ''
     file.error = err.message
-    hitLine.value = 0
   } finally {
     if (mine === seq) file.loading = false
   }
-  // 等代码区真的渲染出来再量位置，加载中的占位元素上没有行号。
-  if (line && mine === seq) await scrollToLine(line)
+  if (mine !== seq) return
+  await nextTick()
+  const el = editorRef.value
+  if (!el) return
+  el.scrollTop = 0
+  el.scrollLeft = 0
+  syncEditorScroll(el)
+  // 等编辑框真的渲染出来再定位，加载中的占位元素上没有它。
+  if (line) await locateLine(line)
 }
 
 // 退出搜索：清空输入，结果列表跟着收起来，左侧回到目录树。
@@ -379,22 +479,26 @@ async function refresh() {
       return
     }
     await Promise.all(Object.keys(cache).map((path) => loadDir(path, true)))
-    if (activeNode.value) await openFile(hitLine.value)
+    // 有没保存的改动就不重新读，免得草稿被磁盘上的旧内容盖掉。
+    if (activeNode.value && !dirty.value) await openFile()
   } finally {
     refreshing.value = false
   }
 }
 
 function reset() {
+  answerLeave(false)
   for (const key of Object.keys(cache)) delete cache[key]
   for (const key of Object.keys(expanded)) delete expanded[key]
   expanded[''] = true
   activeNode.value = null
-  hitLine.value = 0
-  hitBand.value = null
   file.text = ''
   file.error = ''
   file.loading = false
+  edit.base = ''
+  edit.draft = ''
+  edit.saving = false
+  edit.error = ''
   query.value = ''
   search.matches = []
   search.error = ''
@@ -435,6 +539,7 @@ onMounted(reset)
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
   searchSeq += 1
+  answerLeave(false)
   endSplit()
 })
 </script>
@@ -632,27 +737,26 @@ onBeforeUnmount(() => {
   font-size: 0.72rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
-.code-wrap {
-  position: relative;
+.edit-wrap {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  align-items: flex-start;
-  overflow: auto;
+  flex-direction: column;
 }
-.hitband {
-  position: absolute;
-  z-index: 0;
-  border-radius: 3px;
-  background: rgba(var(--v-theme-primary), 0.12);
-  pointer-events: none;
+.edit-error {
+  margin: 8px 12px 0;
 }
+.edit-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+/* 行号列与高亮层都不接鼠标，输入落在外层透明的编辑框上。 */
 .gutter {
-  position: sticky;
-  left: 0;
-  z-index: 1;
+  z-index: 2;
   flex: 0 0 auto;
-  padding: 10px 8px 24px 12px;
+  overflow: hidden;
+  padding: 10px 8px 48px 12px;
   text-align: right;
   font-size: 0.78rem;
   line-height: 1.6;
@@ -664,55 +768,94 @@ onBeforeUnmount(() => {
 .ln {
   height: 1.6em;
 }
-.ln.hitline {
-  color: rgb(var(--v-theme-primary));
-  font-weight: 700;
-}
-.code {
+.edit-stage {
   position: relative;
-  z-index: 1;
   flex: 1 1 auto;
+  min-width: 0;
+}
+.layer-code {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   margin: 0;
   padding: 10px 16px 24px 12px;
+  overflow: hidden;
   font-size: 0.78rem;
   line-height: 1.6;
   white-space: pre;
   tab-size: 4;
+  pointer-events: none;
 }
-.code-wrap :deep(.hljs-comment),
-.code-wrap :deep(.hljs-quote) {
+.layer-code code {
+  display: block;
+  will-change: transform;
+}
+/* 编辑框的文字是透明的，颜色由底下这层高亮给；行尾不折行，Tab 由脚本插空格。 */
+.editor {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 10px 16px 24px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: 'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Sarasa Mono SC',
+    'Cascadia Mono', Consolas, Menlo, 'Liberation Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: rgb(var(--v-theme-on-surface));
+}
+.editor::selection {
+  background: rgba(var(--v-theme-primary), 0.28);
+}
+/* 高亮层要跟编辑框逐字对齐，斜体会让字宽对不上，注释一律正体。 */
+.layer-code :deep(.hljs-comment),
+.layer-code :deep(.hljs-quote) {
   color: rgb(var(--v-theme-on-surface-variant));
-  font-style: italic;
+  font-style: normal;
 }
-.code-wrap :deep(.hljs-keyword),
-.code-wrap :deep(.hljs-selector-tag),
-.code-wrap :deep(.hljs-built_in),
-.code-wrap :deep(.hljs-type) {
+.layer-code :deep(.hljs-keyword),
+.layer-code :deep(.hljs-selector-tag),
+.layer-code :deep(.hljs-built_in),
+.layer-code :deep(.hljs-type) {
   color: rgb(var(--v-theme-primary));
 }
-.code-wrap :deep(.hljs-string),
-.code-wrap :deep(.hljs-regexp),
-.code-wrap :deep(.hljs-addition) {
+.layer-code :deep(.hljs-string),
+.layer-code :deep(.hljs-regexp),
+.layer-code :deep(.hljs-addition) {
   color: rgb(var(--v-theme-added));
 }
-.code-wrap :deep(.hljs-number),
-.code-wrap :deep(.hljs-literal),
-.code-wrap :deep(.hljs-attr),
-.code-wrap :deep(.hljs-attribute),
-.code-wrap :deep(.hljs-property) {
+.layer-code :deep(.hljs-number),
+.layer-code :deep(.hljs-literal),
+.layer-code :deep(.hljs-attr),
+.layer-code :deep(.hljs-attribute),
+.layer-code :deep(.hljs-property) {
   color: rgb(var(--v-theme-modified));
 }
-.code-wrap :deep(.hljs-title),
-.code-wrap :deep(.hljs-section),
-.code-wrap :deep(.hljs-name) {
+.layer-code :deep(.hljs-title),
+.layer-code :deep(.hljs-section),
+.layer-code :deep(.hljs-name) {
   color: rgb(var(--v-theme-primary));
 }
-.code-wrap :deep(.hljs-tag),
-.code-wrap :deep(.hljs-meta) {
+.layer-code :deep(.hljs-tag),
+.layer-code :deep(.hljs-meta) {
   color: rgb(var(--v-theme-on-surface-variant));
 }
-.code-wrap :deep(.hljs-deletion) {
+.layer-code :deep(.hljs-deletion) {
   color: rgb(var(--v-theme-deleted));
+}
+.tip {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
 .hint {
   margin: 16px;
