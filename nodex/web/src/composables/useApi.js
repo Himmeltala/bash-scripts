@@ -57,4 +57,7 @@ export const api = {
   // 打好的包直接交给浏览器下，链接带下载头，点一下就是另存为。
   downloadUrl: (ws, name) =>
     `${PREFIX}/download?ws=${encodeURIComponent(ws)}&name=${encodeURIComponent(name)}`,
+  // 右键下载树里的某个条目；目录由后端现场压成 zip。
+  entryUrl: (ws, rel) =>
+    `${PREFIX}/entry?ws=${encodeURIComponent(ws)}&path=${encodeURIComponent(rel || '')}`,
 }

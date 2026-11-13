@@ -7,7 +7,7 @@
       :placeholder="placeholder"
       prepend-inner-icon="mdi-folder"
       :error="!!modelValue && !valid"
-      :error-messages="modelValue && !valid ? '只能添加家目录内的目录' : ''"
+      :error-messages="modelValue && !valid ? invalidText : ''"
       hide-details="auto"
       autofocus
     />
@@ -45,6 +45,9 @@ const props = defineProps({
   placeholder: { type: String, default: '' },
   // 取目录的函数：不传参数取家目录这一层，传路径取它的下一层。
   loader: { type: Function, required: true },
+  // 自定义校验：收到 (target, home)，返回能不能选；不传就按家目录以内判断。
+  validate: { type: Function, default: null },
+  invalidText: { type: String, default: '只能添加家目录内的目录' },
 })
 const emit = defineEmits(['update:modelValue', 'update:valid'])
 
@@ -68,6 +71,7 @@ const target = computed(() => {
 
 const valid = computed(() => {
   if (!home.value || !target.value) return false
+  if (props.validate) return Boolean(props.validate(target.value, home.value))
   return target.value === home.value || target.value.startsWith(home.value + '/')
 })
 

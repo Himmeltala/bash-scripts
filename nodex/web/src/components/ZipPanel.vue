@@ -16,6 +16,8 @@
           :key-of="keyOf"
           :dir-of="dirOf"
           label-class="mono"
+          :root-path="ws.root"
+          :download-of="downloadOf"
           :row-class="rowClass"
           :active="active"
           :texts="treeTexts"
@@ -125,6 +127,7 @@ let copiedTimer = null
 
 // 树里的节点用 rel 认路、dir 判断目录；行内的勾选状态由这一侧提供。
 const loadLayer = (rel) => api.entries(props.ws.id, rel)
+const downloadOf = (node) => api.entryUrl(props.ws.id, node.rel)
 const keyOf = (node) => node.rel
 const dirOf = (node) => node.dir
 const rowClass = (node) => ({ excluded: node.excluded })

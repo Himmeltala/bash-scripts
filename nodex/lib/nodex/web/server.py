@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"
 from metrics import Metrics
 from sse import MetricsStream, SSEMixin, StateStream, tail
 from stores import FS, AliasStore, Row
-from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, log
+from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, log, zip_dir
 
 
 def one_line(value):
@@ -916,6 +916,8 @@ class Handler(SSEMixin, WebHandler):
             return self._zip_status((query.get("run") or [""])[0])
         if route == "download":
             return self._download(query, head=(method == "HEAD"))
+        if route == "entry":
+            return self._entry_download(query, head=(method == "HEAD"))
         if route == "metrics/stream":
             self._sse([(self.metrics_stream, "metrics")])
             return STREAMED
@@ -1063,6 +1065,24 @@ class Handler(SSEMixin, WebHandler):
             "path": job.get("path", ""),
             "size": size,
         }
+
+    def _entry_download(self, query, head=False):
+        ws = (query.get("ws") or [""])[0]
+        rel = (query.get("path") or [""])[0]
+        root = ws_root(self.state, ws)
+        target = resolve_in_root(root, rel or ".", "路径")
+        if target.is_dir():
+            path, _ = zip_dir(target, ZIP_EXCLUDES)
+            name = (target.name or "download") + ".zip"
+            try:
+                self._send_download(path, name, head=head)
+            finally:
+                os.unlink(path)
+            return STREAMED
+        if not target.is_file():
+            raise ApiError(404, "没有这个文件：%s" % (rel or "根目录"))
+        self._send_download(target, target.name, head=head)
+        return STREAMED
 
     def _download(self, query, head=False):
         """把打好的包吐给浏览器：认单范围 Range，断了下一次能从断点接着来。"""

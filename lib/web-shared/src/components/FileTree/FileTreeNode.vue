@@ -5,6 +5,7 @@
       :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick }]"
       :style="{ paddingLeft: 4 + depth * 14 + 'px' }"
       @click="onRowClick"
+      @contextmenu.prevent.stop="onContext"
     >
       <v-btn
         v-if="isDir"
@@ -47,6 +48,7 @@
           :texts="texts"
           @toggle="emit('toggle', $event)"
           @pick="emit('pick', $event)"
+          @context="emit('context', $event)"
         >
           <template #row-before-label="scope">
             <slot name="row-before-label" v-bind="scope" />
@@ -63,7 +65,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { fileIcon } from '../utils/fileIcons.js'
+import { fileIcon } from '../../utils/fileIcons.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -79,7 +81,7 @@ const props = defineProps({
   texts: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['toggle', 'pick'])
+const emit = defineEmits(['toggle', 'pick', 'context'])
 
 // 每层的提示文案由调用方给，这里只兜底。
 const DEFAULTS = {
@@ -110,6 +112,10 @@ function onRowClick() {
   if (!props.pickOnRowClick) return
   if (isDir.value) emit('toggle', key.value)
   else emit('pick', props.node)
+}
+
+function onContext(event) {
+  emit('context', { node: props.node, event })
 }
 </script>
 

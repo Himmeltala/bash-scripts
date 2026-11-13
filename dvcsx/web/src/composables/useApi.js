@@ -65,6 +65,8 @@ export const api = {
   cancelOperation: (id) => call('POST', `/operations/${q(id)}/cancel`, {}),
   tree: (ws, path = '') => call('GET', `/tree?ws=${q(ws)}&path=${q(path)}`),
   file: (ws, path) => call('GET', `/file?ws=${q(ws)}&path=${q(path)}`),
+  // 直接交给浏览器下；目录由后端现场压成 zip。
+  downloadUrl: (ws, path) => `${PREFIX}/download?ws=${q(ws)}&path=${q(path)}`,
   save: (ws, path, text) => call('POST', '/save', { ws, path, text }),
   search: (ws, text, mode = 'name', path = '') =>
     call(

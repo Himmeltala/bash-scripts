@@ -100,6 +100,8 @@
           ref="treeRef"
           :loader="loadLayer"
           :root="rootNode"
+          :root-path="ws.root"
+          :download-of="downloadOf"
           :row-class="rowClass"
           pick-on-row-click
           :texts="treeTexts"
@@ -164,6 +166,7 @@ const activePath = computed(() => (activeNode.value ? activeNode.value.path : ''
 
 // 取数函数与行内状态由这一侧给，树的展开与缓存交给共用组件。
 const loadLayer = (path) => api.tree(props.ws.id, path)
+const downloadOf = (node) => api.downloadUrl(props.ws.id, node.path)
 const rowClass = (node) => ({ selected: node.type === 'file' && node.path === activePath.value })
 const treeTexts = { truncated: '这一层文件太多，只列了前面一部分。' }
 

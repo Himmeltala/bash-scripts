@@ -17,7 +17,7 @@ npm run build          # 产出 dist/web-shared.js 与 dist/web-shared.css
 ```
 src/
   index.js            主入口
-  components/         LogView、DirectoryPicker、DirectoryNode、FileTree、FileEditor/、Metrics/、SplitHandle
+  components/         LogView、DirectoryPicker/、FileTree/、FileEditor/、Metrics/、SplitHandle
   composables/        useSplitPane、useFileTree
   utils/              fileIcons、highlight（代码着色，单独一个入口）
 ```
@@ -48,7 +48,7 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 | 导出 | 用途 | 谁在用 |
 | ---- | ---- | ------ |
 | `LogView` | xterm 日志终端：增量追加、滚到底、选中复制 | nodex、mvnx、dvcsx |
-| `DirectoryPicker` / `DirectoryNode` | 从家目录往下选目录；提示文案与取数函数由调用方传 | nodex、mvnx、dvcsx |
+| `DirectoryPicker` / `DirectoryNode` | 从家目录往下选目录；提示文案、取数函数与校验（`validate`、`invalidText`）由调用方传 | nodex、mvnx、dvcsx |
 | `FileTree` | 懒加载的目录树：展开、缓存、图标、提示都由它管；取数函数与行内内容由调用方传 | nodex、dvcsx |
 | `FileEditor` | 文件编辑区：面包屑、行号、语法高亮、草稿与保存、未保存确认；取数与落盘由调用方传 | dvcsx |
 | `fileIcon` | 文件类型图标与配色 | nodex、dvcsx |
@@ -62,7 +62,7 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 
 ### FileTree
 
-树自己管展开状态与每一层的缓存，只在展开时调 `loader(key)`。两边节点字段不同，用 `keyOf` / `dirOf` / `nameOf` 适配；行内差异走 `row-before-label` 与 `row-after-label` 两个插槽（作用域带 `node`、`open`、`state`）。`root` 传节点就在顶上显示根行，不传就直接列第一层；`pickOnRowClick` 决定整行点击是否等于选中；`active` 为假时不读目录。`defineExpose` 给出 `reveal / reload / reloadDir / refreshAll`，对应定位、全量重读、重读一层与刷新。
+树自己管展开状态与每一层的缓存，只在展开时调 `loader(key)`。两边节点字段不同，用 `keyOf` / `dirOf` / `nameOf` 适配；行内差异走 `row-before-label` 与 `row-after-label` 两个插槽（作用域带 `node`、`open`、`state`）。`root` 传节点就在顶上显示根行，不传就直接列第一层；`pickOnRowClick` 决定整行点击是否等于选中；`active` 为假时不读目录。`defineExpose` 给出 `reveal / reload / reloadDir / refreshAll`，对应定位、全量重读、重读一层与刷新。右键菜单复制相对路径与绝对路径、下载文件或目录（目录由后端打包）；`rootPath` 给绝对路径的根，`downloadOf(node)` 给下载地址，两者不传就隐藏对应菜单项。
 
 ### FileEditor
 

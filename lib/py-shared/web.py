@@ -5,11 +5,15 @@
 """
 
 import json
+import os
+import shutil
 import socket
 import sys
+import tempfile
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 
 class ApiError(Exception):
@@ -60,8 +64,34 @@ CONTENT_TYPES = {
     ".woff2": "font/woff2",
     ".ttf": "font/ttf",
     ".eot": "application/vnd.ms-fontobject",
+    ".zip": "application/zip",
     ".map": "application/json; charset=utf-8",
 }
+
+
+def zip_dir(src, skip=()):
+    """把目录压进临时 zip，返回 (临时路径, 字节数)；子项名字在 skip 里的跳过。"""
+    src = Path(src)
+    top = src.name or "download"
+    handle = tempfile.NamedTemporaryFile(prefix="web-", suffix=".zip", delete=False)
+    try:
+        with handle, zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as bundle:
+            added = False
+            for dirpath, dirnames, filenames in os.walk(src):
+                dirnames[:] = sorted(d for d in dirnames if d not in skip)
+                for name in sorted(filenames):
+                    full = os.path.join(dirpath, name)
+                    if os.path.islink(full) or not os.path.isfile(full):
+                        continue
+                    bundle.write(full, os.path.join(top, os.path.relpath(full, src)))
+                    added = True
+            if not added:
+                bundle.writestr(top + "/", b"")
+    except BaseException:
+        if os.path.exists(handle.name):
+            os.unlink(handle.name)
+        raise
+    return handle.name, os.path.getsize(handle.name)
 
 
 class WebServer(ThreadingHTTPServer):
@@ -120,6 +150,8 @@ class WebHandler(BaseHTTPRequestHandler):
             result = self._dispatch(method, route, query, body)
         except ApiError as exc:
             self._json(exc.status, {"error": exc.message})
+            return
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             return
         except Exception as exc:  # 页面看到一句人话，比连接被断开强
             self._error_log("接口出错 %s %s：%r" % (method, self.path, exc))
@@ -193,6 +225,21 @@ class WebHandler(BaseHTTPRequestHandler):
     def _json(self, status, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(status, data, "application/json; charset=utf-8", cache="no-store")
+
+    def _send_download(self, path, name, head=False):
+        """按附件下发，文件名用 RFC 5987 编码，中文名也能对。"""
+        path = Path(path)
+        ctype = CONTENT_TYPES.get(path.suffix.lower(), "application/octet-stream")
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(path.stat().st_size))
+        self.send_header("Content-Disposition", "attachment; filename*=UTF-8''%s" % quote(name))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if head:
+            return
+        with open(path, "rb") as handle:
+            shutil.copyfileobj(handle, self.wfile)
 
     def _send(self, status, data, ctype, head=False, cache=None):
         self.send_response(status)
