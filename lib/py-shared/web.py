@@ -7,7 +7,7 @@
 import json
 import socket
 import sys
-from http.server import BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -62,6 +62,15 @@ CONTENT_TYPES = {
     ".eot": "application/vnd.ms-fontobject",
     ".map": "application/json; charset=utf-8",
 }
+
+
+class WebServer(ThreadingHTTPServer):
+    """客户端提前断开不算错误：关标签或刷新时回话写不出去，不必打整段栈。"""
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        ThreadingHTTPServer.handle_error(self, request, client_address)
 
 
 class WebHandler(BaseHTTPRequestHandler):
@@ -176,7 +185,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 return
             target = self.static / "index.html"
         ctype = CONTENT_TYPES.get(target.suffix.lower(), "application/octet-stream")
-        # Vite 给带哈希的资源长名，一年缓存；首页不缓存，重新打包立刻生效。
+        # 带哈希的资源缓存十分钟；首页不缓存，重新打包立刻生效。
         cache = "no-cache" if target.name == "index.html" else "public, max-age=600"
         data = b"" if head else target.read_bytes()
         self._send(200, data, ctype, head=head, cache=cache)

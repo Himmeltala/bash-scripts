@@ -26,7 +26,6 @@ import sys
 import threading
 import time
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -35,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"
 from metrics import Metrics
 from sse import MetricsStream, SSEMixin, StateStream, tail
 from stores import FS, AliasStore, Row
-from web import ApiError, STREAMED, WebHandler, guess_host, is_any, log
+from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, log
 
 
 def one_line(value):
@@ -1183,7 +1182,7 @@ def serve(args):
     Handler.metrics_stream.start()
 
     try:
-        httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+        httpd = WebServer((args.host, args.port), Handler)
     except OSError as exc:
         log("端口 %s 用不了：%s" % (args.port, exc))
         return 1

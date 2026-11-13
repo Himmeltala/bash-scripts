@@ -25,13 +25,12 @@ import time
 import uuid
 import webbrowser
 import xml.etree.ElementTree as ET
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
-from web import ApiError, CONTENT_TYPES, WebHandler, guess_host, is_any
+from web import ApiError, CONTENT_TYPES, WebHandler, WebServer, guess_host, is_any
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
 MAX_TEXT = 2 * 1024 * 1024
@@ -2070,7 +2069,7 @@ def serve(args):
     Handler.state_stream.start()
 
     try:
-        httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+        httpd = WebServer((args.host, args.port), Handler)
     except OSError as exc:
         log("端口 %s 用不了：%s" % (args.port, exc))
         return 1

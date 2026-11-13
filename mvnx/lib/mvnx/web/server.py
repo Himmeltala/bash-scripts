@@ -24,7 +24,6 @@ import sys
 import threading
 import time
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -42,7 +41,7 @@ from sse import (
     tail,
 )
 from stores import FS, AliasStore, Row
-from web import ApiError, STREAMED, WebHandler, guess_host, is_any, log
+from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, log
 
 # 状态行的列，与 lib/mvnx/server.sh 里的 web_col 一致，0 起。
 WS_KIND, SVC_KIND, POM_KIND, RUN_KIND = "ws", "svc", "pom", "run"
@@ -830,7 +829,7 @@ def serve(args):
     Handler.metrics_stream.start()
 
     try:
-        httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+        httpd = WebServer((args.host, args.port), Handler)
     except OSError as exc:
         log("端口 %s 用不了：%s" % (args.port, exc))
         return 1

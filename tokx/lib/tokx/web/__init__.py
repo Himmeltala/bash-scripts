@@ -294,6 +294,15 @@ def urls(host: str, port: int) -> tuple[str, str]:
     return f"http://{host}:{port}/", local
 
 
+class _Server(ThreadingHTTPServer):
+    """客户端提前断开不算错误：关标签或刷新时回话写不出去，不必打整段栈。"""
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        ThreadingHTTPServer.handle_error(self, request, client_address)
+
+
 def serve(
     config: Config,
     host: str = "0.0.0.0",
@@ -306,7 +315,7 @@ def serve(
         print("tokx: --port 取 0 到 65535", file=sys.stderr)
         return 2
     try:
-        httpd = ThreadingHTTPServer((host, port), _make_handler(config))
+        httpd = _Server((host, port), _make_handler(config))
     except OSError as exc:
         print(f"tokx: 监听 {host}:{port} 失败：{exc}", file=sys.stderr)
         return 1
