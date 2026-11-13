@@ -40,6 +40,7 @@ python3 "$repo/mvnx/test/test_web_alias.py" >/dev/null 2>&1 || bad '网页工作
 python3 "$repo/mvnx/test/test_web_jdk.py" >/dev/null 2>&1 || bad '网页按工作区选 JDK 的测试未通过'
 python3 "$repo/mvnx/test/test_web_log.py" >/dev/null 2>&1 || bad '网页日志 SSE 的测试未通过'
 python3 "$repo/mvnx/test/test_web_metrics.py" >/dev/null 2>&1 || bad '网页指标 SSE 的测试未通过'
+python3 "$repo/mvnx/test/test_web_state.py" >/dev/null 2>&1 || bad '网页状态 SSE 的测试未通过'
 python3 "$repo/mvnx/test/test_web_start.py" >/dev/null 2>&1 || bad '网页启动没有带上模块的测试未通过'
 
 "$repo/mvnx/bin/mvnx" --help >/dev/null 2>&1 || bad 'mvnx --help 失败'

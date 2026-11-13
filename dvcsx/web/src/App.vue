@@ -57,10 +57,9 @@ import { useLocalStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
 import WorkspaceList from './components/WorkspaceList.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
-import { api } from './composables/useApi'
+import { api, stateEventsUrl } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
 
-const POLL_MS = 5000
 const VIEW_KEY = 'dvcsx-ws'
 
 const theme = useTheme()
@@ -71,7 +70,7 @@ const adding = ref(false)
 const snack = reactive({ on: false, text: '', color: 'grey' })
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
-let timer = null
+let source = null
 
 function select(id) {
   currentId.value = id || ''
@@ -89,16 +88,31 @@ function toggleTheme() {
   rememberTheme(next)
 }
 
+function applyState(data) {
+  state.workspaces = data.workspaces || []
+  // 没选中或选中的已经移出时，落到第一个；列表空着就清空选中。
+  if (!currentId.value && state.workspaces.length) select(state.workspaces[0].id)
+  else if (currentId.value && !current.value) select('')
+}
+
 async function refresh() {
   try {
-    const data = await api.state()
-    state.workspaces = data.workspaces || []
-    // 没选中或选中的已经移出时，落到第一个；列表空着就清空选中。
-    if (!currentId.value && state.workspaces.length) select(state.workspaces[0].id)
-    else if (currentId.value && !current.value) select('')
+    applyState(await api.state())
   } catch (err) {
-    // 轮询失败不打扰用户，下一次再试。
+    // 取不到就先留着现有列表，下一次推送再补。
   }
+}
+
+// 登记表一变就推过来，页面不用再定时来取。
+function connectState() {
+  source = new EventSource(stateEventsUrl())
+  source.addEventListener('state', (ev) => {
+    try {
+      applyState(JSON.parse(ev.data))
+    } catch (err) {
+      // 单条坏了跳过，下一次推送再补。
+    }
+  })
 }
 
 async function addWorkspace(root) {
@@ -128,22 +142,13 @@ async function removeWorkspace(id) {
 }
 
 onMounted(async () => {
+  connectState()
   await refresh()
-  timer = setInterval(() => {
-    // 页面切到后台就不刷了，回来立刻补一次；只看登记列表，变更由子面板各自刷新。
-    if (!document.hidden) refresh()
-  }, POLL_MS)
-  document.addEventListener('visibilitychange', onVisible)
 })
 
 onBeforeUnmount(() => {
-  clearInterval(timer)
-  document.removeEventListener('visibilitychange', onVisible)
+  if (source) source.close()
 })
-
-function onVisible() {
-  if (!document.hidden) refresh()
-}
 </script>
 
 <style scoped>

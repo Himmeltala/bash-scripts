@@ -16,7 +16,6 @@ import { init, use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { api } from '../composables/useApi'
 
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
@@ -26,6 +25,7 @@ const HOT = 85
 
 const props = defineProps({
   dark: { type: Boolean, default: false },
+  metrics: { type: Object, default: null },
 })
 
 const COLORS = {
@@ -41,7 +41,6 @@ const series = reactive([
 
 const boxes = {}
 const charts = {}
-let source = null
 let observer = null
 
 function setBox(key, el) {
@@ -130,19 +129,14 @@ function apply(data) {
   }
 }
 
-// 服务端每 5 秒推一条，断线由 EventSource 自己重连。
-function connect() {
-  source = new EventSource(api.metricsStreamUrl())
-  source.addEventListener('metrics', (ev) => {
-    // 页面切到后台就不画了，回来后的下一条接着用。
-    if (document.hidden) return
-    try {
-      apply(JSON.parse(ev.data))
-    } catch (err) {
-      // 单条数据坏了就跳过，下一条再来。
-    }
-  })
-}
+// 数据从页面的那条 SSE 上带过来，这里只管画。
+watch(
+  () => props.metrics,
+  (data) => {
+    if (data) apply(data)
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   observer = new ResizeObserver(() => {
@@ -156,11 +150,9 @@ onMounted(() => {
   for (const item of series) {
     if (boxes[item.key]) observer.observe(boxes[item.key])
   }
-  connect()
 })
 
 onBeforeUnmount(() => {
-  if (source) source.close()
   if (observer) observer.disconnect()
   for (const key in charts) charts[key].dispose()
 })

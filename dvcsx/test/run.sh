@@ -8,7 +8,7 @@ ok() { printf 'ok - %s\n' "$*"; }
 bad() { printf 'FAIL - %s\n' "$*" >&2; fail=1; }
 
 # python 侧：每条用例打一行，失败时把 unittest 的尾巴贴出来。
-for suite in test_svn.py test_git.py; do
+for suite in test_svn.py test_git.py test_web_state.py; do
   out=$(python3 -I "$repo/test/$suite" -v 2>&1)
   rc=$?
   while IFS= read -r line; do

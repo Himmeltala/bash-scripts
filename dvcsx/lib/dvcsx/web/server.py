@@ -51,6 +51,8 @@ JOB_LINES_MAX = 20000
 # SSE 心跳与工作副本状态检查的间隔。
 SSE_HEARTBEAT = 15
 WATCH_INTERVAL = 3
+# 登记表很小，变了就推，稍快一点页面也不觉得有延迟。
+STATE_WATCH_INTERVAL = 0.5
 
 
 def is_loopback(addr):
@@ -335,6 +337,62 @@ class EventHub:
             if signature is not None:
                 last = signature
             time.sleep(WATCH_INTERVAL)
+
+
+class StateStream:
+    """登记表一变就推一份给所有页面；页面不用再定时来取。"""
+
+    def __init__(self, path, build):
+        self.path = Path(path)
+        self.build = build
+        self.lock = threading.Lock()
+        self.subs = set()
+        self.payload = None
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def subscribe(self):
+        box = queue.Queue(maxsize=1)
+        with self.lock:
+            self.subs.add(box)
+            if self.payload is not None:
+                box.put_nowait(self.payload)
+        return box
+
+    def unsubscribe(self, box):
+        with self.lock:
+            self.subs.discard(box)
+
+    def _publish(self, payload):
+        with self.lock:
+            self.payload = payload
+            subs = list(self.subs)
+        for box in subs:
+            if box.full():
+                try:
+                    box.get_nowait()
+                except queue.Empty:
+                    pass
+            try:
+                box.put_nowait(payload)
+            except queue.Full:
+                pass
+
+    def _run(self):
+        seen = None
+        while True:
+            try:
+                mtime = self.path.stat().st_mtime_ns
+            except OSError:
+                mtime = None
+            if mtime != seen:
+                seen = mtime
+                try:
+                    self._publish(self.build())
+                except Exception as exc:
+                    log("取工作区列表失败：%r" % exc)
+            time.sleep(STATE_WATCH_INTERVAL)
 
 
 JOBS = Jobs()
@@ -1543,6 +1601,7 @@ class Handler(BaseHTTPRequestHandler):
 
     static = None
     store = None
+    state_stream = None
     api_prefix = "/__dvcsx/api"
     # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
     allow_write = False
@@ -1573,6 +1632,9 @@ class Handler(BaseHTTPRequestHandler):
         # SSE 自己写响应头与数据流，不走下面一次性回 JSON 的路。
         if method == "GET":
             try:
+                if route == "state/stream":
+                    self._sse_state()
+                    return
                 if route == "events":
                     self._sse_workspace(query)
                     return
@@ -1813,6 +1875,28 @@ class Handler(BaseHTTPRequestHandler):
     def _sse_ping(self):
         return self._sse_write(": ping\n\n")
 
+    def _sse_state(self):
+        stream = self.state_stream
+        if stream is None:
+            raise ApiError(503, "推送没有起来")
+        box = stream.subscribe()
+        try:
+            try:
+                self._sse_headers()
+            except OSError:
+                return
+            while True:
+                try:
+                    payload = box.get(timeout=SSE_HEARTBEAT)
+                except queue.Empty:
+                    if not self._sse_ping():
+                        return
+                    continue
+                if not self._sse_send("state", json.dumps(payload, ensure_ascii=False)):
+                    return
+        finally:
+            stream.unsubscribe(box)
+
     def _sse_workspace(self, query):
         ws = self._ws(query)
         box = HUB.subscribe(ws)
@@ -1968,6 +2052,8 @@ def serve(args):
     Handler.store = Workspaces(args.state)
     Handler.api_prefix = args.api
     Handler.allow_write = args.allow_write
+    Handler.state_stream = StateStream(args.state, lambda: {"workspaces": Handler.store.workspaces()})
+    Handler.state_stream.start()
 
     try:
         httpd = ThreadingHTTPServer((args.host, args.port), Handler)

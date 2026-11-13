@@ -16,6 +16,7 @@ import codecs
 import errno
 import json
 import os
+import queue
 import re
 import shutil
 import signal
@@ -331,6 +332,11 @@ def attach_alias_rel(snapshot, store):
         except (TypeError, ValueError):
             ws["rel"] = root
     return snapshot
+
+
+def state_payload(state, nodes, aliases, custom):
+    """页面要的整份状态：工作区、包、服务、运行记录，加上别名与 Node 选择。"""
+    return attach_alias_rel(attach_nodes(state.snapshot(custom), nodes), aliases)
 
 
 # ---------------------------------------------------------------- 状态文件
@@ -912,6 +918,127 @@ METRICS = Metrics()
 # 指标栏的推送间隔；前端按这个节奏存点，60 个点正好覆盖 5 分钟。
 METRICS_STREAM_INTERVAL = 5.0
 
+# 页面连着时按这个间隔收拾运行记录；文件有变化就推，最多晚半秒。
+STATE_TICK_INTERVAL = 2.0
+PUMP_INTERVAL = 0.5
+# 闲太久发一条注释，免得代理把连接当死链掐掉。
+SSE_PING_SECONDS = 15
+
+
+class Fanout:
+    """一份数据推给所有页面；来不及取的只留最新的一份。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._subs = set()
+        self._payload = None
+
+    def subscribe(self):
+        q = queue.Queue(maxsize=1)
+        with self._lock:
+            self._subs.add(q)
+            if self._payload is not None:
+                q.put_nowait(self._payload)
+        return q
+
+    def unsubscribe(self, q):
+        with self._lock:
+            self._subs.discard(q)
+
+    def listeners(self):
+        with self._lock:
+            return len(self._subs)
+
+    def publish(self, payload):
+        with self._lock:
+            self._payload = payload
+            subs = list(self._subs)
+        for q in subs:
+            if q.full():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    pass
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                pass
+
+
+class StateStream(Fanout):
+    """状态文件一变就推一份；tick 也走这条线程，开几个页面都只跑一条。"""
+
+    def __init__(self, paths, build, tick):
+        super().__init__()
+        self.paths = [Path(p) for p in paths]
+        self.build = build
+        self.tick = tick
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _mtimes(self):
+        out = []
+        for path in self.paths:
+            try:
+                out.append(path.stat().st_mtime_ns)
+            except OSError:
+                out.append(None)
+        return tuple(out)
+
+    def _run(self):
+        seen = None
+        next_tick = 0.0
+        while True:
+            # 没有页面连着就不收拾，和以前没人轮询时一样。
+            if not self.listeners():
+                seen = None
+                time.sleep(PUMP_INTERVAL)
+                continue
+            now = time.time()
+            if now >= next_tick:
+                next_tick = now + STATE_TICK_INTERVAL
+                try:
+                    self.tick()
+                except ApiError as exc:
+                    log("tick 失败：%s" % exc.message)
+                except Exception as exc:
+                    log("tick 出错：%r" % exc)
+            mtimes = self._mtimes()
+            if mtimes != seen:
+                seen = mtimes
+                try:
+                    self.publish(self.build())
+                except Exception as exc:
+                    log("状态推送失败：%r" % exc)
+            time.sleep(PUMP_INTERVAL)
+
+
+class MetricsStream(Fanout):
+    """指标只采一份给所有页面，CPU 的两次采样之间不会被别的页面抢走。"""
+
+    def __init__(self, metrics):
+        super().__init__()
+        self.metrics = metrics
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        last = 0.0
+        while True:
+            if not self.listeners():
+                last = 0.0
+                time.sleep(PUMP_INTERVAL)
+                continue
+            if time.time() - last >= METRICS_STREAM_INTERVAL:
+                last = time.time()
+                try:
+                    self.publish(self.metrics.snapshot())
+                except Exception as exc:
+                    log("指标推送失败：%r" % exc)
+            time.sleep(PUMP_INTERVAL)
+
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -943,6 +1070,8 @@ class Handler(BaseHTTPRequestHandler):
     aliases = None
     custom = None
     logs = None
+    state_stream = None
+    metrics_stream = None
     api_prefix = "/__nodex/api"
 
     def log_message(self, fmt, *args):
@@ -990,15 +1119,16 @@ class Handler(BaseHTTPRequestHandler):
         if route == "log/stream":
             self._stream_log((query.get("run") or [""])[0])
             return STREAMED
+        if route == "state/stream":
+            self._sse([(self.state_stream, "state"), (self.metrics_stream, "metrics")])
+            return STREAMED
         if route == "state":
-            # 页面每两秒取一次状态，顺手让引擎收拾在跑的记录：端口、退出码、状态都靠这一趟更新。
-            # 引擎自己出问题时照旧把状态给出去，页面不至于连列表都打不开。
+            # 没用推送的客户端照样能拿到收拾过的状态。
             try:
                 self.engine.call("tick")
             except ApiError as exc:
                 log("tick 失败：%s" % exc.message)
-            snapshot = self.state.snapshot(self.custom)
-            return attach_alias_rel(attach_nodes(snapshot, self.nodes), self.aliases)
+            return state_payload(self.state, self.nodes, self.aliases, self.custom)
         if route == "log":
             return self._log(query)
         if route == "dirs":
@@ -1006,7 +1136,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "nodes":
             return {"nodes": discover_nodes(), "current": current_node_version()}
         if route == "metrics/stream":
-            self._stream_metrics()
+            self._sse([(self.metrics_stream, "metrics")])
             return STREAMED
         if route == "metrics":
             return METRICS.snapshot()
@@ -1073,6 +1203,49 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": True}
         raise ApiError(404, "没有这个接口：%s" % route)
 
+    def _sse_start(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        self.close_connection = True
+
+    def _sse(self, streams):
+        """一条长连接带几路数据：哪路有新的一份就写哪路，闲久了 ping 一下。"""
+        streams = [(stream, event) for stream, event in streams if stream is not None]
+        if not streams:
+            raise ApiError(503, "推送没有起来")
+        self._sse_start()
+        subs = [(event, stream, stream.subscribe()) for stream, event in streams]
+        last = time.time()
+        try:
+            while True:
+                wrote = False
+                for event, _, q in subs:
+                    try:
+                        payload = q.get_nowait()
+                    except queue.Empty:
+                        continue
+                    self.wfile.write(sse_data(payload, event=event).encode("utf-8"))
+                    self.wfile.flush()
+                    wrote = True
+                now = time.time()
+                if wrote:
+                    last = now
+                elif now - last >= SSE_PING_SECONDS:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    last = now
+                else:
+                    time.sleep(PUMP_INTERVAL)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            for _, stream, q in subs:
+                stream.unsubscribe(q)
+
     def _stream_log(self, runid):
         """把日志按 SSE 推给页面：先补最近一页，再推新写入的行。"""
         if not runid:
@@ -1090,13 +1263,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             offset = None
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "close")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-        self.close_connection = True
+        self._sse_start()
 
         buf = LineBuffer()
         last_write = time.time()
@@ -1140,23 +1307,6 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             if fh is not None:
                 fh.close()
-
-    def _stream_metrics(self):
-        """头部三个指标按固定间隔推，省得页面每 5 秒发一次请求。"""
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "close")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-        self.close_connection = True
-        try:
-            while True:
-                self.wfile.write(sse_data(METRICS.snapshot(), event="metrics").encode("utf-8"))
-                self.wfile.flush()
-                time.sleep(METRICS_STREAM_INTERVAL)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
 
     def _log(self, query):
         runid = (query.get("run") or [""])[0]
@@ -1348,6 +1498,19 @@ def serve(args):
     Handler.custom = custom
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
+
+    # 状态与指标各一条后台线程，页面开几个都共用这一份。
+    watched = [args.state, Path(args.state).parent / "alias.tsv", Path(args.state).parent / "node.tsv"]
+    if args.custom:
+        watched.append(args.custom)
+    Handler.state_stream = StateStream(
+        watched,
+        build=lambda: state_payload(state, nodes, aliases, custom),
+        tick=lambda: engine.call("tick"),
+    )
+    Handler.metrics_stream = MetricsStream(METRICS)
+    Handler.state_stream.start()
+    Handler.metrics_stream.start()
 
     try:
         httpd = ThreadingHTTPServer((args.host, args.port), Handler)

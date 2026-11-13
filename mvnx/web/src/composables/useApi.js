@@ -27,6 +27,7 @@ async function call(method, path, body) {
 
 export const api = {
   state: () => call('GET', '/state'),
+  stateStreamUrl: () => `${PREFIX}/state/stream`,
   jdks: () => call('GET', '/jdks'),
   setJdk: (ws, jdk) => call('POST', '/jdk', { ws, jdk }),
   log: (run, page = 0) => call('GET', `/log?run=${encodeURIComponent(run)}&page=${page}`),

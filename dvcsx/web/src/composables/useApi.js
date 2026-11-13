@@ -29,6 +29,10 @@ function q(value) {
 }
 
 // SSE 不能走 fetch，地址单独给页面拼。
+export function stateEventsUrl() {
+  return `${PREFIX}/state/stream`
+}
+
 export function workspaceEventsUrl(ws) {
   return `${PREFIX}/events?ws=${q(ws)}`
 }

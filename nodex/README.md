@@ -54,7 +54,7 @@ nodex web             起网页界面，左侧添加工作区，右侧点按钮�
 
 每个工作区可以单独选 Node 版本：自动扫 `~/.nvm/versions/node`、`~/.local/share/fnm/node-versions`、`~/.volta/tools/image/node` 与 `/usr/local/n/versions/node`，也可以手填版本目录。启动时把选中版本的 `bin` 放到 `PATH` 最前；目录不在了就回退到当前环境。
 
-日志按运行号分开，位于 `~/.cache/nodex/web/logs/<工作区>/<运行号>.log`；状态与 Node 选择在 `~/.cache/nodex/web/` 下。页面通过 SSE 收日志与头部指标。
+日志按运行号分开，位于 `~/.cache/nodex/web/logs/<工作区>/<运行号>.log`；状态与 Node 选择在 `~/.cache/nodex/web/` 下。页面通过 SSE 收日志、头部指标与工作区状态。
 
 前端源码在 `web/`，打包步骤见 `web/README.md`。
 

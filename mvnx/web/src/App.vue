@@ -16,7 +16,7 @@
       >
         {{ running }} 个在跑
       </v-chip>
-      <SystemMonitor :dark="dark" />
+      <SystemMonitor :dark="dark" :metrics="metrics" />
       <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" @click="toggleTheme" />
     </v-app-bar>
 
@@ -77,7 +77,6 @@ import { api } from './composables/useApi'
 import { runningCount } from './composables/format'
 import { rememberTheme } from './plugins/vuetify'
 
-const POLL_MS = 2000
 const VIEW_KEY = 'mvnx-ws'
 
 const theme = useTheme()
@@ -86,10 +85,11 @@ const state = reactive({ workspaces: [], jdks: [], currentJdk: '' })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
 const snack = reactive({ on: false, text: '', color: 'grey' })
+const metrics = ref(null)
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
 const running = computed(() => state.workspaces.reduce((sum, ws) => sum + runningCount(ws), 0))
-let timer = null
+let source = null
 let busy = 0
 
 function select(id) {
@@ -108,16 +108,40 @@ function toggleTheme() {
   rememberTheme(next)
 }
 
-// 轮询与动作共用一条，动作进行中就别再拉，免得把中间态画到页面上。
+function applyState(data) {
+  state.workspaces = data.workspaces || []
+  if (currentId.value && !current.value) select('')
+}
+
 async function refresh() {
   if (busy) return
   try {
-    const data = await api.state()
-    state.workspaces = data.workspaces || []
-    if (currentId.value && !current.value) select('')
+    applyState(await api.state())
   } catch (err) {
-    // 轮询失败不打扰用户，下一次再试。
+    // 取不到就先留着现有列表，下一次推送再补。
   }
+}
+
+// 状态与头部指标共用一条连接，页面不再自己轮询。
+function connectState() {
+  source = new EventSource(api.stateStreamUrl())
+  source.addEventListener('state', (ev) => {
+    // 动作进行中就别画，免得把中间态当成结果。
+    if (busy) return
+    try {
+      applyState(JSON.parse(ev.data))
+    } catch (err) {
+      // 单条坏了跳过，下一次推送再补。
+    }
+  })
+  source.addEventListener('metrics', (ev) => {
+    if (document.hidden) return
+    try {
+      metrics.value = JSON.parse(ev.data)
+    } catch (err) {
+      // 同上，坏的一条跳过。
+    }
+  })
 }
 
 async function loadJdks() {
@@ -196,23 +220,14 @@ async function setWorkspaceJdk({ ws, jdk }) {
 }
 
 onMounted(async () => {
+  connectState()
   await refresh()
   loadJdks()
-  timer = setInterval(() => {
-    // 页面切到后台就不刷了，回来立刻补一次。
-    if (!document.hidden) refresh()
-  }, POLL_MS)
-  document.addEventListener('visibilitychange', onVisible)
 })
 
 onBeforeUnmount(() => {
-  clearInterval(timer)
-  document.removeEventListener('visibilitychange', onVisible)
+  if (source) source.close()
 })
-
-function onVisible() {
-  if (!document.hidden) refresh()
-}
 </script>
 
 <style scoped>

@@ -27,6 +27,7 @@ async function call(method, path, body) {
 
 export const api = {
   state: () => call('GET', '/state'),
+  stateStreamUrl: () => `${PREFIX}/state/stream`,
   nodes: () => call('GET', '/nodes'),
   setNode: (ws, node) => call('POST', '/node', { ws, node }),
   log: (run, page = 0) => call('GET', `/log?run=${encodeURIComponent(run)}&page=${page}`),

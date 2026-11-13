@@ -34,10 +34,12 @@ def read_event(resp):
 class MetricsSseTest(unittest.TestCase):
     def test_streams_one_snapshot(self):
         with tempfile.TemporaryDirectory() as td:
+            metrics = web.MetricsStream(web.METRICS)
+            metrics.start()
             handler = type(
                 "TestHandler",
                 (web.Handler,),
-                {"api_prefix": "/api", "static": Path(td)},
+                {"api_prefix": "/api", "static": Path(td), "metrics_stream": metrics},
             )
             httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
             httpd.daemon_threads = True
