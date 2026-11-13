@@ -254,6 +254,17 @@ assert payload["totals"]["total_tokens"] == 7_501_000, payload["totals"]
 print("ok - 被删会话从账本回显")
 PY
 
+# 查窄范围不能顺手删掉范围外的账本记录：账本只追加，清理走 db gc。
+"$bin" daily --since 2026-10-27 --until 2026-10-27 >/dev/null || fail "窄范围查询失败"
+kept=$("$bin" --all --json) || fail "窄范围查询后全量读取失败"
+python3 - "$kept" <<'PY' || exit 1
+import json, sys
+rows = json.loads(sys.argv[1])["rows"]
+cache = [row for row in rows if row["origin"] == "cache"]
+assert cache and cache[0]["date"] == "2026-10-26", rows
+print("ok - 窄范围查询保留范围外的账本记录")
+PY
+
 table=$("$bin" --all) || fail "回显后出表失败"
 python3 - "$table" <<'PY' || exit 1
 import sys
@@ -511,6 +522,11 @@ assert page["command"] == "hour" and page["rows"], page
 
 price = json.loads(get("/api/prices")[1])
 assert price["models"]["deepseek-flash"]["off"]["hit"] == 0.02, price
+
+# 全部历史：all=1 不要再回落到默认 14 天。
+page = json.loads(get("/api/usage?command=daily&all=1")[1])
+assert page["since"] is None and page["until"] is None, page
+assert page["rows"], page
 
 for path, status in (("/api/usage?command=bogus", 400), ("/api/usage?command=daily&days=x", 400), ("/api/nope", 404)):
     try:

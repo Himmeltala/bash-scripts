@@ -1,6 +1,6 @@
 """tokx 的网页界面：只读的标准库 HTTP 服务，用量由服务端按 SSE 推给页面。
 
-数据都走 cli._collect，与命令行出表是同一份口径：每轮请求都重新现扫、导入账本、
+数据都走 cli._collect，与命令行出表是同一份口径：每轮请求先现扫入库，再从账本统计、
 按当前价格表计价，页面拿到的 rows 与 --json 输出里的 rows 完全一样。
 服务默认绑所有网卡，局域网里的机器也能打开；只想本机看就用 --host 127.0.0.1。
 页面没有登录，也没有写操作，能连上的人都能看用量。
@@ -65,6 +65,9 @@ def _args(config: Config, query: dict[str, list[str]]) -> tuple[argparse.Namespa
     if sources:
         args.source = sources
 
+    # 页面选「全部历史」时不带 days，另外带一个 all=1；range=all 也兼容手拼的地址。
+    if first("all") or first("range") == "all":
+        args.all = True
     args.since = _parse_date(first("since"))
     args.until = _parse_date(first("until"))
     days = first("days")

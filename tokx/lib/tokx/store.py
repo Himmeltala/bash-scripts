@@ -210,18 +210,31 @@ class Store:
             item["loudest"] = int(peak or 0)
         return result
 
-    def records(self, sources: Iterable[str]) -> list[Record]:
-        """账本里全部请求，折算成与现扫同形的 Record。"""
+    def records(
+        self,
+        sources: Iterable[str],
+        start: int | None = None,
+        end: int | None = None,
+    ) -> list[Record]:
+        """账本里的请求，折算成与现扫同形的 Record；start 与 end 是毫秒时间戳，前闭后开。"""
         wanted = tuple(sources)
         if not wanted:
             return []
         marks = ",".join("?" * len(wanted))
+        where = [f"source in ({marks})"]
+        params: list[object] = list(wanted)
+        if start is not None:
+            where.append("at >= ?")
+            params.append(int(start))
+        if end is not None:
+            where.append("at < ?")
+            params.append(int(end))
         try:
             rows = self.con.execute(
                 "select source, session, project, at, provider, model, key,"
                 " input, cache_read, cache_write, output, reasoning"
-                f" from request where source in ({marks})",
-                wanted,
+                " from request where " + " and ".join(where),
+                params,
             ).fetchall()
         except sqlite3.Error as exc:
             raise StoreError(f"读账本失败: {exc}") from exc

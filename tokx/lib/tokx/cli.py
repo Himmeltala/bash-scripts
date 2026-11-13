@@ -239,16 +239,14 @@ def _collect(
     sources = _pick_sources(getattr(args, "source", None))
 
     records, batches, snapshots = _scan(config, sources)
-    _remember(config, batches, snapshots)
-
-    recalled = _recall(config, sources, batches)
-    kept, recalled = _trim(config, recalled, since, until)
-    if kept:
-        _forget(config, kept)
+    use_store = _remember(config, batches, snapshots)
+    # 统计以账本为准：现扫只负责入库，出表统一读 sqlite，文件还在不在都不影响数字。
+    if use_store:
+        stored = _stored(config, sources, batches, since, until)
+        if stored is not None:
+            records = stored
 
     records = [record for record in records if _in_range(record.at, config.book, since, until)]
-    # 回显的记录同样按范围筛：跨天会话只留范围内的行，免得昨天的请求混进今天的报表。
-    records.extend(record for record in recalled if _in_range(record.at, config.book, since, until))
     for record in records:
         record.api = config.api.address(record.source, record.provider)
     records.sort(key=lambda record: record.at)
@@ -341,69 +339,53 @@ def _remember(
     config: Config,
     batches: dict[str, dict[str, list[Record]]],
     snapshots: dict[str, Snapshot],
-) -> None:
-    """把现扫结果写进账本，并把快照缓存落盘；账本写不进去只警告，不影响出表。"""
+) -> bool:
+    """把现扫结果写进账本，并把快照缓存落盘。
+
+    返回账本能不能作为出表的数据源；关掉账本或写不进去时退回纯现扫。
+    """
     for snapshot in snapshots.values():
         snapshot.save()
-    if not config.store.enabled or not batches:
-        return
+    if not config.store.enabled:
+        return False
+    if not batches:
+        return True
     try:
         with Store(config.store.db, config.book.tz) as store:
             store.insert(batches)
+        return True
     except StoreError as exc:
         print(f"tokx: {exc}（本次只显示现扫结果）", file=sys.stderr)
+        return False
 
 
-def _recall(config: Config, sources: list[str], batches: dict[str, dict[str, list[Record]]]) -> list[Record]:
-    """账本里有、这次没扫到的会话，把它们的记录读回来补进报表。"""
-    if not config.store.enabled:
-        return []
-    try:
-        with Store(config.store.db, config.book.tz) as store:
-            known = store.sessions(sources)
-            old = {key for key in known if key[1] not in batches.get(key[0], {})}
-            if not old:
-                return []
-            records = [record for record in store.records(sources) if (record.source, record.session) in old]
-    except StoreError as exc:
-        print(f"tokx: {exc}", file=sys.stderr)
-        return []
-    for record in records:
-        record.origin = report.ORIGIN_CACHE
-    return records
-
-
-def _trim(
+def _stored(
     config: Config,
-    records: list[Record],
+    sources: list[str],
+    batches: dict[str, dict[str, list[Record]]],
     since: date | None,
     until: date | None,
-) -> tuple[list[tuple[str, str]], list[Record]]:
-    """日期范围完全落在账本记录之外的会话，账本里的记录留着没用了，返回要清理的会话。"""
-    if not config.store.enabled or not records:
-        return [], records
-    span: dict[tuple[str, str], tuple[date, date]] = {}
-    for record in records:
-        day = record.at.astimezone(config.book.tz).date()
-        key = (record.source, record.session)
-        low, high = span.get(key, (day, day))
-        span[key] = (min(low, day), max(high, day))
-    drop = {
-        key
-        for key, (low, high) in span.items()
-        if (since is not None and high < since) or (until is not None and low > until)
-    }
-    if not drop:
-        return [], records
-    return list(drop), [record for record in records if (record.source, record.session) not in drop]
-
-
-def _forget(config: Config, sessions: list[tuple[str, str]]) -> None:
+) -> list[Record] | None:
+    """账本里这个日期范围的记录，按这次有没有现扫到标注出处；读不了返回 None。"""
+    tz = config.book.tz
+    start = None
+    if since:
+        start = int(datetime.combine(since, datetime.min.time(), tzinfo=tz).timestamp() * 1000)
+    end = None
+    if until:
+        day_after = datetime.combine(until + timedelta(days=1), datetime.min.time(), tzinfo=tz)
+        end = int(day_after.timestamp() * 1000)
     try:
-        with Store(config.store.db, config.book.tz) as store:
-            store.forget(sessions)
+        with Store(config.store.db, tz) as store:
+            records = store.records(sources, start, end)
     except StoreError as exc:
-        print(f"tokx: {exc}", file=sys.stderr)
+        print(f"tokx: {exc}（本次只显示现扫结果）", file=sys.stderr)
+        return None
+    live = {(source, session) for source, sessions in batches.items() for session in sessions}
+    for record in records:
+        seen = (record.source, record.session) in live
+        record.origin = report.ORIGIN_LIVE if seen else report.ORIGIN_CACHE
+    return records
 
 
 def _rebuild(

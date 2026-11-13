@@ -52,7 +52,9 @@ export function query(extra = {}) {
   if (view.range === 'custom') {
     if (view.since) params.set('since', view.since)
     if (view.until) params.set('until', view.until)
-  } else if (view.range !== 'all') {
+  } else if (view.range === 'all') {
+    params.set('all', '1')
+  } else {
     params.set('days', view.range)
   }
   if (view.sources.length < SOURCES.length) params.set('source', view.sources.join(','))
