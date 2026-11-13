@@ -9,7 +9,7 @@
     >
       <template #actions>
         <div v-if="dirty && !state.loading" class="actions">
-          <v-chip size="x-small" variant="flat" color="warning">未保存</v-chip>
+          <v-chip size="x-small" variant="flat" color="modified">未保存</v-chip>
           <v-btn
             size="small"
             variant="text"

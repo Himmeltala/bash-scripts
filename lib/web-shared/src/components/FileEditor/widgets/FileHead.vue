@@ -14,8 +14,8 @@
         </button>
       </template>
     </nav>
-    <span class="meta">{{ sizeText }}</span>
     <slot name="actions" />
+    <span class="meta">{{ sizeText }}</span>
   </div>
 </template>
 
