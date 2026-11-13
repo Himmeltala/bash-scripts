@@ -104,14 +104,7 @@
         </div>
       </aside>
 
-      <div
-        class="vgutter"
-        title="拖动调整两侧宽度，双击还原"
-        @pointerdown="startSplit"
-        @dblclick="resetSplit"
-      >
-        <span class="grip" />
-      </div>
+      <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
       <section class="detail">
         <template v-if="current">
@@ -233,15 +226,14 @@
               </div>
             </div>
 
-            <div
-              class="gutter"
-              :class="{ disabled: filesCollapsed || diffCollapsed }"
+            <SplitHandle
+              axis="y"
+              :active="dragging"
+              :disabled="filesCollapsed || diffCollapsed"
               title="拖动调整两块区域的高度，双击还原"
-              @pointerdown="startDrag"
-              @dblclick="resetFiles"
-            >
-              <span class="grip" />
-            </div>
+              @start="startDrag"
+              @reset="resetFiles"
+            />
 
             <div class="pane diffpane" :class="{ collapsed: diffCollapsed }">
               <DiffView
@@ -280,12 +272,15 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from './DiffView.vue'
+import SplitHandle from './SplitHandle.vue'
 import { api } from '../composables/useApi'
 import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
+import { useFileTree } from '@bash-scripts/web-shared'
+import { useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -313,73 +308,32 @@ const diffError = ref('')
 const bodyRef = ref(null)
 const filesCollapsed = ref(false)
 const diffCollapsed = ref(false)
-const dragging = ref(false)
 // 文件列表占详情区的高度比例，拖动中间的分隔条改它。
-const filePct = ref(35)
-let startY = 0
-let startPct = 0
+const { size: filePct, resizing: dragging, start: startDrag, reset: resetFiles } = useSplitPane({
+  area: bodyRef,
+  initial: 35,
+  min: 15,
+  max: 82,
+  axis: 'y',
+  unit: 'pct',
+  persist: 'dvcsx.log.files-pct',
+})
 // 左侧提交列表的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
-const listWidth = ref(320)
-const resizing = ref(false)
-let startX = 0
-let startWidth = 0
+const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: splitRef,
+  initial: 320,
+  min: 200,
+  rightMin: 320,
+  persist: 'dvcsx.log.list-width',
+})
 let diffSeq = 0
 
-// 「改动的文件」两种查看方式，目录树默认全部展开。
-const collapsedDirs = reactive({})
-
-function buildTree(list) {
-  const root = { path: '', dirs: new Map(), files: [] }
-  for (const item of list) {
-    const parts = String(item.path || '').split('/').filter(Boolean)
-    if (!parts.length) continue
-    let node = root
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      const name = parts[i]
-      let child = node.dirs.get(name)
-      if (!child) {
-        child = {
-          name,
-          path: node.path ? `${node.path}/${name}` : name,
-          dirs: new Map(),
-          files: [],
-        }
-        node.dirs.set(name, child)
-      }
-      node = child
-    }
-    node.files.push({ ...item, name: parts[parts.length - 1] })
-  }
-  return root
-}
-
-function countIn(node) {
-  let total = node.files.length
-  for (const child of node.dirs.values()) total += countIn(child)
-  return total
-}
-
-function flattenTree(node, depth) {
-  const out = []
-  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  for (const dir of dirs) {
-    out.push({ kind: 'dir', name: dir.name, path: dir.path, depth, count: countIn(dir) })
-    if (!collapsedDirs[dir.path]) out.push(...flattenTree(dir, depth + 1))
-  }
-  const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  for (const file of files) {
-    out.push({
-      kind: 'file',
-      name: file.name,
-      path: file.path,
-      label: shortenPath(file.name, 40),
-      depth,
-      item: file,
-    })
-  }
-  return out
-}
+// 树形视图的收起状态与摊平交给公共的文件树，平铺视图自己拼。
+const { rows: treeRows, collapsed: collapsedDirs, toggle: toggleDir } = useFileTree(
+  () => (current.value ? current.value.paths : []),
+  (file) => ({ item: file, label: shortenPath(file.name, 40) }),
+)
 
 const pathRows = computed(() => {
   const list = current.value ? current.value.paths : []
@@ -392,12 +346,8 @@ const pathRows = computed(() => {
       item,
     }))
   }
-  return flattenTree(buildTree(list), 0)
+  return treeRows.value
 })
-
-function toggleDir(path) {
-  collapsedDirs[path] = !collapsedDirs[path]
-}
 
 const isGit = computed(() => props.ws.vcs === 'git')
 // SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
@@ -486,65 +436,6 @@ function toggleDiff() {
   if (filesCollapsed.value) filesCollapsed.value = false
   diffCollapsed.value = true
 }
-
-function startDrag(event) {
-  if (event.button !== 0 || filesCollapsed.value || diffCollapsed.value) return
-  if (!bodyRef.value) return
-  dragging.value = true
-  startY = event.clientY
-  startPct = filePct.value
-  event.preventDefault()
-  window.addEventListener('pointermove', onDragMove)
-  window.addEventListener('pointerup', endDrag, { once: true })
-}
-
-function onDragMove(event) {
-  const height = bodyRef.value ? bodyRef.value.clientHeight : 0
-  if (!height) return
-  const next = startPct + ((event.clientY - startY) / height) * 100
-  filePct.value = Math.min(Math.max(next, 15), 82)
-}
-
-function endDrag() {
-  dragging.value = false
-  window.removeEventListener('pointermove', onDragMove)
-}
-
-function resetFiles() {
-  filePct.value = 35
-}
-
-function startSplit(event) {
-  if (event.button !== 0 || !splitRef.value) return
-  resizing.value = true
-  startX = event.clientX
-  startWidth = listWidth.value
-  event.preventDefault()
-  window.addEventListener('pointermove', onSplitMove)
-  window.addEventListener('pointerup', endSplit, { once: true })
-}
-
-function onSplitMove(event) {
-  const total = splitRef.value ? splitRef.value.clientWidth : 0
-  if (!total) return
-  // 右侧至少留 320 像素看提交详情与差异，左侧不窄于 200 像素。
-  const max = Math.max(200, total - 320)
-  listWidth.value = Math.min(Math.max(startWidth + event.clientX - startX, 200), max)
-}
-
-function endSplit() {
-  resizing.value = false
-  window.removeEventListener('pointermove', onSplitMove)
-}
-
-function resetSplit() {
-  listWidth.value = 320
-}
-
-onBeforeUnmount(() => {
-  endDrag()
-  endSplit()
-})
 
 // SVN 的版本号前面带 r，Git 给的是完整 sha，列表上只显示前 7 位。
 function revLabel(rev) {
@@ -706,30 +597,6 @@ defineExpose({ load })
   width: var(--list-width, 320px);
   flex: 0 0 var(--list-width, 320px);
   overflow: auto;
-}
-.vgutter {
-  flex: 0 0 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: col-resize;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-.vgutter .grip {
-  width: 3px;
-  height: 36px;
-  border-radius: 2px;
-  background: rgba(var(--v-theme-on-surface), 0.22);
-}
-.vgutter:hover,
-.split.resizing .vgutter {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-.vgutter:hover .grip,
-.split.resizing .vgutter .grip {
-  background: rgb(var(--v-theme-primary));
 }
 .revitem {
   padding: 8px 10px;
@@ -945,36 +812,6 @@ defineExpose({ load })
   min-height: 0;
   overflow: auto;
   padding: 4px 6px;
-}
-.gutter {
-  flex: 0 0 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: row-resize;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-.gutter .grip {
-  width: 36px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(var(--v-theme-on-surface), 0.22);
-}
-.gutter:hover,
-.body.dragging .gutter {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-.gutter:hover .grip,
-.body.dragging .gutter .grip {
-  background: rgb(var(--v-theme-primary));
-}
-.gutter.disabled {
-  cursor: default;
-}
-.gutter.disabled .grip {
-  opacity: 0.45;
 }
 .diffpane {
   flex: 1 1 auto;

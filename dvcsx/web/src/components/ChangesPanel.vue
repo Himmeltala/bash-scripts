@@ -93,14 +93,7 @@
         </ul>
       </aside>
 
-      <div
-        class="gutter"
-        title="拖动调整两侧宽度，双击还原"
-        @pointerdown="startSplit"
-        @dblclick="resetSplit"
-      >
-        <span class="grip" />
-      </div>
+      <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
       <section class="view">
         <DiffView
@@ -118,13 +111,16 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from './DiffView.vue'
+import SplitHandle from './SplitHandle.vue'
 import { api } from '../composables/useApi'
-import { fileIcon } from '../composables/fileIcons'
+import { fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
+import { useFileTree } from '@bash-scripts/web-shared'
+import { useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -142,16 +138,18 @@ const diffLoading = ref(false)
 const error = ref('')
 const diffError = ref('')
 
-// 查看方式来自全局偏好，所有工作区共用；树形默认全部展开，收起过的目录记在这里。
+// 查看方式来自全局偏好，所有工作区共用；树形默认全部展开。
 const preferences = usePreferencesStore()
 const { changesMode: mode, diffScope } = storeToRefs(preferences)
-const collapsedDirs = reactive({})
 // 左侧列表的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
-const listWidth = ref(320)
-const resizing = ref(false)
-let startX = 0
-let startWidth = 0
+const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: splitRef,
+  initial: 320,
+  min: 200,
+  rightMin: 280,
+  persist: 'dvcsx.changes.list-width',
+})
 
 const isGit = computed(() => props.ws.vcs === 'git')
 const diffTitle = computed(() => (selected.value ? selected.value.path : ''))
@@ -171,53 +169,8 @@ function iconOf(file) {
   return fileIcon(file.path)
 }
 
-// 把文件按路径拆成目录节点，文件挂在所属目录下。
-function buildTree(list) {
-  const root = { path: '', dirs: new Map(), files: [] }
-  for (const file of list) {
-    const parts = String(file.path || '').split('/').filter(Boolean)
-    if (!parts.length) continue
-    let node = root
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      const name = parts[i]
-      let child = node.dirs.get(name)
-      if (!child) {
-        child = {
-          name,
-          path: node.path ? `${node.path}/${name}` : name,
-          dirs: new Map(),
-          files: [],
-        }
-        node.dirs.set(name, child)
-      }
-      node = child
-    }
-    node.files.push({ ...file, name: parts[parts.length - 1] })
-  }
-  return root
-}
-
-// 目录行右侧显示这个目录下共有多少个变更文件。
-function countIn(node) {
-  let total = node.files.length
-  for (const child of node.dirs.values()) total += countIn(child)
-  return total
-}
-
-// 按当前展开状态摊平成行，目录在前、文件在后，各自按名字排。
-function flatten(node, depth) {
-  const out = []
-  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  for (const dir of dirs) {
-    out.push({ kind: 'dir', name: dir.name, path: dir.path, depth, count: countIn(dir) })
-    if (!collapsedDirs[dir.path]) out.push(...flatten(dir, depth + 1))
-  }
-  const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  for (const file of files) {
-    out.push({ kind: 'file', name: file.name, path: file.path, depth, file })
-  }
-  return out
-}
+// 树形视图的收起状态与摊平交给公共的文件树，平铺视图自己拼。
+const { rows: treeRows, collapsed: collapsedDirs, toggle: toggleDir } = useFileTree(files)
 
 const rows = computed(() => {
   if (mode.value !== 'tree') {
@@ -229,41 +182,8 @@ const rows = computed(() => {
       file,
     }))
   }
-  return flatten(buildTree(files.value), 0)
+  return treeRows.value
 })
-
-function toggleDir(path) {
-  collapsedDirs[path] = !collapsedDirs[path]
-}
-
-function startSplit(event) {
-  if (event.button !== 0 || !splitRef.value) return
-  resizing.value = true
-  startX = event.clientX
-  startWidth = listWidth.value
-  event.preventDefault()
-  window.addEventListener('pointermove', onSplitMove)
-  window.addEventListener('pointerup', endSplit, { once: true })
-}
-
-function onSplitMove(event) {
-  const total = splitRef.value ? splitRef.value.clientWidth : 0
-  if (!total) return
-  // 右侧至少留 280 像素看差异，左侧不窄于 200 像素。
-  const max = Math.max(200, total - 280)
-  listWidth.value = Math.min(Math.max(startWidth + event.clientX - startX, 200), max)
-}
-
-function endSplit() {
-  resizing.value = false
-  window.removeEventListener('pointermove', onSplitMove)
-}
-
-function resetSplit() {
-  listWidth.value = 320
-}
-
-onBeforeUnmount(endSplit)
 
 async function load() {
   loading.value = true
@@ -455,30 +375,6 @@ defineExpose({ load })
   flex: 0 0 auto;
   font-size: 0.7rem;
   color: rgb(var(--v-theme-on-surface-variant));
-}
-.gutter {
-  flex: 0 0 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: col-resize;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-.gutter .grip {
-  width: 3px;
-  height: 36px;
-  border-radius: 2px;
-  background: rgba(var(--v-theme-on-surface), 0.22);
-}
-.gutter:hover,
-.split.resizing .gutter {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-.gutter:hover .grip,
-.split.resizing .gutter .grip {
-  background: rgb(var(--v-theme-primary));
 }
 .view {
   flex: 1 1 auto;

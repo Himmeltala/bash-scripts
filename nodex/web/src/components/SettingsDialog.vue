@@ -47,7 +47,7 @@
       <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
     </div>
     <div class="log-box">
-      <LogView v-if="logText" :text="logText" :dark="dark" />
+      <LogView v-if="logText" :text="logText" :dark="dark" :colorize="colorize" />
       <p v-else class="log-empty">还没有运行过</p>
     </div>
 
@@ -63,6 +63,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { TYPE_TEXT } from '../composables/format'
+import { colorize } from '../composables/logColor'
 import FloatingDialog from './FloatingDialog.vue'
 
 const props = defineProps({

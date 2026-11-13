@@ -10,6 +10,7 @@ import '@fontsource/roboto/latin-700.css'
 import '@fontsource/jetbrains-mono/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-500.css'
 import '@fontsource/jetbrains-mono/latin-700.css'
+import '@bash-scripts/web-shared/style.css'
 import './styles/base.css'
 
 createApp(App).use(createPinia()).use(vuetify).mount('#app')

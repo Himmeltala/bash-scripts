@@ -77,7 +77,7 @@
       </div>
       <p v-if="error" class="hint bad">{{ error }}</p>
       <div class="log">
-        <LogView v-if="log" :text="log" :dark="dark" />
+        <LogView v-if="log" :text="log" :dark="dark" :colorize="colorize" />
         <p v-else class="hint">还没有打过包。勾选左边的文件或目录，点「打包」。</p>
       </div>
     </div>
@@ -88,6 +88,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import ZipTree from './ZipTree.vue'
 import { api } from '../composables/useApi'
+import { colorize } from '../composables/logColor'
 import { copyText } from '../composables/clipboard'
 import { baseName, sizeText } from '../composables/format'
 
@@ -315,11 +316,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* 页面本身是滚动容器，这一栏自己定高度，目录树与日志各自滚。 */
+/* 面板是纵向弹性布局，这一栏吃掉标题与栏目之外的高度，目录树与日志各自滚。 */
 .zip {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  height: calc(100vh - 300px);
-  min-height: 420px;
 }
 .tree-side {
   flex: 0 0 46%;
@@ -419,7 +420,6 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .zip {
     flex-direction: column;
-    height: auto;
   }
   .tree-side {
     flex: 0 0 auto;

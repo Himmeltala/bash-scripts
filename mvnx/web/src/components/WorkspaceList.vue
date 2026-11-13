@@ -92,7 +92,15 @@
       <v-card>
         <v-card-title>添加工作区</v-card-title>
         <v-card-text>
-          <DirectoryPicker :key="dialogKey" v-model="path" @update:valid="pathOk = $event" />
+          <DirectoryPicker
+            :key="dialogKey"
+            v-model="path"
+            tip="选 Maven 工程所在的目录，加的时候会自动往上找带 pom.xml 的那层。"
+            label="工程目录"
+            placeholder="~/pros/项目名"
+            :loader="loadDirs"
+            @update:valid="pathOk = $event"
+          />
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -123,8 +131,11 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import DirectoryPicker from './DirectoryPicker.vue'
+import { DirectoryPicker } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
+
+// 选目录用的取数函数由这一侧给，共用组件只管界面。
+const loadDirs = (path) => api.dirs(path)
 
 defineProps({
   workspaces: { type: Array, required: true },

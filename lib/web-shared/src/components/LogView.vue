@@ -3,14 +3,17 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { colorize } from '../composables/logColor'
 
 const props = defineProps({
   text: { type: String, default: '' },
   dark: { type: Boolean, default: false },
+  // 行着色由调用方给：nodex 认 npm/Vite 的标记，mvnx 认 Maven/Spring 的，不给就原样显示。
+  colorize: { type: Function, default: (text) => text },
+  // 给了高度就按固定高度撑开，不给就交给父容器的 flex 分配。
+  height: { type: String, default: '' },
 })
 
-// 两种深色底，与原来日志区的底色一致；浅色主题下也用深底，终端习惯如此。
+// 两种深色底，与日志区原来的底色一致；浅色主题下也用深底，终端习惯如此。
 const THEMES = {
   normal: { background: '#11151c', foreground: '#d6deeb', selectionBackground: '#2f4366' },
   deeper: { background: '#0b0e13', foreground: '#d6deeb', selectionBackground: '#2f4366' },
@@ -27,10 +30,14 @@ function themeFor(dark) {
   return dark ? THEMES.deeper : THEMES.normal
 }
 
+function paint(text) {
+  return props.colorize(text)
+}
+
 // 重建整屏：清空后写全量，写完把视口放到指定行；不指定就停在最新一行。
 function rebuild(text, keepLine) {
   term.reset()
-  term.write(colorize(text), () => {
+  term.write(paint(text), () => {
     if (!term) return
     if (keepLine == null) term.scrollToBottom()
     else term.scrollToLine(Math.min(keepLine, Math.max(0, term.buffer.active.length - 1)))
@@ -44,8 +51,10 @@ function apply(text) {
     const atBottom = term.buffer.active.viewportY >= term.buffer.active.baseY
     const delta = text.slice(written.length)
     written = text
-    term.write(colorize(delta))
-    if (atBottom) term.scrollToBottom()
+    // 写完再滚到底：xterm 的写入是异步的，先滚会差一行，最新一行压在可视区外面。
+    term.write(paint(delta), () => {
+      if (term && atBottom) term.scrollToBottom()
+    })
     return
   }
   // 前面补进了更早的一页：按新增行数下移视口，停在同一段内容上。
@@ -122,7 +131,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="term" :class="{ deeper: dark }" />
+  <div
+    ref="host"
+    class="term"
+    :class="{ deeper: dark }"
+    :style="height ? { height, flex: '0 0 auto' } : null"
+  />
 </template>
 
 <style scoped>

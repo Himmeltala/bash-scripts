@@ -52,7 +52,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { fileIcon } from '../composables/fileIcons'
+import { fileIcon } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   node: { type: Object, required: true },

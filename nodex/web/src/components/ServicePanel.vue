@@ -493,7 +493,12 @@ function onSave({ args }) {
 </script>
 
 <style scoped>
+/* 面板占满右侧剩下的高度：标题与栏目固定，表格自己滚。 */
 .panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 16px 20px 40px;
 }
 .head {
@@ -535,6 +540,8 @@ function onSave({ args }) {
   margin-left: 6px;
 }
 .table {
+  flex: 1 1 auto;
+  min-height: 0;
   background: rgb(var(--v-theme-surface));
   border-radius: 10px;
 }

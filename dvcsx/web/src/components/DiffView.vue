@@ -32,7 +32,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { MAX_HIGHLIGHT, highlightCode, languageOf } from '../composables/highlight'
+import { MAX_HIGHLIGHT, highlightCode, languageOf } from '@bash-scripts/web-shared/highlight'
 
 const props = defineProps({
   text: { type: String, default: '' },

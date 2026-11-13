@@ -106,14 +106,7 @@
         />
       </aside>
 
-      <div
-        class="vgutter"
-        title="拖动调整两侧宽度，双击还原"
-        @pointerdown="startSplit"
-        @dblclick="resetSplit"
-      >
-        <span class="grip" />
-      </div>
+      <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
       <section class="viewer">
         <div v-if="activeNode" class="file-head">
@@ -185,11 +178,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BrowseTree from './BrowseTree.vue'
+import SplitHandle from './SplitHandle.vue'
 import { api } from '../composables/useApi'
-import { fileIcon } from '../composables/fileIcons'
+import { fileIcon } from '@bash-scripts/web-shared'
 import { dirName } from '../composables/format'
-import { highlightCode, languageOf } from '../composables/highlight'
+import { highlightCode, languageOf } from '@bash-scripts/web-shared/highlight'
 import { usePreferencesStore } from '../stores/preferences'
+import { useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -203,10 +198,13 @@ const refreshing = ref(false)
 let seq = 0
 // 左侧目录树的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
-const treeWidth = ref(300)
-const resizing = ref(false)
-let startX = 0
-let startWidth = 0
+const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: splitRef,
+  initial: 300,
+  min: 180,
+  rightMin: 320,
+  persist: 'dvcsx.browse.tree-width',
+})
 // 搜索：query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
 const preferences = usePreferencesStore()
 const { searchMode: mode } = storeToRefs(preferences)
@@ -507,40 +505,12 @@ function reset() {
   loadDir('')
 }
 
-function startSplit(event) {
-  if (event.button !== 0 || !splitRef.value) return
-  resizing.value = true
-  startX = event.clientX
-  startWidth = treeWidth.value
-  event.preventDefault()
-  window.addEventListener('pointermove', onSplitMove)
-  window.addEventListener('pointerup', endSplit, { once: true })
-}
-
-function onSplitMove(event) {
-  const total = splitRef.value ? splitRef.value.clientWidth : 0
-  if (!total) return
-  // 右侧至少留 320 像素看文件内容，左侧不窄于 180 像素。
-  const max = Math.max(180, total - 320)
-  treeWidth.value = Math.min(Math.max(startWidth + event.clientX - startX, 180), max)
-}
-
-function endSplit() {
-  resizing.value = false
-  window.removeEventListener('pointermove', onSplitMove)
-}
-
-function resetSplit() {
-  treeWidth.value = 300
-}
-
 watch(() => props.ws.id, reset)
 onMounted(reset)
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
   searchSeq += 1
   answerLeave(false)
-  endSplit()
 })
 </script>
 
@@ -655,30 +625,6 @@ onBeforeUnmount(() => {
   flex: 0 0 var(--tree-width, 300px);
   overflow: auto;
   padding: 6px 4px;
-}
-.vgutter {
-  flex: 0 0 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: col-resize;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-.vgutter .grip {
-  width: 3px;
-  height: 36px;
-  border-radius: 2px;
-  background: rgba(var(--v-theme-on-surface), 0.22);
-}
-.vgutter:hover,
-.body.resizing .vgutter {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-.vgutter:hover .grip,
-.body.resizing .vgutter .grip {
-  background: rgb(var(--v-theme-primary));
 }
 .viewer {
   flex: 1 1 auto;

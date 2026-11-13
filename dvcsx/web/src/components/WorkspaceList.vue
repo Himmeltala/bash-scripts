@@ -95,7 +95,15 @@
       <v-card>
         <v-card-title>添加工作副本</v-card-title>
         <v-card-text>
-          <DirectoryPicker :key="dialogKey" v-model="path" @update:valid="pathOk = $event" />
+          <DirectoryPicker
+            :key="dialogKey"
+            v-model="path"
+            tip="选 SVN 工作副本或 Git 仓库所在的目录，加的时候会先确认这个目录在版本控制里。"
+            label="工作副本目录"
+            placeholder="~/pros/svn/省/项目/前端/仓库名"
+            :loader="loadDirs"
+            @update:valid="pathOk = $event"
+          />
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -126,9 +134,12 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import DirectoryPicker from './DirectoryPicker.vue'
+import { DirectoryPicker } from '@bash-scripts/web-shared'
 import { baseName } from '../composables/format'
 import { api } from '../composables/useApi'
+
+// 选目录用的取数函数由这一侧给，共用组件只管界面。
+const loadDirs = (path) => api.dirs(path)
 
 defineProps({
   workspaces: { type: Array, required: true },

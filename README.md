@@ -89,7 +89,7 @@ bash-scripts/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`dvcsx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。
+除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`dvcsx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。例外是 `lib/web-shared/`：三个网页界面（nodex、mvnx、dvcsx）共用的前端组件做成了一个本地 npm 包，不是工具；改了源码要它自己 `npm run build` 出 `dist/`，三个工程按 `file:` 依赖引用。
 
 ## 安装
 

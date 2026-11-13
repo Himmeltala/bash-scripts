@@ -50,7 +50,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { fileIcon } from '../composables/fileIcons'
+import { fileIcon } from '@bash-scripts/web-shared'
 import { sizeText } from '../composables/format'
 
 const props = defineProps({

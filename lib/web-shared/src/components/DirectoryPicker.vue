@@ -1,10 +1,10 @@
 <template>
   <div class="picker">
-    <p class="tip">选 Node 工程所在的目录，加的时候会自动往上找声明了工作区的 package.json。</p>
+    <p v-if="tip" class="tip">{{ tip }}</p>
     <v-text-field
       v-model="path"
-      label="工程目录"
-      placeholder="~/pros/项目名"
+      :label="label"
+      :placeholder="placeholder"
       prepend-inner-icon="mdi-folder"
       :error="!!modelValue && !valid"
       :error-messages="modelValue && !valid ? '只能添加家目录内的目录' : ''"
@@ -25,6 +25,7 @@
           :key="node.path"
           :node="node"
           :selected="target"
+          :loader="loader"
           @pick="pick"
         />
         <p v-if="!roots.length" class="hint">家目录下没有子目录</p>
@@ -36,10 +37,14 @@
 <script setup>
 import { computed, onMounted, ref, watchEffect } from 'vue'
 import DirectoryNode from './DirectoryNode.vue'
-import { api } from '../composables/useApi'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
+  tip: { type: String, default: '' },
+  label: { type: String, default: '目录' },
+  placeholder: { type: String, default: '' },
+  // 取目录的函数：不传参数取家目录这一层，传路径取它的下一层。
+  loader: { type: Function, required: true },
 })
 const emit = defineEmits(['update:modelValue', 'update:valid'])
 
@@ -74,7 +79,7 @@ function pick(node) {
 
 onMounted(async () => {
   try {
-    const data = await api.dirs()
+    const data = await props.loader()
     home.value = data.home
     roots.value = data.entries.map((item) => ({ ...item, children: null }))
   } catch (err) {

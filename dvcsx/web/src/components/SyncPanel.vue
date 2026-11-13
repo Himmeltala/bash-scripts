@@ -184,7 +184,7 @@
 
       <section v-if="output" class="block">
         <h3>输出</h3>
-        <TerminalOutput :text="output" :dark="dark" />
+        <LogView :text="output" :dark="dark" height="320px" />
       </section>
       <p v-if="lastError" class="hint bad">{{ lastError }}</p>
     </div>
@@ -209,7 +209,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
-import TerminalOutput from './TerminalOutput.vue'
+import { LogView } from '@bash-scripts/web-shared'
 import { api, jobEventsUrl } from '../composables/useApi'
 import { statusOf } from '../composables/format'
 

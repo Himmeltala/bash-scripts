@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@bash-scripts/web-shared": "file:../../lib/web-shared",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/roboto": "^5.3.0",
     "@mdi/font": "^7.4.47",

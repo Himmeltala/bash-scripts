@@ -33,11 +33,12 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
-import { api } from '../composables/useApi'
 
 const props = defineProps({
   node: { type: Object, required: true },
   selected: { type: String, default: '' },
+  // 取下一层目录的函数由调用方给：各工程的接口前缀与返回结构可能不同。
+  loader: { type: Function, required: true },
 })
 const emit = defineEmits(['pick'])
 
@@ -76,7 +77,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api.dirs(props.node.path)
+    const data = await props.loader(props.node.path)
     // 子目录挂在节点上，展开过的不会重复请求。
     props.node.children = data.entries
   } catch (err) {
