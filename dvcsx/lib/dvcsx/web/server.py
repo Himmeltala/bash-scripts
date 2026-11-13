@@ -29,6 +29,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+# 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+from web import ApiError, CONTENT_TYPES, WebHandler, guess_host, is_any
+
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
 MAX_TEXT = 2 * 1024 * 1024
 # 未纳入版本控制的文件没有差异可算，直接读内容预览，超过这个大小就不给。
@@ -403,30 +407,8 @@ JOBS = Jobs()
 HUB = EventHub()
 
 
-CONTENT_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-    ".ttf": "font/ttf",
-    ".eot": "application/vnd.ms-fontobject",
-}
-
-
 def log(msg):
     print(time.strftime("%H:%M:%S"), msg, file=sys.stderr, flush=True)
-
-
-class ApiError(Exception):
-    def __init__(self, status, message):
-        super().__init__(message)
-        self.status = status
-        self.message = message
 
 
 # ---- 工作副本登记 ----
@@ -1721,9 +1703,8 @@ def list_dirs(raw):
 # ---- HTTP ----
 
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(WebHandler):
     server_version = "dvcsx-web"
-    protocol_version = "HTTP/1.1"
 
     static = None
     store = None
@@ -1732,58 +1713,23 @@ class Handler(BaseHTTPRequestHandler):
     # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
     allow_write = False
 
-    def log_message(self, fmt, *args):
-        # 访问日志没有用，轮询一多还会把 runner.log 撑长。
-        pass
+    def _error_log(self, msg):
+        # 这一侧的日志带时间戳，骨架里的默认写法没有。
+        log(msg)
 
-    def do_GET(self):
-        self._route("GET")
-
-    def do_HEAD(self):
-        self._route("HEAD")
-
-    def do_POST(self):
-        self._route("POST")
-
-    def _route(self, method):
-        url = urlparse(self.path)
-        if not url.path.startswith(self.api_prefix):
-            if method == "POST":
-                self._send(405, b"", "text/plain")
-                return
-            self._static(url.path, head=(method == "HEAD"))
-            return
-        route = url.path[len(self.api_prefix):].strip("/")
-        query = parse_qs(url.query)
-        # SSE 自己写响应头与数据流，不走下面一次性回 JSON 的路。
-        if method == "GET":
-            try:
-                if route == "state/stream":
-                    self._sse_state()
-                    return
-                if route == "events":
-                    self._sse_workspace(query)
-                    return
-                match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/events", route)
-                if match:
-                    self._sse_job(match.group(1))
-                    return
-            except ApiError as exc:
-                self._json(exc.status, {"error": exc.message})
-                return
-        try:
-            if method == "POST":
-                self._check_origin()
-            body = self._read_json() if method == "POST" else {}
-            result = self._dispatch(method, route, query, body)
-        except ApiError as exc:
-            self._json(exc.status, {"error": exc.message})
-            return
-        except Exception as exc:  # 页面看到一句人话，比连接被断开强
-            log("接口出错 %s %s：%r" % (method, self.path, exc))
-            self._json(500, {"error": "服务端出错：%s" % exc})
-            return
-        self._json(200, result)
+    def _stream_routes(self, route, query):
+        # SSE 自己写响应头与数据流，不走一次性回 JSON 的路。
+        if route == "state/stream":
+            self._sse_state()
+            return True
+        if route == "events":
+            self._sse_workspace(query)
+            return True
+        match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/events", route)
+        if match:
+            self._sse_job(match.group(1))
+            return True
+        return False
 
     def _dispatch(self, method, route, query, body):
         if route == "state":
@@ -2106,87 +2052,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         raise ApiError(403, "写操作只允许本机发起；要放开给其他机器，用 --allow-write 启动")
 
-    def _check_origin(self):
-        """跨站写请求挡在门外：只认同源的 Origin。没带 Origin 的（脚本、curl）放行。"""
-        origin = self.headers.get("Origin")
-        if not origin:
-            return
-        if urlparse(origin).netloc != self.headers.get("Host", ""):
-            raise ApiError(403, "拒绝跨站写请求")
-
-    def _read_json(self):
-        length = self.headers.get("Content-Length")
-        if length is None:
-            return {}
-        try:
-            length = int(length)
-        except ValueError:
-            raise ApiError(400, "Content-Length 不对")
-        raw = self.rfile.read(length) if length > 0 else b""
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ApiError(400, "请求体不是 JSON")
-        if not isinstance(data, dict):
-            raise ApiError(400, "请求体要是一个对象")
-        return data
-
-    # ---- 静态页面
-
-    def _static(self, path, head=False):
-        rel = path.lstrip("/") or "index.html"
-        target = (self.static / rel).resolve()
-        try:
-            target.relative_to(self.static)
-        except ValueError:
-            self._send(404, b"", "text/plain", head=head)
-            return
-        if target.is_dir():
-            target = target / "index.html"
-        if not target.is_file():
-            if "." in Path(rel).name or not (self.static / "index.html").is_file():
-                self._send(404, b"not found\n", "text/plain", head=head)
-                return
-            target = self.static / "index.html"
-        ctype = CONTENT_TYPES.get(target.suffix.lower(), "application/octet-stream")
-        cache = "no-cache" if target.name == "index.html" else "public, max-age=600"
-        data = b"" if head else target.read_bytes()
-        self._send(200, data, ctype, head=head, cache=cache)
-
-    def _json(self, status, payload):
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self._send(status, data, "application/json; charset=utf-8", cache="no-store")
-
-    def _send(self, status, data, ctype, head=False, cache=None):
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        if cache:
-            self.send_header("Cache-Control", cache)
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        if not head:
-            self.wfile.write(data)
-
-
-def is_any(host):
-    """0.0.0.0 与 :: 都是「所有网卡」，不能拿来当访问地址。"""
-    return host in ("0.0.0.0", "::", "")
-
-
-def guess_host():
-    """监听全地址时给浏览器一个能点开的地址：取本机出口 IP，猜不出来就用回环。"""
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.connect(("10.255.255.255", 1))
-            return sock.getsockname()[0]
-        finally:
-            sock.close()
-    except OSError:
-        return "127.0.0.1"
 
 
 def serve(args):

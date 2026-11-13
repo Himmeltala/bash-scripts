@@ -17,7 +17,7 @@ npm run build          # 产出 dist/web-shared.js 与 dist/web-shared.css
 ```
 src/
   index.js            主入口
-  components/         LogView、DirectoryPicker、DirectoryNode
+  components/         LogView、DirectoryPicker、DirectoryNode、FileTree
   composables/        useSplitPane、useFileTree
   utils/              fileIcons、highlight（代码着色，单独一个入口）
 ```
@@ -33,7 +33,7 @@ src/
 代码里按包名引用：
 
 ```js
-import { LogView, DirectoryPicker, fileIcon, useSplitPane, useFileTree } from '@bash-scripts/web-shared'
+import { LogView, DirectoryPicker, FileTree, fileIcon, useSplitPane, useFileTree } from '@bash-scripts/web-shared'
 import '@bash-scripts/web-shared/style.css'
 
 // 代码着色只有 dvcsx 用，走单独的入口，其余工程不会因此装上 highlight.js。
@@ -46,10 +46,15 @@ import { highlightCode, languageOf } from '@bash-scripts/web-shared/highlight'
 | ---- | ---- | ------ |
 | `LogView` | xterm 日志终端：增量追加、滚到底、选中复制 | nodex、mvnx、dvcsx |
 | `DirectoryPicker` / `DirectoryNode` | 从家目录往下选目录；提示文案与取数函数由调用方传 | nodex、mvnx、dvcsx |
+| `FileTree` | 懒加载的目录树：展开、缓存、图标、提示都由它管；取数函数与行内内容由调用方传 | nodex、dvcsx |
 | `fileIcon` | 文件类型图标与配色 | nodex、dvcsx |
 | `useSplitPane` | 面板分隔条：拖动改尺寸、双击还原、宽度记忆 | dvcsx |
 | `useFileTree` | 带路径的列表摆成目录树 | dvcsx |
 | `highlightCode` / `languageOf`（子入口 `/highlight`） | 按扩展名做语法着色 | dvcsx |
+
+### FileTree
+
+树自己管展开状态与每一层的缓存，只在展开时调 `loader(key)`。两边节点字段不同，用 `keyOf` / `dirOf` / `nameOf` 适配；行内差异走 `row-before-label` 与 `row-after-label` 两个插槽（作用域带 `node`、`open`、`state`）。`root` 传节点就在顶上显示根行，不传就直接列第一层；`pickOnRowClick` 决定整行点击是否等于选中；`active` 为假时不读目录。`defineExpose` 给出 `reveal / reload / reloadDir / refreshAll`，对应定位、全量重读、重读一层与刷新。
 
 ## 依赖怎么算
 

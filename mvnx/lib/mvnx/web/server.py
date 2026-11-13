@@ -28,7 +28,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-FS = "\x1f"
+# 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+from metrics import Metrics
+from sse import (
+    LineBuffer,
+    MetricsStream,
+    SSEMixin,
+    StateStream,
+    last_lines,
+    sse_data,
+    sse_event,
+    tail,
+)
+from stores import FS, AliasStore, Row
+from web import ApiError, STREAMED, WebHandler, guess_host, is_any, log
 
 # 状态行的列，与 lib/mvnx/server.sh 里的 web_col 一致，0 起。
 WS_KIND, SVC_KIND, POM_KIND, RUN_KIND = "ws", "svc", "pom", "run"
@@ -50,38 +64,8 @@ RUN_FIELDS = ("id", "ws", "type", "tag", "path", "pl", "display", "module", "arg
 
 # 一次引擎调用的上限：扫描大工程几秒，留足余量。
 ENGINE_TIMEOUT = 120
-# 日志一页行数。
-LOG_PAGE = 400
 # 状态文件坏了最多打这么多行日志，免得刷屏。
 COERCIONS = 3
-
-
-def log(msg):
-    print(msg, file=sys.stderr, flush=True)
-
-
-class Row:
-    """状态行按列名取值。列数不对的行由 State 丢掉，这里只管取。
-    """
-
-    __slots__ = ("kind", "f")
-
-    def __init__(self, parts):
-        self.kind = parts[0]
-        self.f = parts
-
-    def __getitem__(self, idx):
-        if isinstance(idx, slice):
-            return self.f[idx]
-        return self.f[idx] if idx < len(self.f) else ""
-
-    @property
-    def id(self):
-        return self[1]
-
-    @property
-    def ws(self):
-        return self[2]
 
 
 WS_WIDTH, SVC_WIDTH, POM_WIDTH, RUN_WIDTH = 4, 9, 4, 17
@@ -232,54 +216,6 @@ def attach_jdks(snapshot, store):
         ws["jdk"] = jdk
         ws["jdk_missing"] = bool(jdk) and not is_jdk_home(jdk)
     return snapshot
-
-
-class AliasStore:
-    """工作区别名，存在状态文件旁边；状态文件本身仍由 bash 写，这里不碰它。"""
-
-    def __init__(self, path):
-        self.path = Path(path)
-        self._lock = threading.Lock()
-
-    def _load(self):
-        out = {}
-        try:
-            text = self.path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return out
-        for line in text.splitlines():
-            if not line:
-                continue
-            ws, sep, alias = line.partition(FS)
-            if sep and ws and alias:
-                out[ws] = alias
-        return out
-
-    def _save(self, data):
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            text = "".join(ws + FS + alias + "\n" for ws, alias in data.items() if ws and alias)
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, self.path)
-        except OSError as exc:
-            log("写别名失败 %s：%s" % (self.path, exc))
-
-    def all(self):
-        with self._lock:
-            return self._load()
-
-    def set(self, ws, alias):
-        alias = " ".join((alias or "").split()).replace(FS, " ")
-        if len(alias) > 80:
-            raise ApiError(400, "别名太长，最多 80 个字")
-        with self._lock:
-            data = self._load()
-            if alias:
-                data[ws] = alias
-            else:
-                data.pop(ws, None)
-            self._save(data)
 
 
 def attach_alias_rel(snapshot, store):
@@ -488,11 +424,6 @@ def group_alive(sid):
 # ---------------------------------------------------------------- 引擎
 
 
-class ApiError(Exception):
-    def __init__(self, status, message):
-        Exception.__init__(self, message)
-        self.status = status
-        self.message = message
 
 
 class Engine:
@@ -758,256 +689,11 @@ def list_dirs(raw):
     }
 
 
-def _percent(used, total):
-    if not total:
-        return None
-    return round(100.0 * used / total, 1)
-
-
-class Metrics:
-    """CPU、内存、磁盘占用，页面头部那三张小图用。
-
-    只用 /proc 与 statvfs，不引第三方库。CPU 占用只有两次采样之间才算得出来：
-    第一次请求时先取一次、等 200ms 再取一次，之后每次请求都用上一次留下的计数器，
-    间隔就是页面的刷新周期。
-    """
-
-    SAMPLE_PAUSE = 0.2
-
-    def __init__(self, home=None):
-        self.home = Path(home) if home else Path.home()
-        self.mount = self._mount_of(self.home)
-        self._lock = threading.Lock()
-        self._prev = None
-
-    @staticmethod
-    def _counters():
-        with open("/proc/stat", "r") as fh:
-            parts = fh.readline().split()[1:]
-        nums = [int(x) for x in parts]
-        # 空闲算 idle 加 iowait，其余（user、system、irq 等）都算忙。
-        idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
-        return idle, sum(nums)
-
-    @staticmethod
-    def _mount_of(path):
-        target = str(path.resolve())
-        best = "/"
-        try:
-            with open("/proc/mounts", "r") as fh:
-                for line in fh:
-                    fields = line.split()
-                    if len(fields) < 2:
-                        continue
-                    point = fields[1]
-                    prefix = point.rstrip("/") + "/"
-                    if target == point or target.startswith(prefix):
-                        if len(point) > len(best):
-                            best = point
-        except OSError:
-            pass
-        return best
-
-    def cpu(self):
-        with self._lock:
-            prev = self._prev
-            cur = self._counters()
-            if prev is None:
-                time.sleep(self.SAMPLE_PAUSE)
-                prev, cur = cur, self._counters()
-            self._prev = cur
-        idle, total = cur[0] - prev[0], cur[1] - prev[1]
-        if total <= 0:
-            return None
-        return round(min(100.0, max(0.0, 100.0 * (total - idle) / total)), 1)
-
-    def mem(self):
-        info = {}
-        with open("/proc/meminfo", "r") as fh:
-            for line in fh:
-                key, _, rest = line.partition(":")
-                fields = rest.split()
-                if key and fields:
-                    info[key] = int(fields[0]) * 1024
-        total = info.get("MemTotal", 0)
-        avail = info.get("MemAvailable")
-        if avail is None:  # 老内核没有 MemAvailable，退回三项相加
-            avail = info.get("MemFree", 0) + info.get("Buffers", 0) + info.get("Cached", 0)
-        used = max(0, total - avail)
-        return {"used": used, "total": total, "percent": _percent(used, total)}
-
-    def disk(self):
-        st = os.statvfs(str(self.home))
-        total = st.f_frsize * st.f_blocks
-        free = st.f_frsize * st.f_bfree
-        avail = st.f_frsize * st.f_bavail
-        used = max(0, total - free)
-        return {
-            "used": used,
-            "total": total,
-            "avail": avail,
-            "percent": _percent(used, total),
-            "mount": self.mount,
-        }
-
-    def snapshot(self):
-        out = {"time": int(time.time())}
-        for key in ("cpu", "mem", "disk"):
-            try:
-                out[key] = getattr(self, key)()
-            except (OSError, ValueError) as exc:
-                log("取 %s 指标失败：%s" % (key, exc))
-                out[key] = None
-        return out
-
-
 METRICS = Metrics()
-# 指标栏的推送间隔；前端按这个节奏存点，60 个点正好覆盖 5 分钟。
-METRICS_STREAM_INTERVAL = 5.0
-
-# 页面连着时按这个间隔收拾运行记录；文件有变化就推，最多晚半秒。
-STATE_TICK_INTERVAL = 2.0
-PUMP_INTERVAL = 0.5
-# 闲太久发一条注释，免得代理把连接当死链掐掉。
-SSE_PING_SECONDS = 15
 
 
-class Fanout:
-    """一份数据推给所有页面；来不及取的只留最新的一份。"""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._subs = set()
-        self._payload = None
-
-    def subscribe(self):
-        q = queue.Queue(maxsize=1)
-        with self._lock:
-            self._subs.add(q)
-            if self._payload is not None:
-                q.put_nowait(self._payload)
-        return q
-
-    def unsubscribe(self, q):
-        with self._lock:
-            self._subs.discard(q)
-
-    def listeners(self):
-        with self._lock:
-            return len(self._subs)
-
-    def publish(self, payload):
-        with self._lock:
-            self._payload = payload
-            subs = list(self._subs)
-        for q in subs:
-            if q.full():
-                try:
-                    q.get_nowait()
-                except queue.Empty:
-                    pass
-            try:
-                q.put_nowait(payload)
-            except queue.Full:
-                pass
-
-
-class StateStream(Fanout):
-    """状态文件一变就推一份；tick 也走这条线程，开几个页面都只跑一条。"""
-
-    def __init__(self, paths, build, tick):
-        super().__init__()
-        self.paths = [Path(p) for p in paths]
-        self.build = build
-        self.tick = tick
-
-    def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _mtimes(self):
-        out = []
-        for path in self.paths:
-            try:
-                out.append(path.stat().st_mtime_ns)
-            except OSError:
-                out.append(None)
-        return tuple(out)
-
-    def _run(self):
-        seen = None
-        next_tick = 0.0
-        while True:
-            # 没有页面连着就不收拾，和以前没人轮询时一样。
-            if not self.listeners():
-                seen = None
-                time.sleep(PUMP_INTERVAL)
-                continue
-            now = time.time()
-            if now >= next_tick:
-                next_tick = now + STATE_TICK_INTERVAL
-                try:
-                    self.tick()
-                except ApiError as exc:
-                    log("tick 失败：%s" % exc.message)
-                except Exception as exc:
-                    log("tick 出错：%r" % exc)
-            mtimes = self._mtimes()
-            if mtimes != seen:
-                seen = mtimes
-                try:
-                    self.publish(self.build())
-                except Exception as exc:
-                    log("状态推送失败：%r" % exc)
-            time.sleep(PUMP_INTERVAL)
-
-
-class MetricsStream(Fanout):
-    """指标只采一份给所有页面，CPU 的两次采样之间不会被别的页面抢走。"""
-
-    def __init__(self, metrics):
-        super().__init__()
-        self.metrics = metrics
-
-    def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _run(self):
-        last = 0.0
-        while True:
-            if not self.listeners():
-                last = 0.0
-                time.sleep(PUMP_INTERVAL)
-                continue
-            if time.time() - last >= METRICS_STREAM_INTERVAL:
-                last = time.time()
-                try:
-                    self.publish(self.metrics.snapshot())
-                except Exception as exc:
-                    log("指标推送失败：%r" % exc)
-            time.sleep(PUMP_INTERVAL)
-
-
-CONTENT_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".mjs": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".gif": "image/gif",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-    ".ttf": "font/ttf",
-    ".map": "application/json; charset=utf-8",
-}
-
-
-class Handler(BaseHTTPRequestHandler):
+class Handler(SSEMixin, WebHandler):
     server_version = "mvnx-web"
-    protocol_version = "HTTP/1.1"
 
     static = None
     state = None
@@ -1020,44 +706,6 @@ class Handler(BaseHTTPRequestHandler):
     metrics_stream = None
     api_prefix = "/__mvnx/api"
 
-    def log_message(self, fmt, *args):
-        # 访问日志默认打到 stderr，被 mvnx 收进 runner.log，轮询一多就长，这里丢掉。
-        pass
-
-    def do_GET(self):
-        self._route("GET")
-
-    def do_HEAD(self):
-        self._route("HEAD")
-
-    def do_POST(self):
-        self._route("POST")
-
-    def _route(self, method):
-        url = urlparse(self.path)
-        if not url.path.startswith(self.api_prefix):
-            if method == "POST":
-                self._send(405, b"", "text/plain")
-                return
-            self._static(url.path, head=(method == "HEAD"))
-            return
-        route = url.path[len(self.api_prefix):].strip("/")
-        try:
-            if method == "POST":
-                self._check_origin()
-            body = self._read_json() if method == "POST" else {}
-            result = self._dispatch(method, route, parse_qs(url.query), body)
-        except ApiError as exc:
-            self._json(exc.status, {"error": exc.message})
-            return
-        except Exception as exc:  # 页面看到一句人话，比连接被断开强
-            log("接口出错 %s %s：%r" % (method, self.path, exc))
-            self._json(500, {"error": "服务端出错：%s" % exc})
-            return
-        # 流式回话已经自己写完，别再套一层 JSON。
-        if result is STREAMED:
-            return
-        self._json(200, result)
 
     # ---- 路由
 
@@ -1137,110 +785,6 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": True}
         raise ApiError(404, "没有这个接口：%s" % route)
 
-    def _sse_start(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "close")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-        self.close_connection = True
-
-    def _sse(self, streams):
-        """一条长连接带几路数据：哪路有新的一份就写哪路，闲久了 ping 一下。"""
-        streams = [(stream, event) for stream, event in streams if stream is not None]
-        if not streams:
-            raise ApiError(503, "推送没有起来")
-        self._sse_start()
-        subs = [(event, stream, stream.subscribe()) for stream, event in streams]
-        last = time.time()
-        try:
-            while True:
-                wrote = False
-                for event, _, q in subs:
-                    try:
-                        payload = q.get_nowait()
-                    except queue.Empty:
-                        continue
-                    self.wfile.write(sse_data(payload, event=event).encode("utf-8"))
-                    self.wfile.flush()
-                    wrote = True
-                now = time.time()
-                if wrote:
-                    last = now
-                elif now - last >= SSE_PING_SECONDS:
-                    self.wfile.write(b": ping\n\n")
-                    self.wfile.flush()
-                    last = now
-                else:
-                    time.sleep(PUMP_INTERVAL)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            for _, stream, q in subs:
-                stream.unsubscribe(q)
-
-    def _stream_log(self, runid):
-        """把日志按 SSE 推给页面：先补最近一页，再推新写入的行。"""
-        if not runid:
-            raise ApiError(400, "没给运行号")
-        logs = Path(self.logs).resolve()
-        path = logs / runid.split(".", 1)[0] / (runid + ".log")
-        try:
-            path.resolve().relative_to(logs)
-        except ValueError:
-            raise ApiError(400, "运行号不对")
-
-        # 断线重连时浏览器会带上 Last-Event-ID，从那里接着推，不重发历史。
-        try:
-            offset = int(self.headers.get("Last-Event-ID", ""))
-        except ValueError:
-            offset = None
-
-        self._sse_start()
-
-        buf = LineBuffer()
-        last_write = time.time()
-        fh = None
-        try:
-            while True:
-                if fh is None:
-                    try:
-                        fh = open(path, "rb")
-                    except OSError:
-                        fh = None
-                if fh is not None:
-                    size = os.fstat(fh.fileno()).st_size
-                    if offset is None or size < offset:
-                        # 第一次连上，或者文件被重写：先补尾部。
-                        with open(path, "rb") as rf:
-                            data = rf.read()
-                        text, more = last_lines(data)
-                        offset = len(data)
-                        buf = LineBuffer()
-                        self.wfile.write(sse_event(text, event="tail", event_id=offset, more=more).encode("utf-8"))
-                        self.wfile.flush()
-                        last_write = time.time()
-                    else:
-                        fh.seek(offset)
-                        chunk = fh.read()
-                        if chunk:
-                            offset += len(chunk)
-                            text = buf.feed(chunk)
-                            if text:
-                                self.wfile.write(sse_event(text, event="append", event_id=offset).encode("utf-8"))
-                                self.wfile.flush()
-                                last_write = time.time()
-                if time.time() - last_write >= 5:
-                    self.wfile.write(b": ping\n\n")
-                    self.wfile.flush()
-                    last_write = time.time()
-                time.sleep(0.25)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            if fh is not None:
-                fh.close()
 
     def _log(self, query):
         runid = (query.get("run") or [""])[0]
@@ -1260,154 +804,6 @@ class Handler(BaseHTTPRequestHandler):
             "page": page,
             "more": more,
         }
-
-    # ---- 安全与请求体
-
-    def _check_origin(self):
-        """跨站写请求挡在门外：只认同源的 Origin。没带 Origin 的（脚本、curl）放行。"""
-        origin = self.headers.get("Origin")
-        if not origin:
-            return
-        if urlparse(origin).netloc != self.headers.get("Host", ""):
-            raise ApiError(403, "拒绝跨站写请求")
-
-    def _read_json(self):
-        length = self.headers.get("Content-Length")
-        if length is None:
-            return {}
-        try:
-            length = int(length)
-        except ValueError:
-            raise ApiError(400, "Content-Length 不对")
-        raw = self.rfile.read(length) if length > 0 else b""
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ApiError(400, "请求体不是 JSON")
-        if not isinstance(data, dict):
-            raise ApiError(400, "请求体要是一个对象")
-        return data
-
-    # ---- 静态页面
-
-    def _static(self, path, head=False):
-        rel = path.lstrip("/") or "index.html"
-        target = (self.static / rel).resolve()
-        try:
-            target.relative_to(self.static)
-        except ValueError:
-            self._send(404, b"", "text/plain", head=head)
-            return
-        if target.is_dir():
-            target = target / "index.html"
-        if not target.is_file():
-            # 带点的当作文件，真没有就 404；其余交回首页，前端自己按路径找页面。
-            if "." in Path(rel).name or not (self.static / "index.html").is_file():
-                self._send(404, b"not found\n", "text/plain", head=head)
-                return
-            target = self.static / "index.html"
-        ctype = CONTENT_TYPES.get(target.suffix.lower(), "application/octet-stream")
-        # Vite 给带哈希的资源长名，一年缓存；首页不缓存，重新打包立刻生效。
-        cache = "no-cache" if target.name == "index.html" else "public, max-age=600"
-        data = b"" if head else target.read_bytes()
-        self._send(200, data, ctype, head=head, cache=cache)
-
-    def _json(self, status, payload):
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self._send(status, data, "application/json; charset=utf-8", cache="no-store")
-
-    def _send(self, status, data, ctype, head=False, cache=None):
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        if cache:
-            self.send_header("Cache-Control", cache)
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        if not head:
-            self.wfile.write(data)
-
-
-# _dispatch 用它表示「回话已经流式写完」，外层别再包 JSON。
-STREAMED = object()
-
-
-class LineBuffer:
-    """把字节流按行切开；末尾没写完的行留到下一次，跨块的多字节字符也不会切坏。"""
-
-    def __init__(self):
-        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
-        self._pending = ""
-
-    def feed(self, data):
-        self._pending += self._decoder.decode(data)
-        if "\n" not in self._pending:
-            return ""
-        *lines, self._pending = self._pending.split("\n")
-        return "\n".join(lines)
-
-    def flush(self):
-        text = self._pending + self._decoder.decode(b"", final=True)
-        self._pending = ""
-        return text
-
-
-def last_lines(data, lines=LOG_PAGE):
-    """日志尾部一页：返回 (文本, 还有更早的没有)。"""
-    all_lines = data.decode("utf-8", "replace").splitlines()
-    return "\n".join(all_lines[-lines:]), len(all_lines) > lines
-
-
-def sse_data(payload, event=None, event_id=None):
-    """一条 SSE 事件。数据整体走 JSON，换行不会破坏 data 行的格式。"""
-    head = ""
-    if event_id is not None:
-        head += "id: %s\n" % event_id
-    if event:
-        head += "event: %s\n" % event
-    return head + "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
-
-
-def sse_event(text, event=None, event_id=None, more=None):
-    payload = {"text": text}
-    if more is not None:
-        payload["more"] = bool(more)
-    return sse_data(payload, event=event, event_id=event_id)
-
-
-def tail(path, page=0, lines=LOG_PAGE):
-    """日志的一页：page=0 最新，page=n 再往前翻 n 页。返回 (文本, 还有更早的没有)。"""
-    try:
-        data = Path(path).read_bytes()
-    except OSError:
-        return "", False
-    all_lines = data.decode("utf-8", "replace").splitlines()
-    end = max(0, len(all_lines) - page * lines)
-    start = max(0, end - lines)
-    return "\n".join(all_lines[start:end]), start > 0
-
-
-# ---------------------------------------------------------------- 启动
-
-
-def is_any(host):
-    """0.0.0.0 与 :: 都是「所有网卡」，不能拿来当访问地址。"""
-    return host in ("0.0.0.0", "::", "")
-
-
-def guess_host():
-    """监听全地址时给浏览器一个能点开的地址：取本机出口 IP，猜不出来就用回环。"""
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.connect(("10.255.255.255", 1))
-            return sock.getsockname()[0]
-        finally:
-            sock.close()
-    except OSError:
-        return "127.0.0.1"
 
 
 def serve(args):

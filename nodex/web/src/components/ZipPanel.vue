@@ -9,22 +9,32 @@
         <v-btn size="x-small" variant="text" prepend-icon="mdi-refresh" @click="reload">重读</v-btn>
       </div>
       <div class="tree">
-        <p v-if="root.loading" class="hint">正在读取目录…</p>
-        <p v-else-if="root.error" class="hint bad">{{ root.error }}</p>
-        <p v-else-if="!root.entries.length" class="hint">这个工作区是空的。</p>
-        <template v-else>
-          <ZipTree
-            v-for="node in root.entries"
-            :key="node.rel"
-            :node="node"
-            :expanded="expanded"
-            :cache="cache"
-            :picked="picked"
-            @toggle="toggle"
-            @pick="togglePick"
-          />
-          <p v-if="root.truncated" class="hint">这一层太多，只列了前面一部分。</p>
-        </template>
+        <FileTree
+          ref="treeRef"
+          :key="ws.id"
+          :loader="loadLayer"
+          :key-of="keyOf"
+          :dir-of="dirOf"
+          label-class="mono"
+          :row-class="rowClass"
+          :active="active"
+          :texts="treeTexts"
+          @pick="togglePick"
+        >
+          <template #row-before-label="{ node }">
+            <v-checkbox-btn
+              class="pick"
+              density="compact"
+              :model-value="checked(node)"
+              :disabled="node.excluded || locked(node)"
+              @update:model-value="togglePick(node)"
+            />
+          </template>
+          <template #row-after-label="{ node }">
+            <span v-if="node.excluded" class="meta">默认排除</span>
+            <span v-else-if="!node.dir && node.size" class="meta">{{ sizeText(node.size) }}</span>
+          </template>
+        </FileTree>
       </div>
     </div>
 
@@ -85,8 +95,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import ZipTree from './ZipTree.vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { FileTree } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import { colorize } from '../composables/logColor'
 import { copyText } from '../composables/clipboard'
@@ -98,9 +108,7 @@ const props = defineProps({
   active: { type: Boolean, default: false },
 })
 
-// 目录树跟浏览目录一路：展开状态与读过的孩子各存一份，节点自己不带副本。
-const expanded = reactive({})
-const cache = reactive({})
+const treeRef = ref(null)
 // 勾中的条目按相对路径存；父目录也在里面时，后端提交前会去掉多余的那条。
 const picked = ref([])
 const name = ref(`${baseName(props.ws.root)}.zip`)
@@ -114,14 +122,29 @@ const copied = ref(false)
 let logSource = null
 let timer = null
 let copiedTimer = null
-let loadedFor = ''
 
-const root = computed(
-  () => cache[''] || { loading: false, error: '', entries: [], truncated: false },
-)
+// 树里的节点用 rel 认路、dir 判断目录；行内的勾选状态由这一侧提供。
+const loadLayer = (rel) => api.entries(props.ws.id, rel)
+const keyOf = (node) => node.rel
+const dirOf = (node) => node.dir
+const rowClass = (node) => ({ excluded: node.excluded })
+const treeTexts = {
+  rootLoading: '正在读取目录…',
+  rootEmpty: '这个工作区是空的。',
+  truncated: '这一层太多，只列了前面一部分。',
+}
 
 function covered(rel) {
   return picked.value.some((item) => rel !== item && rel.startsWith(`${item}/`))
+}
+
+// 目录被勾中时它下面的条目也算在里面，显示成勾上但点不动。
+function locked(node) {
+  return picked.value.some((rel) => rel !== node.rel && node.rel.startsWith(`${rel}/`))
+}
+
+function checked(node) {
+  return picked.value.includes(node.rel) || locked(node)
 }
 
 function togglePick(node) {
@@ -135,45 +158,8 @@ function clearPicks() {
   picked.value = []
 }
 
-function setRoot(data) {
-  cache[''] = {
-    loading: false,
-    error: '',
-    entries: data.entries || [],
-    truncated: !!data.truncated,
-  }
-}
-
-async function loadRoot() {
-  cache[''] = { loading: true, error: '', entries: [], truncated: false }
-  try {
-    setRoot(await api.entries(props.ws.id, ''))
-  } catch (err) {
-    cache[''] = { loading: false, error: err.message, entries: [], truncated: false }
-  }
-}
-
-async function toggle(rel) {
-  expanded[rel] = !expanded[rel]
-  if (!expanded[rel] || cache[rel]) return
-  cache[rel] = { loading: true, error: '', entries: [], truncated: false }
-  try {
-    const data = await api.entries(props.ws.id, rel)
-    cache[rel] = {
-      loading: false,
-      error: '',
-      entries: data.entries || [],
-      truncated: !!data.truncated,
-    }
-  } catch (err) {
-    cache[rel] = { loading: false, error: err.message, entries: [], truncated: false }
-  }
-}
-
 function reload() {
-  for (const rel of Object.keys(cache)) delete cache[rel]
-  for (const rel of Object.keys(expanded)) delete expanded[rel]
-  loadRoot()
+  treeRef.value?.reload()
 }
 
 function reset() {
@@ -183,37 +169,17 @@ function reset() {
   log.value = ''
   status.value = null
   saved.value = null
-  for (const rel of Object.keys(cache)) delete cache[rel]
-  for (const rel of Object.keys(expanded)) delete expanded[rel]
-  // 切到这一栏时才读目录，没点开过的不白读。
-  if (props.active) loadRoot()
-}
-
-function activate() {
-  if (loadedFor === props.ws.id) return
-  loadedFor = props.ws.id
-  loadRoot()
 }
 
 watch(
   () => props.ws.id,
   () => {
-    loadedFor = ''
     closeLog()
     stopTimer()
     running.value = false
     reset()
   }
 )
-
-watch(
-  () => props.active,
-  (on) => {
-    if (on) activate()
-  }
-)
-
-if (props.active) activate()
 
 async function start() {
   if (running.value || !picked.value.length) return
@@ -350,6 +316,10 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   font-size: 0.7rem;
   color: rgb(var(--v-theme-on-surface-variant));
+}
+.pick {
+  flex: 0 0 auto;
+  margin-inline: 2px;
 }
 .side {
   flex: 1 1 auto;

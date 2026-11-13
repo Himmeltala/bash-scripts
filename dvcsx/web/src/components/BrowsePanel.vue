@@ -94,14 +94,15 @@
             </template>
           </div>
         </template>
-        <BrowseTree
-          v-else
-          :node="rootNode"
-          :depth="0"
-          :expanded="expanded"
-          :cache="cache"
-          :selected="activePath"
-          @toggle="toggle"
+        <FileTree
+          v-show="!searching"
+          :key="ws.id"
+          ref="treeRef"
+          :loader="loadLayer"
+          :root="rootNode"
+          :row-class="rowClass"
+          pick-on-row-click
+          :texts="treeTexts"
           @pick="pick"
         />
       </aside>
@@ -177,10 +178,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import BrowseTree from './BrowseTree.vue'
 import SplitHandle from './SplitHandle.vue'
 import { api } from '../composables/useApi'
-import { fileIcon } from '@bash-scripts/web-shared'
+import { FileTree, fileIcon } from '@bash-scripts/web-shared'
 import { dirName } from '../composables/format'
 import { highlightCode, languageOf } from '@bash-scripts/web-shared/highlight'
 import { usePreferencesStore } from '../stores/preferences'
@@ -190,8 +190,7 @@ const props = defineProps({
   ws: { type: Object, required: true },
 })
 
-const cache = reactive({})
-const expanded = reactive({})
+const treeRef = ref(null)
 const activeNode = ref(null)
 const file = reactive({ text: '', loading: false, error: '' })
 const refreshing = ref(false)
@@ -248,38 +247,13 @@ const sizeText = computed(() => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 })
 
-async function loadDir(path, force = false) {
-  if (!force && cache[path]) return
-  if (!cache[path]) cache[path] = { loading: false, error: '', entries: [], truncated: false }
-  const state = cache[path]
-  state.loading = true
-  state.error = ''
-  try {
-    const data = await api.tree(props.ws.id, path)
-    state.entries = data.entries || []
-    state.truncated = data.truncated || false
-  } catch (err) {
-    state.error = err.message
-    state.entries = []
-  } finally {
-    state.loading = false
-  }
-}
-
-function toggle(path) {
-  expanded[path] = !expanded[path]
-  if (expanded[path]) loadDir(path)
-}
+// 取数函数与行内状态由这一侧给，树的展开与缓存交给共用组件。
+const loadLayer = (path) => api.tree(props.ws.id, path)
+const rowClass = (node) => ({ selected: node.type === 'file' && node.path === activePath.value })
+const treeTexts = { truncated: '这一层文件太多，只列了前面一部分。' }
 
 async function reveal(dirPath) {
-  expanded[''] = true
-  await loadDir('')
-  let acc = ''
-  for (const seg of String(dirPath || '').split('/').filter(Boolean)) {
-    acc = acc ? `${acc}/${seg}` : seg
-    await loadDir(acc)
-    expanded[acc] = true
-  }
+  await treeRef.value?.reveal(dirPath)
 }
 
 async function pick(node) {
@@ -329,7 +303,7 @@ async function save() {
       if (activeNode.value) activeNode.value = { ...activeNode.value, size: data.size }
     }
     // 目录树里记着文件大小，保存后把这一层重新列一遍。
-    loadDir(dirName(path), true)
+    treeRef.value?.reloadDir(dirName(path))
   } catch (err) {
     edit.error = err.message
   } finally {
@@ -476,7 +450,7 @@ async function refresh() {
       await runSearch()
       return
     }
-    await Promise.all(Object.keys(cache).map((path) => loadDir(path, true)))
+    await treeRef.value?.refreshAll()
     // 有没保存的改动就不重新读，免得草稿被磁盘上的旧内容盖掉。
     if (activeNode.value && !dirty.value) await openFile()
   } finally {
@@ -486,9 +460,7 @@ async function refresh() {
 
 function reset() {
   answerLeave(false)
-  for (const key of Object.keys(cache)) delete cache[key]
-  for (const key of Object.keys(expanded)) delete expanded[key]
-  expanded[''] = true
+  // 树按 ws.id 重建一份，展开状态与缓存不在这里清。
   activeNode.value = null
   file.text = ''
   file.error = ''
@@ -502,7 +474,6 @@ function reset() {
   search.error = ''
   search.loading = false
   search.truncated = false
-  loadDir('')
 }
 
 watch(() => props.ws.id, reset)
