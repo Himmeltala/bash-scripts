@@ -67,7 +67,7 @@ const shortDays = computed(() => ({
 <template>
   <v-row dense>
     <v-col v-if="command === 'daily'" cols="12">
-      <v-card variant="outlined">
+      <v-card variant="flat">
         <BarChart
           :categories="shortDays.categories"
           :series="shortDays.series"
@@ -77,12 +77,12 @@ const shortDays = computed(() => ({
       </v-card>
     </v-col>
     <v-col v-if="command === 'hour'" cols="12" lg="6">
-      <v-card variant="outlined">
+      <v-card variant="flat">
         <BarChart :items="clock" title="每小时合计费用（元）" legend />
       </v-card>
     </v-col>
     <v-col v-if="command === 'hour'" cols="12" lg="6">
-      <v-card variant="outlined">
+      <v-card variant="flat">
         <BarChart
           :categories="clockBySource.categories"
           :series="clockBySource.series"

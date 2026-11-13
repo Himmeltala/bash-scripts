@@ -3,6 +3,7 @@
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { createVuetify } from 'vuetify'
+import { zhHans } from 'vuetify/locale'
 
 const THEME_KEY = 'tokx-theme'
 
@@ -54,6 +55,7 @@ export const initialTheme =
   wanted || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 
 const vuetify = createVuetify({
+  locale: { locale: 'zhHans', fallback: 'zhHans', messages: { zhHans } },
   theme: { defaultTheme: initialTheme, themes: { light, dark } },
 })
 

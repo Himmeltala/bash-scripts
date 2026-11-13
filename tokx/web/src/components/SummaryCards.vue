@@ -19,7 +19,7 @@ const items = computed(() => {
 <template>
   <v-row dense>
     <v-col v-for="item in items" :key="item.title" cols="12" sm="6" md="4" lg>
-      <v-card :variant="item.strong ? 'tonal' : 'outlined'" :color="item.strong ? 'primary' : undefined">
+      <v-card :variant="item.strong ? 'tonal' : 'flat'" :color="item.strong ? 'primary' : undefined">
         <v-card-item>
           <template #prepend>
             <v-icon :icon="item.icon" :color="item.strong ? 'primary' : 'on-surface-variant'" />

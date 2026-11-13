@@ -2,9 +2,9 @@
 
 // 三个来源的显示名、标记与图表配色，标题栏的勾选框、表里的来源列、按来源分色的图共用。
 export const SOURCE_LIST = [
-  { key: 'claude', name: 'Claude Code', short: 'Claude', mark: 'C', color: '#8b5cf6' },
-  { key: 'opencode', name: 'opencode', short: 'oc', mark: 'O', color: '#f97316' },
-  { key: 'dsh', name: 'DeepSeek Harness', short: 'Harness', mark: 'D', color: '#0ea5e9' },
+  { key: 'claude', name: 'Claude Code', short: 'Claude', color: '#8b5cf6' },
+  { key: 'opencode', name: 'opencode', short: 'oc', color: '#f97316' },
+  { key: 'dsh', name: 'DeepSeek Harness', short: 'Harness', color: '#0ea5e9' },
 ]
 
 export const nf = new Intl.NumberFormat('zh-CN')

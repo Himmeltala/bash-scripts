@@ -4,9 +4,39 @@ import { useTheme } from 'vuetify'
 import { COMMANDS, EVERY, RANGES, SOURCES, view } from './composables/useView'
 import { busy, close as closeStream, data, error, load, loadedAt, subscribe } from './composables/useUsage'
 import { rememberTheme } from './plugins/vuetify'
+import BrandIcon from './components/BrandIcon.vue'
 import SummaryCards from './components/SummaryCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
+import { VDateInput } from 'vuetify/labs/VDateInput'
+
+// 地址栏里存 YYYY-MM-DD，日期组件收发的是本地时区的 Date，两边在这里换。
+function dayToDate(text) {
+  const hit = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text || '')
+  if (!hit) return null
+  const date = new Date(Number(hit[1]), Number(hit[2]) - 1, Number(hit[3]))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function dateToDay(value) {
+  if (!value) return ''
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${value.getFullYear()}-${month}-${day}`
+}
+
+const sinceDate = computed({
+  get: () => dayToDate(view.since),
+  set: (value) => {
+    view.since = dateToDay(value)
+  },
+})
+const untilDate = computed({
+  get: () => dayToDate(view.until),
+  set: (value) => {
+    view.until = dateToDay(value)
+  },
+})
 
 const theme = useTheme()
 // 没手动切过深浅色时跟着系统走，系统换主题页面当场跟上。
@@ -92,7 +122,7 @@ onBeforeUnmount(() => {
 
     <v-main>
       <v-container fluid class="pa-4 page">
-        <v-sheet border rounded class="filters pa-3 mb-4">
+        <v-sheet rounded class="filters pa-3 mb-4">
           <div class="filters-row">
             <v-select
               v-model="view.command"
@@ -117,22 +147,22 @@ onBeforeUnmount(() => {
               class="pick"
             />
             <template v-if="view.range === 'custom'">
-              <v-text-field
-                v-model="view.since"
-                type="date"
+              <v-date-input
+                v-model="sinceDate"
                 label="起始日期"
                 density="compact"
                 variant="outlined"
                 hide-details
+                clearable
                 class="pick"
               />
-              <v-text-field
-                v-model="view.until"
-                type="date"
+              <v-date-input
+                v-model="untilDate"
                 label="结束日期"
                 density="compact"
                 variant="outlined"
                 hide-details
+                clearable
                 class="pick"
               />
             </template>
@@ -141,10 +171,12 @@ onBeforeUnmount(() => {
                 v-for="item in SOURCES"
                 :key="item.key"
                 :value="item.key"
-                :prepend-icon="`mdi-${item.key === 'claude' ? 'robot-outline' : item.key === 'opencode' ? 'code-braces' : 'brain'}`"
                 variant="tonal"
                 size="small"
               >
+                <template #prepend>
+                  <BrandIcon :name="item.key" :size="16" />
+                </template>
                 {{ item.name }}
               </v-chip>
             </v-chip-group>

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import BrandIcon from './BrandIcon.vue'
 import { data } from '../composables/useUsage'
 import { COLUMNS, nf, SOURCE_LIST, cellValue } from '../composables/format'
 
@@ -64,7 +65,7 @@ function rowProps({ item }) {
 </script>
 
 <template>
-  <v-card variant="outlined">
+  <v-card variant="flat">
     <v-data-table
       :headers="headers"
       :items="rows"
@@ -79,7 +80,9 @@ function rowProps({ item }) {
     >
       <template v-for="column in columns" :key="column.key" #[`item.${column.key}`]="{ item }">
         <span v-if="column.key === 'source'" class="source">
-          <span class="mark">{{ sourceOf(item.source)?.mark || '?' }}</span>{{ cell(column, item) }}
+          <span class="mark" :title="sourceOf(item.source)?.name || item.source">
+            <BrandIcon :name="item.source" :size="13" />
+          </span>{{ cell(column, item) }}
         </span>
         <span v-else-if="column.key === 'origin'" :class="{ cached: item.origin === 'cache' }">
           {{ cell(column, item) }}
