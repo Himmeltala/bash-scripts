@@ -94,7 +94,7 @@ remove_path_setting() {
         if (skip_next) { skip_next = 0; continue }
         if (line[i] == mark) {
           while (n > 0 && out[n] ~ /^[[:space:]]*$/) n--
-          if (i < NR && line[i + 1] ~ /^export PATH=/) skip_next = 1
+          if (i < NR && line[i + 1] ~ /^(\[\[|export PATH=)/) skip_next = 1
           continue
         }
         out[++n] = line[i]

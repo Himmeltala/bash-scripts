@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 在临时 HOME 里验证 install.sh 的 PATH 判定：系统配置已给 PATH 时不写 .bashrc，改不了时照写。
+# 在临时 HOME 里验证 install.sh 的 PATH 判定：/etc/environment 已给 PATH 时不写 .bashrc，否则照写。
+# ~/.profile 不算已覆盖：非 login shell 不读它。
 # 用法: test/install-path.sh [仓库根目录]
 
 set -uo pipefail
@@ -26,21 +27,26 @@ run() {  # run <home> [env...]
   env HOME="$home" BASH_SCRIPTS_ENVIRONMENT=/nonexistent "$@" "$repo/install.sh" >"$log" 2>&1
 }
 
-# 1. Debian 默认：有 .profile 那句，默认链接目录，不写 .bashrc
+# 1. Debian 默认：有 .profile 那句也照写 .bashrc——终端常起非 login shell，不读 .profile
 h=/tmp/path_test_home1; make_home "$h" yes
 run "$h"
-if ! grep -q 'bash-scripts 装的工具' "$h/.bashrc"; then
-  ok "有 .profile 时不写 .bashrc"
+if grep -qF 'bash-scripts 装的工具' "$h/.bashrc"; then
+  ok "有 .profile 时也写 .bashrc"
 else
-  bad "有 .profile 时 .bashrc: $(cat "$h/.bashrc")"
+  bad "有 .profile 时没写 .bashrc: $(cat "$h/.bashrc")"
 fi
-grep -q '不写' "$log" && ok "提示不写 .bashrc" || bad "没有提示"
+grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$h/.bashrc" && ok "写的是默认目录" || bad "行不对: $(cat "$h/.bashrc")"
 
-# 2. 没有 .profile 就写 .bashrc
+# 2. 没有 .profile 也写 .bashrc
 h=/tmp/path_test_home2; make_home "$h" no
 run "$h"
 if grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$h/.bashrc"; then ok "没有 .profile 时写 .bashrc"; else bad ".bashrc 没写: $(cat "$h/.bashrc")"; fi
 head -1 "$h/.bashrc" | grep -qx 'export FOO=1' && ok "原有内容保留" || bad "原有内容被改"
+
+# 2b. 写进去的行本身幂等：PATH 里已有该目录时执行 .bashrc 不再重复追加
+out=$(env HOME="$h" PATH="$h/.local/bin:/usr/bin:/bin" bash -c '. "$HOME/.bashrc"; printf "%s" "$PATH"' 2>/dev/null)
+n=$(printf '%s\n' "$out" | tr ':' '\n' | grep -cxF "$h/.local/bin")
+[[ "$n" == 1 ]] && ok "该行幂等，不重复追加" || bad "PATH 里有 $n 份 $h/.local/bin: $out"
 
 # 3. 自定义链接目录：不管 .profile 都写
 h=/tmp/path_test_home3; make_home "$h" yes

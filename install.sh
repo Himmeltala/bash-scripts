@@ -19,19 +19,11 @@ readonly MARK_LINE='# bash-scripts 装的工具'
 readonly INSTALL_DIR="${BASH_SCRIPTS_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-scripts}"
 readonly BIN_DIR="${BASH_SCRIPTS_BIN_DIR:-$HOME/.local/bin}"
 
-# 系统默认配置已经给出 PATH 时就不写 .bashrc：Debian/Ubuntu 的 ~/.profile 里有一句，
-# /etc/environment 由 PAM 在会话开始时读；两种文件有一种覆盖了链接目录就不改。
-readonly PROFILE_FILE="$HOME/.profile"
+# /etc/environment 由 PAM 在会话开始时读，覆盖到非 login shell，里面已有链接目录时不写 .bashrc。
+# ~/.profile 不算覆盖：终端、tmux、IDE 起的常是非 login shell，根本不读它，写了工具照样找不到。
 readonly ENVIRONMENT_FILE='/etc/environment'
 # 核对 /etc/environment 用哪个文件，可以换掉，测试用。
 readonly ENVIRONMENT_PATH="${BASH_SCRIPTS_ENVIRONMENT:-$ENVIRONMENT_FILE}"
-
-# 默认链接目录配合 ~/.profile 里的那句，登录时自动进 PATH，不必改 .bashrc。
-default_bin_covered() {
-  [[ "$BIN_DIR" == "$HOME/.local/bin" ]] || return 1
-  [[ -f "$PROFILE_FILE" ]] || return 1
-  grep -qF 'PATH="$HOME/.local/bin:$PATH"' "$PROFILE_FILE"
-}
 
 # /etc/environment 里已经把某个目录写进 PATH。这里不展开变量，只认字面路径。
 environment_covered() {
@@ -53,12 +45,15 @@ environment_covered() {
 }
 
 # 要写进 .bashrc 的 PATH 行：默认位置写成 $HOME 形式，自定义路径写死。
+# 带幂等判断：login shell 已经通过 ~/.profile 拿到该目录时，这里不再追加一次。
 path_line() {
+  local dir
   if [[ "$BIN_DIR" == "$HOME/.local/bin" ]]; then
-    printf 'export PATH="$HOME/.local/bin:$PATH"\n'
+    dir='$HOME/.local/bin'
   else
-    printf 'export PATH="%s:$PATH"\n' "$BIN_DIR"
+    dir=$BIN_DIR
   fi
+  printf '[[ ":$PATH:" == *":%s:"* ]] || export PATH="%s:$PATH"\n' "$dir" "$dir"
 }
 
 info() { printf '%s\n' "$*"; }
@@ -250,7 +245,7 @@ remove_path_setting() {
         if (skip_next) { skip_next = 0; continue }
         if (line[i] == mark) {
           while (n > 0 && out[n] ~ /^[[:space:]]*$/) n--
-          if (i < NR && line[i + 1] ~ /^export PATH=/) skip_next = 1
+          if (i < NR && line[i + 1] ~ /^(\[\[|export PATH=)/) skip_next = 1
           continue
         }
         out[++n] = line[i]
@@ -313,11 +308,7 @@ ensure_path() {
     return 0
   fi
 
-  # 系统已有设置时不再往 .bashrc 里加，免得同一行 PATH 写两遍。
-  if default_bin_covered; then
-    info "$BIN_DIR 已由 $PROFILE_FILE 加进 PATH，不写 $rc"
-    return 0
-  fi
+  # /etc/environment 对所有会话生效，已覆盖时不再往 .bashrc 里加。
   if environment_covered; then
     info "$BIN_DIR 已由 $ENVIRONMENT_FILE 加进 PATH，不写 $rc"
     return 0
