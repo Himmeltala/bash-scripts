@@ -519,6 +519,79 @@ class GitOperations(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertEqual(git_out("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.work), "origin/main")
 
+    def checkout(self, **body):
+        """按页面发来的参数生成切换命令并执行，返回 git_op 的结果。"""
+        plan = gitmod.operation_plan(
+            {"id": "x", "root": str(self.work), "vcs": "git"},
+            {"action": "checkout", **body},
+        )
+        self.assertEqual(len(plan["commands"]), 1)
+        argv = plan["commands"][0]
+        self.assertEqual(argv[:3], ["git", "--no-pager", "switch"])
+        return gitmod.git_op(plan["cwd"], argv[2:], "switch")
+
+    def test_branches_lists_local_and_remote(self):
+        branches = gitmod.git_branches(str(self.work))
+        local = {b["name"]: b for b in branches if not b["remote"]}
+        self.assertTrue(local["main"]["current"])
+        self.assertEqual(local["main"]["upstream"], "origin/main")
+        # 远端 main 已经有同名本地分支，不再列成可新建的远端分支。
+        self.assertNotIn("origin/main", [b.get("start_point") for b in branches if b["remote"]])
+
+        run(["git", "branch", "feature", "main"], cwd=self.other)
+        run(["git", "push", "-q", "origin", "feature"], cwd=self.other)
+        run(["git", "fetch", "-q", "origin"], cwd=self.work)
+        remote = {b["start_point"]: b for b in gitmod.git_branches(str(self.work)) if b["remote"]}
+        self.assertTrue(remote["origin/feature"]["remote"])
+        self.assertEqual(remote["origin/feature"]["name"], "feature")
+        self.assertFalse(remote["origin/feature"]["current"])
+
+    def test_checkout_switches_local_branch(self):
+        run(["git", "branch", "dev", "main"], cwd=self.work)
+        result = self.checkout(branch="dev")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=self.work), "dev")
+
+    def test_checkout_creates_branch_from_head(self):
+        result = self.checkout(branch="topic", create=True)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=self.work), "topic")
+        self.assertEqual(git_out("rev-parse", "HEAD", cwd=self.work), git_out("rev-parse", "main", cwd=self.work))
+
+    def test_checkout_tracks_remote_branch(self):
+        run(["git", "branch", "feature", "main"], cwd=self.other)
+        run(["git", "push", "-q", "origin", "feature"], cwd=self.other)
+        run(["git", "fetch", "-q", "origin"], cwd=self.work)
+        result = self.checkout(branch="feature", start_point="origin/feature")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=self.work), "feature")
+        self.assertEqual(
+            git_out("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.work), "origin/feature"
+        )
+
+    def test_checkout_rejects_bad_name_and_missing_branch(self):
+        for name in ("", "-b", "bad..name", "a b"):
+            with self.assertRaises(gitmod.ApiError):
+                self.checkout(branch=name)
+        with self.assertRaises(gitmod.ApiError):
+            self.checkout(branch="no-such-branch")
+        with self.assertRaises(gitmod.ApiError):
+            self.checkout(branch="feature", start_point="origin/no-such")
+        # 失败后还留在原分支。
+        self.assertEqual(git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=self.work), "main")
+
+    def test_checkout_reports_dirty_conflict(self):
+        # dev 上改了 a.txt，切回 main 后在本地再改一份，切回 dev 会被拒绝。
+        run(["git", "switch", "-q", "-c", "dev"], cwd=self.work)
+        (self.work / "a.txt").write_text("dev\n", "utf-8")
+        run(["git", "commit", "-qam", "dev 改动"], cwd=self.work)
+        run(["git", "switch", "-q", "main"], cwd=self.work)
+        (self.work / "a.txt").write_text("local\n", "utf-8")
+        result = self.checkout(branch="dev")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("a.txt", result["output"])
+        self.assertEqual(git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=self.work), "main")
+
     def test_commit_detail_keeps_full_message(self):
         run(["git", "commit", "--allow-empty", "-qm", "标题\n\n正文第一行\n正文第二行"], cwd=self.work)
         sha = git_out("rev-parse", "HEAD", cwd=self.work)
@@ -577,6 +650,7 @@ class GitOperations(unittest.TestCase):
         self.assertEqual(info["upstream"], "origin/main")
         self.assertEqual(info["remotes"], ["origin"])
         self.assertFalse(info["detached"])
+        self.assertTrue(any(b["current"] and b["name"] == "main" for b in info["branches"]))
 
 
 if __name__ == "__main__":

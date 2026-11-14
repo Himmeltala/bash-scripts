@@ -3,7 +3,7 @@
 
 页面要的东西都由这里现跑 svn 或 git 命令取：工作副本变更、单个文件的差异、
 提交日志、某次提交的完整说明，以及直接浏览工作副本的目录与文件内容。
-查询只读；拉取、推送、更新与提交会动工作副本或远端，只接受本机请求，
+查询只读；拉取、推送、切换分支、更新与提交会动工作副本或远端，只接受本机请求，
 要放开到其他机器得用 --allow-write 启动。工作副本变化与操作输出走 SSE。
 """
 
@@ -1393,6 +1393,45 @@ def git_remotes(root):
     return out.decode("utf-8", "replace").split() if rc == 0 else []
 
 
+def git_branches(root):
+    """本地分支，加上还没有同名本地分支的远端跟踪分支，给页面切换用。"""
+    branches = []
+    local = set()
+    rc, out, _ = git(
+        ["for-each-ref", "--format=%(refname:short)%09%(HEAD)%09%(upstream:short)", "refs/heads"],
+        cwd=root,
+    )
+    if rc == 0:
+        for line in out.decode("utf-8", "replace").splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3 or not parts[0]:
+                continue
+            name, head, upstream = parts[0], parts[1], parts[2]
+            local.add(name)
+            branches.append(
+                {"name": name, "current": head == "*", "upstream": upstream, "remote": False}
+            )
+    rc, out, _ = git(["for-each-ref", "--format=%(refname:short)", "refs/remotes"], cwd=root)
+    if rc == 0:
+        for ref in out.decode("utf-8", "replace").split():
+            # refs/remotes/origin/feature 在本地要建的分支叫 feature。
+            if not ref or ref.endswith("/HEAD") or "/" not in ref:
+                continue
+            name = ref.split("/", 1)[1]
+            if name in local:
+                continue
+            branches.append(
+                {
+                    "name": name,
+                    "current": False,
+                    "upstream": "",
+                    "remote": True,
+                    "start_point": ref,
+                }
+            )
+    return branches
+
+
 def git_op_env():
     """写操作的 git 环境：没人看着终端，不能让命令停在密码或口令提示上。"""
     env = dict(os.environ)
@@ -1477,6 +1516,34 @@ def git_push(root, set_upstream=False):
     return git_op(root, git_push_args(root, set_upstream), "push")
 
 
+def git_checkout_args(root, body):
+    """切分支的参数：本地分支直接切，远端分支建跟踪分支，新建分支从当前提交起。
+
+    工作区有未提交的改动且会被切换覆盖时，git switch 自己会拒绝，输出原样带回页面。
+    """
+    branch = str(body.get("branch", "")).strip()
+    if not branch:
+        raise ApiError(400, "没给分支名")
+    if branch.startswith("-"):
+        raise ApiError(400, "分支名不合法：%s" % branch)
+    # 名字再交给 git 校验，规则与终端里 git branch 一致。
+    rc, _, _ = git(["check-ref-format", "--branch", branch], cwd=root)
+    if rc != 0:
+        raise ApiError(400, "分支名不合法：%s" % branch)
+    start = str(body.get("start_point", "")).strip()
+    if start or body.get("create"):
+        if start:
+            if not git_ref_exists(root, start):
+                raise ApiError(400, "没有这个分支：%s" % start)
+            return ["switch", "--track", "-c", branch, start]
+        if not git_head(root)[0]:
+            raise ApiError(400, "仓库还没有提交，先切到一个已有分支或做一次提交")
+        return ["switch", "-c", branch]
+    if not git_ref_exists(root, "refs/heads/" + branch):
+        raise ApiError(404, "没有这个本地分支：%s" % branch)
+    return ["switch", branch]
+
+
 def git_commit_commands(root, message, paths):
     """把选中的路径暂存后提交。
 
@@ -1535,6 +1602,8 @@ def operation_plan(ws, body):
             commands = [
                 ["git", "--no-pager", *git_push_args(ws["root"], bool(body.get("set_upstream")))]
             ]
+        elif action == "checkout":
+            commands = [["git", "--no-pager", *git_checkout_args(ws["root"], body)]]
         elif action == "commit":
             commands = git_commit_commands(
                 ws["root"],
@@ -1586,6 +1655,7 @@ def git_sync_info(root):
         "behind": behind,
         "detached": not branch or branch == "HEAD",
         "remotes": git_remotes(root),
+        "branches": git_branches(root),
         "has_head": bool(info["revision"]),
         "files": files,
         "truncated": truncated,
@@ -2131,7 +2201,7 @@ def main(argv=None):
     parser.add_argument(
         "--allow-write",
         action="store_true",
-        help="允许其他机器发起拉取、推送、更新与提交；默认只认本机",
+        help="允许其他机器发起拉取、推送、切换分支、更新与提交；默认只认本机",
     )
     parser.add_argument("--open", action="store_true", help="起来后打开浏览器")
     return serve(parser.parse_args(argv))

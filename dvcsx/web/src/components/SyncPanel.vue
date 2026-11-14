@@ -47,10 +47,59 @@
 
     <p v-if="error" class="hint bad">{{ error }}</p>
     <p v-if="info.writable === false" class="hint warn">
-      当前页面不是从本机打开的，拉取、推送、更新与提交已禁用；要放开给其他机器，用 --allow-write 启动。
+      当前页面不是从本机打开的，拉取、推送、切换分支、更新与提交已禁用；要放开给其他机器，用 --allow-write 启动。
     </p>
 
     <div class="body">
+      <section v-if="isGit" class="block">
+        <h3>分支</h3>
+        <p class="hint">
+          切到本地分支，或从远端分支新建同名跟踪分支。工作区有未提交的改动且会被覆盖时，Git 会拒绝切换，原因显示在下面的输出里。
+        </p>
+        <div class="row">
+          <v-select
+            v-model="branchPick"
+            :items="branchItems"
+            label="切换分支"
+            density="compact"
+            hide-details
+            class="branchsel"
+          />
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-source-branch"
+            :loading="running === 'checkout'"
+            :disabled="busy || info.writable === false || !pickedBranch || pickedBranch.current"
+            @click="askCheckout()"
+          >
+            切换
+          </v-btn>
+        </div>
+        <div class="row">
+          <v-text-field
+            v-model="newBranch"
+            label="新分支名"
+            placeholder="从当前提交新建"
+            density="compact"
+            hide-details
+            class="branchsel"
+          />
+          <v-btn
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-plus"
+            :loading="running === 'checkout'"
+            :disabled="busy || info.writable === false || !newBranch.trim() || newBranchTaken"
+            @click="askCheckout(true)"
+          >
+            新建并切换
+          </v-btn>
+        </div>
+        <p v-if="info.detached" class="hint warn">
+          当前是游离 HEAD：切到已有分支可以回到分支上，新建分支会从当前提交起一个。
+        </p>
+      </section>
+
       <section v-if="isGit" class="block">
         <h3>拉取</h3>
         <p class="hint">
@@ -233,6 +282,9 @@ const pending = ref('')
 const confirmOn = ref(false)
 const pullMode = ref('ff')
 const setUpstream = ref(false)
+const branchPick = ref('')
+const newBranch = ref('')
+const checkout = ref(null)
 const message = ref('')
 const picked = ref([])
 const pickedInitialized = ref(false)
@@ -273,18 +325,71 @@ const pullLabel = computed(
   () => pullModes.find((item) => item.value === pullMode.value)?.title || pullMode.value,
 )
 
-const confirmTitle = computed(
-  () =>
+// 分支下拉：本地分支直接切，远端分支选中的是从远端新建同名跟踪分支。
+const branches = computed(() => info.value.branches || [])
+const branchItems = computed(() =>
+  branches.value.map((item) => ({
+    title: item.remote
+      ? `${item.start_point}（远端，新建跟踪分支）`
+      : item.current
+        ? `${item.name}（当前）`
+        : item.name,
+    value: item.remote ? `remote:${item.start_point}` : `local:${item.name}`,
+  })),
+)
+
+function findBranch(value) {
+  return branches.value.find(
+    (item) => (item.remote ? `remote:${item.start_point}` : `local:${item.name}`) === value,
+  )
+}
+
+const pickedBranch = computed(() => findBranch(branchPick.value))
+const newBranchTaken = computed(() =>
+  branches.value.some((item) => !item.remote && item.name === newBranch.value.trim()),
+)
+
+function askCheckout(create = false) {
+  if (create) {
+    const name = newBranch.value.trim()
+    if (!name) return
+    checkout.value = { branch: name, create: true }
+  } else {
+    const item = pickedBranch.value
+    if (!item || item.current) return
+    checkout.value = item.remote
+      ? { branch: item.name, start_point: item.start_point }
+      : { branch: item.name }
+  }
+  pending.value = 'checkout'
+  confirmOn.value = true
+}
+
+const confirmTitle = computed(() => {
+  if (pending.value === 'checkout') {
+    return checkout.value?.start_point || checkout.value?.create ? '新建分支并切换' : '切换分支'
+  }
+  return (
     ({
       pull: '拉取远端提交',
       push: '推送当前分支',
       update: '更新工作副本',
       commit: isGit.value ? '提交到 Git' : '提交到 SVN',
-    })[pending.value] || '确认操作',
-)
+    })[pending.value] || '确认操作'
+  )
+})
 
 const confirmText = computed(() => {
   switch (pending.value) {
+    case 'checkout':
+      if (!checkout.value) return ''
+      if (checkout.value.start_point) {
+        return `从 ${checkout.value.start_point} 新建本地分支 ${checkout.value.branch}，并切过去。`
+      }
+      if (checkout.value.create) {
+        return `从当前提交新建分支 ${checkout.value.branch}，并切过去。`
+      }
+      return `切换到分支 ${checkout.value.branch}。工作区有未提交改动且会被覆盖时，Git 会拒绝并留在原分支。`
     case 'pull':
       return `从 ${info.value.upstream || '远端'} 拉取到 ${info.value.branch || '当前分支'}，方式：${pullLabel.value}。`
     case 'push':
@@ -372,6 +477,9 @@ function finishStream(data, action) {
     lastError.value = data.error || '操作没有成功，看上面的输出。'
   } else if (action === 'commit') {
     message.value = ''
+  } else if (action === 'checkout') {
+    branchPick.value = ''
+    newBranch.value = ''
   }
   running.value = ''
   emit('done', action)
@@ -429,6 +537,7 @@ async function run() {
   lastError.value = ''
   try {
     const body = { ws: props.ws.id, action }
+    if (action === 'checkout') Object.assign(body, checkout.value || {})
     if (action === 'pull') body.mode = pullMode.value
     if (action === 'push') body.set_upstream = setUpstream.value
     if (action === 'commit') {
@@ -473,6 +582,9 @@ function reset() {
   pickedInitialized.value = false
   setUpstream.value = false
   pullMode.value = 'ff'
+  branchPick.value = ''
+  newBranch.value = ''
+  checkout.value = null
   jobId.value = ''
   running.value = ''
   canceling.value = false
@@ -574,6 +686,10 @@ h3 {
 }
 .mode {
   max-width: 220px;
+}
+.branchsel {
+  min-width: 220px;
+  max-width: 340px;
 }
 .picks {
   gap: 4px;

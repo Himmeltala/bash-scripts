@@ -80,7 +80,7 @@ web_command() {
     printf '页面没有登录，同一网络里能连上的人都能查看工作副本的变更与日志；只想本机用就加 --host 127.0.0.1\n' >&2
   if ((RV_ALLOW_WRITE)) &&
     [[ "$RV_HOST" != '127.0.0.1' && "$RV_HOST" != 'localhost' ]]; then
-    printf '已放开写操作：同一网络里能打开页面的人都能拉取、推送、更新与提交，确认网络可信再用 --allow-write\n' >&2
+    printf '已放开写操作：同一网络里能打开页面的人都能拉取、推送、切换分支、更新与提交，确认网络可信再用 --allow-write\n' >&2
   fi
   printf '按 Ctrl+C 退出网页服务。\n' >&2
   wait "$child"
