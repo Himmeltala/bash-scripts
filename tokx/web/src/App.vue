@@ -164,7 +164,9 @@ onBeforeUnmount(() => {
         </v-alert>
 
         <UsageCharts v-if="hasRows" class="mb-4" />
-        <UsageTable v-if="hasRows" />
+        <div v-if="hasRows" class="table-area">
+          <UsageTable />
+        </div>
         <v-alert v-else-if="data && !error" type="info" variant="tonal" density="compact">
           没有找到用量记录。
         </v-alert>
@@ -177,6 +179,38 @@ onBeforeUnmount(() => {
 <style scoped>
 .title {
   font-weight: 700;
+}
+
+/* 整页按一屏高排，表格占满余下的空间，行多时只让表格自己滚动。 */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--v-layout-top));
+  overflow: hidden;
+}
+
+/* 筛选条、卡片、图表都按自身内容占高，不参与伸缩。 */
+.page > * {
+  flex: none;
+}
+
+.table-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.table-area > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 窄屏放不下一屏，恢复成整页滚动。 */
+@media (max-width: 960px) {
+  .page {
+    height: auto;
+    overflow: visible;
+  }
 }
 
 .filters-row {

@@ -66,13 +66,14 @@ function rowProps({ item }) {
 </script>
 
 <template>
-  <v-card variant="flat">
+  <v-card variant="flat" class="table-card">
     <v-data-table
       :headers="headers"
       :items="rows"
       item-value="key"
       density="compact"
       hover
+      fixed-header
       :items-per-page="-1"
       hide-default-footer
       :sort-by="[{ key: sortKey, order: sortDesc ? 'desc' : 'asc' }]"
@@ -115,6 +116,19 @@ function rowProps({ item }) {
 </template>
 
 <style scoped>
+/* 卡片跟着外层分配的高度走，表格在卡片内部滚动，合计行留在底部。 */
+.table-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table-card :deep(.v-data-table) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .source {
   display: inline-flex;
   align-items: center;
