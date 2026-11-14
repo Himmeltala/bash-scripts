@@ -39,6 +39,8 @@ SCHEMA = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS request_by_day ON request (source, day)",
+    # 出表都按时间段取，范围条件落在 at 上。
+    "CREATE INDEX IF NOT EXISTS request_by_at ON request (source, at)",
     """
     CREATE TABLE IF NOT EXISTS session_seen (
         source  TEXT    NOT NULL,
@@ -86,7 +88,9 @@ class Store:
         try:
             if str(self.path) != ":memory:":
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-            con = sqlite3.connect(str(self.path))
+            con = sqlite3.connect(str(self.path), timeout=5)
+            # 网页每轮写入与命令行的读并行时，WAL 不会让两边互相等锁。
+            con.execute("pragma journal_mode=wal")
             for statement in SCHEMA:
                 con.execute(statement)
             _migrate(con)

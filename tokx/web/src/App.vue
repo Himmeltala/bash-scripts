@@ -53,7 +53,6 @@ const notice = computed(() => {
 const hasRows = computed(() => !!data.value?.rows.length)
 
 function reload() {
-  view.sort = { key: '', desc: true }
   subscribe()
 }
 

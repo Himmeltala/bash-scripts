@@ -24,6 +24,7 @@ class Bucket:
     usage: Usage = field(default_factory=Usage)
     cost_peak: float = 0.0
     cost_off: float = 0.0
+    saved: float = 0.0
     unpriced: int = 0
     from_cache: bool = False
 
@@ -47,6 +48,7 @@ class Bucket:
         if cost is None:
             self.unpriced += 1
             return
+        self.saved += book.cache_saved(record.model, usage, record.at) or 0.0
         if book.is_peak(record.at):
             self.cost_peak += cost
         else:
@@ -80,6 +82,11 @@ def _totals(rows: list[dict]) -> dict:
     }
     for key in ("cost_peak", "cost_off", "cost"):
         total[key] = round(sum(row[key] for row in priced), 8) if priced else None
+    known_saved = [row["cache_saved"] for row in rows if row["cache_saved"] is not None]
+    total["cache_saved"] = round(sum(known_saved), 8) if known_saved else None
+    cache_reads = total["cache_read"]
+    cached_inputs = total["input"] + cache_reads
+    total["cache_hit"] = cache_reads / cached_inputs if cached_inputs else None
     return total
 
 
@@ -90,15 +97,11 @@ def _cache_note(rows: list[dict], has_total: bool) -> str:
         return ""
     sessions = len({row.get("session") for row in cached if row.get("session")})
     if not sessions:
-        # 按天、按小时汇总的表没有会话，只能说明口径。
+        # 按天、按小时、按项目汇总的表没有会话，只能说明口径。
         return "\n\n出处标为缓存的请求，原始会话文件已不在，显示的是删除前最后一次采集的数字。"
     requests = sum(row["requests"] for row in cached)
-    # 同一会话每换一次模型就占一行，先把会话去重再加，避免重复累加。
-    by_session: dict[str, dict] = {}
-    for row in cached:
-        if row.get("session") and row["cost"] is not None:
-            by_session.setdefault(row["session"], row)
-    priced = list(by_session.values())
+    # 同一会话每换一次模型或接口就占一行，各行的费用互不重叠，直接相加。
+    priced = [row for row in cached if row["cost"] is not None]
     money = _money(sum(row["cost"] for row in priced)) if priced else "--"
     note = (
         f"\n\n出处标为缓存的 {sessions} 个会话、{_number(requests)} 条请求（{money}）"
@@ -228,6 +231,81 @@ def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     return rows, _totals(rows)
 
 
+def projects(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
+    # 一个项目里可能有好几个来源、模型与接口，各算各的行，项目之间按合计费用从高到低排。
+    buckets: dict[tuple[str, str, str, str, str], Bucket] = {}
+    for record in records:
+        key = (
+            record.project,
+            record.source,
+            _model_name(record, book),
+            record.api,
+            _origin(record),
+        )
+        buckets.setdefault(key, Bucket()).add(record, book)
+
+    labels = _project_labels({key[0] for key in buckets})
+    money: dict[str, float] = {}
+    for key, bucket in buckets.items():
+        if bucket.unpriced == 0:
+            money[key[0]] = money.get(key[0], 0.0) + bucket.cost
+    rank = {
+        path: index
+        for index, path in enumerate(
+            sorted(money, key=lambda path: (-money[path], labels.get(path, path)))
+        )
+    }
+    # 全是未计价模型的项目没有金额可比，按名字排在最后。
+    rest = sorted(
+        {key[0] for key in buckets} - set(rank),
+        key=lambda path: labels.get(path, path),
+    )
+    for path in rest:
+        rank[path] = len(rank)
+
+    order = {name: index for index, name in enumerate(SOURCE_ORDER)}
+    rows = []
+    for key in sorted(
+        buckets,
+        key=lambda k: (
+            rank[k[0]],
+            order.get(k[1], 9),
+            *_cost_key(buckets[k]),
+            k[2],
+            k[3],
+            k[4],
+        ),
+    ):
+        row = _row("", key[1], buckets[key], key[2], key[3], key[4])
+        row.pop("date", None)
+        row["project"] = labels.get(key[0], key[0])
+        rows.append(row)
+    return rows, _totals(rows)
+
+
+def _project_labels(paths: set[str]) -> dict[str, str]:
+    """项目列显示目录名；不同路径同名时补上一级目录，不把两个项目并成一行。"""
+    bases: dict[str, set[str]] = {}
+    for path in paths:
+        bases.setdefault(_project_name(path), set()).add(path)
+    labels: dict[str, str] = {}
+    for path in paths:
+        name = _project_name(path)
+        if path and len(bases[name]) > 1:
+            parent = PurePath(path).parent.name
+            labels[path] = f"{parent}/{name}" if parent else name
+        else:
+            labels[path] = name
+    # 补一级目录还撞名时退回完整路径，宁可长一点也不能把两个项目混成一行。
+    same: dict[str, int] = {}
+    for label in labels.values():
+        same[label] = same.get(label, 0) + 1
+    for path, label in labels.items():
+        if path and same[label] > 1:
+            labels[path] = path
+    return labels
+
+
 def _origin(record: Record) -> str:
     return getattr(record, "origin", ORIGIN_LIVE)
 
@@ -241,8 +319,9 @@ def _row(
     origin: str = ORIGIN_LIVE,
 ) -> dict:
     usage = bucket.usage
-    # 一条记录查不到价格，这一行的费用就算不全，三个费用列都留空。
+    # 一条记录查不到价格，这一行的费用就算不全，三个费用列与缓存节省都留空。
     known = bucket.unpriced == 0
+    cached_inputs = usage.input + usage.cache_read
     return {
         "date": key_a,
         "source": key_b,
@@ -254,6 +333,8 @@ def _row(
         "cache_write": usage.cache_write,
         "output": usage.output,
         "total_tokens": usage.total,
+        "cache_hit": usage.cache_read / cached_inputs if cached_inputs else None,
+        "cache_saved": round(bucket.saved, 8) if known else None,
         "cost_peak": round(bucket.cost_peak, 8) if known else None,
         "cost_off": round(bucket.cost_off, 8) if known else None,
         "cost": round(bucket.cost, 8) if known else None,
@@ -509,6 +590,65 @@ def table_hours(rows: list[dict], total: dict, unpriced: list[str] | None = None
             "right",
         ],
     ) + _unpriced_note(unpriced or [], False)
+
+
+def table_projects(rows: list[dict], total: dict, unpriced: list[str] | None = None) -> str:
+    has_total = len(rows) > 1
+    body = [
+        [
+            row["project"] or "-",
+            row["source"],
+            row["model"],
+            row["api"] or "-",
+            _origin_name(row),
+            _number(row["requests"]),
+            _number(row["input"]),
+            _number(row["cache_read"]),
+            _number(row["output"]),
+            _number(row["total_tokens"]),
+            _cost(row["cost_peak"]),
+            _cost(row["cost_off"]),
+            _cost(row["cost"]),
+        ]
+        for row in rows
+    ]
+    if has_total:
+        body.append(
+            [
+                "合计",
+                "",
+                "",
+                "",
+                "",
+                _number(total["requests"]),
+                _number(total["input"]),
+                _number(total["cache_read"]),
+                _number(total["output"]),
+                _number(total["total_tokens"]),
+                _cost(total["cost_peak"]),
+                _cost(total["cost_off"]),
+                _cost(total["cost"]),
+            ]
+        )
+    return render(
+        ["项目", "来源", "模型", "API 地址", "出处", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计"],
+        body,
+        [
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+        ],
+    ) + _cache_note(rows, has_total) + _unpriced_note(unpriced or [], has_total)
 
 
 def table_prices(book: PriceBook) -> str:

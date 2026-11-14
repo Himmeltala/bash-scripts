@@ -128,3 +128,13 @@ class PriceBook:
             + usage.output * tier.output
         )
         return tokens / 1_000_000
+
+    def cache_saved(self, model: str, usage: Usage, at: datetime) -> float | None:
+        """缓存读按命中价计，比全部按未命中价省下的钱；未知模型返回 None。"""
+        price = self.price_for(model)
+        if price is None:
+            return None
+        if price.free:
+            return 0.0
+        tier = price.peak if self.is_peak(at) else price.off
+        return usage.cache_read * (tier.miss - tier.hit) / 1_000_000

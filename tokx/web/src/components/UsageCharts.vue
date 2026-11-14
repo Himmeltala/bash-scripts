@@ -62,10 +62,34 @@ const shortDays = computed(() => ({
   categories: days.value.categories.map((label) => label.slice(5)),
   series: days.value.series,
 }))
+
+// 按项目报表的图：取费用最高的前 12 个项目，各来源分别花了多少。
+const projectChart = computed(() => {
+  const money = new Map()
+  for (const row of rows.value) {
+    const name = row.project || '未记录'
+    money.set(name, (money.get(name) || 0) + (Number(row.cost) || 0))
+  }
+  const top = [...money.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([name]) => name)
+  return split(top, (row) => row.project || '未记录')
+})
 </script>
 
 <template>
   <v-row dense>
+    <v-col v-if="command === 'project'" cols="12">
+      <v-card variant="flat">
+        <BarChart
+          :categories="projectChart.categories"
+          :series="projectChart.series"
+          title="各项目费用（元）"
+          legend
+        />
+      </v-card>
+    </v-col>
     <v-col v-if="command === 'daily'" cols="12">
       <v-card variant="flat">
         <BarChart

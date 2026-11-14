@@ -17,7 +17,9 @@ const rows = computed(() => {
   if (!column) return list
   const sign = sortDesc.value ? -1 : 1
   return list.sort((a, b) => {
-    if (column.num || column.money) return sign * ((Number(a[key]) || 0) - (Number(b[key]) || 0))
+    if (column.num || column.money || column.percent) {
+      return sign * ((Number(a[key]) || 0) - (Number(b[key]) || 0))
+    }
     return sign * String(a[key] || '').localeCompare(String(b[key] || ''), 'zh-CN')
   })
 })
@@ -30,25 +32,24 @@ const WIDTH = {
   slot: 64,
   label: 72,
   session: 132,
-  project: 120,
+  project: 160,
   start: 136,
   model: 132,
   api: 240,
+  cache_hit: 88,
+  cache_saved: 104,
 }
 
 const headers = computed(() =>
   columns.value.map((column) => ({
     title: column.label,
     key: column.key,
-    align: column.num || column.money ? 'end' : 'start',
+    align: column.num || column.money || column.percent ? 'end' : 'start',
     sortable: true,
     width: WIDTH[column.key],
     nowrap: true,
   })),
 )
-
-// 合计行：非数字列留空，数字列逐列对齐，末格写「合计」。
-const totals = computed(() => (data.value?.totals ? COLUMNS.totalsFor(data.value.command) : []))
 
 const totalsRow = computed(() => data.value?.totals || {})
 
@@ -74,6 +75,7 @@ function rowProps({ item }) {
       density="compact"
       hover
       fixed-header
+      fixed-footer
       :items-per-page="-1"
       hide-default-footer
       :sort-by="[{ key: sortKey, order: sortDesc ? 'desc' : 'asc' }]"
@@ -98,18 +100,22 @@ function rowProps({ item }) {
         </span>
       </template>
 
-      <template #bottom>
-        <div class="total-row">
-          <div
-            v-for="column in totals"
+      <template #tfoot>
+        <tr class="total-row">
+          <td
+            v-for="(column, index) in columns"
             :key="column.key"
-            class="cell"
-            :class="{ end: column.num || column.money, money: column.money }"
-            :style="WIDTH[column.key] ? { flex: `0 0 ${WIDTH[column.key]}px`, width: `${WIDTH[column.key]}px` } : null"
+            :class="{ 'text-end': column.num || column.money || column.percent }"
           >
-            {{ cell(column, totalsRow, true) }}
-          </div>
-        </div>
+            {{
+              index === 0
+                ? '合计'
+                : column.num || column.money || column.percent
+                  ? cell(column, totalsRow, true)
+                  : ''
+            }}
+          </td>
+        </tr>
       </template>
     </v-data-table>
   </v-card>
@@ -160,30 +166,14 @@ function rowProps({ item }) {
   font-weight: 700;
 }
 
-.total-row {
-  display: flex;
-  align-items: center;
-  border-top: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+.total-row td {
   font-weight: 700;
-  font-size: 0.85rem;
-}
-
-.total-row .cell {
-  flex: 1 1 0;
-  padding: 0.45rem 0.75rem 0.45rem 0;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.total-row .end {
-  text-align: right;
-}
-
-.total-row .money {
-  font-size: 0.78rem;
+  /* Vuetify 的吸底背景选择器少了 wrapper 一层，不生效，这里自己补上。 */
+  background: rgb(var(--v-theme-surface));
+  box-shadow: inset 0 1px 0 rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 :deep(.cached-row) {

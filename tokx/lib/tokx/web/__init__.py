@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
 import netutil
 import pathutil
-from sse import SSE_INTERVAL, SSEMixin, sse_data
+from sse import SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
 from web import ApiError, WebHandler, WebServer
 
 from .. import cli
@@ -36,7 +36,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 INDEX = STATIC / "index.html"
 # 带内容哈希的资源可以长期缓存。
 _CACHED = "public, max-age=31536000, immutable"
-COMMANDS = ("daily", "session", "hour")
+COMMANDS = ("daily", "session", "hour", "project")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
 LOCK = threading.Lock()
 
@@ -106,10 +106,8 @@ def _stream_seconds(query: dict[str, list[str]]) -> int:
 def _payload(config: Config, query: dict[str, list[str]]) -> dict:
     config = _current(config)
     args, since, until = _args(config, query)
-    data = cli._collect(args.command, args, config, since, until)
-    data["now"] = cli.datetime.now(config.book.tz).isoformat(timespec="seconds")
-    data["store"] = {"enabled": config.store.enabled, "db": str(config.store.db)}
-    return data
+    # 页面只用 rows 与 totals；不加时间戳，数据没变时这一份才好拿去和上一份比对。
+    return cli._collect(args.command, args, config, since, until)
 
 
 def _static_file(path: str) -> Path | None:
@@ -209,8 +207,11 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
                 raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
 
             self._sse_start()
+            last = sse_data(payload, event="usage", json_default=str)
+            last_write = time.time()
             try:
-                self._sse_send(payload, "usage")
+                self.wfile.write(last.encode("utf-8"))
+                self.wfile.flush()
                 while True:
                     time.sleep(every)
                     try:
@@ -218,8 +219,19 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
                             payload = _payload(config, query)
                     except Exception as exc:  # noqa: BLE001 - 单轮失败不掐断流
                         self._sse_send({"error": f"{type(exc).__name__}: {exc}"}, "failure")
+                        last_write = time.time()
                         continue
-                    self._sse_send(payload, "usage")
+                    # 数字没变就只留一条注释，页面不用为同一份数据重排表格、重画图。
+                    text = sse_data(payload, event="usage", json_default=str)
+                    if text != last:
+                        self.wfile.write(text.encode("utf-8"))
+                        self.wfile.flush()
+                        last = text
+                        last_write = time.time()
+                    elif time.time() - last_write >= SSE_PING_SECONDS:
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
+                        last_write = time.time()
             except (BrokenPipeError, ConnectionResetError):
                 pass
 

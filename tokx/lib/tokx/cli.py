@@ -23,7 +23,7 @@ from .sources import SOURCE_LABELS, SOURCE_ORDER, SourceError, collect
 from .store import Store, StoreError
 
 VERSION = "0.2.0"
-COMMANDS = ("daily", "session", "hour", "prices", "rebuild", "db", "web")
+COMMANDS = ("daily", "session", "hour", "project", "prices", "rebuild", "db", "web")
 
 # --watch 不带秒数时多久刷一次。
 WATCH_SECONDS = 5
@@ -52,12 +52,13 @@ def build_parser() -> argparse.ArgumentParser:
         ("daily", "按天汇总，默认命令"),
         ("session", "按会话汇总"),
         ("hour", "按一天内的小时分布汇总"),
+        ("project", "按项目汇总"),
         ("prices", "打印当前价格表"),
         ("rebuild", "清空账本后全量重扫并重建"),
         ("web", "在浏览器里看用量，定时自动刷新"),
     ):
         child = sub.add_parser(name, parents=[suppressed], help=text, description=text)
-        if name in ("daily", "session", "hour"):
+        if name in ("daily", "session", "hour", "project"):
             _add_watch(child, suppress=True)
         if name == "web":
             _add_web(child)
@@ -163,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = _fold_watch(argv)
     args = parser.parse_args(argv)
     command = getattr(args, "command", None) or "daily"
-    if command in ("daily", "session", "hour", "prices", "rebuild"):
+    if command in ("daily", "session", "hour", "project", "prices", "rebuild"):
         # 选项写在子命令前面时（tokx --watch 3 daily），argparse 会把它们记在一张空白的
         # 子命令命名空间上，子命令那份是空的，这里把前面那份补过来。两个都写了时子命令的优先。
         top = _top_values(argv)
@@ -256,6 +257,8 @@ def _collect(
         rows, total = report.sessions(records, book)
     elif command == "hour":
         rows, total = report.hours(records, book)
+    elif command == "project":
+        rows, total = report.projects(records, book)
     else:
         rows, total = report.daily(records, book)
     return {
@@ -294,6 +297,8 @@ def _report_command(
         text = report.table_sessions(rows, total, unpriced)
     elif command == "hour":
         text = report.table_hours(rows, total, unpriced)
+    elif command == "project":
+        text = report.table_projects(rows, total, unpriced)
     else:
         text = report.table_daily(rows, total, unpriced)
 

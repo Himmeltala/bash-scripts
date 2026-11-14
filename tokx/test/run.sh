@@ -255,16 +255,23 @@ session_out=$("$bin" session --all) || fail "session 命令失败"
 [[ "$session_out" == *"claude"* ]] || fail "会话表缺少来源列"
 ok 会话表带来源
 "$bin" hour --all >/dev/null || fail "hour 命令失败"
-ok session 与 hour 命令
+project_out=$("$bin" project --all) || fail "project 命令失败"
+[[ "$project_out" == *"项目"* && "$project_out" == *"demo"* ]] || fail "项目表缺少项目列或目录名"
+ok session、hour 与 project 命令
 
 # 同一会话用过两个模型时，会话表按模型分成两行。
 session_json=$("$bin" session --all --json) || fail "session --json 失败"
 python3 - "$session_json" <<'PY' || exit 1
 import json, sys
-rows = json.loads(sys.argv[1])["rows"]
+payload = json.loads(sys.argv[1])
+rows = payload["rows"]
 sess = [row for row in rows if row["session"] == "ses-oc2"]
 assert {row["model"] for row in sess} == {"deepseek-flash", "mystery-model"}, sess
-print("ok - 同一会话按模型分行")
+# 缓存指标：命中率与节省金额都跟着行与合计一起给出。
+assert 0 < payload["totals"]["cache_hit"] <= 1, payload["totals"]
+assert payload["totals"]["cache_saved"] > 0, payload["totals"]
+assert all("cache_hit" in row and "cache_saved" in row for row in rows), rows[0]
+print("ok - 同一会话按模型分行，缓存指标齐全")
 PY
 
 # 账本：删掉 Claude 的会话文件后，那部分用量还能从账本回显，并标成缓存。
@@ -448,7 +455,7 @@ print("ok - mimo 不分峰谷")
 PY
 
 # 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，看完选回主菜单，然后退出。
-printf '1\n5\n1 3\n1\n6\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
+printf '1\n5\n1 3\n1\n7\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
 grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
 grep -q '^dsh' "$tmp/menu.out" || fail "菜单输出缺少 dsh"
 grep -q '^opencode' "$tmp/menu.out" && fail "菜单没有排除 opencode"
@@ -541,8 +548,8 @@ page = json.loads(raw)
 assert page["command"] == "daily", page
 assert page["rows"] == cli["rows"], (page["rows"], cli["rows"])
 assert page["totals"] == cli["totals"], page["totals"]
-assert page["store"]["enabled"] is True, page["store"]
-assert page["now"], page
+# 页面不再下发没人用的采集时间与账本路径。
+assert "now" not in page and "store" not in page, page
 
 page = json.loads(get("/api/usage?command=session&days=30&source=dsh")[1])
 assert page["command"] == "session" and page["rows"], page
@@ -550,6 +557,10 @@ assert {row["source"] for row in page["rows"]} == {"dsh"}, page["rows"]
 
 page = json.loads(get("/api/usage?command=hour&days=30")[1])
 assert page["command"] == "hour" and page["rows"], page
+
+page = json.loads(get("/api/usage?command=project&days=30")[1])
+assert page["command"] == "project" and page["rows"], page
+assert {row["project"] for row in page["rows"]} >= {"demo"}, page["rows"]
 
 price = json.loads(get("/api/prices")[1])
 assert price["models"]["deepseek-flash"]["off"]["hit"] == 0.02, price
@@ -661,7 +672,8 @@ assert claude["api"] == "http://127.0.0.1:9000", claude
 
 (home / ".claude/settings.json").write_text(
     json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9003"}}), encoding="utf-8")
-second = read_usage(res)
+# 数据没变时流上不再重发同一份；改配置后重新取一次，老记录仍保留入库时的地址。
+second = json.loads(urlopen(base + "/api/usage?command=daily&days=30", timeout=60).read())
 claude = next(row for row in second["rows"] if row["source"] == "claude")
 assert claude["api"] == "http://127.0.0.1:9000", claude
 res.close()

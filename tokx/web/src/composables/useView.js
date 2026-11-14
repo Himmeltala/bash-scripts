@@ -9,6 +9,7 @@ export const COMMANDS = [
   { key: 'daily', name: '按天汇总' },
   { key: 'session', name: '按会话汇总' },
   { key: 'hour', name: '按小时汇总' },
+  { key: 'project', name: '按项目汇总' },
 ]
 
 export const RANGES = [
@@ -34,7 +35,6 @@ function fromUrl() {
 }
 
 export const view = reactive(fromUrl())
-view.sort = { key: '', desc: true }
 
 // 请求参数：没选满来源时只带选中的那几个，命令行的 -s 语义。
 export function query(extra = {}) {

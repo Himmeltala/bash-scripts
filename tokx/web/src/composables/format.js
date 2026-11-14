@@ -27,46 +27,30 @@ export const HEAD = {
   slot: { key: 'slot', label: '小时', width: 6 },
   label: { key: 'label', label: '时段', width: 8 },
   session: { key: 'session', label: '会话', width: 12, mono: true },
-  project: { key: 'project', label: '项目', width: 12 },
   start: { key: 'start', label: '开始', width: 11 },
   model: { key: 'model', label: '模型', width: 20 },
   api: { key: 'api', label: 'API 地址', width: 15 },
+  project: { key: 'project', label: '项目', width: 18 },
   requests: { key: 'requests', label: '请求', ...COUNT },
   input: { key: 'input', label: '输入', ...COUNT },
   cache_read: { key: 'cache_read', label: '缓存读', ...COUNT },
+  cache_hit: { key: 'cache_hit', label: '缓存命中', width: 8, percent: true },
   output: { key: 'output', label: '输出', ...COUNT },
   total_tokens: { key: 'total_tokens', label: '总 token', ...COUNT },
+  cache_saved: { key: 'cache_saved', label: '缓存节省', ...MONEY },
   cost_peak: { key: 'cost_peak', label: '高峰费用', ...MONEY },
   cost_off: { key: 'cost_off', label: '空闲费用', ...MONEY },
   cost: { key: 'cost', label: '合计', ...MONEY, strong: true },
 }
 
-const TOTALS = {
-  requests: { key: 'requests', label: '', ...COUNT },
-  input: { key: 'input', label: '', ...COUNT },
-  cache_read: { key: 'cache_read', label: '', ...COUNT },
-  output: { key: 'output', label: '', ...COUNT },
-  total_tokens: { key: 'total_tokens', label: '', ...COUNT },
-  cost_peak: { key: 'cost_peak', label: '', ...MONEY },
-  cost_off: { key: 'cost_off', label: '', ...MONEY },
-  cost: { key: 'cost', label: '合计', ...MONEY },
-}
+const TAIL = ['requests', 'input', 'cache_read', 'cache_hit', 'output', 'total_tokens', 'cache_saved', 'cost_peak', 'cost_off', 'cost']
 
-const TAIL = ['requests', 'input', 'cache_read', 'output', 'total_tokens', 'cost_peak', 'cost_off', 'cost']
-
-// 三张表的前几列统一：来源、模型、API 地址，再放这张表自己的时间列，然后是数字列。
+// 四张表的前几列统一：来源、模型、API 地址，再放这张表自己的时间或项目列，然后是数字列。
 export const COLUMNS = {
   daily: ['source', 'model', 'api', 'date', 'origin', ...TAIL].map((key) => HEAD[key]),
   session: ['source', 'model', 'api', 'start', 'session', 'project', 'origin', ...TAIL].map((key) => HEAD[key]),
   hour: ['source', 'model', 'api', 'slot', 'label', ...TAIL].map((key) => HEAD[key]),
-  // 合计行与命令行一致：非数字列留空，"合计"两字放在最后一格（合计费用）上，数字列逐列对齐。
-  totalsFor(command) {
-    const front = command === 'session' ? 7 : 5
-    // 第一格只是占位，让数字列落在表头对应的位置上。
-    return ['', ...Array(front - 1).fill(''), ...TAIL].map((key, index) =>
-      key === '' ? { key: `blank${index}`, label: '' } : TOTALS[key],
-    )
-  },
+  project: ['project', 'source', 'model', 'api', 'origin', ...TAIL].map((key) => HEAD[key]),
 }
 
 export function cellValue(column, row, blankMissing = false) {
@@ -80,6 +64,7 @@ export function cellValue(column, row, blankMissing = false) {
   if (column.key === 'origin') return value === 'cache' ? '缓存' : '现扫'
   // 会话 id 太长，表里只留前 10 位，完整值挂在悬停提示上。
   if (column.key === 'session') return value && value.length > 12 ? `${value.slice(0, 10)}..` : value || '-'
+  if (column.percent) return value == null ? '-' : `${(Number(value) * 100).toFixed(1)}%`
   if (column.money) return fmtMoney(value)
   if (column.num) return fmtNum(value)
   if (column.key === 'label') return value === '高峰窗口' ? '高峰' : value
