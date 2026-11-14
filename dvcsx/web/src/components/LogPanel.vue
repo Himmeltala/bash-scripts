@@ -30,6 +30,16 @@
         </template>
       </span>
       <div class="bar-actions">
+        <v-switch
+          v-if="isGit"
+          v-model="logAllBranches"
+          class="allrefs"
+          label="所有分支"
+          density="compact"
+          hide-details
+          color="primary"
+          title="连本地分支、远端跟踪分支与标签一起列，便于看时间线"
+        />
         <v-btn-toggle
           v-model="logDiffScope"
           density="compact"
@@ -71,30 +81,51 @@
           }"
           @click="select(entry)"
         >
-          <div class="line1">
-            <span class="rev mono">{{ revLabel(entry.revision) }}</span>
-            <span class="author">{{ entry.author || '（无作者）' }}</span>
-            <span class="date">{{ when(entry.date) }}</span>
-          </div>
-          <div class="msg">{{ firstLine(entry.message) }}</div>
-          <div v-if="refsOf(entry).length || stateOf(entry)" class="refs">
-            <span
-              v-for="mark in refsOf(entry)"
-              :key="mark.text"
-              class="ref"
-              :class="mark.kind"
-              :title="mark.title"
-            >
-              <v-icon size="11">{{ mark.icon }}</v-icon>{{ mark.text }}
-            </span>
-            <span
-              v-if="stateOf(entry)"
-              class="ref"
-              :class="stateOf(entry).kind"
-              :title="stateOf(entry).title"
-            >
-              <v-icon size="11">{{ stateOf(entry).icon }}</v-icon>{{ stateOf(entry).text }}
-            </span>
+          <svg
+            v-if="lineOf(entry)"
+            class="graph"
+            :style="{ width: `${graphWidth}px` }"
+            aria-hidden="true"
+          >
+            <line
+              v-for="seg in lineOf(entry).segments"
+              :key="seg.key"
+              :x1="seg.x1"
+              :y1="seg.y1"
+              :x2="seg.x2"
+              :y2="seg.y2"
+              :stroke="seg.color"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+            <circle :cx="lineOf(entry).x" :cy="DOT_Y" r="3.6" :fill="lineOf(entry).color" />
+          </svg>
+          <div class="revbody" :style="isGit ? { paddingLeft: `${graphWidth}px` } : null">
+            <div class="line1">
+              <span class="rev mono">{{ revLabel(entry.revision) }}</span>
+              <span class="author">{{ entry.author || '（无作者）' }}</span>
+              <span class="date">{{ when(entry.date) }}</span>
+            </div>
+            <div class="msg">{{ firstLine(entry.message) }}</div>
+            <div v-if="refsOf(entry).length || stateOf(entry)" class="refs">
+              <span
+                v-for="mark in refsOf(entry)"
+                :key="mark.text"
+                class="ref"
+                :class="mark.kind"
+                :title="mark.title"
+              >
+                <v-icon size="11">{{ mark.icon }}</v-icon>{{ mark.text }}
+              </span>
+              <span
+                v-if="stateOf(entry)"
+                class="ref"
+                :class="stateOf(entry).kind"
+                :title="stateOf(entry).title"
+              >
+                <v-icon size="11">{{ stateOf(entry).icon }}</v-icon>{{ stateOf(entry).text }}
+              </span>
+            </div>
           </div>
         </div>
         <div v-if="entries.length && !exhausted" class="more">
@@ -274,8 +305,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useStorage } from '@vueuse/core'
+import { useTheme } from 'vuetify'
 import DiffView from '@bash-scripts/web-shared/diff'
 import { api } from '../composables/useApi'
+import { buildGraph, DOT_Y } from '../composables/gitGraph'
 import { SplitHandle } from '@bash-scripts/web-shared'
 import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
@@ -290,6 +324,11 @@ const props = defineProps({
 // 差异口径与文件列表的查看方式记在全局偏好里，换工作副本也保持。
 const preferences = usePreferencesStore()
 const { logDiffScope, logFilesMode } = storeToRefs(preferences)
+
+const theme = useTheme()
+const dark = computed(() => theme.global.current.value.dark)
+// 时间线默认连所有分支与标签一起列；关掉就只看当前分支与它的上游。
+const logAllBranches = useStorage('dvcsx.log.all-branches', true)
 
 const PAGE = 50
 const entries = ref([])
@@ -360,27 +399,66 @@ const currentMessage = computed(
     '（没有写提交说明）',
 )
 
-// 引用标签照 VS Code 的做法只点在本分支与远端分支所在的提交上。
+// 提交上挂的分支与标签由后端一次查好；只是当前提交不在任何分支上时补一个 HEAD。
 function refsOf(entry) {
-  const refs = []
-  if (!isGit.value) return refs
-  if (entry.head) {
-    refs.push({
-      kind: 'head',
-      icon: 'mdi-source-branch',
-      text: (remote.value && remote.value.branch) || 'HEAD',
-      title: '本地分支当前提交',
-    })
+  if (!isGit.value) return []
+  const marks = []
+  const seen = new Set()
+  for (const ref of entry.labels || []) {
+    if (seen.has(ref.name)) continue
+    seen.add(ref.name)
+    if (ref.kind === 'head') {
+      marks.push({ kind: 'head', icon: 'mdi-source-branch', text: ref.name, title: '本地分支' })
+    } else if (ref.kind === 'tag') {
+      marks.push({ kind: 'tag', icon: 'mdi-tag-outline', text: ref.name, title: '标签' })
+    } else {
+      marks.push({
+        kind: 'upstream',
+        icon: 'mdi-cloud-outline',
+        text: ref.name,
+        title: '远端跟踪分支',
+      })
+    }
   }
-  if (entry.remote_tip && remote.value && remote.value.upstream) {
-    refs.push({
-      kind: 'upstream',
-      icon: 'mdi-cloud-outline',
-      text: remote.value.upstream,
-      title: '远端跟踪分支的最新提交',
-    })
+  // 老服务端不给 labels 时按原来的 HEAD / 上游标记显示。
+  if (!entry.labels) {
+    if (entry.head) {
+      marks.push({
+        kind: 'head',
+        icon: 'mdi-source-branch',
+        text: (remote.value && remote.value.branch) || 'HEAD',
+        title: '本地分支当前提交',
+      })
+    }
+    if (entry.remote_tip && remote.value && remote.value.upstream) {
+      marks.push({
+        kind: 'upstream',
+        icon: 'mdi-cloud-outline',
+        text: remote.value.upstream,
+        title: '远端跟踪分支的最新提交',
+      })
+    }
   }
-  return refs
+  if (entry.head && !marks.some((mark) => mark.kind === 'head')) {
+    marks.unshift({ kind: 'head', icon: 'mdi-source-branch', text: 'HEAD', title: '当前提交' })
+  }
+  return marks
+}
+
+// 时间线分列交给纯函数，换主题只是换一套颜色。
+const LANE_COLORS = {
+  light: ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'],
+  dark: ['#60a5fa', '#4ade80', '#fbbf24', '#f87171', '#c084fc', '#22d3ee', '#f472b6', '#a3e635'],
+}
+
+const graphRows = computed(() =>
+  buildGraph(entries.value, dark.value ? LANE_COLORS.dark : LANE_COLORS.light),
+)
+
+const graphWidth = computed(() => (isGit.value ? graphRows.value.width : 0))
+
+function lineOf(entry) {
+  return isGit.value ? graphRows.value.rows.get(entry.revision) || null : null
 }
 
 // 提交相对本地分支与远端分支的位置；没有远端跟踪分支时不做判断。
@@ -456,7 +534,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api.log(props.ws.id, PAGE, 0, true)
+    const data = await api.log(props.ws.id, PAGE, 0, true, logAllBranches.value)
     entries.value = data.entries || []
     exhausted.value = entries.value.length < PAGE
     remote.value = data.remote || null
@@ -473,7 +551,13 @@ async function more() {
   if (moreLoading.value || exhausted.value) return
   moreLoading.value = true
   try {
-    const data = await api.log(props.ws.id, PAGE, entries.value.length, false)
+    const data = await api.log(
+      props.ws.id,
+      PAGE,
+      entries.value.length,
+      false,
+      logAllBranches.value
+    )
     const seen = new Set(entries.value.map((entry) => entry.revision))
     const fresh = (data.entries || []).filter((entry) => !seen.has(entry.revision))
     entries.value = entries.value.concat(fresh)
@@ -546,6 +630,7 @@ watch(logDiffScope, () => {
 })
 watch(() => props.ws.id, load)
 watch(() => props.refresh, load)
+watch(logAllBranches, load)
 onMounted(load)
 
 defineExpose({ load })
@@ -599,9 +684,30 @@ defineExpose({ load })
   overflow: auto;
 }
 .revitem {
+  position: relative;
   padding: 8px 10px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.07);
   cursor: pointer;
+}
+/* 时间线画在整行左侧，行高跟着内容走，不占布局。 */
+.graph {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.revbody {
+  min-width: 0;
+}
+.allrefs {
+  flex: 0 0 auto;
+  margin: 0 4px 0 0;
+}
+.allrefs :deep(.v-label) {
+  font-size: 0.76rem;
+  opacity: 1;
 }
 .revitem:hover {
   background: rgba(var(--v-theme-on-surface), 0.06);
@@ -667,6 +773,10 @@ defineExpose({ load })
 .ref.local {
   color: rgb(var(--v-theme-on-surface-variant));
   border: 1px solid rgba(var(--v-theme-on-surface), 0.22);
+}
+.ref.tag {
+  color: rgb(var(--v-theme-modified));
+  border: 1px solid rgba(var(--v-theme-modified), 0.4);
 }
 .author {
   font-size: 0.76rem;

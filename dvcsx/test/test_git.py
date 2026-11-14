@@ -145,6 +145,7 @@ class GitWorkspace(unittest.TestCase):
         entries = gitmod.git_log(str(self.repo), 5)
         self.assertEqual(entries[0]["revision"], self.second)
         self.assertEqual(entries[0]["message"], "second")
+        self.assertEqual(entries[0]["parents"], [self.first])
         self.assertIn("notes.txt", [p["path"] for p in entries[0]["paths"]])
         self.assertEqual(len(entries[0]["short"]), 7)
         self.assertTrue(entries[0]["local"])
@@ -518,6 +519,45 @@ class GitOperations(unittest.TestCase):
         result = gitmod.git_push(str(self.work), set_upstream=True)
         self.assertTrue(result["ok"], result)
         self.assertEqual(git_out("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.work), "origin/main")
+
+    def test_log_keeps_merge_commit_with_path_filter(self):
+        run(["git", "switch", "-q", "-c", "side"], cwd=self.work)
+        (self.work / "side.txt").write_text("s\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.work)
+        run(["git", "commit", "-qm", "side 改动"], cwd=self.work)
+        run(["git", "switch", "-q", "main"], cwd=self.work)
+        run(["git", "merge", "-q", "--no-ff", "-m", "合并 side", "side"], cwd=self.work)
+        entries = gitmod.git_log(str(self.work), 10)
+        # 路径过滤默认会省掉没改这个目录的合并提交，时间线会断，所以要看得到它。
+        self.assertEqual(entries[0]["message"], "合并 side")
+        self.assertEqual(len(entries[0]["parents"]), 2)
+
+    def test_log_all_refs_covers_branches_and_tags(self):
+        run(["git", "switch", "-q", "-c", "dev"], cwd=self.work)
+        (self.work / "dev.txt").write_text("dev\n", "utf-8")
+        run(["git", "add", "dev.txt"], cwd=self.work)
+        run(["git", "commit", "-qm", "dev 提交"], cwd=self.work)
+        run(["git", "tag", "light"], cwd=self.work)
+        run(["git", "switch", "-q", "main"], cwd=self.work)
+        run(["git", "tag", "-a", "ann", "-m", "附注标签"], cwd=self.work)
+
+        default = [e["message"] for e in gitmod.git_log(str(self.work), 10)]
+        self.assertNotIn("dev 提交", default)
+
+        entries = gitmod.git_log(str(self.work), 10, all_refs=True)
+        by_msg = {e["message"]: e for e in entries}
+        dev = by_msg["dev 提交"]
+        # 只在本地分支上，还没进远端。
+        self.assertTrue(dev["local"])
+        self.assertFalse(dev["pushed"])
+        self.assertEqual(
+            [(r["name"], r["kind"]) for r in dev["labels"]], [("dev", "head"), ("light", "tag")]
+        )
+        main = next(e for e in entries if e["head"])
+        self.assertEqual(
+            [(r["name"], r["kind"]) for r in main["labels"]],
+            [("main", "head"), ("origin/main", "remote"), ("ann", "tag")],
+        )
 
     def checkout(self, **body):
         """按页面发来的参数生成切换命令并执行，返回 git_op 的结果。"""

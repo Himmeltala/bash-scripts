@@ -50,8 +50,11 @@ export const api = {
   changes: (ws) => call('GET', `/changes?ws=${q(ws)}`),
   diff: (ws, path, item = '', full = false) =>
     call('GET', `/diff?ws=${q(ws)}&path=${q(path)}&item=${q(item)}&full=${full ? 1 : 0}`),
-  log: (ws, limit = 50, skip = 0, sync = true) =>
-    call('GET', `/log?ws=${q(ws)}&limit=${limit}&skip=${skip}&sync=${sync ? 1 : 0}`),
+  log: (ws, limit = 50, skip = 0, sync = true, allRefs = true) =>
+    call(
+      'GET',
+      `/log?ws=${q(ws)}&limit=${limit}&skip=${skip}&sync=${sync ? 1 : 0}&all=${allRefs ? 1 : 0}`
+    ),
   commit: (ws, rev) => call('GET', `/commit?ws=${q(ws)}&rev=${q(rev)}`),
   revision: (ws, rev, path = '', full = false) =>
     call(
