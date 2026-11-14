@@ -483,7 +483,7 @@ print("ok - mimo 不分峰谷")
 PY
 
 # 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，看完选回主菜单，然后退出。
-printf '1\n5\n1 3\n1\n8\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
+printf '1\n5\n1 3\n1\n7\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
 grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
 grep -q '^dsh' "$tmp/menu.out" || fail "菜单输出缺少 dsh"
 grep -q '^opencode' "$tmp/menu.out" && fail "菜单没有排除 opencode"
