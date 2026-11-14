@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { COMMANDS, RANGES, SOURCES, view } from './composables/useView'
-import { close as closeStream, data, error, loadedAt, subscribe } from './composables/useUsage'
+import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { rememberTheme } from './plugins/vuetify'
 import BrandIcon from './components/BrandIcon.vue'
@@ -45,12 +45,6 @@ const { dark, toggle: flipTheme } = useThemeToggle({
   followSystem: true,
 })
 
-const stamp = computed(() => {
-  if (error.value) return `读取失败：${error.value}`
-  if (!loadedAt.value) return '正在读取…'
-  return `更新于 ${loadedAt.value.replace('T', ' ')} · ${data.value?.timezone || ''}`
-})
-
 const notice = computed(() => {
   const models = data.value?.unpriced_models || []
   return models.length ? `这些模型没有价格，只算 token 不算钱：${models.join('、')}` : ''
@@ -86,11 +80,10 @@ onBeforeUnmount(() => {
     <v-app-bar density="comfortable" flat border>
       <v-app-bar-title>
         <span class="title">tokx</span>
-        <span class="stamp">{{ stamp }}</span>
       </v-app-bar-title>
       <template #append>
         <v-btn
-          :icon="dark ? 'mdi-weather-night' : 'mdi-weather-sunny'"
+          :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
           :title="dark ? '切到浅色' : '切到深色'"
           variant="text"
           @click="flipTheme"
@@ -184,13 +177,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .title {
   font-weight: 700;
-  margin-right: 0.9rem;
-}
-
-.stamp {
-  color: rgb(var(--v-theme-on-surface-variant));
-  font-size: 0.85rem;
-  font-weight: 400;
 }
 
 .filters-row {

@@ -6,13 +6,11 @@ import { query } from './useView'
 
 export const data = ref(null)
 export const error = ref('')
-export const loadedAt = ref('')
 
 let source = null
 
 function apply(payload) {
   data.value = payload
-  loadedAt.value = payload.now
   error.value = ''
 }
 

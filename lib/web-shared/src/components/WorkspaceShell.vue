@@ -17,7 +17,12 @@
         {{ running }} 个在跑
       </v-chip>
       <slot name="metrics" />
-      <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" @click="toggleTheme" />
+      <v-btn
+        :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+        title="切换深浅色"
+        variant="text"
+        @click="toggleTheme"
+      />
     </v-app-bar>
 
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
