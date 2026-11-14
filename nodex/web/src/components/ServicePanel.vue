@@ -28,23 +28,9 @@
     </header>
 
     <div class="tabs">
-      <v-slide-group v-model="tab" mandatory show-arrows class="tab-row">
-        <v-slide-group-item
-          v-for="t in tabs"
-          :key="t.value"
-          :value="t.value"
-          v-slot="{ isSelected, toggle }"
-        >
-          <v-btn
-            size="small"
-            :variant="isSelected ? 'flat' : 'text'"
-            :color="isSelected ? 'primary' : undefined"
-            @click="toggle"
-          >
-            {{ t.title }}
-          </v-btn>
-        </v-slide-group-item>
-      </v-slide-group>
+      <v-tabs v-model="tab" density="compact" color="primary" mandatory show-arrows class="tab-row">
+        <v-tab v-for="t in tabs" :key="t.value" :value="t.value">{{ t.title }}</v-tab>
+      </v-tabs>
       <v-spacer />
       <v-btn v-if="tab !== 'zip'" size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">
         添加命令
@@ -183,7 +169,9 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import SettingsDialog from './SettingsDialog.vue'
+import { usePreferencesStore } from '../stores/preferences'
 import ZipPanel from './ZipPanel.vue'
 import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
@@ -210,7 +198,8 @@ const tabs = [
   { value: 'scripts', title: '脚本' },
   { value: 'zip', title: '压缩' },
 ]
-const tab = ref('scripts')
+// 栏目选择记在全局偏好里，换工作区、刷新页面都停在原处。
+const { activeTab: tab } = storeToRefs(usePreferencesStore())
 const filter = ref('')
 const stopping = ref({})
 const starting = ref({})
@@ -469,13 +458,10 @@ function onSave({ args }) {
   margin: 14px 0 10px;
   flex-wrap: wrap;
 }
-/* 栏目条用 v-slide-group：窄窗口里横向滚动，不把按钮折成两行。 */
+/* 栏目条与右侧按钮同一行：页签条自己按内容宽，窄窗口里横向滚动不折行。 */
 .tab-row {
   flex: 0 1 auto;
   min-width: 0;
-}
-.tab-row :deep(.v-slide-group__content) {
-  gap: 4px;
 }
 .filters {
   display: flex;
