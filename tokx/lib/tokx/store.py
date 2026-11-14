@@ -174,49 +174,36 @@ class Store:
             raise StoreError(f"读账本失败: {exc}") from exc
         return int(row[0] or 0) if row else 0
 
-    def sessions(self, sources: Iterable[str]) -> dict[tuple[str, str], dict]:
-        """账本里已采到的会话：last_at 是最后采集时间，stored 是现有条数，loudest 由调用方抬高上限。"""
+    def sources_with_rows(self, sources: Iterable[str]) -> set[str]:
+        """账本里已经有请求行的来源；一个来源一条都没有时，这一轮要全量补一次。"""
         wanted = tuple(sources)
         if not wanted:
-            return {}
+            return set()
         marks = ",".join("?" * len(wanted))
         try:
-            seen = self.con.execute(
-                "select source, session, last_at from session_seen"
-                f" where source in ({marks})",
-                wanted,
-            ).fetchall()
-            marks2 = ",".join("?" * len(wanted))
-            counted = self.con.execute(
-                "select source, session, count(*) from request"
-                f" where source in ({marks2}) group by source, session",
+            rows = self.con.execute(
+                f"select distinct source from request where source in ({marks})",
                 wanted,
             ).fetchall()
         except sqlite3.Error as exc:
             raise StoreError(f"读账本失败: {exc}") from exc
-        result: dict[tuple[str, str], dict] = {}
-        for source, session, last_at in seen:
-            result[(str(source), str(session))] = {
-                "last_at": int(last_at),
-                "stored": 0,
-                "loudest": 0,
-            }
-        loud = self.con.execute(
-            "select source, session, max(loud) from request"
-            f" where source in ({marks}) group by source, session",
-            wanted,
-        ).fetchall()
-        for source, session, count in counted:
-            item = result.setdefault(
-                (str(source), str(session)), {"last_at": 0, "stored": 0, "loudest": 0}
-            )
-            item["stored"] = int(count)
-        for source, session, peak in loud:
-            item = result.setdefault(
-                (str(source), str(session)), {"last_at": 0, "stored": 0, "loudest": 0}
-            )
-            item["loudest"] = int(peak or 0)
-        return result
+        return {str(row[0]) for row in rows}
+
+    def touch(self, batches: dict[str, dict[str, list[Record]]]) -> None:
+        """只更新会话的最后采集时间，不重写请求行；没有变化的会话也照常记一次。"""
+        now = int(time.time() * 1000)
+        items = [
+            (source, session, now)
+            for source, sessions in batches.items()
+            for session in sessions
+        ]
+        if not items:
+            return
+        try:
+            with self.con:
+                self.con.executemany(_TOUCH, items)
+        except sqlite3.Error as exc:
+            raise StoreError(f"写账本失败: {exc}") from exc
 
     def records(
         self,

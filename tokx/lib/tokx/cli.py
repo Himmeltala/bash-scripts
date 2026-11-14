@@ -345,20 +345,42 @@ def _remember(
     batches: dict[str, dict[str, list[Record]]],
     snapshots: dict[str, Snapshot],
 ) -> bool:
-    """把现扫结果写进账本并落盘快照，返回账本能否作为出表数据源；关掉或写不进去时退回纯现扫。"""
-    for snapshot in snapshots.values():
-        snapshot.save()
+    """把现扫结果写进账本并落盘快照，返回账本能否作为出表数据源；关掉或写不进去时退回纯现扫。
+
+    只重写本轮重新解析过的会话；账本里还没有记录的来源全量补一次，其余会话只推进采集时间。
+    """
     if not config.store.enabled:
+        for snapshot in snapshots.values():
+            snapshot.save()
         return False
     if not batches:
+        for snapshot in snapshots.values():
+            snapshot.save()
         return True
+
     try:
         with Store(config.store.db, config.book.tz) as store:
-            store.insert(batches)
-        return True
+            known = store.sources_with_rows(batches.keys())
+            changed: dict[str, dict[str, list[Record]]] = {}
+            for source, sessions in batches.items():
+                snapshot = snapshots.get(source)
+                if source not in known or snapshot is None:
+                    dirty = set(sessions)
+                else:
+                    dirty = snapshot.changed
+                picked = {name: records for name, records in sessions.items() if name in dirty}
+                if picked:
+                    changed[source] = picked
+            if changed:
+                store.insert(changed)
+            store.touch(batches)
     except StoreError as exc:
+        # 快照先不落盘：下一轮还会把这些会话当成有变化，重新试一次入库。
         print(f"tokx: {exc}（本次只显示现扫结果）", file=sys.stderr)
         return False
+    for snapshot in snapshots.values():
+        snapshot.save()
+    return True
 
 
 def _stored(

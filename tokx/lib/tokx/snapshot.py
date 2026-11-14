@@ -31,6 +31,8 @@ class Snapshot:
         self.path = path
         self.data: dict[str, dict] = {}
         self.dirty = False
+        # 这一轮重新解析或删掉过哪些会话，入库时只写这些会话。
+        self.changed: set[str] = set()
         self._load()
 
     def _load(self) -> None:
@@ -102,12 +104,14 @@ class Snapshot:
         if self.data.get(session) != entry:
             self.data[session] = entry
             self.dirty = True
+            self.changed.add(session)
 
     def prune(self, alive: set[str]) -> None:
         """文件或会话已经不在了，把对应的缓存条目摘掉。"""
         for name in [name for name in self.data if name not in alive]:
             del self.data[name]
             self.dirty = True
+            self.changed.add(name)
 
     def save(self) -> None:
         if not self.dirty or self.path is None:

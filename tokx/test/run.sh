@@ -354,6 +354,23 @@ second=$("$bin" --all --json) || fail "第三次运行失败"
 [[ "$first" == "$second" ]] || fail "多次运行数字不一致"
 ok 重复运行数字稳定
 
+# 增量入库：账本里某个来源的记录被清掉后，即使会话文件没变，也要按来源补回来。
+python3 - "$HOME/.local/state/tokx/usage.db" <<'PY' || exit 1
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+con.execute("delete from request where source = 'opencode'")
+con.commit()
+PY
+seeded=$("$bin" --all --json) || fail "账本缺来源后运行失败"
+python3 - "$seeded" "$HOME/.local/state/tokx/usage.db" <<'PY' || exit 1
+import json, sqlite3, sys
+payload = json.loads(sys.argv[1])
+assert [row for row in payload["rows"] if row["source"] == "opencode"], payload["rows"]
+con = sqlite3.connect(sys.argv[2])
+assert con.execute("select count(*) from request where source = 'opencode'").fetchone()[0] > 0
+print("ok - 账本缺来源时按来源补入库")
+PY
+
 # tokx db status 能看到账本内容，db import 重复导入不翻倍。
 status=$("$bin" db status) || fail "db status 失败"
 [[ "$status" == *"请求"* ]] || fail "db status 输出不对: $status"
