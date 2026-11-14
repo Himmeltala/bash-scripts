@@ -31,11 +31,11 @@ const WIDTH = {
   date: 104,
   slot: 64,
   label: 72,
-  session: 132,
-  project: 160,
+  session: 124,
+  project: 140,
   start: 136,
   duration: 96,
-  models: 220,
+  models: 170,
   model: 132,
   api: 240,
   cache_hit: 88,
@@ -137,7 +137,13 @@ function rowProps({ item }) {
   min-height: 0;
 }
 
-/* 表格横向滚动，单元格统一不折行、垂直居中，行高才不会有的两行、合计行一行。 */
+/* 单元格左右留白收窄到 10px，十几列的表在 1920 宽的窗口里放得下，不用横向拖。 */
+.table-card :deep(.v-data-table th),
+.table-card :deep(.v-data-table td) {
+  padding: 0 10px;
+}
+
+/* 单元格统一不折行、垂直居中，行高才不会有的两行、合计行一行。 */
 .table-card :deep(.v-data-table td) {
   vertical-align: middle;
   white-space: nowrap;
@@ -177,7 +183,7 @@ function rowProps({ item }) {
 /* 合计行按普通数据行的行高与字号排，避免吸底后比上面的行高出一截。 */
 .total-row td {
   height: var(--v-table-row-height);
-  padding: 0 16px;
+  padding: 0 10px;
   font: inherit;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
