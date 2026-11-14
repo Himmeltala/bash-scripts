@@ -17,7 +17,7 @@ const rows = computed(() => {
   if (!column) return list
   const sign = sortDesc.value ? -1 : 1
   return list.sort((a, b) => {
-    if (column.num || column.money || column.percent) {
+    if (column.num || column.money || column.percent || column.seconds) {
       return sign * ((Number(a[key]) || 0) - (Number(b[key]) || 0))
     }
     return sign * String(a[key] || '').localeCompare(String(b[key] || ''), 'zh-CN')
@@ -34,22 +34,27 @@ const WIDTH = {
   session: 132,
   project: 160,
   start: 136,
+  duration: 96,
+  models: 220,
   model: 132,
   api: 240,
   cache_hit: 88,
   cache_saved: 104,
 }
 
+// 表头一律居中；正文单元格用 cell-props 统一靠右，标题和数值都贴着右边界。
 const headers = computed(() =>
   columns.value.map((column) => ({
     title: column.label,
     key: column.key,
-    align: column.num || column.money || column.percent ? 'end' : 'start',
+    align: 'center',
     sortable: true,
     width: WIDTH[column.key],
     nowrap: true,
   })),
 )
+
+const cellProps = () => ({ class: 'text-end' })
 
 const totalsRow = computed(() => data.value?.totals || {})
 
@@ -80,6 +85,7 @@ function rowProps({ item }) {
       hide-default-footer
       :sort-by="[{ key: sortKey, order: sortDesc ? 'desc' : 'asc' }]"
       :row-props="rowProps"
+      :cell-props="cellProps"
       @update:sort-by="(value) => { sortKey = value?.[0]?.key || ''; sortDesc = value?.[0]?.order === 'desc' }"
     >
       <template v-for="column in columns" :key="column.key" #[`item.${column.key}`]="{ item }">
@@ -102,11 +108,7 @@ function rowProps({ item }) {
 
       <template #tfoot>
         <tr class="total-row">
-          <td
-            v-for="(column, index) in columns"
-            :key="column.key"
-            :class="{ 'text-end': column.num || column.money || column.percent }"
-          >
+          <td v-for="(column, index) in columns" :key="column.key" class="text-end">
             {{
               index === 0
                 ? '合计'
@@ -133,6 +135,12 @@ function rowProps({ item }) {
 .table-card :deep(.v-data-table) {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* 表格横向滚动，单元格统一不折行、垂直居中，行高才不会有的两行、合计行一行。 */
+.table-card :deep(.v-data-table td) {
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .source {
@@ -166,10 +174,14 @@ function rowProps({ item }) {
   font-weight: 700;
 }
 
+/* 合计行按普通数据行的行高与字号排，避免吸底后比上面的行高出一截。 */
 .total-row td {
+  height: var(--v-table-row-height);
+  padding: 0 16px;
+  font: inherit;
   font-weight: 700;
-  font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
+  vertical-align: middle;
   white-space: nowrap;
   /* Vuetify 的吸底背景选择器少了 wrapper 一层，不生效，这里自己补上。 */
   background: rgb(var(--v-theme-surface));

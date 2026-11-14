@@ -8,6 +8,7 @@ export const SOURCES = SOURCE_LIST
 export const COMMANDS = [
   { key: 'daily', name: '按天汇总' },
   { key: 'session', name: '按会话汇总' },
+  { key: 'session-total', name: '按会话合计' },
   { key: 'hour', name: '按小时汇总' },
   { key: 'project', name: '按项目汇总' },
 ]

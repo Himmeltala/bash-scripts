@@ -28,6 +28,8 @@ export const HEAD = {
   label: { key: 'label', label: '时段', width: 8 },
   session: { key: 'session', label: '会话', width: 12, mono: true },
   start: { key: 'start', label: '开始', width: 11 },
+  duration: { key: 'duration', label: '时长', width: 10, seconds: true },
+  models: { key: 'models', label: '模型', width: 24 },
   model: { key: 'model', label: '模型', width: 20 },
   api: { key: 'api', label: 'API 地址', width: 15 },
   project: { key: 'project', label: '项目', width: 18 },
@@ -49,8 +51,19 @@ const TAIL = ['requests', 'input', 'cache_read', 'cache_hit', 'output', 'total_t
 export const COLUMNS = {
   daily: ['source', 'model', 'api', 'date', 'origin', ...TAIL].map((key) => HEAD[key]),
   session: ['source', 'model', 'api', 'start', 'session', 'project', 'origin', ...TAIL].map((key) => HEAD[key]),
+  'session-total': ['source', 'session', 'project', 'start', 'duration', 'models', 'origin', ...TAIL].map(
+    (key) => HEAD[key],
+  ),
   hour: ['source', 'model', 'api', 'slot', 'label', ...TAIL].map((key) => HEAD[key]),
   project: ['project', 'source', 'model', 'api', 'origin', ...TAIL].map((key) => HEAD[key]),
+}
+
+export function formatDuration(value) {
+  const seconds = Math.max(0, Math.round(Number(value) || 0))
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分`
+  return `${Math.floor(minutes / 60)} 小时 ${String(minutes % 60).padStart(2, '0')} 分`
 }
 
 export function cellValue(column, row, blankMissing = false) {
@@ -64,6 +77,7 @@ export function cellValue(column, row, blankMissing = false) {
   if (column.key === 'origin') return value === 'cache' ? '缓存' : '现扫'
   // 会话 id 太长，表里只留前 10 位，完整值挂在悬停提示上。
   if (column.key === 'session') return value && value.length > 12 ? `${value.slice(0, 10)}..` : value || '-'
+  if (column.seconds) return value == null ? '-' : formatDuration(value)
   if (column.percent) return value == null ? '-' : `${(Number(value) * 100).toFixed(1)}%`
   if (column.money) return fmtMoney(value)
   if (column.num) return fmtNum(value)

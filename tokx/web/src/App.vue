@@ -5,6 +5,7 @@ import { close as closeStream, data, error, subscribe } from './composables/useU
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { rememberTheme } from './plugins/vuetify'
 import BrandIcon from './components/BrandIcon.vue'
+import CostBreakdown from './components/CostBreakdown.vue'
 import SummaryCards from './components/SummaryCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
@@ -92,7 +93,7 @@ onBeforeUnmount(() => {
 
     <v-main>
       <v-container fluid class="pa-4 page">
-        <v-sheet rounded class="filters pa-3 mb-4">
+        <v-sheet rounded class="filters pa-3 mb-2">
           <div class="filters-row">
             <v-select
               v-model="view.command"
@@ -153,16 +154,17 @@ onBeforeUnmount(() => {
           </div>
         </v-sheet>
 
-        <SummaryCards v-if="data" class="mb-4" />
+        <SummaryCards v-if="data" class="mb-2" />
+        <CostBreakdown v-if="hasRows" class="mb-2" />
 
-        <v-alert v-if="notice" type="warning" variant="tonal" density="compact" class="mb-4">
+        <v-alert v-if="notice" type="warning" variant="tonal" density="compact" class="mb-2">
           {{ notice }}
         </v-alert>
-        <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">
+        <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2">
           {{ error }}
         </v-alert>
 
-        <UsageCharts v-if="hasRows" class="mb-4" />
+        <UsageCharts v-if="hasRows" class="mb-2" />
         <div v-if="hasRows" class="table-area">
           <UsageTable />
         </div>
