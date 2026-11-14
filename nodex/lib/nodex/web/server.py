@@ -508,7 +508,7 @@ class Handler(ToolHandler):
         root = ws_root(self.state, ws)
         name, target = zip_name(root, body.get("name", ""))
         rels = zip_entries(root, body.get("entries"))
-        exe = find_zipx(self.engine.nodex if self.engine else "")
+        exe = find_zipx(self.engine.command if self.engine else "")
         if not exe:
             raise ApiError(500, "找不到 zipx，确认它和 nodex 装在同一个 bin 目录")
         if target.exists():

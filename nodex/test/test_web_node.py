@@ -273,6 +273,22 @@ class ZipHelpersTest(unittest.TestCase):
         with self.assertRaises(server.ApiError):
             server.zip_entries(self.root, [])
 
+    def test_zip_start_looks_for_zipx_beside_the_engine_command(self):
+        """执行端的入口在共享基类里叫 command，压缩要按它去找同目录的 zipx。"""
+        entry = str(Path(self.tmp.name) / "bin" / "nodex")
+        engine = server.Engine(entry, self.state, None, Path(self.tmp.name) / "logs")
+        handler = type("ZipHandler", (server.Handler,), {"state": self.state, "engine": engine})
+        seen = []
+        original = server.find_zipx
+        server.find_zipx = lambda path: seen.append(path) or ""
+        try:
+            with self.assertRaises(server.ApiError) as caught:
+                handler.__new__(handler)._zip_start({"ws": "w1", "entries": ["README.md"]})
+        finally:
+            server.find_zipx = original
+        self.assertEqual(seen, [entry])
+        self.assertIn("zipx", caught.exception.message)
+
 
 if __name__ == "__main__":
     unittest.main()
