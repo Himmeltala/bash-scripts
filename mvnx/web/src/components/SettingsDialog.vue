@@ -168,9 +168,4 @@ code {
   font-size: 0.78rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
-@media (max-width: 600px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
-}
 </style>

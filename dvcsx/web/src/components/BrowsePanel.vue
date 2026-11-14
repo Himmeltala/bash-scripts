@@ -413,18 +413,4 @@ onBeforeUnmount(() => {
 .hint.bad {
   color: rgb(var(--v-theme-error));
 }
-@media (max-width: 900px) {
-  .body {
-    flex-direction: column;
-  }
-  .tree {
-    width: 100%;
-    flex: 0 0 auto;
-    max-height: 220px;
-    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  }
-  .vgutter {
-    display: none;
-  }
-}
 </style>

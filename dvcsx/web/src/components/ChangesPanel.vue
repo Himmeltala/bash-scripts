@@ -581,18 +581,4 @@ defineExpose({ load })
 .hint.bad {
   color: rgb(var(--v-theme-error));
 }
-@media (max-width: 900px) {
-  .split {
-    flex-direction: column;
-  }
-  .files {
-    width: 100%;
-    flex: 0 0 auto;
-    max-height: 220px;
-    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  }
-  .gutter {
-    display: none;
-  }
-}
 </style>

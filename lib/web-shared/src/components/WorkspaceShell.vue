@@ -91,16 +91,4 @@ defineEmits(['empty-action'])
   flex-direction: column;
   overflow-y: auto;
 }
-@media (max-width: 720px) {
-  .shell {
-    flex-direction: column;
-    height: auto;
-  }
-  .side {
-    width: 100%;
-    flex: 0 0 auto;
-    border-right: none;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.22);
-  }
-}
 </style>

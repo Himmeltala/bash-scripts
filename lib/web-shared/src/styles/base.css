@@ -22,3 +22,31 @@ pre,
 body.web-shared-resizing {
   user-select: none;
 }
+
+/* 滚动条按 Vuetify 的观感统一：细条、圆角，拇指取主题 on-surface 的半透明色，轨道透明。
+   Chromium 系走 ::-webkit-scrollbar；Firefox 不认这个伪元素，单独给它标准属性。 */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(var(--v-theme-on-surface, 110, 110, 110), 0.26);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(var(--v-theme-on-surface, 110, 110, 110), 0.42);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--v-theme-on-surface, 110, 110, 110), 0.26) transparent;
+  }
+}

@@ -206,14 +206,6 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-/* 窄屏放不下一屏，恢复成整页滚动。 */
-@media (max-width: 960px) {
-  .page {
-    height: auto;
-    overflow: visible;
-  }
-}
-
 .filters-row {
   display: flex;
   flex-wrap: wrap;

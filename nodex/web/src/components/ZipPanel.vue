@@ -373,18 +373,4 @@ onBeforeUnmount(() => {
 .hint.bad {
   color: rgb(var(--v-theme-error));
 }
-@media (max-width: 900px) {
-  .zip {
-    flex-direction: column;
-  }
-  .tree-side {
-    flex: 0 0 auto;
-    max-height: 45vh;
-    border-right: none;
-    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  }
-  .log {
-    min-height: 220px;
-  }
-}
 </style>

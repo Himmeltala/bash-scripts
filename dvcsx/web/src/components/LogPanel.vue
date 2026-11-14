@@ -991,18 +991,4 @@ defineExpose({ load })
 .hint.warn {
   color: rgb(var(--v-theme-warning));
 }
-@media (max-width: 900px) {
-  .split {
-    flex-direction: column;
-  }
-  .revs {
-    width: 100%;
-    flex: 0 0 auto;
-    max-height: 220px;
-    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  }
-  .vgutter {
-    display: none;
-  }
-}
 </style>
