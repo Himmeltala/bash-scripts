@@ -410,6 +410,10 @@ async function load() {
   error.value = ''
   try {
     const data = await api.syncInfo(props.ws.id)
+    // 下拉原来停在当前分支（或还没选）时，刷新后跟着新的当前分支走；用户自己选过的分支不抢。
+    const oldCurrent = branches.value.find((item) => item.current)
+    const followsCurrent =
+      !branchPick.value || (oldCurrent && branchPick.value === `local:${oldCurrent.name}`)
     info.value = data
     const known = new Set(committable.value.map((item) => item.path))
     picked.value = picked.value.filter((path) => known.has(path))
@@ -417,6 +421,10 @@ async function load() {
     if (!pickedInitialized.value && known.size) {
       picked.value = [...known]
       pickedInitialized.value = true
+    }
+    if (followsCurrent || !findBranch(branchPick.value)) {
+      const current = branches.value.find((item) => item.current)
+      branchPick.value = current ? `local:${current.name}` : ''
     }
   } catch (err) {
     error.value = err.message
