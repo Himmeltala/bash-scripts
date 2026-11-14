@@ -138,3 +138,18 @@ class PriceBook:
             return 0.0
         tier = price.peak if self.is_peak(at) else price.off
         return usage.cache_read * (tier.miss - tier.hit) / 1_000_000
+
+    def parts(self, model: str, usage: Usage, at: datetime) -> dict[str, float] | None:
+        """按 token 类别拆开的费用；未知模型返回 None，免费模型四类都是 0。"""
+        price = self.price_for(model)
+        if price is None:
+            return None
+        if price.free:
+            return {"input": 0.0, "cache_read": 0.0, "cache_write": 0.0, "output": 0.0}
+        tier = price.peak if self.is_peak(at) else price.off
+        return {
+            "input": usage.input * tier.miss / 1_000_000,
+            "cache_read": usage.cache_read * tier.hit / 1_000_000,
+            "cache_write": usage.cache_write * tier.miss / 1_000_000,
+            "output": usage.output * tier.output / 1_000_000,
+        }
