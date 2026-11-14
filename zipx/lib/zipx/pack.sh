@@ -14,28 +14,10 @@ list_dir_entries() {
   shopt -u nullglob dotglob
 }
 
-# 排除规则匹配归档内路径，要带被选中条目这一层前缀：选 proj 时 proj/.git 及其下都要排掉。
-# 显式选中的条目本身不排除；条目写成 . 或 ./x 时 zip 存的路径可能不带前导 ./，两种都补。
+# 默认不排除任何条目；只有命令行上 --exclude 给的模式才传给 zip，按 zip 的规则匹配归档内路径。
 build_exclude_patterns() {
   local -n out=$1
-  shift
-  local -a picked=("$@")
-  local x e bare
-  if ((NO_EXCLUDE == 0)); then
-    for x in "${DEFAULT_EXCLUDES[@]}"; do
-      for e in "${picked[@]}"; do
-        e="${e%/}"
-        [[ "$e" == "$x" || "$e" == "./$x" ]] && continue
-        if [[ "$e" == '.' ]]; then
-          out+=(-x "$x" -x "$x/*")
-          continue
-        fi
-        out+=(-x "$e/$x" -x "$e/$x/*")
-        bare="${e#./}"
-        [[ "$bare" != "$e" ]] && out+=(-x "$bare/$x" -x "$bare/$x/*")
-      done
-    done
-  fi
+  local x
   for x in "${USER_EXCLUDES[@]}"; do
     [[ -n "$x" ]] && out+=(-x "$x")
   done
@@ -87,7 +69,7 @@ cmd_pack() {
 
   local -a cmd=(zip -r "$(archive_arg "$out")")
   cmd+=("${entries[@]}")
-  build_exclude_patterns cmd "${entries[@]}"
+  build_exclude_patterns cmd
 
   run_cmd "${cmd[@]}" || die '打包失败，看上面的 zip 输出'
   # 预演模式没有真正执行，包文件当然不存在，这一句只能放在预演之后。

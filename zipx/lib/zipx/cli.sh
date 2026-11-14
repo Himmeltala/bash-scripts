@@ -19,8 +19,7 @@ usage() {
   -o, --output 包名    pack 的输出包名，默认取当前目录名加 .zip
   -d, --into 目录      unpack、extract 解到哪，默认当前目录
       --overwrite      允许覆盖：pack 撞同名包、unpack 撞同名文件时默认拒绝
-      --no-exclude     打包时不套用默认排除规则
-      --exclude 模式   再追加一条排除模式，可重复
+      --exclude 模式   打包时按 zip 的规则排掉匹配的条目，可重复
   -y, --yes            rm 时不再逐条确认，非交互环境下必须加
   -n, --dry-run        只打印要执行的命令，不落盘
   -h, --help           显示本帮助
@@ -36,7 +35,6 @@ ACTION=''
 PACK_OUT=''
 INTO=''
 OVERWRITE=0
-NO_EXCLUDE=0
 ASSUME_YES=0
 DRY_RUN=0
 declare -a POSITIONAL=()
@@ -77,7 +75,6 @@ parse_args() {
       -d|--into) need_value "$a" "$i" "${#args[@]}"; INTO=${args[$i]}; i=$((i + 1)) ;;
       --exclude) need_value "$a" "$i" "${#args[@]}"; USER_EXCLUDES+=("${args[$i]}"); i=$((i + 1)) ;;
       --overwrite) OVERWRITE=1 ;;
-      --no-exclude) NO_EXCLUDE=1 ;;
       -y|--yes) ASSUME_YES=1 ;;
       -n|--dry-run) DRY_RUN=1 ;;
       -*) usage_error "未知选项 $a" ;;

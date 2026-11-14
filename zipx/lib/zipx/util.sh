@@ -3,9 +3,6 @@
 # 退出码：0 成功，1 操作失败，2 用法错误，3 用户取消。
 readonly EXIT_FAIL=1 EXIT_USAGE=2 EXIT_CANCEL=3
 
-# 默认排除的目录：版本库元数据、构建产物与依赖目录；--no-exclude 关掉，--exclude 追加。
-readonly DEFAULT_EXCLUDES=(.git .svn .idea node_modules target)
-
 info() { printf '%s\n' "$*" >&2; }
 
 # 只打第一条参数：第二个参数是退出码，用 $* 会把码也打进消息里。

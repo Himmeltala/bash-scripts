@@ -6,7 +6,7 @@
 
 ```
 zipx                     打开菜单
-zipx pack 目录 文件       打包，默认排除 .git、target、node_modules 等
+zipx pack 目录 文件       打包，勾中什么就打什么，默认不排除
 zipx pack -o 名字.zip 目录
 zipx unpack 包.zip        解到当前目录
 zipx unpack 包.zip -d 目标目录
@@ -40,9 +40,9 @@ zipx --help               显示帮助
 
 解压前先看一遍包内条目名，绝对路径、Windows 盘符、含 `..` 的条目一律拒绝执行。这类包解出来会写到目标目录之外（zip slip）。unzip 6.00 自己会拦一部分，但各版本行为不一致，不指望它。
 
-## 默认排除
+## 排除
 
-`pack` 默认跳过 `.git`、`.svn`、`.idea`、`node_modules`、`target`。这几类要么是版本库元数据，要么是构建产物与依赖，塞进包里只会让包变大。排除规则加在被选中条目那一层之下：选中 `proj` 时，排掉的是 `proj/.git` 与它下面的所有内容。显式选中的条目本身不排除，选 `.git` 就是要它。`--no-exclude` 关闭默认规则；`--exclude 模式` 再追加一条自己的规则，按 zip 的规则匹配归档内路径，可以重复指定。
+`pack` 默认不排除任何条目：勾中 `.git`、`node_modules`、`target` 就打进去。要跳过某些内容，用 `--exclude 模式` 自己给，按 zip 的规则匹配归档内路径，可以重复指定。
 
 ## 中文文件名
 

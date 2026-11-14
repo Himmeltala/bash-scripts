@@ -32,6 +32,32 @@ for name in alpha-project beta-module notes.txt; do
   fi
 done
 
+# 默认不排除任何条目：.git 与 node_modules 勾中就打进去；要排掉得自己给 --exclude。
+mkdir -p "$tmp/proj/.git" "$tmp/proj/node_modules/x"
+printf 'g\n' > "$tmp/proj/.git/config"
+printf 'm\n' > "$tmp/proj/node_modules/x/a.js"
+printf 'r\n' > "$tmp/proj/README.md"
+if (cd "$tmp" && "$repo/zipx/bin/zipx" pack -o default.zip proj >/dev/null 2>&1); then
+  listing=$(unzip -Z1 "$tmp/default.zip" 2>/dev/null)
+  if [[ $listing == *'proj/.git/config'* && $listing == *'proj/node_modules/x/a.js'* ]]; then
+    ok '默认把 .git 与 node_modules 一起打包'
+  else
+    bad '默认排除还在，.git 或 node_modules 没进包'
+  fi
+else
+  bad '默认打包失败'
+fi
+if (cd "$tmp" && "$repo/zipx/bin/zipx" pack -o excl.zip proj --exclude 'proj/node_modules/*' >/dev/null 2>&1); then
+  listing=$(unzip -Z1 "$tmp/excl.zip" 2>/dev/null)
+  if [[ $listing == *'proj/.git/config'* && $listing != *'proj/node_modules'* ]]; then
+    ok '--exclude 只排给定模式'
+  else
+    bad '--exclude 没有按给定模式排除'
+  fi
+else
+  bad '带 --exclude 打包失败'
+fi
+
 if command -v script >/dev/null 2>&1; then
   printf 'q' > "$tmp/input"
   frame=$(cd "$tmp" && timeout 30 script -qec "bash '$repo/zipx/bin/zipx' pack" /dev/null \
