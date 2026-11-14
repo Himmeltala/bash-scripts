@@ -5,43 +5,17 @@ nodex、mvnx、dvcsx、tokx 四个网页进程共用的 Python 骨架与工具�
 ## 目录
 
 ```
-web.py       请求路由、JSON 回话、静态页面、监听地址与 ApiError
-toolweb.py   nodex 与 mvnx 的接口骨架 ToolHandler（状态、日志、指标、别名与启停）
-runtime.py   起网页进程：检查打包目录、起监听、就绪行、信号与开浏览器
-sse.py       行缓冲、日志尾部、SSE 拼装、Fanout、状态与指标推送、SSEMixin、日志分页
-metrics.py   CPU、内存、磁盘指标
-stores.py    FS、状态行 Row、别名 AliasStore、工作区工具链目录 HomeStore 与 attach_*
-runner.py    进程会话 Sessions、执行端 EngineClient/ToolEngine、状态缓存 StateRows、运行记录工具函数
-browse.py    家目录内的目录浏览 list_dirs
-fileio.py    原子写、JSON 安全读写、文本预览、保留换行写回
-pathutil.py  路径包含校验、工作副本内相对路径、静态文件定位
-netutil.py   监听地址、回环判断、host 解析、对外地址推测
-kvstore.py   行式键值存储基类 LineStore（别名、Node/JDK 等选择共用）
-toolchain.py Node/JDK 等运行时的目录发现、校验与环境变量拼装
-testkit.py   测试辅助：载入 server.py、起临时 HTTP 服务、读 SSE、JSON 调用、轮询
-test/        共享层的 unittest（python3 -I test/test_shared.py）
+web.py / toolweb.py / runtime.py          路由、接口骨架、启动流程
+sse.py / metrics.py                       SSE 推送与指标
+stores.py / kvstore.py / runner.py        状态行、行式存储、执行端与运行记录
+fileio.py / pathutil.py / netutil.py      文件、路径、监听地址
+browse.py / toolchain.py                  目录浏览、Node/JDK 等运行时
+testkit.py / test/                        测试脚手架与共享用例
 ```
 
 ## 四个工程怎么接
 
-`server.py` 顶部按 `__file__` 找到仓库根的 `lib/py-shared`，放进 `sys.path` 后按模块名引用：
-
-```python
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
-
-from web import ApiError, CONTENT_TYPES, STREAMED, WebHandler, is_any, guess_host
-from sse import LineBuffer, StateStream, tail, log_page
-from stores import FS, AliasStore, Row, attach_alias_rel
-from runner import EngineClient, Sessions, StateRows, parse_fixed_rows, run_info
-from browse import list_dirs
-from fileio import read_json, write_json, read_text_preview
-from pathutil import safe_relative, within
-from netutil import is_loopback_address
-from kvstore import LineStore
-from toolchain import iter_home_dirs, effective_home, prepend_bin
-```
-
-源码目录与 `~/.local/share/bash-scripts` 安装目录的层级一致，两种布局都能找到。测试用 `importlib` 直接执行 `server.py`，所以导入进来的名字仍挂在 `server` 模块上，`server.xxx` 的引用不用改。tokx 的 `web/__init__.py` 在同一层级（`parents[4]`），`snapshot.py` 与 `api.py` 用 `parents[3]`。
+`server.py` 顶部按 `__file__` 找到仓库根的 `lib/py-shared`，放进 `sys.path` 后按模块名 import。源码目录与 `~/.local/share/bash-scripts` 安装目录的层级一致，两种布局都能找到。测试用 `importlib` 直接执行 `server.py`，所以导入进来的名字仍挂在 `server` 模块上，`server.xxx` 的引用不用改。tokx 的 `web/__init__.py` 在同一层级（`parents[4]`），`snapshot.py` 与 `api.py` 用 `parents[3]`。
 
 每个 `Handler` 继承 `WebHandler`（需要日志推送的再加 `SSEMixin`），只实现自己的 `_dispatch`；GET 里要先接下的流式接口覆写 `_stream_routes`，返回 `True` 表示已经写完。nodex 与 mvnx 再上一层继承 `toolweb.ToolHandler`，公共路由在共享层，工具只补 `build_state`、`_tool_get`、`_tool_post` 与 `_tool_update_args`。dvcsx 的 `log` 带时间戳，留在自己那边。tokx 用 `WebHandler` 管路由、JSON 与错误回话，但保留自己的静态缓存策略、HEAD 行为与扫描锁。
 

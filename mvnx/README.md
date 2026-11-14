@@ -39,7 +39,7 @@ mvnx web --json
 
 左侧添加工作区后，右侧能启停服务、打包、装本地仓库，并查看运行日志与性能指标。页面没有登录；写操作只接受本机请求。工作区上点右键可以设置别名、复制相对路径或绝对路径，相对路径以家目录为基准；别名存在 `~/.cache/mvnx/web/alias.tsv`，不改状态文件。
 
-浏览器界面由 `web/` 下的前端源码打包进 `lib/mvnx/web/static`，产物随仓库提供；改前端才需要 Node。
+前端产物随仓库提供，改前端才需要 Node。
 
 ## 非终端输出
 
@@ -143,27 +143,3 @@ admin-service@erp/admin/admin-service
 ## 勾选记录
 
 勾选记录存在 `~/.cache/mvnx/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `install` 上。`--refresh` 只清当前目录当前命令这一份。
-
-## 文件结构
-
-```
-mvnx/
-├── README.md
-├── bin/
-│   └── mvnx             唯一入口：定位核心、转发参数
-└── lib/
-    ├── mvnx-core.sh     加载器，按顺序 source 下面各文件
-    └── mvnx/
-        ├── pom.sh           pom 扫描与解析、可运行模块判定、聚合根寻址
-        ├── exec.sh          启动方式与编译判定、起进程
-        ├── cli.sh           注册表、帮助、参数解析、动作分发与主菜单
-        └── commands/        每条命令一个文件
-            ├── run.sh
-            ├── war.sh
-            ├── install.sh
-            └── package.sh
-```
-
-退出码、报错、记录分列、终端菜单与勾选、网页状态文件与启动流程都在仓库根的 `lib/shell-shared/` 下，与 nodex 共用；界面组件在独立仓库 `bash-tui`，由 `lib/tui-path.sh` 定位。两者都不在上面的目录树里。加载器也可以直接执行，效果等价于 `mvnx`，调试某一步时比较方便。
-
-安装脚本只把 `bin` 下的文件软链成命令，`lib` 不会出现在 PATH 里。

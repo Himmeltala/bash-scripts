@@ -58,7 +58,7 @@ nodex web             起网页界面，左侧添加工作区，右侧点按钮�
 
 日志按运行号分开，位于 `~/.cache/nodex/web/logs/<工作区>/<运行号>.log`；状态与 Node 选择在 `~/.cache/nodex/web/` 下。页面通过 SSE 收日志、头部指标与工作区状态。
 
-前端源码在 `web/`，打包步骤见 `web/README.md`。
+前端产物随仓库提供，改前端才需要 Node；打包步骤见网页前端目录里的 README。
 
 ## 退出码
 

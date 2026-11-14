@@ -4,95 +4,14 @@
 
 ```
 bash-scripts/
-├── install.sh                    安装
-├── uninstall.sh                  卸载
-├── bash-tui.ref                  依赖的 bash-tui 标签
-├── lib/
-│   ├── tui-path.sh               定位并加载 bash-tui
-│   ├── shell-shared/             nodex、mvnx 共用的 shell 基础件（退出码、记录界面、网页状态与启动）
-│   ├── web-shared/               四个网页界面共用的前端组件（本地 npm 包）
-│   └── py-shared/                四个网页进程共用的 Python 骨架
-├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
-│   ├── README.md
-│   ├── bin/
-│   │   └── mvnx
-│   └── lib/
-│       ├── mvnx-core.sh      加载器
-│       └── mvnx/             按职责拆的模块，commands/ 下每条命令一个文件
-├── nodex/                       Node 项目：发现工作区里的包并启动、构建、装依赖
-│   ├── README.md
-│   ├── bin/
-│   │   └── nodex
-│   ├── lib/
-│   │   ├── nodex-core.sh      加载器
-│   │   └── nodex/             包扫描、界面、执行、网页服务与命令
-│   ├── test/
-│   │   └── run.sh             临时 Node 工作区下的回归测试
-│   └── web/                   网页前端源码，打包产物进 lib/nodex/web/static
-├── dvcsx/                      版本库：网页里看变更与日志，拉取、推送、更新与提交
-│   ├── README.md
-│   ├── bin/
-│   │   └── dvcsx
-│   ├── lib/
-│   │   ├── dvcsx-core.sh      加载器
-│   │   └── dvcsx/             命令行、网页服务与 SVN 查询
-│   ├── test/
-│   │   └── run.sh             临时 SVN 仓库下的回归测试
-│   └── web/                   网页前端源码，打包产物进 lib/dvcsx/web/static
-├── gradlex/                     Gradle 项目：发现可运行模块并启动或构建
-│   ├── README.md
-│   ├── bin/
-│   │   └── gradlex
-│   ├── lib/
-│   │   ├── gradlex-core.sh   加载器
-│   │   └── gradlex/          构建扫描、界面、执行与命令
-│   └── test/
-│       └── run.sh            临时 Gradle 工程下的回归测试
-├── zipx/                         归档：压缩、解压、查看、包内增删
-│   ├── README.md
-│   ├── bin/
-│   │   └── zipx
-│   └── lib/
-│       ├── zipx-core.sh          加载器
-│       └── zipx/                 按职责拆的模块
-├── portx/                        系统运维：按端口查询应用，-k 结束进程
-│   ├── README.md
-│   ├── bin/
-│   │   └── portx
-│   ├── lib/
-│   │   ├── portx-core.sh         加载器
-│   │   └── portx/                端口扫描、命令行与终端菜单
-│   └── test/
-│       └── run.sh                临时监听进程下的回归测试
-├── cleanx/                       系统运维：清理缓存、日志与开发垃圾
-│   ├── README.md
-│   ├── bin/
-│   │   └── cleanx
-│   └── lib/
-│       ├── cleanx-core.sh        加载器
-│       └── cleanx/               注册表、三类清理项、执行器与界面
-├── claudex/                      系统运维：管理 Claude Code 会话与缓存
-│   ├── README.md
-│   ├── bin/
-│   │   └── claudex
-│   ├── lib/
-│   │   ├── claudex-core.sh       加载器
-│   │   └── claudex/              会话扫描、归档动作、缓存与界面
-│   └── test/
-│       └── run.sh                临时 HOME 下的回归测试
-└── tokx/                         用量统计：三个编码代理的 token 与费用
-    ├── README.md
-    ├── config.example.toml       价格与峰谷时段示例
-    ├── bin/
-    │   └── tokx                  入口：bash，负责菜单与分发
-    ├── lib/
-    │   ├── tokx-tui.sh           交互菜单
-    │   └── tokx/                 配置、价格、三个数据源与报表
-    └── test/
-        └── run.sh                临时 HOME 下的回归测试
+├── install.sh / uninstall.sh      安装与卸载
+├── bash-tui.ref                   依赖的 bash-tui 标签
+├── lib/                           共用的 shell、Python 与前端代码
+├── nodex/  mvnx/  dvcsx/  tokx/   带网页界面的工具
+└── gradlex/  zipx/  portx/  cleanx/  claudex/   终端工具
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`dvcsx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。例外是 `lib/` 下不是工具的三层共用代码：`lib/web-shared/` 是四个网页界面（nodex、mvnx、dvcsx、tokx）共用的前端组件、工作区页面外壳、组合式函数与纯工具，做成本地 npm 包，改了源码要它自己 `npm run build` 出 `dist/`，四个工程按 `file:` 依赖引用，`vite.config.js` 也共用这里的配置工厂；`lib/py-shared/` 是四个网页进程共用的 Python 骨架（HTTP 路由、接口基类、启动流程、SSE、指标、状态行、文件与路径工具、行式存储），直接被 `server.py` 按路径加进 `sys.path` 后引用，不需要构建；`lib/shell-shared/` 是 nodex 与 mvnx 共用的 shell 基础件（退出码、记录勾选、网页状态文件与启动流程），由各自的 `*-core.sh` 按顺序 source。
+每个工具目录名就是命令名，`bin/` 放可执行文件，`lib/` 放实现；安装时只软链 `bin/`，`lib/` 不会出现在 PATH 里。`lib/` 下不是工具：`web-shared/`、`py-shared/`、`shell-shared/` 分别给四个网页界面、四个网页进程和 nodex/mvnx 的 shell 层共用，细节见各自的 README。
 
 ## 安装
 

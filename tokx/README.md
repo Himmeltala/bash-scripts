@@ -109,19 +109,7 @@ tokx web --json               给脚本用：只打一行 {"url","local","host",
 - 筛选都在页面上改，也可以直接拼查询串：`/api/usage?command=session&days=7&source=dsh`，日期用 `since`、`until`，与命令行同名同义。`/api/usage/stream` 是同一份数据的 SSE 推送，默认 5 秒一份，脚本可以用 `every` 指定 1 到 60 秒；`/api/prices` 给当前价格表。
 - `--json` 只打一行地址就转去服务，适合脚本起服务；stdout 不是终端又没加 `--json` 时直接报错，免得接上管道后服务挂在后台。
 
-前端是 Vite + Vue 3 + Vuetify 3 + ECharts，源码在 `tokx/web/`，打包产物提交在 `tokx/lib/tokx/web/static/`，所以用 `./install.sh` 装整棵树以后不需要 Node。改前端时：
-
-```
-cd tokx/web && npm install
-npm run dev        开发服务（默认 5173），/api 代理到 TOKX_WEB_ORIGIN，默认 http://127.0.0.1:8770
-npm run build      打包到 tokx/lib/tokx/web/static，提交时连产物一起提交
-```
-
-开发时另开一个终端先 `tokx web --port 8770`，Vite 的热更新才有数据可取。
-
-Vuetify 的默认入口只装主题与图标，不带组件，`web/vite.config.js` 里用别名把 `vuetify` 指到带组件的入口，模板里的 `v-app`、`v-data-table` 这些才有人认。`@mdi/font` 的字体文件会一起打进 `static/assets/`，图标在离线与局域网里都能显示。
-
-服务端只认静态文件：加了带哈希的资源长期缓存，首页 `no-cache`，`/api` 不缓存，其余路径回落到首页由页面自己按地址栏还原筛选。
+前端用 Vite + Vue 3 + Vuetify 3 + ECharts，产物随仓库提供，所以 `./install.sh` 装完整棵树后不需要 Node。改前端时先在另一个终端起 `tokx web --port 8770`，再在 `tokx/web` 里 `npm install && npm run dev`；打包用 `npm run build`。服务端只认静态文件：带哈希的资源长期缓存，首页 `no-cache`，`/api` 不缓存，其余路径回落到首页由页面按地址栏还原筛选。
 
 ## 交互界面
 
@@ -255,12 +243,12 @@ keep_days = 180                           # db gc 默认保留多少天
 
 ## 安装
 
-在仓库根目录执行 `./install.sh`，它会把 `tokx/bin/tokx` 软链到 `~/.local/bin/tokx`。也可以直接运行 `tokx/bin/tokx`。
+在仓库根目录执行 `./install.sh`，会把 `tokx` 命令软链到 `~/.local/bin`。也可以直接运行仓库里的 `tokx/bin/tokx`。
 
-入口是 bash，负责菜单与分发；采集、计价与出表在 `tokx/lib/tokx` 下的 Python 包里，也可以绕开入口直接调：
+入口是 bash，负责菜单与分发；采集、计价与出表是 Python 包，也可以绕开入口直接调：
 
 ```
 PYTHONPATH=tokx/lib python3 -m tokx --all
 ```
 
-依赖：Python 3.11 或更高版本（用到 `tomllib`），读 DeepSeek Harness 时需要 `zstd` 命令，其余都是标准库。菜单依赖 `bash-tui` 与 bash 4.2 以上，由仓库根下的 `lib/tui-path.sh` 定位。
+依赖：Python 3.11 或更高版本（用到 `tomllib`），读 DeepSeek Harness 时需要 `zstd` 命令，其余都是标准库。菜单依赖 `bash-tui` 与 bash 4.2 以上。
