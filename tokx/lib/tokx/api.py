@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# 共用小件在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib" / "py-shared"))
+from fileio import read_json, read_text
 
 CLAUDE_DEFAULT = "https://api.anthropic.com"
 
@@ -128,17 +133,16 @@ def _unquote(text: str) -> str:
 def _load_json(path: Path) -> dict:
     if not path.is_file():
         return {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
+    parsed = read_json(path, default=None)
+    if parsed is not None:
+        return parsed if isinstance(parsed, dict) else {}
+    text = read_text(path, default=None)
+    if text is None:
         return {}
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(_strip_jsonc(text))
     except json.JSONDecodeError:
-        try:
-            parsed = json.loads(_strip_jsonc(text))
-        except json.JSONDecodeError:
-            return {}
+        return {}
     return parsed if isinstance(parsed, dict) else {}
 
 

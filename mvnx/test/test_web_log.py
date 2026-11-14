@@ -1,19 +1,19 @@
 """网页模式日志 SSE 的回归测试：行缓冲、尾部与增量推送。"""
 
 import http.client
-import importlib.util
 import json
+import sys
 import tempfile
-import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[2] / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "lib" / "py-shared"))
 
-spec = importlib.util.spec_from_file_location("mvnx_web_server", SERVER)
-web = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(web)
+import testkit
+
+SERVER = REPO / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+web = testkit.load_module("mvnx_web_server", SERVER)
 
 
 class LineBufferTest(unittest.TestCase):
@@ -45,21 +45,6 @@ class SseEventTest(unittest.TestCase):
         self.assertEqual(payload["text"], "a\nb")
 
 
-def read_event(resp):
-    event, data = "", ""
-    while True:
-        line = resp.readline()
-        if not line:
-            return event, data
-        line = line.decode("utf-8").rstrip("\n")
-        if line == "":
-            return event, data
-        if line.startswith("event:"):
-            event = line[6:].strip()
-        elif line.startswith("data:"):
-            data += line[5:].strip()
-
-
 class SseTest(unittest.TestCase):
     def test_sends_tail_then_appended_lines(self):
         with tempfile.TemporaryDirectory() as td:
@@ -69,22 +54,17 @@ class SseTest(unittest.TestCase):
             log.parent.mkdir(parents=True)
             log.write_text("one\ntwo\n", encoding="utf-8")
 
-            handler = type(
-                "TestHandler",
-                (web.Handler,),
-                {"logs": str(logs), "api_prefix": "/api", "static": Path(td)},
-            )
-            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-            httpd.daemon_threads = True
-            threading.Thread(target=httpd.serve_forever, daemon=True).start()
-            try:
-                conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+            handler = type("TestHandler", (web.Handler,), {})
+            with testkit.serve(
+                handler, static=td, api_prefix="/api", logs=str(logs)
+            ) as srv:
+                conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
                 conn.request("GET", "/api/log/stream?run=" + runid)
                 resp = conn.getresponse()
                 self.assertEqual(resp.status, 200)
                 self.assertEqual(resp.getheader("Content-Type"), "text/event-stream; charset=utf-8")
 
-                event, data = read_event(resp)
+                event, data = testkit.read_sse_event(resp)
                 payload = json.loads(data)
                 self.assertEqual(event, "tail")
                 self.assertEqual(payload["text"], "one\ntwo")
@@ -92,15 +72,12 @@ class SseTest(unittest.TestCase):
 
                 with open(log, "a", encoding="utf-8") as fh:
                     fh.write("three\n")
-                event, data = read_event(resp)
+                event, data = testkit.read_sse_event(resp)
                 self.assertEqual(event, "append")
                 self.assertEqual(json.loads(data)["text"], "three")
 
                 resp.close()
                 conn.close()
-            finally:
-                httpd.shutdown()
-                httpd.server_close()
 
 
 if __name__ == "__main__":

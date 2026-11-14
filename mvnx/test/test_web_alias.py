@@ -1,16 +1,18 @@
 """网页工作区别名与相对路径的回归测试。"""
 
-import importlib.util
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[2] / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "lib" / "py-shared"))
 
-spec = importlib.util.spec_from_file_location("mvnx_web_server_alias", SERVER)
-web = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(web)
+import testkit
+
+SERVER = REPO / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+web = testkit.load_module("mvnx_web_server_alias", SERVER)
 
 
 class AliasStoreTest(unittest.TestCase):

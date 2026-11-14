@@ -32,9 +32,20 @@ from urllib.parse import parse_qs, quote, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
 from browse import inside, list_dirs
 from metrics import Metrics
-from runner import EngineClient, Sessions, StateRows, sh_shell_argv
-from sse import MetricsStream, SSEMixin, StateStream, tail
-from stores import FS, AliasStore, Row, attach_alias_rel
+from runner import (
+    RUN_FIELDS,
+    EngineClient,
+    Sessions,
+    StateRows,
+    latest_runs,
+    parse_fixed_rows,
+    run_info,
+    run_log_path,
+    sh_shell_argv,
+)
+from sse import MetricsStream, SSEMixin, StateStream, log_page, tail
+from stores import FS, AliasStore, LineStore, Row, attach_alias_rel
+from toolchain import effective_home, iter_home_dirs, prepend_bin
 from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, log, zip_dir
 
 
@@ -57,8 +68,7 @@ RUN_REL = 6
 RUN_DISPLAY = 7
 RUN_PID, RUN_PORT, RUN_STATUS = 11, 12, 13
 # run 行第 1 段是类型 run，第 2 段起依次是这 16 个字段，顺序与 lib/nodex/server.sh 的 web_run_line 一致。
-RUN_FIELDS = ("id", "ws", "type", "tag", "path", "pl", "display", "module", "args",
-              "cmd", "pid", "port", "status", "started", "code", "err")
+# （RUN_FIELDS 由共享层给出，这里仍以同名留在模块顶层。）
 
 
 # 一次引擎调用的上限：扫描大工程几秒，留足余量。
@@ -72,15 +82,7 @@ WIDTHS = {WS_KIND: WS_WIDTH, SVC_KIND: SVC_WIDTH, SCRIPT_KIND: SCRIPT_WIDTH, RUN
 
 
 def parse_rows(text):
-    rows = []
-    for line in text.splitlines():
-        if not line:
-            continue
-        parts = line.split(FS)
-        # 列数必须正好对上：多一段少一段都是写坏了，用它会整行错位，不如丢掉。
-        if len(parts) == WIDTHS.get(parts[0]):
-            rows.append(parts)
-    return rows
+    return parse_fixed_rows(text, WIDTHS)
 
 
 # 按工作区选 Node
@@ -109,30 +111,11 @@ def _version_key(name):
 def discover_nodes(roots=None):
     """扫已装的 Node，符号链接跳过（current 之类的别名只是重复）；fnm 装在 <版本>/installation，nvm、volta、n 直接放 <版本> 下。"""
     out = []
-    seen = set()
-    for root in (roots if roots is not None else NODE_ROOTS):
-        try:
-            entries = sorted(Path(root).iterdir(), key=lambda p: p.name)
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name.startswith(".") or entry.is_symlink():
-                continue
-            try:
-                if not entry.is_dir():
-                    continue
-            except OSError:
-                continue
-            home = entry / "installation" if (entry / "installation").is_dir() else entry
-            try:
-                real = home.resolve()
-            except OSError:
-                continue
-            if real in seen or not is_node_home(real):
-                continue
-            seen.add(real)
-            version = entry.name.lstrip("v")
-            out.append({"path": str(real), "version": version, "label": version or real.name})
+    for entry, real in iter_home_dirs(
+        roots if roots is not None else NODE_ROOTS, is_node_home, nested="installation"
+    ):
+        version = entry.name.lstrip("v")
+        out.append({"path": str(real), "version": version, "label": version or real.name})
 
     out.sort(key=lambda item: _version_key(item["version"]), reverse=True)
     return out
@@ -151,69 +134,32 @@ def current_node_version():
 
 def effective_node(node):
     """存着的目录还在才用它；不在了回退到当前环境。"""
-    return node if node and is_node_home(node) else ""
+    return effective_home(node, is_node_home)
 
 
 def build_env(node, base=None):
     """node 非空时把它的 bin 放到 PATH 最前；空则原样继承。"""
-    if not node:
-        return None
-    env = dict(os.environ if base is None else base)
-    bindir = os.path.join(node, "bin")
-    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p and p != bindir]
-    env["PATH"] = os.pathsep.join([bindir] + parts)
-    return env
+    return prepend_bin(node, base)
 
 
-class NodeStore:
+class NodeStore(LineStore):
     """工作区到 Node 安装目录的映射，存在状态文件旁边，只有网页进程写它。"""
 
     def __init__(self, path):
-        self.path = Path(path)
-        self._lock = threading.Lock()
+        LineStore.__init__(self, path, allow_empty=True, on_error=self._write_failed)
 
-    def _load(self):
-        out = {}
-        try:
-            text = self.path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return out
-        for line in text.splitlines():
-            if not line:
-                continue
-            ws, sep, node = line.partition(FS)
-            if sep and ws:
-                out[ws] = node
-        return out
-
-    def _save(self, data):
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            text = "".join(ws + FS + node + "\n" for ws, node in data.items() if ws)
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, self.path)
-        except OSError as exc:
-            log("写 Node 设置失败 %s：%s" % (self.path, exc))
+    def _write_failed(self, exc):
+        log("写 Node 设置失败 %s：%s" % (self.path, exc))
 
     def get(self, ws):
-        with self._lock:
-            return self._load().get(ws, "")
+        return LineStore.get(self, ws, "")
 
     def set(self, ws, node):
-        with self._lock:
-            data = self._load()
-            if node:
-                data[ws] = node
-            else:
-                data.pop(ws, None)
-            self._save(data)
-
-    def remove(self, ws):
-        with self._lock:
-            data = self._load()
-            data.pop(ws, None)
-            self._save(data)
+        # 空值仍然表示「删掉这一行」，与以前的状态文件格式保持一致。
+        if node:
+            LineStore.set(self, ws, node)
+        else:
+            LineStore.remove(self, ws)
 
 
 def attach_nodes(snapshot, store):
@@ -225,22 +171,18 @@ def attach_nodes(snapshot, store):
     return snapshot
 
 
-class CustomStore:
+class CustomStore(LineStore):
     """自定义命令的登记表，每行：工作区|类型|脚本目录|名称|完整命令。这里只用来标记哪些服务是自定义的。"""
 
     def __init__(self, path):
-        self.path = Path(path)
+        LineStore.__init__(self, path, allow_empty=True)
 
     def ids(self):
         out = set()
-        try:
-            text = self.path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return out
-        for line in text.splitlines():
-            parts = line.split(FS)
-            if len(parts) >= 4 and parts[0] and parts[1] and parts[3]:
-                out.add("%s.%s.%s" % (parts[0], parts[1], parts[3]))
+        for ws, rest in self.all().items():
+            parts = rest.split(FS)
+            if len(parts) >= 3 and ws and parts[0] and parts[2]:
+                out.add("%s.%s.%s" % (ws, parts[0], parts[2]))
         return out
 
 
@@ -261,19 +203,17 @@ class State(StateRows):
     def snapshot(self, custom=None):
         custom_ids = custom.ids() if custom is not None else set()
         scripts = {}
-        runs = {}
         workspaces = []
         by_id = {}
-        for r in self.rows():
+        rows = self.rows()
+        runs = latest_runs(rows)
+        for r in rows:
             if r[0] == WS_KIND:
                 item = {"id": r[1], "root": r[2], "added": r[3], "scripts": [], "services": []}
                 by_id[r[1]] = item
                 workspaces.append(item)
             elif r[0] == SCRIPT_KIND:
                 scripts.setdefault(r[2], []).append({"rel": r[1], "name": r[3]})
-            elif r[0] == RUN_KIND:
-                # 一个服务跑过多次会留下多条记录，留下最新的一条。
-                runs[RUN_PREFIX_RE.sub("", r[1])] = Row(r)
 
         for r in self.rows():
             if r[0] != SVC_KIND:
@@ -304,13 +244,6 @@ class State(StateRows):
             ws["scripts"] = items
             ws["services"].sort(key=lambda s: (s["display"], s["id"]))
         return {"workspaces": workspaces, "now": int(time.time())}
-
-
-def run_info(r):
-    # Row 的 self.f 是整行，第 1 段是类型；列表切片不走 __getitem__，用 .f 取。
-    d = dict(zip(RUN_FIELDS, r.f[1:]))
-    d.setdefault("pl", "")
-    return d
 
 
 # 引擎
@@ -376,7 +309,7 @@ class Engine(EngineClient):
         runid, path, run_args = parts[0], parts[1], parts[2]
         gen = parts[-1]
 
-        log_path = self.logs / runid.split(".", 1)[0] / (runid + ".log")
+        log_path = run_log_path(self.logs, runid)
         # 记录里的参数就是完整命令，包管理器由用户填在命令里。
         argv = [w for w in run_args.split() if w]
         if not argv:
@@ -672,23 +605,7 @@ class Handler(SSEMixin, WebHandler):
 
 
     def _log(self, query):
-        runid = (query.get("run") or [""])[0]
-        run = self.state.find(RUN_KIND, runid)
-        try:
-            page = max(0, int((query.get("page") or ["0"])[0] or 0))
-        except ValueError:
-            page = 0
-        path = Path(self.logs) / runid.split(".", 1)[0] / (runid + ".log")
-        text, more = tail(path, page)
-        info = run_info(run) if run else {}
-        return {
-            "run": runid,
-            "status": info.get("status", ""),
-            "code": info.get("code", ""),
-            "text": text,
-            "page": page,
-            "more": more,
-        }
+        return log_page(self.state, self.logs, query, RUN_KIND)
 
     # 压缩
 

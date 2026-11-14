@@ -1,4 +1,17 @@
-// 页面上反复用到的小格式化：状态字母、日志动作、日期与路径。
+// 页面上反复用到的小格式化：路径与时间走共享的 /format，这里只留状态与动作词汇。
+
+import { formatDateTime } from '@bash-scripts/web-shared/format'
+
+export {
+  baseName,
+  dirName,
+  firstLine,
+  shortPath,
+  shortenPath,
+} from '@bash-scripts/web-shared/format'
+
+// SVN 给 UTC（带 Z），Git 给带偏移的时间；按浏览器时区显示到分钟。
+export const when = formatDateTime
 
 const STATUS = {
   modified: { letter: 'M', text: '改动', color: 'modified' },
@@ -28,46 +41,4 @@ const ACTIONS = {
 
 export function actionOf(action) {
   return ACTIONS[action] || { text: action || '改动', color: 'unversioned' }
-}
-
-export function baseName(full) {
-  const parts = String(full || '').split('/').filter(Boolean)
-  return parts.length ? parts[parts.length - 1] : full
-}
-
-export function dirName(full) {
-  const parts = String(full || '').split('/')
-  parts.pop()
-  return parts.join('/')
-}
-
-// SVN 给 UTC（带 Z），Git 给带偏移的时间；统一按浏览器时区显示到分钟。
-export function when(iso) {
-  if (!iso) return ''
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return String(iso).slice(0, 16)
-  const pad = (value) => String(value).padStart(2, '0')
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-    `${pad(date.getHours())}:${pad(date.getMinutes())}`
-  )
-}
-
-export function firstLine(text) {
-  const lines = String(text || '').split('\n')
-  return lines.find((line) => line.trim()) || '（没有写提交说明）'
-}
-
-export function shortPath(repoPath) {
-  return String(repoPath || '').replace(/^\/+/, '')
-}
-
-// 列表窄，长路径从中间省略：开头看得到模块，结尾看得到文件名。
-export function shortenPath(text, max = 42) {
-  const s = String(text || '')
-  if (s.length <= max) return s
-  const keep = max - 1
-  const head = Math.ceil(keep / 3)
-  const tail = keep - head
-  return s.slice(0, head) + '…' + s.slice(-tail)
 }

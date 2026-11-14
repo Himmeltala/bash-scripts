@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+from runner import run_info, run_log_path
 from web import ApiError, log
 
 # 日志尾部一页的行数。
@@ -47,14 +48,18 @@ def last_lines(data, lines=LOG_PAGE):
     return "\n".join(all_lines[-lines:]), len(all_lines) > lines
 
 
-def sse_data(payload, event=None, event_id=None):
+def sse_data(payload, event=None, event_id=None, json_default=None):
     """一条 SSE 事件。数据整体走 JSON，换行不会破坏 data 行的格式。"""
     head = ""
     if event_id is not None:
         head += "id: %s\n" % event_id
     if event:
         head += "event: %s\n" % event
-    return head + "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+    if json_default is None:
+        data = json.dumps(payload, ensure_ascii=False)
+    else:
+        data = json.dumps(payload, ensure_ascii=False, default=json_default)
+    return head + "data: " + data + "\n\n"
 
 
 def sse_event(text, event=None, event_id=None, more=None):
@@ -74,6 +79,26 @@ def tail(path, page=0, lines=LOG_PAGE):
     end = max(0, len(all_lines) - page * lines)
     start = max(0, end - lines)
     return "\n".join(all_lines[start:end]), start > 0
+
+
+def log_page(state, logs, query, run_kind="run"):
+    """日志界面的一页：runid 与 page 从 query 取，状态行只用来带出状态与退出码。"""
+    runid = (query.get("run") or [""])[0]
+    run = state.find(run_kind, runid)
+    try:
+        page = max(0, int((query.get("page") or ["0"])[0] or 0))
+    except ValueError:
+        page = 0
+    text, more = tail(run_log_path(logs, runid), page)
+    info = run_info(run) if run else {}
+    return {
+        "run": runid,
+        "status": info.get("status", ""),
+        "code": info.get("code", ""),
+        "text": text,
+        "page": page,
+        "more": more,
+    }
 
 
 class Fanout:

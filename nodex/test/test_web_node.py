@@ -1,19 +1,20 @@
 """nodex 网页端：Node 版本发现、按工作区保存与环境拼装，以及状态快照。"""
 
 import http.client
-import importlib.util
 import json
 import os
+import sys
 import tempfile
-import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parent.parent / "lib" / "nodex" / "web" / "server.py"
-spec = importlib.util.spec_from_file_location("nodex_web_server", SERVER)
-server = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(server)
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "lib" / "py-shared"))
+
+import testkit
+
+SERVER = REPO / "nodex" / "lib" / "nodex" / "web" / "server.py"
+server = testkit.load_module("nodex_web_server", SERVER)
 
 
 def make_node(home):
@@ -190,21 +191,6 @@ class AttachAliasTest(unittest.TestCase):
             )
 
 
-def read_event(resp):
-    event, data = "", ""
-    while True:
-        line = resp.readline()
-        if not line:
-            return event, data
-        line = line.decode("utf-8").rstrip("\n")
-        if line == "":
-            return event, data
-        if line.startswith("event:"):
-            event = line[6:].strip()
-        elif line.startswith("data:"):
-            data += line[5:].strip()
-
-
 class StateSseTest(unittest.TestCase):
     """状态文件一变就推一份，tick 也只跟着页面走。"""
 
@@ -219,38 +205,28 @@ class StateSseTest(unittest.TestCase):
                 tick=lambda: ticks.append(1),
             )
             stream.start()
-            handler = type(
-                "TestHandler",
-                (server.Handler,),
-                {"api_prefix": "/api", "static": Path(td), "state_stream": stream},
-            )
-            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-            httpd.daemon_threads = True
-            threading.Thread(target=httpd.serve_forever, daemon=True).start()
-            try:
-                conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
+            handler = type("TestHandler", (server.Handler,), {})
+            with testkit.serve(handler, static=td, api_prefix="/api", state_stream=stream) as srv:
+                conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=10)
                 conn.request("GET", "/api/state/stream")
                 resp = conn.getresponse()
                 self.assertEqual(resp.status, 200)
                 self.assertEqual(resp.getheader("Content-Type"), "text/event-stream; charset=utf-8")
 
-                event, data = read_event(resp)
+                event, data = testkit.read_sse_event(resp)
                 self.assertEqual(event, "state")
                 self.assertEqual(json.loads(data)["size"], 4)
 
                 stat = path.stat()
                 path.write_text("one\ntwo\n", encoding="utf-8")
                 os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1000000))
-                event, data = read_event(resp)
+                event, data = testkit.read_sse_event(resp)
                 self.assertEqual(event, "state")
                 self.assertEqual(json.loads(data)["size"], 8)
                 self.assertTrue(ticks)
 
                 resp.close()
                 conn.close()
-            finally:
-                httpd.shutdown()
-                httpd.server_close()
 
 
 class ZipHelpersTest(unittest.TestCase):

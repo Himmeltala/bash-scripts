@@ -1,4 +1,5 @@
 # 网页模式：起 python3 转发进程，静态页面与 SVN / Git 查询、操作接口都由它出。
+# 公共启动流程在 lib/shell-shared/web-command.sh，这里给参数与两项 dvcsx 专属校验/提示。
 
 # 缺省值在这里定，parse_args 里覆盖，dvcsx -p 9999 web 与 dvcsx web -p 9999 等价。
 RV_PORT=0
@@ -13,6 +14,7 @@ readonly WEB_STATE_FILE="$WEB_HOME/state.json"
 readonly WEB_API_PREFIX='/__dvcsx/api'
 readonly WEB_PAGE="$dvcsx_dir/dvcsx/web/static/index.html"
 
+# dvcsx 不接网页状态层，web_fail 与 web_python 留在这里供共享的 web_command 用。
 web_fail() {
   printf 'dvcsx: %s\n' "$1" >&2
   return "${2:-$EXIT_FAIL}"
@@ -29,59 +31,33 @@ web_python() {
   printf '%s\n' "$runner"
 }
 
-web_command() {
-  local runner child log line='' waited=0 url local_url
-  local -a open_arg=() write_arg=()
-  runner=$(web_python) || return
-  RV_PORT=${RV_PORT:-0}
-  RV_HOST=${RV_HOST:-0.0.0.0}
-  [[ "$RV_PORT" =~ ^[0-9]+$ ]] && ((RV_PORT >= 0 && RV_PORT <= 65535)) ||
-    { web_fail "端口不对：$RV_PORT" "$EXIT_USAGE"; return; }
-  [[ -f "$WEB_PAGE" ]] ||
-    { web_fail "缺 ${WEB_PAGE#"$dvcsx_dir"/}，前端还没打包（见 dvcsx/web/README.md）" "$EXIT_USAGE"; return; }
+# web_command 的公共流程在 lib/shell-shared/web-command.sh，这里只给参数。
+WEB_TOOL='dvcsx'
+WEB_ROOT="$dvcsx_dir/dvcsx/web"
+WEB_SERVER_PY="$WEB_ROOT/server.py"
+WEB_STATIC_DIR="$WEB_ROOT/static"
+WEB_READY_MARKER='DVCSX_WEB_READY'
+WEB_PYTHON_ENV='DVCSX_PYTHON'
+# --json 时只打一行 JSON；dvcsx 要等转发进程退出，脚本拿到的服务才算收尾。
+WEB_JSON_FLAG=0
+WEB_JSON_WAIT=1
+WEB_SERVER_ARGS=(--state "$WEB_STATE_FILE" --api "$WEB_API_PREFIX")
+WEB_WARN_TEXT='页面没有登录，同一网络里能连上的人都能查看工作副本的变更与日志；只想本机用就加 --host 127.0.0.1'
+WEB_EXIT_TEXT='按 Ctrl+C 退出网页服务。'
+
+# 页面起不来之前先确认有可用的版本控制命令，错误比 python 侧的报错更直接。
+# 放开写操作的参数也在启动前补上，与命令行解析结果保持一致。
+web_command_precheck() {
   command -v svn >/dev/null 2>&1 || command -v git >/dev/null 2>&1 ||
-    { web_fail '找不到 svn 与 git 命令，装上其中一个再试' "$EXIT_USAGE"; return; }
+    { web_fail '找不到 svn 与 git 命令，装上其中一个再试' "$EXIT_USAGE"; return 1; }
+  ((RV_ALLOW_WRITE)) && WEB_SERVER_ARGS+=(--allow-write)
+  return 0
+}
 
-  mkdir -p "$WEB_HOME"
-  log="$WEB_HOME/runner.log"
-  : >"$log"
-  ((RV_OPEN)) && open_arg+=(--open)
-  ((RV_ALLOW_WRITE)) && write_arg+=(--allow-write)
-
-  "$runner" "$dvcsx_dir/dvcsx/web/server.py" \
-    --static "$dvcsx_dir/dvcsx/web/static" \
-    --state "$WEB_STATE_FILE" --api "$WEB_API_PREFIX" \
-    --host "$RV_HOST" --port "$RV_PORT" "${open_arg[@]}" "${write_arg[@]}" >"$log" 2>&1 &
-  child=$!
-  trap 'kill -TERM "$child" 2>/dev/null' INT TERM HUP
-
-  while ((waited < WEB_ATTACH_TIMEOUT * 4)); do
-    if line=$(grep -m 1 '^DVCSX_WEB_READY ' "$log" 2>/dev/null); then
-      line=${line#DVCSX_WEB_READY }
-      break
-    fi
-    kill -0 "$child" 2>/dev/null || { web_fail "网页服务起不来：$(tail -n 3 "$log" 2>/dev/null)"; return; }
-    sleep 0.25
-    waited=$((waited + 1))
-  done
-  [[ -n "$line" ]] || { web_fail '等网页服务就绪超时'; return; }
-
-  url="http://$line/"
-  local_url="http://127.0.0.1:${line##*:}/"
-  if ((RV_JSON)); then
-    printf '{"url":"%s","local":"%s","host":"%s","port":"%s"}\n' \
-      "$url" "$local_url" "$RV_HOST" "${line##*:}"
-    wait "$child"
-    return 0
-  fi
-  printf 'dvcsx 网页界面：%s\n' "$url"
-  [[ "$url" == "$local_url" ]] || printf '本机 %s\n' "$local_url"
-  [[ "$RV_HOST" == '127.0.0.1' || "$RV_HOST" == 'localhost' ]] ||
-    printf '页面没有登录，同一网络里能连上的人都能查看工作副本的变更与日志；只想本机用就加 --host 127.0.0.1\n' >&2
+# 放开写操作时再提醒一次风险；只在本机监听时不必说。
+web_command_extra_warn() {
   if ((RV_ALLOW_WRITE)) &&
     [[ "$RV_HOST" != '127.0.0.1' && "$RV_HOST" != 'localhost' ]]; then
     printf '已放开写操作：同一网络里能打开页面的人都能拉取、推送、切换分支、更新与提交，确认网络可信再用 --allow-write\n' >&2
   fi
-  printf '按 Ctrl+C 退出网页服务。\n' >&2
-  wait "$child"
 }

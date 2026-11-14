@@ -1,4 +1,8 @@
-// 页面上反复用到的小格式化。
+// 页面上反复用到的小格式化：共享的纯函数走 /format，这里只留业务常量。
+
+import { formatAgo } from '@bash-scripts/web-shared/format'
+
+export const ago = formatAgo
 
 export const STATUS_TEXT = {
   starting: '启动中',
@@ -40,16 +44,6 @@ export const MODE_ITEMS = [
 // 模块清单是前端用 mvn 现成的模块：pom 路径相对工作区根，逐级去掉 ./ 之后与 mvn -pl 写法一致。
 export function moduleOf(rel) {
   return String(rel || '').replace(/^(\.\/)+/, '')
-}
-
-export function ago(sec) {
-  const n = Number(sec)
-  if (!n) return ''
-  const diff = Math.max(0, Math.floor(Date.now() / 1000) - n)
-  if (diff < 60) return `${diff} 秒前`
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
-  return `${Math.floor(diff / 86400)} 天前`
 }
 
 export function tailPath(full) {

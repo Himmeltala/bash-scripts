@@ -9,19 +9,23 @@
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import json
 import mimetypes
 import os
-import socket
 import sys
 import threading
 import time
 from datetime import date
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+
+# 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+import netutil
+from sse import sse_data
+from web import WebServer
 
 from .. import cli
 from ..config import Config, load
@@ -231,7 +235,7 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
                 pass
 
         def _sse_send(self, payload: dict, event: str) -> None:
-            body = f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+            body = sse_data(payload, event=event, json_default=str)
             self.wfile.write(body.encode("utf-8"))
             self.wfile.flush()
 
@@ -247,60 +251,34 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
 
 
 def parse_host(text: str) -> str:
-    if text == "localhost":
-        return text
     try:
-        ipaddress.ip_address(text)
+        return netutil.parse_host(text)
     except ValueError as exc:
-        raise cli.UsageError(f"--host {text} 不是 IP 地址") from exc
-    return text
+        raise cli.UsageError(str(exc)) from exc
 
 
 def is_loopback(host: str) -> bool:
-    if host == "localhost":
-        return True
-    return ipaddress.ip_address(host).is_loopback
+    return netutil.is_loopback_host(host)
 
 
 def is_any(host: str) -> bool:
     """0.0.0.0 与 :: 都是"所有网卡"，不能拿来当访问地址。"""
-    return host in ("0.0.0.0", "::")
+    return netutil.is_any_host(host)
 
 
 def lan_address() -> str:
-    """猜一个局域网里能用的本机地址，猜不出来退回回环地址；连外部地址只让内核选出口网卡，断网时可能失败。"""
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.connect(("192.0.2.1", 9))  # TEST-NET-1，不会真连上
-            address = probe.getsockname()[0]
-        if address and not ipaddress.ip_address(address).is_loopback:
-            return address
-    except OSError:
-        pass
-    try:
-        address = socket.gethostbyname(socket.gethostname())
-        if address and not ipaddress.ip_address(address).is_loopback:
-            return address
-    except OSError:
-        pass
-    return "127.0.0.1"
+    """猜一个局域网里能用的本机地址，猜不出来退回回环地址。"""
+    return netutil.guess_lan_address()
 
 
 def urls(host: str, port: int) -> tuple[str, str]:
     """返回 (对外地址, 本机地址)。"""
-    local = f"http://127.0.0.1:{port}/"
-    if is_any(host):
-        return f"http://{lan_address()}:{port}/", local
-    return f"http://{host}:{port}/", local
+    local = netutil.host_url("127.0.0.1", port)
+    return netutil.host_url(host, port), local
 
 
-class _Server(ThreadingHTTPServer):
-    """客户端提前断开不算错误：关标签或刷新时回话写不出去，不必打整段栈。"""
-
-    def handle_error(self, request, client_address):
-        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
-            return
-        ThreadingHTTPServer.handle_error(self, request, client_address)
+# 客户端提前断开不算错误：共用 WebServer 已经按这个口径处理。
+_Server = WebServer
 
 
 def serve(

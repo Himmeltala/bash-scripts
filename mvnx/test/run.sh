@@ -6,10 +6,17 @@ fail=0
 ok() { printf 'ok - %s\n' "$*"; }
 bad() { printf 'FAIL - %s\n' "$*" >&2; fail=1; }
 
-if grep -q 'mvnx_plain_checklist' "$repo/mvnx/lib/mvnx/ui.sh"; then
+if grep -rq 'mvnx_plain_checklist' "$repo/mvnx/lib"; then
   bad '仍保留自定义编号清单'
 else
   ok '已删除自定义编号清单'
+fi
+
+# 共享层留在 lib/shell-shared，不能搬回 mvnx/lib。
+if grep -rqE '^shell_(assign_tags|ui_checklist|ui_checklist_all|save_selection)\(\)' "$repo/mvnx/lib"; then
+  bad '共享层不能放回 mvnx/lib'
+else
+  ok '共享层没有放回 mvnx/lib'
 fi
 
 
@@ -21,12 +28,12 @@ rec() {
 
 records=$(rec web /w/a '' '' a/web 'mvn -pl a'; rec web /w/b '' '' b/web 'mvn -pl b')
 expected=$(rec 'web@a/web' /w/a '' '' a/web 'mvn -pl a'; rec 'web@b/web' /w/b '' '' b/web 'mvn -pl b')
-got=$(printf '%s\n' "$records" | bash -c 'source "$1/mvnx/lib/mvnx-core.sh"; assign_tags' _ "$repo")
+got=$(printf '%s\n' "$records" | bash -c 'source "$1/mvnx/lib/mvnx-core.sh"; shell_assign_tags' _ "$repo")
 [[ "$got" == "$expected" ]] && ok '标签去重后记录仍是六列' || bad '标签去重改动了记录'
 
 # 勾选结果按标签映射回整条记录，执行时不用再猜字段。
 one=$(rec web /w/a '' '' a/web 'mvn -pl a')
-got=$(printf '1\n' | bash -c 'source "$1/mvnx/lib/mvnx-core.sh"; UI_MODE=0; mvnx_ui_checklist 模块 "$2"' _ "$repo" "$one" 2>/dev/null)
+got=$(printf '1\n' | bash -c 'source "$1/mvnx/lib/mvnx-core.sh"; UI_MODE=0; shell_ui_checklist 模块 "$2"' _ "$repo" "$one" 2>/dev/null)
 [[ "$got" == "$one" ]] && ok '勾选结果映射回整条记录' || bad '勾选结果丢了记录字段'
 
 # 终端探测、暂停与空选判断都在 bash-tui，本地不再各写一份。

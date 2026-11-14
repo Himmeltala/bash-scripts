@@ -7,27 +7,30 @@ nodex、mvnx、dvcsx、tokx 四个网页界面共用的组件、组合式函数�
 ```bash
 cd lib/web-shared
 npm install
-npm run build          # 产出 dist/web-shared.js 与 dist/web-shared.css
+npm run build          # 产出各子入口与 dist/web-shared.css
+npm test               # node:test，只测纯函数
 ```
 
-三个工程引用的是 `dist/` 的产物，改了这里的源码要**先编这里，再编工程**，否则看不到变化。
+四个工程引用的是 `dist/` 的产物，改了这里的源码要**先编这里，再编工程**，否则看不到变化。
 
 ## 目录
 
 ```
 src/
   index.js            主入口
-  theme.js            Vuetify 主题工厂（单独一个入口）
-  components/         LogView、DirectoryPicker/、FileTree/、FileEditor/、DiffView/、
-                      FloatingDialog/、WorkspaceList/、Metrics/、SplitHandle
-  composables/        useSplitPane、useFileTree、useDialogLayout
+  ui.js               轻量 UI 入口：EmptyState、ToastHost、useToast
+  theme.js            Vuetify 主题工厂与 useThemeToggle（单独一个入口）
+  components/         LogView、EmptyState、ToastHost、DirectoryPicker/、FileTree/、
+                      FileEditor/、DiffView/、FloatingDialog/、WorkspaceList/、Metrics/、SplitHandle
+  composables/        useSplitPane、useFileTree、useDialogLayout、useToast
   styles/             base.css（字体与拖动时的全局规则）
-  utils/              fileIcons、highlight（代码着色，单独一个入口）
+  utils/              fileIcons、highlight（代码着色）、format、http、logColor
+test/                 format 与 http 的 node:test 用例
 ```
 
-## 三个工程怎么接
+## 四个工程怎么接
 
-`package.json` 里加一条依赖（三边都已经写好）：
+`package.json` 里加一条依赖（四边都已经写好）：
 
 ```json
 "@bash-scripts/web-shared": "file:../../lib/web-shared"
@@ -39,8 +42,20 @@ src/
 import { LogView, DirectoryPicker, FileTree, FileEditor, FloatingDialog, WorkspaceList, SplitHandle, fileIcon, useSplitPane, useFileTree } from '@bash-scripts/web-shared'
 import '@bash-scripts/web-shared/style.css'
 
-// Vuetify 实例与公共主题走单独的入口；tokx 只用这一块。
-import { createThemedVuetify } from '@bash-scripts/web-shared/theme'
+// Vuetify 实例、公共主题与标题栏开关走单独的入口；tokx 也只用这一块。
+import { createThemedVuetify, useThemeToggle } from '@bash-scripts/web-shared/theme'
+
+// 纯格式化函数：路径、时间、文件大小、数字与金额，不依赖 UI 库。
+import { baseName, dirName, firstLine, formatAgo, formatBytes, formatNumber, formatMoney, formatCompact } from '@bash-scripts/web-shared/format'
+
+// HTTP 客户端：统一 JSON 请求、错误文案与 ApiError.status。
+import { ApiError, q, createJsonClient } from '@bash-scripts/web-shared/http'
+
+// 日志着色骨架：各工程传自己的规则表。
+import { RESET, paint, createLogColorizer } from '@bash-scripts/web-shared/logs'
+
+// 轻量 UI：空状态、提示条与 useToast；不拉 xterm、highlight.js、echarts。
+import { EmptyState, ToastHost, useToast } from '@bash-scripts/web-shared/ui'
 
 // 代码着色只有 dvcsx 用，走单独的入口，其余工程不会因此装上 highlight.js。
 import { highlightCode, languageOf } from '@bash-scripts/web-shared/highlight'
@@ -63,7 +78,11 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 | `DiffView`（子入口 `/diff`） | 差异视图：按行显示统一 diff，给了工作副本快照就能在行内直接改；快照与保存由调用方处理 | dvcsx |
 | `FloatingDialog` | 可拖动、可拉伸、位置与大小记忆的浮窗；`storageKey` 是窗名，`storage` 是浏览器里的位置表名 | nodex、mvnx |
 | `WorkspaceList` | 工作副本/工作区左栏：添加、移出、别名、右键复制路径；取目录与存别名的接口由调用方传 | dvcsx、nodex、mvnx |
-| `createThemedVuetify`（子入口 `/theme`） | Vuetify 实例与深浅色主题：底座色板一致，语义色由调用方补 | dvcsx、nodex、mvnx、tokx |
+| `createThemedVuetify` / `useThemeToggle`（子入口 `/theme`） | Vuetify 实例与深浅色主题；标题栏开关可跟随系统 | dvcsx、nodex、mvnx、tokx |
+| `baseName` / `dirName` / `shortPath` / `shortenPath` / `firstLine` / `formatDateTime` / `formatAgo` / `formatBytes` / `formatNumber` / `formatMoney` / `formatCompact`（子入口 `/format`） | 纯格式化函数，业务常量与端点表仍留在各工程 | 四边 |
+| `ApiError` / `q` / `createJsonClient`（子入口 `/http`） | 统一 JSON 请求与错误文案，前缀和文案由调用方传 | 四边 |
+| `RESET` / `paint` / `createLogColorizer`（子入口 `/logs`） | 日志着色骨架，规则表由调用方传 | nodex、mvnx |
+| `EmptyState` / `ToastHost` / `useToast`（子入口 `/ui`） | 空状态、页面提示条与提示状态；轻量入口不到 xterm、echarts | 四边 |
 | `fileIcon` | 文件类型图标与配色 | nodex、dvcsx |
 | `SplitHandle` | 分隔条本身：横向或纵向、拖动中高亮、双击还原、禁用态 | dvcsx |
 | `useSplitPane` | 分隔条背后的尺寸逻辑：拖动改尺寸、双击还原、宽度记忆 | dvcsx |
@@ -97,6 +116,8 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 
 `theme.js` 走子入口 `/theme`，导出 `createThemedVuetify({ storageKey, colors, options })`：底座色板（背景、表面、主色等）四边共用，`colors.light` / `colors.dark` 只补各自的语义色（`ready`/`failed`、`modified`/`added` 之类），`options` 原样并进 `createVuetify`（tokx 用它加中文 locale）。返回 `{ vuetify, initialTheme, rememberTheme }`，主题名存在 `storageKey` 里，兼容旧的单字符串与 JSON 字符串两种写法。
 
+同一入口还导出 `useThemeToggle({ storageKey, rememberTheme, followSystem })`，返回 `{ theme, dark, toggle, setTheme }`。`followSystem` 为真时，用户没手动切过就继续跟系统走；切换过一次后系统变化不再覆盖用户选择（tokx 用这个行为）。
+
 `styles/base.css` 随主入口一起进 `dist/web-shared.css`：统一的 Roboto 与中文字体、代码与日志的等宽字体、拖动分隔条时禁止选中文字。工程 `main.js` 引一次 `style.css` 即可，不再各写一份 `styles/base.css`。
 
 ### Metrics
@@ -111,6 +132,6 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 
 ## 放进来之前先想清楚
 
-- **只放三边真的同构的东西。** 配色这类差异交给调用方：`LogView` 的行着色是 `colorize` 属性传进来的，nodex 传 npm/Vite 的规则，mvnx 传 Maven 的规则，两边各留自己的 `logColor.js`。
-- **别把接口封装带进来。** `useApi.js`、`format.js` 看着像，字段与函数各工程不一样，共用只会逼着改业务。
+- **只放四边真的同构的东西。** 配色与业务词汇交给调用方：`LogView` 的行着色由调用方传规则；`/format` 只收纯函数，`statusOf`、`TYPE_TEXT`、`MODE_ITEMS`、`COLUMN` 这类业务常量仍留在各工程。
+- **接口只抽骨架，不带端点表。** `/http` 的 `createJsonClient` 只管请求方式与错误文案，前缀、端点表、业务字段由各工程自己写；`/logs` 同理，只抽匹配与套色流程。
 - **样式随包发。** 组件的 scoped 样式与 xterm 的样式都收进 `dist/web-shared.css`，工程在 `main.js` 里引一次即可。

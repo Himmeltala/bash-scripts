@@ -1,4 +1,10 @@
-// 列定义与格式化：列顺序沿用命令行的出表顺序，数字口径与 tokx 报表一致。
+// 列定义与格式化：列顺序沿用命令行的出表顺序，数字口径走共享的 /format。
+
+import {
+  formatCompact,
+  formatMoney,
+  formatNumber,
+} from '@bash-scripts/web-shared/format'
 
 // 三个来源的显示名、标记与图表配色，标题栏的勾选框、表里的来源列、按来源分色的图共用。
 export const SOURCE_LIST = [
@@ -7,19 +13,9 @@ export const SOURCE_LIST = [
   { key: 'dsh', name: 'DeepSeek Harness', short: 'Harness', color: '#0ea5e9' },
 ]
 
-export const nf = new Intl.NumberFormat('zh-CN')
-export const cf = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-export const fmtNum = (value) => nf.format(Math.round(Number(value) || 0))
-export const fmtMoney = (value) => (value == null ? '--' : cf.format(Number(value) || 0))
-
-export function fmtTokens(value) {
-  const n = Number(value) || 0
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
-  return fmtNum(n)
-}
+export const fmtNum = formatNumber
+export const fmtMoney = formatMoney
+export const fmtTokens = formatCompact
 
 const MONEY = { money: true }
 const COUNT = { num: true }

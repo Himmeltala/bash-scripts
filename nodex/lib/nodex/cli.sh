@@ -101,7 +101,7 @@ parse_args() {
       -p|--port) RV_PORT=${args[$i]:-}; i=$((i + 1)) ;;
       --host) RV_HOST=${args[$i]:-}; i=$((i + 1)) ;;
       -o|--open) RV_OPEN=1 ;;
-      --json) JSON_ONLY=1 ;;
+      --json) JSON_ONLY=1; WEB_JSON_FLAG=1 ;;
       --engine) WEB_ENGINE=1 ;;
       web) if [[ -z "$ACTION" ]]; then ACTION='web'; else POSITIONAL+=("$a"); fi ;;
       -*) usage_error "未知选项 $a" ;;
@@ -147,7 +147,7 @@ run_action() {
   prepare_scripts "$root"
 
   local -a recs=()
-  mapfile -t recs < <("$collector" | assign_tags)
+  mapfile -t recs < <("$collector" | shell_assign_tags)
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
 
   local rec tag workdir rel args display cmdtext
@@ -174,7 +174,7 @@ run_action() {
     [[ ${#chosen[@]} -gt 0 ]] || die "没有$noun匹配关键词 $kw"
   else
     local rc=0
-    out=$(nodex_ui_checklist "$noun" "${recs[@]}") || rc=$?
+    out=$(shell_ui_checklist "$noun" "${recs[@]}") || rc=$?
     case "$rc" in
       0) : ;;
       4) return "$EXIT_BACK" ;;
@@ -184,7 +184,7 @@ run_action() {
     mapfile -t chosen <<< "$out"
   fi
 
-  save_selection "${chosen[@]}"
+  shell_save_selection "${chosen[@]}"
 
   # 装依赖串行跑：同一个工作区里两条 install 同时跑会抢锁。
   if [[ "$cmd" == 'install' ]]; then

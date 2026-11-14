@@ -38,260 +38,11 @@ readonly RUN_COL_PL=7 RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_S
 # run 行共 17 段：类型、运行号，加下面这 15 个字段。
 # 启动方式的取值与命令行一致；页面按这个直接改参数。
 readonly WEB_MODES='auto compile no-compile rebuild'
-# 引擎进程里预留的那一次启动：预排行、运行号、服务 id、会话代次。只有引擎会用。
-# 状态文件里当前行的位置，web_locate 与 web_set 靠它。
-WEB_AT=0
-FRAG=()
-STATE_WIDTH=0
-# 工作区 id 到根的缓存，拼命令时要用。
-declare -A WS_ROOTS=()
-
-web_fail() {
-  printf 'mvnx: %s\n' "$1" >&2
-  return "${2:-$EXIT_FAIL}"
-}
-
-# 打印可用的 python3 解释器；没有或太旧就报错。只支持标准库，3.7 起够用。
-web_python() {
-  local runner=${MVNX_PYTHON:-python3} ver
-  command -v "$runner" >/dev/null 2>&1 ||
-    { web_fail "找不到 $runner，网页模式的转发进程靠它，先装上 python3" "$EXIT_USAGE"; return; }
-  ver=$("$runner" -c 'import sys; print(sys.version_info[0] * 10 + sys.version_info[1])' 2>/dev/null) ||
-    { web_fail "跑不起 $runner" "$EXIT_USAGE"; return; }
-  ((ver >= 37)) || { web_fail '网页模式需要 python 3.7 或更新版本' "$EXIT_USAGE"; return; }
-  printf '%s\n' "$runner"
-}
-
-# 状态文件
-
-# 记下的持有者还在不在跑。僵尸进程也算没了：它不会再放锁，最多等着被回收。
-web_lock_owner_alive() {
-  local stat
-  [[ "$1" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$1" 2>/dev/null || return 1
-  stat=$(ps -o stat= -p "$1" 2>/dev/null) || return 1
-  [[ "$stat" != Z* ]]
-}
-
-# 清掉一个确认没人管的锁：先删 pid 再删目录，这中间要是有人抢到并写了新 pid，目录就删不动，不会误伤。
-web_lock_reap() {
-  if [[ -z "$1" || "$(cat "$WEB_LOCK_PID" 2>/dev/null)" == "$1" ]]; then
-    rm -f "$WEB_LOCK_PID" 2>/dev/null || :
-  fi
-  rmdir "$WEB_LOCK_DIR" 2>/dev/null || :
-  return 0
-}
-
-# 状态目录连同锁目录的上一级一起建：首次使用还没有这个目录，锁就永远拿不到。
-web_lock() {
-  local n=0 pid miss=0
-  [[ -d "$WEB_HOME" ]] || mkdir -p "$WEB_HOME"
-  until mkdir "$WEB_LOCK_DIR" 2>/dev/null; do
-    n=$((n + 1))
-    if ((n > 2000)); then
-      pid=$(cat "$WEB_LOCK_PID" 2>/dev/null) || pid=''
-      web_fail "等锁 $WEB_LOCK_DIR 超时，持锁进程是 ${pid:-不详}，看看它是不是卡住了" "$EXIT_FAIL"
-      return
-    fi
-    pid=''
-    if [[ -s "$WEB_LOCK_PID" ]]; then
-      IFS= read -r pid <"$WEB_LOCK_PID" || true
-    fi
-    if [[ -n "$pid" ]]; then
-      miss=0
-      if ! web_lock_owner_alive "$pid"; then
-        # 拿锁的进程中途没了，剩下一个空目录，清掉重抢。
-        web_lock_reap "$pid"
-        continue
-      fi
-    else
-      # 刚建好锁、还没写进 pid 的那一瞬间也没有 pid：给半秒宽限，过了还没有就是建锁的人没了。
-      miss=$((miss + 1))
-      if ((miss > 10)); then
-        web_lock_reap ''
-        miss=0
-        continue
-      fi
-    fi
-    sleep 0.05
-  done
-  # $$ 在 $(...) 里取到的仍是引擎自己，不是那层子壳：引擎没了才该作废这个锁。
-  printf '%s\n' "$$" >"$WEB_LOCK_PID" 2>/dev/null || :
-  # 拿锁这一段在 $(...) 里跑，set -e 会关掉；手动开回来，锁后的失败才不会一路走到底。
-  set -e
-}
-
-web_unlock() {
-  rm -f "$WEB_LOCK_PID" 2>/dev/null || :
-  # 目录已经被人清掉也算放开了：set -e 开着，这里失败会一路退到退出整个引擎。
-  rmdir "$WEB_LOCK_DIR" 2>/dev/null || :
-  return 0
-}
-
-# 整份替换写：读的人要么看到旧的整份，要么看到新的整份。
-web_write_lines() {
-  local tmp="$WEB_STATE_FILE.tmp" line
-  # 一行一个换行；最后一行也补上，免得追加时粘到上一行。
-  printf '%s\n' "$@" >"$tmp" && mv -f "$tmp" "$WEB_STATE_FILE"
-}
-
-# 只收形状认得出的行：首列决定后面有几列，写坏的行丢掉，不让一行打乱整份状态。
-web_state_load() {
-  local line want
-  STATE_LINES=()
-  [[ -f "$WEB_STATE_FILE" ]] || return 0
-  # 循环体一律执行，别用 && 串：跳过的条件会悄悄吃掉最后一行。
-  while IFS= read -r line; do
-    case ${line%%"$FS"*} in
-      "$WS_KIND"|"$POM_KIND") want=4 ;;
-      "$SVC_KIND") want=9 ;;
-      # run 行 17 段：类型、运行号，加上后 15 个字段。
-      "$RUN_KIND") want=17 ;;
-      *) continue ;;
-    esac
-    web_split "$line"
-    ((STATE_WIDTH == want)) && STATE_LINES+=("$line")
-  done <"$WEB_STATE_FILE"
-}
-
-web_state_save() {
-  web_write_lines "${STATE_LINES[@]+"${STATE_LINES[@]}"}"
-}
-
-# 按 $FS 切行，结果放在全局 FRAG（0 起）：记录首列是类型，宽度按类型补齐。
-# 切一次取多列；不在一行里连套几个 $(web_col ...)，那样每取一列都重切一遍。
-web_split() {
-  local line=$1 i want=0
-  FRAG=()
-  # 直接读进全局数组：中间过一道局部数组时，set -u 下取值会认不出格位。
-  IFS="$FS" read -r -a FRAG <<<"$line"
-  # 末尾的空列 read 会吞掉，按记录类型补齐，列号才对得上。
-  case ${line%%"$FS"*} in
-    "$WS_KIND"|"$POM_KIND") want=4 ;;
-    "$SVC_KIND") want=9 ;;
-    # run 行 17 段：类型、运行号，加上后 15 个字段。
-    "$RUN_KIND") want=17 ;;
-    *) want=${#FRAG[@]} ;;
-  esac
-  for ((i = ${#FRAG[@]}; i < want; i++)); do FRAG[i]=''; done
-  STATE_WIDTH=$want
-}
-# 取第 n 列（1 起），空列也认。
-web_col() {
-  # $1 是整行，$2 是第几列（1 起），越界给空串；切一次取多列，连套几个 web_col 也行。
-  # 不用 read -a：它在 $( ) 里会并掉末尾空列；\x1f 在 C 语言环境里算空白，裸写进模式会丢格。
-  local rest=$1 want=$2 i cut
-  ((want >= 1)) || return 0
-  for ((i = 1; i < want; i++)); do
-    [[ "$rest" == *"$FS"* ]] || return 0
-    rest=${rest#*"$FS"}
-  done
-  cut=${rest%%"$FS"*}
-  if [[ "$cut" == "$rest" ]]; then
-    printf '%s\n' "$rest"
-  else
-    printf '%s\n' "$cut"
-  fi
-}
-
-# 换掉一行里若干列，结果打到标准输出：列号 值 列号 值 ……，列数以该行的类型为准。
-web_row_set() {
-  # 列号 值 列号 值 ……，换掉后整行打到标准输出。一次换几列都行。
-  local n=$1 line=$2
-  shift 2
-  # 先切行再填词表：web_split 会把 FRAG 清空重建，顺序反了格子就都空了。
-  web_split "$line"
-  local -a want=()
-  local at
-  while (($# >= 2)); do
-    at=$1
-    want[$at]=$2
-    shift 2
-  done
-  local i col out='' v
-  for ((i = 0; i < n; i++)); do
-    v=${FRAG[i]+${FRAG[i]}}
-    ((i > 0)) && out+="$FS"
-    col=$((i + 1))
-    # 这一列要换才盖上去；不能用 ${want[col]-$v}，下标算不出来时它会被当成「取所有元素」。
-    if [[ -n "${want[$col]+x}" ]]; then
-      v=${want[$col]}
-    fi
-    out+="$v"
-  done
-  printf '%s\n' "$out"
-}
-
-# 换掉 STATE_LINES[WEB_AT] 里的若干列，配合 web_locate 用。
-web_set() {
-  # 列数以这一行自己的类型为准，web_split 会算出 STATE_WIDTH。
-  # ${arr[i]+${arr[i]}}：直接取不存在的下标在 set -u 下会报成未定义变量。
-  web_split "${STATE_LINES[WEB_AT]+${STATE_LINES[WEB_AT]}}"
-  STATE_LINES[WEB_AT]=$(web_row_set "$STATE_WIDTH" "${STATE_LINES[WEB_AT]+${STATE_LINES[WEB_AT]}}" "$@")
-}
-
-# 按首列与 id 找行：位置放 WEB_AT，整行放 WEB_ROW。
-web_locate() {
-  local kind=$1 id=$2 row i=0
-  for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
-    if [[ ${row%%"$FS"*} == "$kind" ]] && [[ "$(web_col "$row" 2)" == "$id" ]]; then
-      WEB_AT=$i
-      WEB_ROW=$row
-      return 0
-    fi
-    i=$((i + 1))
-  done
-  return 1
-}
-
-# 按 id 删行，不管首列是什么。
-web_drop() {
-  local -a ids=("$@") keep=()
-  local row i hit
-  for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
-    hit=0
-    for i in "${ids[@]}"; do
-      [[ "$(web_col "$row" 2)" == "$i" ]] && hit=1
-    done
-    ((hit)) || keep+=("$row")
-  done
-  STATE_LINES=("${keep[@]+"${keep[@]}"}")
-}
-
-# 读、改、写回一趟：web_txn 函数名 参数…；函数在 STATE_LINES 上改，返回 0 才写回。
-# 锁在这里拿，被调的函数里别再锁：目录锁不是可重入的，套第二次会一直等到超时。
-web_txn() {
-  local fn=$1 rc=0
-  shift
-  web_lock || return
-  web_state_load
-  "$fn" "$@" || rc=$?
-  ((rc == 0)) && web_state_save
-  web_unlock
-  return "$rc"
-}
+# 共享状态层按这张表判断一行该有几列；键是首列的类型。
+declare -A WEB_STATE_WIDTHS=([ws]=4 [pom]=4 [svc]=9 [run]=17)
 
 # 工作区
 
-web_ws_id() {
-  printf '%s\n' "$(printf '%s' "$1" | md5sum | cut -c1-12)"
-}
-
-# 按工作区 id 取根；找不到就空着。
-web_ws_root_of() {
-  local id=$1 root=''
-  if [[ -n "${WS_ROOTS[$id]+x}" ]]; then
-    printf '%s\n' "${WS_ROOTS[$id]}"
-    return 0
-  fi
-  if web_locate "$WS_KIND" "$id"; then
-    root=$(web_col "$WEB_ROW" 3)
-    WS_ROOTS[$id]=$root
-  fi
-  printf '%s\n' "$root"
-}
-
-# 从目录往上找第一个带 pom.xml 的目录，它就是工作区根；一路找不到就不是 Maven 项目。
 web_ws_root() {
   local dir
   dir=$(cd "$1" 2>/dev/null && pwd) || return 1
@@ -321,24 +72,6 @@ web_ws_add() {
 }
 
 # 删一个工作区，连同它的服务、pom、运行记录与日志；还在跑的进程先停掉。
-web_ws_remove() {
-  local id=$1 row pid status
-  web_lock || return
-  web_state_load
-  if web_locate "$WS_KIND" "$id"; then
-    for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
-      [[ ${row%%"$FS"*} == "$RUN_KIND" ]] || continue
-      [[ "$(web_col "$row" 3)" == "$id" ]] || continue
-      pid=$(web_col "$row" "$RUN_COL_PID")
-      web_stop_group "$pid"
-    done
-    web_drop "$id"
-    web_state_save
-  fi
-  web_unlock
-  rm -rf "${WEB_LOG_DIR:?}/$id"
-}
-
 # 扫描
 
 # 一条服务写成 svc 行。参数：工作区 id、类型、id 尾、执行目录、-pl 的值、mvn 参数、展示路径、展示命令。
@@ -364,12 +97,12 @@ web_scan() {
     # 能启动的模块都给一条打包：同一模块上的两个动作，参数由 package 现拼。
     args=$(package_args)
     web_svc_line "$id" package "$tag" "$workdir" "$plpath" "$args" "$display" "mvn${plpath:+ -pl "$plpath"} $args"
-  done < <(collect_runnable | assign_tags)
+  done < <(collect_runnable | shell_assign_tags)
 
   while IFS= read -r rec; do
     IFS="$FS" read -r tag workdir plpath mvnargs display cmdtext <<<"$rec"
     web_svc_line "$id" war "$tag" "$workdir" "$plpath" "$mvnargs" "$display" "$cmdtext"
-  done < <(collect_war | assign_tags)
+  done < <(collect_war | shell_assign_tags)
 
   while IFS= read -r rec; do
     IFS="$FS" read -r tag workdir plpath mvnargs display cmdtext <<<"$rec"
@@ -378,7 +111,7 @@ web_scan() {
       IFS="$FS" read -r tag workdir plpath mvnargs display cmdtext <<<"$sub"
       web_svc_line "$id" install "$tag" "$workdir" "$plpath" "$mvnargs" "$display" "$cmdtext"
     done < <(emit_project_modules "$workdir" "$tag")
-  done < <(collect_toplevel | assign_tags)
+  done < <(collect_toplevel | shell_assign_tags)
 
   # pom 清单给页面的模块下拉用。
   while IFS= read -r pom; do
@@ -434,25 +167,6 @@ web_scan_apply() {
 }
 
 # 扫一个已登记的工作区并合并结果。扫描要几秒，不持锁扫，只在写回时锁一次。
-web_ws_scan() {
-  local id=$1 root tmp
-  web_lock || return
-  web_state_load
-  root=''
-  web_locate "$WS_KIND" "$id" && root=$(web_col "$WEB_ROW" 3)
-  web_unlock
-  [[ -n "$root" && -d "$root" ]] || return 1
-
-  tmp="$WEB_HOME/scan.$id.$$"
-  web_scan "$id" "$root" >"$tmp"
-
-  web_lock || { rm -f "$tmp"; return; }
-  web_state_load
-  web_scan_apply "$id" "$tmp"
-  web_state_save
-  web_unlock
-  rm -f "$tmp"
-}
 
 # 运行记录
 
@@ -864,58 +578,19 @@ web_engine() {
   return 0
 }
 
-# mvnx web：起 python，等它就绪，然后就守着它；Ctrl+C 连 python 一起带走。
-# python 起了它之后一直走管道递请求，实际的动作都在这个进程里跑，扫描结果也一直留着。
-web_command() {
-  local runner child log line='' waited=0 ans url local_url
-  local -a open_arg=()
-  runner=$(web_python) || return
-  RV_PORT=${RV_PORT:-0}
-  RV_HOST=${RV_HOST:-0.0.0.0}
-  [[ "$RV_PORT" =~ ^[0-9]+$ ]] && ((RV_PORT >= 0 && RV_PORT <= 65535)) ||
-    { web_fail "端口不对：$RV_PORT" "$EXIT_USAGE"; return; }
-  [[ -f "$WEB_PAGE" ]] ||
-    { web_fail "缺 ${WEB_PAGE#"$mvnx_dir"/}，前端还没打包（见 mvnx/web/README.md）" "$EXIT_USAGE"; return; }
-
-  mkdir -p "$WEB_HOME" "$WEB_LOG_DIR"
-  log="$WEB_HOME/runner.log"
-  : >"$log"
-  ((RV_OPEN)) && open_arg+=(--open)
-
-  "$runner" "$mvnx_dir/mvnx/web/server.py" \
-    --static "$mvnx_dir/mvnx/web/static" \
-    --state "$WEB_STATE_FILE" --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX" \
-    --mvnx "${MVNX_SELF:-$mvnx_dir/../bin/mvnx}" \
-    --host "$RV_HOST" --port "$RV_PORT" "${open_arg[@]}" >"$log" 2>&1 &
-  child=$!
-  # Ctrl+C 与正常退出都把 python 带走；正在跑的 mvn 在它自己的会话里，不跟着停。
-  trap 'kill -TERM "$child" 2>/dev/null' INT TERM HUP
-
-  # 地址由 python 选好再报上来：端口是 0 时它报的是实际用的那个。
-  while ((waited < WEB_ATTACH_TIMEOUT * 4)); do
-    if ans=$(grep -m 1 '^MVNX_WEB_READY ' "$log" 2>/dev/null); then
-      line=${ans#MVNX_WEB_READY }
-      break
-    fi
-    kill -0 "$child" 2>/dev/null || { web_fail "网页服务起不来：$(tail -n 3 "$log" 2>/dev/null)"; return; }
-    sleep 0.25
-    waited=$((waited + 1))
-  done
-  [[ -n "$line" ]] || { web_fail '等网页服务就绪超时'; return; }
-
-  # python 报上来的是「主机:端口」：端口填 0 时它是实际用上的那个，绑所有网卡时主机是猜出来的局域网地址。
-  url="http://$line/"
-  local_url="http://127.0.0.1:${line##*:}/"
-  if ((JSON_ONLY)); then
-    printf '{"url":"%s","local":"%s","host":"%s","port":"%s"}\n' \
-      "$url" "$local_url" "$RV_HOST" "${line##*:}"
-    return 0
-  fi
-  printf 'mvnx 网页界面：%s\n' "$url"
-  [[ "$url" == "$local_url" ]] || printf '本机 %s\n' "$local_url"
-  # 页面没有登录：能连上的人都能起停服务，这一点得说在前面。
-  [[ "$RV_HOST" == '127.0.0.1' || "$RV_HOST" == 'localhost' ]] ||
-    printf '页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1\n' >&2
-  printf '按 Ctrl+C 退出网页服务；正在跑的 mvn 在自己会话里，不跟着停，可在网页里停。\n' >&2
-  wait "$child"
-}
+# web_command 的公共流程在 lib/shell-shared/web-command.sh，这里只给参数。
+WEB_TOOL='mvnx'
+WEB_ROOT="$mvnx_dir/mvnx/web"
+WEB_SERVER_PY="$WEB_ROOT/server.py"
+WEB_STATIC_DIR="$WEB_ROOT/static"
+WEB_READY_MARKER='MVNX_WEB_READY'
+WEB_PYTHON_ENV='MVNX_PYTHON'
+# --json 时只打一行 JSON；mvnx 的 JSON 分支不 wait，交给调用方接着用。
+WEB_JSON_FLAG=0
+WEB_JSON_WAIT=0
+WEB_SERVER_ARGS=(
+  --state "$WEB_STATE_FILE" --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX"
+  --mvnx "${MVNX_SELF:-$mvnx_dir/../bin/mvnx}"
+)
+WEB_WARN_TEXT='页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1'
+WEB_EXIT_TEXT='按 Ctrl+C 退出网页服务；正在跑的 mvn 在自己会话里，不跟着停，可在网页里停。'

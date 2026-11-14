@@ -34,235 +34,10 @@ readonly RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_STARTED=15 RUN
 # svc 行共 10 段：类型、服务 id，加下面这 8 个字段。
 # 位置见这里，读写两侧都按它取。
 readonly SVC_COL_DIR=5 SVC_COL_REL=6 SVC_COL_ARGS=7 SVC_COL_CMD=9 SVC_COL_PM=10
-
-# 状态文件里当前行的位置，web_locate 与 web_set 靠它。
-WEB_AT=0
-FRAG=()
-STATE_WIDTH=0
-declare -A WS_ROOTS=()
-
-web_fail() {
-  printf 'nodex: %s\n' "$1" >&2
-  return "${2:-$EXIT_FAIL}"
-}
-
-# 打印可用的 python3 解释器；没有或太旧就报错。只支持标准库，3.7 起够用。
-web_python() {
-  local runner=${NODEX_PYTHON:-python3} ver
-  command -v "$runner" >/dev/null 2>&1 ||
-    { web_fail "找不到 $runner，网页模式的转发进程靠它，先装上 python3" "$EXIT_USAGE"; return; }
-  ver=$("$runner" -c 'import sys; print(sys.version_info[0] * 10 + sys.version_info[1])' 2>/dev/null) ||
-    { web_fail "跑不起 $runner" "$EXIT_USAGE"; return; }
-  ((ver >= 37)) || { web_fail '网页模式需要 python 3.7 或更新版本' "$EXIT_USAGE"; return; }
-  printf '%s\n' "$runner"
-}
-
-# 状态文件
-
-# 记下的持有者还在不在跑。僵尸进程也算没了：它不会再放锁，最多等着被回收。
-web_lock_owner_alive() {
-  local stat
-  [[ "$1" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$1" 2>/dev/null || return 1
-  stat=$(ps -o stat= -p "$1" 2>/dev/null) || return 1
-  [[ "$stat" != Z* ]]
-}
-
-# 清掉一个确认没人管的锁：先删 pid 再删目录，这中间要是有人抢到并写了新 pid，目录就删不动，不会误伤。
-web_lock_reap() {
-  if [[ -z "$1" || "$(cat "$WEB_LOCK_PID" 2>/dev/null)" == "$1" ]]; then
-    rm -f "$WEB_LOCK_PID" 2>/dev/null || :
-  fi
-  rmdir "$WEB_LOCK_DIR" 2>/dev/null || :
-  return 0
-}
-
-web_lock() {
-  local n=0 pid miss=0
-  [[ -d "$WEB_HOME" ]] || mkdir -p "$WEB_HOME"
-  until mkdir "$WEB_LOCK_DIR" 2>/dev/null; do
-    n=$((n + 1))
-    if ((n > 2000)); then
-      pid=$(cat "$WEB_LOCK_PID" 2>/dev/null) || pid=''
-      web_fail "等锁 $WEB_LOCK_DIR 超时，持锁进程是 ${pid:-不详}，看看它是不是卡住了" "$EXIT_FAIL"
-      return
-    fi
-    pid=''
-    if [[ -s "$WEB_LOCK_PID" ]]; then
-      IFS= read -r pid <"$WEB_LOCK_PID" || true
-    fi
-    if [[ -n "$pid" ]]; then
-      miss=0
-      if ! web_lock_owner_alive "$pid"; then
-        # 拿锁的进程中途没了，剩下一个空目录，清掉重抢。
-        web_lock_reap "$pid"
-        continue
-      fi
-    else
-      # 刚建好锁、还没写进 pid 的那一瞬间也没有 pid：给半秒宽限，过了还没有就是建锁的人没了。
-      miss=$((miss + 1))
-      if ((miss > 10)); then
-        web_lock_reap ''
-        miss=0
-        continue
-      fi
-    fi
-    sleep 0.05
-  done
-  # $$ 在 $(...) 里取到的仍是引擎自己，不是那层子壳：引擎没了才该作废这个锁。
-  printf '%s\n' "$$" >"$WEB_LOCK_PID" 2>/dev/null || :
-  set -e
-}
-
-web_unlock() {
-  rm -f "$WEB_LOCK_PID" 2>/dev/null || :
-  # 目录已经被人清掉也算放开了：set -e 开着，这里失败会一路退到退出整个引擎。
-  rmdir "$WEB_LOCK_DIR" 2>/dev/null || :
-  return 0
-}
-
-web_write_lines() {
-  local tmp="$WEB_STATE_FILE.tmp"
-  printf '%s\n' "$@" >"$tmp" && mv -f "$tmp" "$WEB_STATE_FILE"
-}
-
-web_state_load() {
-  local line want
-  STATE_LINES=()
-  [[ -f "$WEB_STATE_FILE" ]] || return 0
-  while IFS= read -r line; do
-    case ${line%%"$FS"*} in
-      "$WS_KIND"|"$SCRIPT_KIND") want=4 ;;
-      "$SVC_KIND") want=10 ;;
-      "$RUN_KIND") want=17 ;;
-      *) continue ;;
-    esac
-    web_split "$line"
-    ((STATE_WIDTH == want)) && STATE_LINES+=("$line")
-  done <"$WEB_STATE_FILE"
-}
-
-web_state_save() {
-  web_write_lines "${STATE_LINES[@]+"${STATE_LINES[@]}"}"
-}
-
-# 按 $FS 切行，结果放在全局 FRAG（0 起）：记录首列是类型，宽度按类型补齐。
-web_split() {
-  local line=$1 i want=0
-  FRAG=()
-  IFS="$FS" read -r -a FRAG <<<"$line"
-  case ${line%%"$FS"*} in
-    "$WS_KIND"|"$SCRIPT_KIND") want=4 ;;
-    "$SVC_KIND") want=10 ;;
-    "$RUN_KIND") want=17 ;;
-    *) want=${#FRAG[@]} ;;
-  esac
-  for ((i = ${#FRAG[@]}; i < want; i++)); do FRAG[i]=''; done
-  STATE_WIDTH=$want
-}
-
-# 取第 n 列（1 起），空列也认。
-web_col() {
-  local rest=$1 want=$2 i cut
-  ((want >= 1)) || return 0
-  for ((i = 1; i < want; i++)); do
-    [[ "$rest" == *"$FS"* ]] || return 0
-    rest=${rest#*"$FS"}
-  done
-  cut=${rest%%"$FS"*}
-  if [[ "$cut" == "$rest" ]]; then
-    printf '%s\n' "$rest"
-  else
-    printf '%s\n' "$cut"
-  fi
-}
-
-# 换掉一行里若干列，结果打到标准输出：列号 值 列号 值 ……，列数以该行的类型为准。
-web_row_set() {
-  local n=$1 line=$2
-  shift 2
-  web_split "$line"
-  local -a want=()
-  local at
-  while (($# >= 2)); do
-    at=$1
-    want[$at]=$2
-    shift 2
-  done
-  local i col out='' v
-  for ((i = 0; i < n; i++)); do
-    v=${FRAG[i]+${FRAG[i]}}
-    ((i > 0)) && out+="$FS"
-    col=$((i + 1))
-    if [[ -n "${want[$col]+x}" ]]; then
-      v=${want[$col]}
-    fi
-    out+="$v"
-  done
-  printf '%s\n' "$out"
-}
-
-web_set() {
-  web_split "${STATE_LINES[WEB_AT]+${STATE_LINES[WEB_AT]}}"
-  STATE_LINES[WEB_AT]=$(web_row_set "$STATE_WIDTH" "${STATE_LINES[WEB_AT]+${STATE_LINES[WEB_AT]}}" "$@")
-}
-
-web_locate() {
-  local kind=$1 id=$2 row i=0
-  for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
-    if [[ ${row%%"$FS"*} == "$kind" ]] && [[ "$(web_col "$row" 2)" == "$id" ]]; then
-      WEB_AT=$i
-      WEB_ROW=$row
-      return 0
-    fi
-    i=$((i + 1))
-  done
-  return 1
-}
-
-web_drop() {
-  local -a ids=("$@") keep=()
-  local row i hit
-  for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
-    hit=0
-    for i in "${ids[@]}"; do
-      [[ "$(web_col "$row" 2)" == "$i" ]] && hit=1
-    done
-    ((hit)) || keep+=("$row")
-  done
-  STATE_LINES=("${keep[@]+"${keep[@]}"}")
-}
-
-# 读、改、写回一趟：web_txn 函数名 参数…；函数在 STATE_LINES 上改，返回 0 才写回。
-web_txn() {
-  local fn=$1 rc=0
-  shift
-  web_lock || return
-  web_state_load
-  "$fn" "$@" || rc=$?
-  ((rc == 0)) && web_state_save
-  web_unlock
-  return "$rc"
-}
+# 共享状态层按这张表判断一行该有几列；键是首列的类型。
+declare -A WEB_STATE_WIDTHS=([ws]=4 [script]=4 [svc]=10 [run]=17)
 
 # 工作区
-
-web_ws_id() {
-  printf '%s\n' "$(printf '%s' "$1" | md5sum | cut -c1-12)"
-}
-
-web_ws_root_of() {
-  local id=$1 root=''
-  if [[ -n "${WS_ROOTS[$id]+x}" ]]; then
-    printf '%s\n' "${WS_ROOTS[$id]}"
-    return 0
-  fi
-  if web_locate "$WS_KIND" "$id"; then
-    root=$(web_col "$WEB_ROW" 3)
-    WS_ROOTS[$id]=$root
-  fi
-  printf '%s\n' "$root"
-}
 
 # 加工作区：往上找最外层声明了工作区的目录；已登记过的同一根只重扫，历史运行记录保留。
 web_ws_add() {
@@ -280,25 +55,6 @@ web_ws_add() {
   web_state_save
   web_unlock
   web_ws_scan "$id"
-}
-
-web_ws_remove() {
-  local id=$1 row pid
-  web_lock || return
-  web_state_load
-  if web_locate "$WS_KIND" "$id"; then
-    for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
-      [[ ${row%%"$FS"*} == "$RUN_KIND" ]] || continue
-      [[ "$(web_col "$row" 3)" == "$id" ]] || continue
-      pid=$(web_col "$row" "$RUN_COL_PID")
-      web_stop_group "$pid"
-    done
-    web_drop "$id"
-    web_drop_ws "$id"
-    web_state_save
-  fi
-  web_unlock
-  rm -rf "${WEB_LOG_DIR:?}/$id"
 }
 
 # 删掉属于某个工作区的脚本行；它们的第 2 列是相对路径，按工作区 id 删的那支认不出来。
@@ -331,17 +87,17 @@ web_scan() {
   while IFS= read -r rec; do
     IFS="$FS" read -r tag dir rel args display cmdtext <<<"$rec"
     web_svc_line "$id" dev "$tag" "$dir" "$rel" "$args" "$display" "$cmdtext" "$NODE_PM"
-  done < <(collect_dev | assign_tags)
+  done < <(collect_dev | shell_assign_tags)
 
   while IFS= read -r rec; do
     IFS="$FS" read -r tag dir rel args display cmdtext <<<"$rec"
     web_svc_line "$id" build "$tag" "$dir" "$rel" "$args" "$display" "$cmdtext" "$NODE_PM"
-  done < <(collect_build | assign_tags)
+  done < <(collect_build | shell_assign_tags)
 
   while IFS= read -r rec; do
     IFS="$FS" read -r tag dir rel args display cmdtext <<<"$rec"
     web_svc_line "$id" install "$tag" "$dir" "$rel" "$args" "$display" "$cmdtext" "$NODE_PM"
-  done < <(collect_install | assign_tags)
+  done < <(collect_install | shell_assign_tags)
 
   for rel in "${NODE_SCRIPTS[@]}"; do
     name=${SCRIPT_NAME[$rel]}
@@ -535,25 +291,6 @@ web_scan_apply() {
   STATE_LINES=("${keep[@]+"${keep[@]}"}" "${out[@]+"${out[@]}"}")
 }
 
-web_ws_scan() {
-  local id=$1 root tmp
-  web_lock || return
-  web_state_load
-  root=''
-  web_locate "$WS_KIND" "$id" && root=$(web_col "$WEB_ROW" 3)
-  web_unlock
-  [[ -n "$root" && -d "$root" ]] || return 1
-
-  tmp="$WEB_HOME/scan.$id.$$"
-  web_scan "$id" "$root" >"$tmp"
-
-  web_lock || { rm -f "$tmp"; return; }
-  web_state_load
-  web_scan_apply "$id" "$tmp"
-  web_state_save
-  web_unlock
-  rm -f "$tmp"
-}
 
 # 运行记录
 
@@ -854,7 +591,7 @@ web_engine() {
     case "$op" in
       tick) ;;
       add) web_ws_add "$(web_col "$req" 2)" || rc=$? ;;
-      remove) web_ws_remove "$(web_col "$req" 2)" || rc=$? ;;
+      remove) web_ws_remove "$(web_col "$req" 2)" web_drop_ws || rc=$? ;;
       scan) web_ws_scan "$(web_col "$req" 2)" || rc=$? ;;
       reserve)
         _id=$(web_col "$req" 2)
@@ -882,57 +619,23 @@ web_engine() {
   return 0
 }
 
-# nodex web：起 python，等它就绪，然后就守着它；Ctrl+C 连 python 一起带走。
-web_command() {
-  local runner child log line='' waited=0 url local_url
-  local -a open_arg=()
-  runner=$(web_python) || return
-  RV_PORT=${RV_PORT:-0}
-  RV_HOST=${RV_HOST:-0.0.0.0}
-  [[ "$RV_PORT" =~ ^[0-9]+$ ]] && ((RV_PORT >= 0 && RV_PORT <= 65535)) ||
-    { web_fail "端口不对：$RV_PORT" "$EXIT_USAGE"; return; }
-  [[ -f "$WEB_PAGE" ]] ||
-    { web_fail "缺 ${WEB_PAGE#"$nodex_dir"/}，前端还没打包（见 nodex/web/README.md）" "$EXIT_USAGE"; return; }
-
-  mkdir -p "$WEB_HOME" "$WEB_LOG_DIR"
-  log="$WEB_HOME/runner.log"
-  : >"$log"
-  ((RV_OPEN)) && open_arg+=(--open)
-
-  "$runner" "$nodex_dir/nodex/web/server.py" \
-    --static "$nodex_dir/nodex/web/static" \
-    --state "$WEB_STATE_FILE" --custom "$WEB_CUSTOM_FILE" \
-    --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX" \
-    --nodex "${NODEX_SELF:-$nodex_dir/../bin/nodex}" \
-    --host "$RV_HOST" --port "$RV_PORT" "${open_arg[@]}" >"$log" 2>&1 &
-  child=$!
-  trap 'kill -TERM "$child" 2>/dev/null' INT TERM HUP
-
-  while ((waited < WEB_ATTACH_TIMEOUT * 4)); do
-    if ans=$(grep -m 1 '^NODEX_WEB_READY ' "$log" 2>/dev/null); then
-      line=${ans#NODEX_WEB_READY }
-      break
-    fi
-    kill -0 "$child" 2>/dev/null || { web_fail "网页服务起不来：$(tail -n 3 "$log" 2>/dev/null)"; return; }
-    sleep 0.25
-    waited=$((waited + 1))
-  done
-  [[ -n "$line" ]] || { web_fail '等网页服务就绪超时'; return; }
-
-  url="http://$line/"
-  local_url="http://127.0.0.1:${line##*:}/"
-  if ((JSON_ONLY)); then
-    printf '{"url":"%s","local":"%s","host":"%s","port":"%s"}\n' \
-      "$url" "$local_url" "$RV_HOST" "${line##*:}"
-    return 0
-  fi
-  printf 'nodex 网页界面：%s\n' "$url"
-  [[ "$url" == "$local_url" ]] || printf '本机 %s\n' "$local_url"
-  [[ "$RV_HOST" == '127.0.0.1' || "$RV_HOST" == 'localhost' ]] ||
-    printf '页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1\n' >&2
-  printf '按 Ctrl+C 退出网页服务；正在跑的 node 在自己会话里，不跟着停，可在网页里停。\n' >&2
-  wait "$child"
-}
+# web_command 的公共流程在 lib/shell-shared/web-command.sh，这里只给参数。
+WEB_TOOL='nodex'
+WEB_ROOT="$nodex_dir/nodex/web"
+WEB_SERVER_PY="$WEB_ROOT/server.py"
+WEB_STATIC_DIR="$WEB_ROOT/static"
+WEB_READY_MARKER='NODEX_WEB_READY'
+WEB_PYTHON_ENV='NODEX_PYTHON'
+# --json 时只打一行 JSON；nodex 的 JSON 分支不 wait，交给调用方接着用。
+WEB_JSON_FLAG=0
+WEB_JSON_WAIT=0
+WEB_SERVER_ARGS=(
+  --state "$WEB_STATE_FILE" --custom "$WEB_CUSTOM_FILE"
+  --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX"
+  --nodex "${NODEX_SELF:-$nodex_dir/../bin/nodex}"
+)
+WEB_WARN_TEXT='页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1'
+WEB_EXIT_TEXT='按 Ctrl+C 退出网页服务；正在跑的 node 在自己会话里，不跟着停，可在网页里停。'
 
 # 服务 id 形如 <工作区>.<类型>.<标签>；标签里可能还有点和斜杠，所以标签取第三段起。
 web_tag() {

@@ -1,32 +1,11 @@
 // 接口封装：所有请求都走 /__nodex/api，出错时把后端给的那句话抛出来。
 
+import { createJsonClient } from '@bash-scripts/web-shared/http'
+
 const PREFIX = '/__nodex/api'
+const { call } = createJsonClient({ prefix: PREFIX })
 
-export class ApiError extends Error {}
-
-async function call(method, path, body) {
-  const opts = { method, cache: 'no-store', headers: {} }
-  if (body !== undefined) {
-    opts.headers['Content-Type'] = 'application/json'
-    // 只接受同源写请求，显式带上 Origin 之外的凭据没必要。
-    opts.body = JSON.stringify(body)
-  }
-  const resp = await fetch(PREFIX + path, opts)
-  let data = null
-  try {
-    data = await resp.json()
-  } catch (err) {
-    data = null
-  }
-  if (!resp.ok) {
-    const msg = (data && data.error) || `请求失败（${resp.status}）`
-    const err = new ApiError(msg)
-    // 页面偶尔要按状态码区别对待，比如打包撞上同名包先问一句。
-    err.status = resp.status
-    throw err
-  }
-  return data
-}
+export { ApiError } from '@bash-scripts/web-shared/http'
 
 export const api = {
   state: () => call('GET', '/state'),

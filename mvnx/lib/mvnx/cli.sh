@@ -123,7 +123,7 @@ parse_args() {
       -p|--port) RV_PORT=${args[$i]:-}; i=$((i + 1)) ;;
       --host) RV_HOST=${args[$i]:-}; i=$((i + 1)) ;;
       -o|--open) RV_OPEN=1 ;;
-      --json) JSON_ONLY=1 ;;
+      --json) JSON_ONLY=1; WEB_JSON_FLAG=1 ;;
       --engine) WEB_ENGINE=1 ;;
       web) if [[ -z "$ACTION" ]]; then ACTION='web'; else POSITIONAL+=("$a"); fi ;;
       -*) usage_error "未知选项 $a" ;;
@@ -184,7 +184,7 @@ run_action() {
   prepare_scan "$PWD"
 
   local -a recs=()
-  mapfile -t recs < <("$collector" | assign_tags)
+  mapfile -t recs < <("$collector" | shell_assign_tags)
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
 
   local rec tag workdir plpath mvnargs display cmdtext
@@ -216,7 +216,7 @@ run_action() {
     if [[ -n "$selector" ]]; then
       out=$("$selector" "$noun" "${recs[@]}") || rc=$?
     else
-      out=$(mvnx_ui_checklist "$noun" "${recs[@]}") || rc=$?
+      out=$(shell_ui_checklist "$noun" "${recs[@]}") || rc=$?
     fi
     case "$rc" in
       0) : ;;
@@ -234,7 +234,7 @@ run_action() {
   fi
 
   # 自带选择函数的命令在函数里写勾选记录。
-  [[ -z "$selector" || -n "$kw" ]] && save_selection "${chosen[@]}"
+  [[ -z "$selector" || -n "$kw" ]] && shell_save_selection "${chosen[@]}"
 
   # 明说跳过编译时得有东西可执行，模块没编过就报错，不硬起一个空壳。
   if [[ $START_MODE == "$MODE_NO_COMPILE" ]]; then

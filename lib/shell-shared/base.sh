@@ -1,24 +1,27 @@
 # 基础设施：退出码、报错、记录分列、路径计算，以及单元分隔符与缓存目录。
+# 调用方先设 SHELL_TOOL（工具名），再 source 本文件；base 之外再 source 需要的共享模块。
+# shellcheck shell=bash
+# shellcheck disable=SC2154
 
 # 退出码：0 成功，1 找到了目标但执行失败，2 用法错误，3 用户取消；4 只在步骤间传返回上一步，不作进程退出码。
 readonly EXIT_FAIL=1 EXIT_USAGE=2 EXIT_CANCEL=3 EXIT_BACK=4
 
-readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mvnx"
+readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$SHELL_TOOL"
 # 记录用 ASCII 单元分隔符分列，不能用制表符：制表符算 IFS 空白，连续两个会被并成一个，空字段丢失并导致字段错位。
 readonly FS=$'\x1f'
+
 # 只打第一条参数：第二个参数是退出码，用 $* 会把码也打进消息里。
 die() {
-  printf 'mvnx: %s\n' "$1" >&2
+  printf '%s: %s\n' "$SHELL_TOOL" "$1" >&2
   exit "${2:-$EXIT_FAIL}"
 }
 
 # 用法错误按惯例退 2，与「找到了目标但执行失败」的 1、用户取消的 3 分开。
 usage_error() {
-  die "$*；见 mvnx --help" "$EXIT_USAGE"
+  die "$*；见 $SHELL_TOOL --help" "$EXIT_USAGE"
 }
 
-# 记录六列：标签、工作目录、-pl 的值（不走 -pl 时为空）、mvn 参数、展示用相对路径、展示用命令。
-# -pl 单列存放，执行时才能加引号，路径带空格时不被词拆分成两个参数。
+# 记录六列：标签、工作目录、工具自己的两列、展示用相对路径、展示用命令。
 emit_record() {
   local i out=''
   for ((i = 1; i <= $#; i++)); do

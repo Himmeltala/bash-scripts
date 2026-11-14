@@ -6,10 +6,14 @@
 
 from __future__ import annotations
 
-import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# 共用小件在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib" / "py-shared"))
+from fileio import read_json, write_json
 
 from .model import Record, Usage
 
@@ -32,10 +36,7 @@ class Snapshot:
     def _load(self) -> None:
         if self.path is None or not self.path.is_file():
             return
-        try:
-            doc = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
+        doc = read_json(self.path, default=None)
         if not isinstance(doc, dict) or doc.get("format") != FORMAT:
             return
         sessions = doc.get("sessions")
@@ -112,15 +113,9 @@ class Snapshot:
         if not self.dirty or self.path is None:
             return
         doc = {"format": FORMAT, "source": self.source, "sessions": self.data}
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_name(self.path.name + ".tmp")
-            tmp.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(self.path)
+        # 缓存写不进去只影响下次的速度，不影响数字，安静放弃。
+        if write_json(self.path, doc, indent=None, ensure_ascii=False, on_error=lambda exc: None):
             self.dirty = False
-        except OSError:
-            # 缓存写不进去只影响下次的速度，不影响数字，安静放弃。
-            return
 
 
 def dsh_generations(root: Path) -> dict[str, tuple[Path, list[str]]]:

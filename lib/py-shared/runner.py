@@ -5,6 +5,7 @@
 
 import errno
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -14,6 +15,47 @@ from pathlib import Path
 
 from stores import FS, Row
 from web import ApiError, log
+
+# run 行的列名与运行号前缀：nodex 与 mvnx 的状态格式一致。
+RUN_FIELDS = ("id", "ws", "type", "tag", "path", "pl", "display", "module", "args",
+              "cmd", "pid", "port", "status", "started", "code", "err")
+RUN_KIND = "run"
+RUN_PREFIX_RE = re.compile(r"\.[0-9]+$")
+
+
+def parse_fixed_rows(text, widths):
+    """按首列查列数，列数正好对上的行才留下；空行跳过。"""
+    rows = []
+    for line in text.splitlines():
+        if not line:
+            continue
+        parts = line.split(FS)
+        # 列数必须正好对上：多一段少一段都是写坏了，用它会整行错位，不如丢掉。
+        if len(parts) == widths.get(parts[0]):
+            rows.append(parts)
+    return rows
+
+
+def run_info(row):
+    # Row 的 self.f 是整行，第 1 段是类型；列表切片不走 __getitem__，用 .f 取。
+    d = dict(zip(RUN_FIELDS, row.f[1:]))
+    d.setdefault("pl", "")
+    return d
+
+
+def run_log_path(logs, runid):
+    """运行号对应的日志：<logs>/<服务 id>/<运行号>.log。"""
+    return Path(logs) / runid.split(".", 1)[0] / (runid + ".log")
+
+
+def latest_runs(rows):
+    """同一服务跑过多次只留最新一条；行按写入顺序给，后面的覆盖前面的。"""
+    out = {}
+    for r in rows:
+        if r[0] != RUN_KIND:
+            continue
+        out[RUN_PREFIX_RE.sub("", r[1])] = Row(r)
+    return out
 
 
 def sh_shell_argv(argv, env=None):

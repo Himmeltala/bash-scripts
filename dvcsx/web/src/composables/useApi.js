@@ -1,32 +1,11 @@
 // 接口封装：所有请求都走 /__dvcsx/api，出错时把后端给的那句话抛出来。
 
+import { createJsonClient, q } from '@bash-scripts/web-shared/http'
+
 const PREFIX = '/__dvcsx/api'
+const { call } = createJsonClient({ prefix: PREFIX })
 
-export class ApiError extends Error {}
-
-async function call(method, path, body) {
-  const opts = { method, cache: 'no-store', headers: {} }
-  if (body !== undefined) {
-    opts.headers['Content-Type'] = 'application/json'
-    opts.body = JSON.stringify(body)
-  }
-  const resp = await fetch(PREFIX + path, opts)
-  let data = null
-  try {
-    data = await resp.json()
-  } catch (err) {
-    data = null
-  }
-  if (!resp.ok) {
-    const msg = (data && data.error) || `请求失败（${resp.status}）`
-    throw new ApiError(msg)
-  }
-  return data
-}
-
-function q(value) {
-  return encodeURIComponent(value ?? '')
-}
+export { ApiError } from '@bash-scripts/web-shared/http'
 
 // SSE 不能走 fetch，地址单独给页面拼。
 export function stateEventsUrl() {

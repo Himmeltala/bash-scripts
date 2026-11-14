@@ -9,7 +9,6 @@
 
 import argparse
 import hashlib
-import ipaddress
 import json
 import os
 import queue
@@ -17,7 +16,6 @@ import re
 import shlex
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import threading
@@ -30,6 +28,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
+from netutil import is_loopback_address as is_loopback
+from pathutil import PathError, safe_relative, within
 from web import ApiError, CONTENT_TYPES, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
@@ -60,18 +61,6 @@ SSE_HEARTBEAT = 15
 WATCH_INTERVAL = 3
 # 登记表很小，变了就推，稍快一点页面也不觉得有延迟。
 STATE_WATCH_INTERVAL = 0.5
-
-
-def is_loopback(addr):
-    """请求是不是本机发来的。写操作默认只认本机，免得同一网络里的人推代码。"""
-    try:
-        ip = ipaddress.ip_address(addr.split("%", 1)[0])
-    except ValueError:
-        return False
-    # 监听 IPv6 的 :: 时，本机连接可能显示成映射地址 ::ffff:127.0.0.1。
-    if ip.version == 6 and ip.ipv4_mapped:
-        return ip.ipv4_mapped.is_loopback
-    return ip.is_loopback
 
 
 # 同一个工作副本同时只跑一个写操作，避免两次提交或一次更新与一次提交撞在一起。
@@ -420,10 +409,7 @@ class Workspaces:
         self.lock = threading.Lock()
 
     def load(self):
-        try:
-            data = json.loads(self.path.read_text("utf-8"))
-        except (OSError, ValueError):
-            return []
+        data = read_json(self.path, default=None)
         items = data.get("workspaces") if isinstance(data, dict) else None
         if not isinstance(items, list):
             return []
@@ -435,10 +421,7 @@ class Workspaces:
         return items
 
     def save(self, items):
-        tmp = self.path.with_suffix(".tmp")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps({"workspaces": items}, ensure_ascii=False, indent=2), "utf-8")
-        tmp.replace(self.path)
+        write_json(self.path, {"workspaces": items}, indent=2, ensure_ascii=False)
 
     def find(self, wid):
         for item in self.load():
@@ -863,20 +846,17 @@ def svn_commit_detail(root, rev):
 
 def safe_rel(rel):
     """接口收到的工作副本内相对路径：不许绝对路径，不许用 .. 跳出工作副本。"""
-    rel = (rel or "").strip()
-    if not rel:
-        raise ApiError(400, "没给文件路径")
-    if rel.startswith("/") or any(part == ".." for part in Path(rel).parts):
+    try:
+        return safe_relative(rel, "文件路径")
+    except PathError:
+        rel = (rel or "").strip()
+        if not rel:
+            raise ApiError(400, "没给文件路径")
         raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    return rel
 
 
 def inside(root, target):
-    try:
-        Path(target).resolve().relative_to(Path(root).resolve())
-        return True
-    except (ValueError, OSError):
-        return False
+    return within(target, root)
 
 
 def clip(text):
@@ -1023,15 +1003,13 @@ def read_unversioned(root, rel):
         raise ApiError(400, "这是目录，里面没有可直接预览的文件")
     if not os.path.isfile(target):
         raise ApiError(404, "文件不存在：%s" % rel)
-    size = os.path.getsize(target)
-    if size > MAX_FILE:
-        raise ApiError(413, "文件有 %d 字节，超过预览上限 %d" % (size, MAX_FILE))
-    data = Path(target).read_bytes()
-    if b"\x00" in data:
-        raise ApiError(415, "这是二进制文件，看不了内容")
     try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
+        return read_text_preview(target, MAX_FILE)
+    except PreviewError as exc:
+        if exc.kind == "too_large":
+            raise ApiError(413, "文件有 %d 字节，超过预览上限 %d" % (exc.size, exc.max_bytes))
+        if exc.kind == "binary":
+            raise ApiError(415, "这是二进制文件，看不了内容")
         raise ApiError(415, "这个文件的编码不是 UTF-8，看不了内容")
 
 
@@ -1058,17 +1036,11 @@ def save_file(root, rel, text):
         old.decode("utf-8")
     except UnicodeDecodeError:
         raise ApiError(415, "这个文件的编码不是 UTF-8，不能按文本保存")
-    crlf = b"\r\n" in old
-    body = text.replace("\r\n", "\n").replace("\r", "\n")
-    if crlf:
-        body = body.replace("\n", "\r\n")
-    raw = body.encode("utf-8")
     try:
-        with open(target, "wb") as handle:
-            handle.write(raw)
+        size = write_text_preserve_newlines(target, text, old=old)
     except OSError as exc:
         raise ApiError(403, "写不了这个文件：%s" % exc)
-    return {"path": rel, "size": len(raw)}
+    return {"path": rel, "size": size}
 
 
 def diff_of(root, args):

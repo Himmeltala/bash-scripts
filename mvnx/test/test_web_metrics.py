@@ -1,34 +1,19 @@
 """网页头部性能指标的 SSE 回归测试。"""
 
 import http.client
-import importlib.util
 import json
+import sys
 import tempfile
-import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[2] / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "lib" / "py-shared"))
 
-spec = importlib.util.spec_from_file_location("mvnx_web_server", SERVER)
-web = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(web)
+import testkit
 
-
-def read_event(resp):
-    event, data = "", ""
-    while True:
-        line = resp.readline()
-        if not line:
-            return event, data
-        line = line.decode("utf-8").rstrip("\n")
-        if line == "":
-            return event, data
-        if line.startswith("event:"):
-            event = line[6:].strip()
-        elif line.startswith("data:"):
-            data += line[5:].strip()
+SERVER = REPO / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+web = testkit.load_module("mvnx_web_server", SERVER)
 
 
 class MetricsSseTest(unittest.TestCase):
@@ -36,22 +21,15 @@ class MetricsSseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             metrics = web.MetricsStream(web.METRICS)
             metrics.start()
-            handler = type(
-                "TestHandler",
-                (web.Handler,),
-                {"api_prefix": "/api", "static": Path(td), "metrics_stream": metrics},
-            )
-            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-            httpd.daemon_threads = True
-            threading.Thread(target=httpd.serve_forever, daemon=True).start()
-            try:
-                conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
+            handler = type("TestHandler", (web.Handler,), {})
+            with testkit.serve(handler, static=td, api_prefix="/api", metrics_stream=metrics) as srv:
+                conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=10)
                 conn.request("GET", "/api/metrics/stream")
                 resp = conn.getresponse()
                 self.assertEqual(resp.status, 200)
                 self.assertEqual(resp.getheader("Content-Type"), "text/event-stream; charset=utf-8")
 
-                event, data = read_event(resp)
+                event, data = testkit.read_sse_event(resp)
                 payload = json.loads(data)
                 self.assertEqual(event, "metrics")
                 for key in ("time", "cpu", "mem", "disk"):
@@ -59,9 +37,6 @@ class MetricsSseTest(unittest.TestCase):
 
                 resp.close()
                 conn.close()
-            finally:
-                httpd.shutdown()
-                httpd.server_close()
 
 
 if __name__ == "__main__":

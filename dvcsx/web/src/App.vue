@@ -13,9 +13,7 @@
       />
     </v-app-bar>
 
-    <v-snackbar v-model="snack.on" :color="snack.color" timeout="4000" location="bottom right">
-      {{ snack.text }}
-    </v-snackbar>
+    <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
 
     <v-main class="fill-height">
       <div class="shell">
@@ -35,16 +33,14 @@
           <div v-if="current" class="panelwrap">
             <WorkspacePanel :key="current.id" :ws="current" />
           </div>
-          <div v-else class="empty">
-            <v-icon size="56" color="on-surface-variant">mdi-source-branch</v-icon>
-            <p class="empty-title">先加一个工作副本</p>
-            <p class="empty-hint">
-              选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、切换分支、更新、提交和浏览目录看代码。
-            </p>
-            <v-btn color="primary" variant="flat" prepend-icon="mdi-folder-plus" @click="addWorkspace()">
-              添加工作副本
-            </v-btn>
-          </div>
+          <EmptyState
+            v-else
+            icon="mdi-source-branch"
+            title="先加一个工作副本"
+            hint="选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、切换分支、更新、提交和浏览目录看代码。"
+            action="添加工作副本"
+            @action="addWorkspace()"
+          />
         </main>
       </div>
     </v-main>
@@ -54,38 +50,26 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-import { useTheme } from 'vuetify'
 import WorkspaceList from './components/WorkspaceList.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
+import { useThemeToggle } from '@bash-scripts/web-shared/theme'
+import { EmptyState, ToastHost, useToast } from '@bash-scripts/web-shared/ui'
 import { api, stateEventsUrl } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'dvcsx-ws'
 
-const theme = useTheme()
-const dark = computed(() => theme.global.current.value.dark)
+const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
 const state = reactive({ workspaces: [] })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
-const snack = reactive({ on: false, text: '', color: 'grey' })
+const { snack, toast } = useToast()
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
 let source = null
 
 function select(id) {
   currentId.value = id || ''
-}
-
-function toast(text, color = 'grey') {
-  snack.text = text
-  snack.color = color
-  snack.on = true
-}
-
-function toggleTheme() {
-  const next = dark.value ? 'light' : 'dark'
-  theme.global.name.value = next
-  rememberTheme(next)
 }
 
 function applyState(data) {
@@ -183,25 +167,6 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.empty {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  text-align: center;
-  padding: 24px;
-}
-.empty-title {
-  font-size: 1.1rem;
-  margin: 8px 0 0;
-}
-.empty-hint {
-  color: rgb(var(--v-theme-on-surface-variant));
-  max-width: 460px;
-  margin: 0 0 12px;
 }
 @media (max-width: 720px) {
   .shell {

@@ -2,7 +2,16 @@
 // 手动刷新仍走一次 /api/usage；断线由 EventSource 自己重连，重连后服务端先推当前值。
 
 import { ref } from 'vue'
+import { createJsonClient } from '@bash-scripts/web-shared/http'
 import { query } from './useView'
+
+// 手动刷新与 SSE 推送取的都是同一份报表；错误文案沿用原来的后端 error 优先。
+const client = createJsonClient({
+  prefix: '/api',
+  messageOf: ({ data, status, response }) =>
+    (data && data.error) || response.statusText || `请求失败（${status}）`,
+  treatPayloadError: true,
+})
 
 export const data = ref(null)
 export const error = ref('')
@@ -22,9 +31,7 @@ export async function load() {
   busy.value = true
   error.value = ''
   try {
-    const res = await fetch(`/api/usage?${query()}`, { cache: 'no-store' })
-    const payload = await res.json()
-    if (!res.ok || payload.error) throw new Error(payload.error || res.statusText)
+    const payload = await client.call('GET', `/usage?${query()}`)
     apply(payload)
   } catch (err) {
     error.value = err.message

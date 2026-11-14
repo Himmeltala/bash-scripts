@@ -9,8 +9,14 @@ dvcsx_dir=${BASH_SOURCE[0]%/*}
 [[ "$dvcsx_dir" == "${BASH_SOURCE[0]}" ]] && dvcsx_dir='.'
 readonly dvcsx_dir
 
+# 共享层：base 先设 SHELL_TOOL；dvcsx 只有网页命令，不接记录界面与网页状态层。
+SHELL_TOOL=dvcsx
+# shellcheck source=../../lib/shell-shared/base.sh
+source "$dvcsx_dir"/../../lib/shell-shared/base.sh
+# shellcheck source=../../lib/shell-shared/web-command.sh
+source "$dvcsx_dir"/../../lib/shell-shared/web-command.sh
+
 for dvcsx_module in \
-  "$dvcsx_dir"/dvcsx/util.sh \
   "$dvcsx_dir"/dvcsx/web.sh
 do
   source "$dvcsx_module"

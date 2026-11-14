@@ -47,7 +47,7 @@ parse_args() {
       --host) RV_HOST=${args[$i]:-}; i=$((i + 1)) ;;
       -o|--open) RV_OPEN=1 ;;
       --allow-write) RV_ALLOW_WRITE=1 ;;
-      --json) RV_JSON=1 ;;
+      --json) RV_JSON=1; WEB_JSON_FLAG=1 ;;
       -*) usage_error "未知选项 $a" ;;
       web) ACTION='web' ;;
       *) usage_error "未知命令 $a" ;;

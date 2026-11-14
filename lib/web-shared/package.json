@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "nodex、mvnx、dvcsx 三个网页界面共用的组件与组合式函数",
+  "description": "nodex、mvnx、dvcsx、tokx 四个网页界面共用的组件、组合式函数与纯工具",
   "files": [
     "dist"
   ],
@@ -15,10 +15,15 @@
     "./diff": "./dist/diff.js",
     "./metrics": "./dist/metrics.js",
     "./theme": "./dist/theme.js",
+    "./format": "./dist/format.js",
+    "./http": "./dist/http.js",
+    "./logs": "./dist/logs.js",
+    "./ui": "./dist/ui.js",
     "./style.css": "./dist/web-shared.css"
   },
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "test": "node --test test/*.test.js"
   },
   "peerDependencies": {
     "@xterm/addon-fit": "^0.11.0",

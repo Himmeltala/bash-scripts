@@ -15,10 +15,19 @@ if ! source "$mvnx_dir"/../../lib/tui-path.sh; then
   exit 1
 fi
 
+# 共享层：base 约定先设 SHELL_TOOL，再按需加载记录界面、网页状态与网页启动流程。
+SHELL_TOOL=mvnx
+# shellcheck source=../../lib/shell-shared/base.sh
+source "$mvnx_dir"/../../lib/shell-shared/base.sh
+# shellcheck source=../../lib/shell-shared/ui-records.sh
+source "$mvnx_dir"/../../lib/shell-shared/ui-records.sh
+# shellcheck source=../../lib/shell-shared/web-state.sh
+source "$mvnx_dir"/../../lib/shell-shared/web-state.sh
+# shellcheck source=../../lib/shell-shared/web-command.sh
+source "$mvnx_dir"/../../lib/shell-shared/web-command.sh
+
 for mvnx_module in \
-  "$mvnx_dir"/mvnx/util.sh \
   "$mvnx_dir"/mvnx/pom.sh \
-  "$mvnx_dir"/mvnx/ui.sh \
   "$mvnx_dir"/mvnx/exec.sh \
   "$mvnx_dir"/mvnx/server.sh
 do

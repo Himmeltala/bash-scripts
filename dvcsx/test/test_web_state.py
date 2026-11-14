@@ -1,35 +1,20 @@
 """网页登记表 SSE 的回归测试：state.json 一变就推一份。"""
 
 import http.client
-import importlib.util
 import json
+import sys
 import tempfile
-import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SERVER = HERE.parent / "lib" / "dvcsx" / "web" / "server.py"
 
-spec = importlib.util.spec_from_file_location("dvcsx_web_server", SERVER)
-web = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(web)
+# 测试按 python3 -I 跑，共享层不在 sys.path 上，显式加进去。
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared"))
+from testkit import load_module, read_sse_event, serve
 
-
-def read_event(resp):
-    event, data = "", ""
-    while True:
-        line = resp.readline()
-        if not line:
-            return event, data
-        line = line.decode("utf-8").rstrip("\n")
-        if line == "":
-            return event, data
-        if line.startswith("event:"):
-            event = line[6:].strip()
-        elif line.startswith("data:"):
-            data += line[5:].strip()
+web = load_module("dvcsx_web_server", SERVER)
 
 
 def workspace(wid, root):
@@ -45,35 +30,25 @@ class StateSseTest(unittest.TestCase):
 
             stream = web.StateStream(str(path), lambda: {"workspaces": store.workspaces()})
             stream.start()
-            handler = type(
-                "TestHandler",
-                (web.Handler,),
-                {"api_prefix": "/api", "static": Path(td), "state_stream": stream},
-            )
-            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-            httpd.daemon_threads = True
-            threading.Thread(target=httpd.serve_forever, daemon=True).start()
-            try:
-                conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
+            handler = type("TestHandler", (web.Handler,), {"state_stream": stream})
+            with serve(handler, static=Path(td), api_prefix="/api") as server:
+                conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
                 conn.request("GET", "/api/state/stream")
                 resp = conn.getresponse()
                 self.assertEqual(resp.status, 200)
                 self.assertEqual(resp.getheader("Content-Type"), "text/event-stream; charset=utf-8")
 
-                event, data = read_event(resp)
+                event, data = read_sse_event(resp)
                 self.assertEqual(event, "state")
                 self.assertEqual(len(json.loads(data)["workspaces"]), 1)
 
                 store.save([workspace("w1", "/tmp/a"), workspace("w2", "/tmp/b")])
-                event, data = read_event(resp)
+                event, data = read_sse_event(resp)
                 self.assertEqual(event, "state")
                 self.assertEqual(len(json.loads(data)["workspaces"]), 2)
 
                 resp.close()
                 conn.close()
-            finally:
-                httpd.shutdown()
-                httpd.server_close()
 
 
 if __name__ == "__main__":

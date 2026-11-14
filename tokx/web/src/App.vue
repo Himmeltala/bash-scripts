@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { useTheme } from 'vuetify'
 import { COMMANDS, EVERY, RANGES, SOURCES, view } from './composables/useView'
 import { busy, close as closeStream, data, error, load, loadedAt, subscribe } from './composables/useUsage'
+import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { rememberTheme } from './plugins/vuetify'
 import BrandIcon from './components/BrandIcon.vue'
 import SummaryCards from './components/SummaryCards.vue'
@@ -38,13 +38,12 @@ const untilDate = computed({
   },
 })
 
-const theme = useTheme()
 // 没手动切过深浅色时跟着系统走，系统换主题页面当场跟上。
-if (!localStorage.getItem('tokx-theme')) {
-  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', (event) => {
-    if (!localStorage.getItem('tokx-theme')) theme.global.name.value = event.matches ? 'dark' : 'light'
-  })
-}
+const { dark, toggle: flipTheme } = useThemeToggle({
+  storageKey: 'tokx-theme',
+  rememberTheme,
+  followSystem: true,
+})
 
 const stamp = computed(() => {
   if (error.value) return `读取失败：${error.value}`
@@ -67,11 +66,6 @@ function refresh() {
 function reload() {
   view.sort = { key: '', desc: true }
   refresh()
-}
-
-function flipTheme() {
-  theme.global.name.value = theme.global.current.value.dark ? 'light' : 'dark'
-  rememberTheme(theme.global.name.value)
 }
 
 watch(() => view.every, (every) => {
@@ -105,8 +99,8 @@ onBeforeUnmount(() => {
       </v-app-bar-title>
       <template #append>
         <v-btn
-          :icon="theme.global.current.value.dark ? 'mdi-weather-night' : 'mdi-weather-sunny'"
-          :title="theme.global.current.value.dark ? '切到浅色' : '切到深色'"
+          :icon="dark ? 'mdi-weather-night' : 'mdi-weather-sunny'"
+          :title="dark ? '切到浅色' : '切到深色'"
           variant="text"
           @click="flipTheme"
         />

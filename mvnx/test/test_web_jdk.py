@@ -4,18 +4,20 @@
 接口与实际起进程由手工验证。
 """
 
-import importlib.util
 import os
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[2] / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "lib" / "py-shared"))
 
-spec = importlib.util.spec_from_file_location("mvnx_web_server", SERVER)
-web = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(web)
+import testkit
+
+SERVER = REPO / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+web = testkit.load_module("mvnx_web_server", SERVER)
 
 
 def make_jdk(root, name, version="17.0.9", vendor="Test"):

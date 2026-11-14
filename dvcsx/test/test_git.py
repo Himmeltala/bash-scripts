@@ -1,30 +1,23 @@
 #!/usr/bin/env python3
 """dvcsx 回归：临时 Git 仓库上的状态解析、差异、日志与网页接口。"""
 
-import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
-import threading
 import unittest
-import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SERVER_PY = HERE.parent / "lib" / "dvcsx" / "web" / "server.py"
 
+# 测试按 python3 -I 跑，共享层不在 sys.path 上，显式加进去。
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared"))
+from testkit import json_call, load_module, serve
 
-def load_server():
-    spec = importlib.util.spec_from_file_location("dvcsx_server", SERVER_PY)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-gitmod = load_server()
+gitmod = load_module("dvcsx_server", SERVER_PY)
 
 # 临时仓库里的提交要作者信息，本机的全局配置不一定有。
 ENV = dict(
@@ -78,29 +71,21 @@ class GitWorkspace(unittest.TestCase):
         run(["git", "mv", "old.txt", "new.txt"], cwd=cls.repo)
         (cls.repo / "sub" / "untracked.txt").write_text("new\n", "utf-8")
 
-        cls.handler = gitmod.Handler
-        cls.handler.static = cls.static.resolve()
-        cls.handler.store = gitmod.Workspaces(str(base / "state.json"))
-        cls.handler.api_prefix = "/__dvcsx/api"
-        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), cls.handler)
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        cls.base = "http://127.0.0.1:%d/__dvcsx/api" % cls.httpd.server_address[1]
+        cls.server = serve(
+            gitmod.Handler,
+            static=cls.static.resolve(),
+            api_prefix="/__dvcsx/api",
+            store=gitmod.Workspaces(str(base / "state.json")),
+        )
+        cls.base = cls.server.base
 
     @classmethod
     def tearDownClass(cls):
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+        cls.server.shutdown()
         cls.tmp.cleanup()
 
     def call(self, path, body=None):
-        data = json.dumps(body).encode("utf-8") if body is not None else None
-        headers = {"Content-Type": "application/json"} if data else {}
-        req = urllib.request.Request(self.base + path, data=data, headers=headers)
-        try:
-            with urllib.request.urlopen(req) as resp:
-                return resp.status, json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            return exc.code, json.loads(exc.read().decode("utf-8"))
+        return json_call(self.base, path, body)
 
     def add(self):
         status, data = self.call("/workspaces", {"root": str(self.repo)})

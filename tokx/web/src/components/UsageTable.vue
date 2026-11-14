@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import BrandIcon from './BrandIcon.vue'
 import { data } from '../composables/useUsage'
-import { COLUMNS, nf, SOURCE_LIST, cellValue } from '../composables/format'
+import { formatNumber } from '@bash-scripts/web-shared/format'
+import { COLUMNS, SOURCE_LIST, cellValue } from '../composables/format'
 
 const sortKey = ref('')
 const sortDesc = ref(false)
@@ -56,7 +57,7 @@ const sourceOf = (key) => SOURCE_LIST.find((item) => item.key === key)
 // 表里的数字带千分位，跟卡片一致；合计行是右对齐的千分位串，宽度有限就留空让标题提示。
 const cell = (column, row, blankMissing = false) => {
   const text = cellValue(column, row, blankMissing)
-  return column.num ? nf.format(Math.round(Number(row[column.key]) || 0)) : text
+  return column.num ? formatNumber(row[column.key]) : text
 }
 
 function rowProps({ item }) {

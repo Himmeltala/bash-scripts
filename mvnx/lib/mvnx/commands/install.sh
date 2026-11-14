@@ -76,11 +76,11 @@ select_install() {
     module_recs+=("${subs[@]}")
   done
 
-  out=$(mvnx_ui_checklist_all '模块' "${module_recs[@]}") || rc=$?
+  out=$(shell_ui_checklist_all '模块' "${module_recs[@]}") || rc=$?
   ((rc == 0)) || return "$rc"
 
   mapfile -t subs <<< "$out"
-  save_selection "${subs[@]}"
+  shell_save_selection "${subs[@]}"
   printf '%s\n' "${subs[@]}"
   return 0
 }

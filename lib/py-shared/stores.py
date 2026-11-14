@@ -1,13 +1,9 @@
 """状态行与别名存储：bash 写状态文件，这里只读行、另存别名。"""
 
 import os
-import threading
-from pathlib import Path
 
+from kvstore import FS, LineStore
 from web import ApiError, log
-
-# bash 写状态行用的字段分隔符。
-FS = "\x1f"
 
 
 class Row:
@@ -47,49 +43,18 @@ def attach_alias_rel(snapshot, store):
     return snapshot
 
 
-class AliasStore:
+class AliasStore(LineStore):
     """工作区别名，存在状态文件旁边；状态文件本身仍由 bash 写，这里不碰它。"""
 
     def __init__(self, path):
-        self.path = Path(path)
-        self._lock = threading.Lock()
+        LineStore.__init__(self, path, allow_empty=False, on_error=self._write_failed)
 
-    def _load(self):
-        out = {}
-        try:
-            text = self.path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return out
-        for line in text.splitlines():
-            if not line:
-                continue
-            ws, sep, alias = line.partition(FS)
-            if sep and ws and alias:
-                out[ws] = alias
-        return out
+    def _write_failed(self, exc):
+        log("写别名失败 %s：%s" % (self.path, exc))
 
-    def _save(self, data):
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            text = "".join(ws + FS + alias + "\n" for ws, alias in data.items() if ws and alias)
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, self.path)
-        except OSError as exc:
-            log("写别名失败 %s：%s" % (self.path, exc))
+    def normalize(self, value):
+        return " ".join((value or "").split()).replace(FS, " ")
 
-    def all(self):
-        with self._lock:
-            return self._load()
-
-    def set(self, ws, alias):
-        alias = " ".join((alias or "").split()).replace(FS, " ")
-        if len(alias) > 80:
+    def validate(self, key, value):
+        if len(value) > 80:
             raise ApiError(400, "别名太长，最多 80 个字")
-        with self._lock:
-            data = self._load()
-            if alias:
-                data[ws] = alias
-            else:
-                data.pop(ws, None)
-            self._save(data)

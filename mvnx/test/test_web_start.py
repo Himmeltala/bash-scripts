@@ -3,18 +3,20 @@
 漏了 -pl，mvn 就在工作区根目录整体跑，spring-boot:run 先落到没有主类的聚合 pom 上。
 """
 
-import importlib.util
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[2] / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "lib" / "py-shared"))
 
-spec = importlib.util.spec_from_file_location("mvnx_web_server", SERVER)
-web = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(web)
+import testkit
+
+SERVER = REPO / "mvnx" / "lib" / "mvnx" / "web" / "server.py"
+web = testkit.load_module("mvnx_web_server", SERVER)
 
 FS = web.FS
 
