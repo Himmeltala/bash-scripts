@@ -28,16 +28,23 @@
     </header>
 
     <div class="tabs">
-      <v-btn
-        v-for="t in tabs"
-        :key="t.value"
-        size="small"
-        :variant="tab === t.value ? 'flat' : 'text'"
-        :color="tab === t.value ? 'primary' : undefined"
-        @click="tab = t.value"
-      >
-        {{ t.title }}
-      </v-btn>
+      <v-slide-group v-model="tab" mandatory show-arrows class="tab-row">
+        <v-slide-group-item
+          v-for="t in tabs"
+          :key="t.value"
+          :value="t.value"
+          v-slot="{ isSelected, toggle }"
+        >
+          <v-btn
+            size="small"
+            :variant="isSelected ? 'flat' : 'text'"
+            :color="isSelected ? 'primary' : undefined"
+            @click="toggle"
+          >
+            {{ t.title }}
+          </v-btn>
+        </v-slide-group-item>
+      </v-slide-group>
       <v-spacer />
       <v-btn v-if="tab !== 'zip'" size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">
         添加命令
@@ -461,6 +468,14 @@ function onSave({ args }) {
   gap: 4px;
   margin: 14px 0 10px;
   flex-wrap: wrap;
+}
+/* 栏目条用 v-slide-group：窄窗口里横向滚动，不把按钮折成两行。 */
+.tab-row {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.tab-row :deep(.v-slide-group__content) {
+  gap: 4px;
 }
 .filters {
   display: flex;
