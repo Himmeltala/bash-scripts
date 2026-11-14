@@ -259,24 +259,10 @@ def is_loopback(host: str) -> bool:
     return netutil.is_loopback_host(host)
 
 
-def is_any(host: str) -> bool:
-    """0.0.0.0 与 :: 都是"所有网卡"，不能拿来当访问地址。"""
-    return netutil.is_any_host(host)
-
-
-def lan_address() -> str:
-    """猜一个局域网里能用的本机地址，猜不出来退回回环地址。"""
-    return netutil.guess_lan_address()
-
-
 def urls(host: str, port: int) -> tuple[str, str]:
     """返回 (对外地址, 本机地址)。"""
     local = netutil.host_url("127.0.0.1", port)
     return netutil.host_url(host, port), local
-
-
-# 客户端提前断开不算错误：共用 WebServer 已经按这个口径处理。
-_Server = WebServer
 
 
 def serve(
@@ -291,7 +277,8 @@ def serve(
         print("tokx: --port 取 0 到 65535", file=sys.stderr)
         return 2
     try:
-        httpd = _Server((host, port), _make_handler(config))
+        # 客户端提前断开不算错误：共用 WebServer 已经按这个口径处理。
+        httpd = WebServer((host, port), _make_handler(config))
     except OSError as exc:
         print(f"tokx: 监听 {host}:{port} 失败：{exc}", file=sys.stderr)
         return 1

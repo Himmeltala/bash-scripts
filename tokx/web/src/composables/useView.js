@@ -1,6 +1,6 @@
 // 视图状态：报表、范围、来源与排序同步到地址栏，刷新页面或分享链接都能还原。
 
-import { computed, reactive, watch } from 'vue'
+import { reactive, watch } from 'vue'
 import { SOURCE_LIST } from './format'
 
 export const SOURCES = SOURCE_LIST
@@ -35,12 +35,6 @@ function fromUrl() {
 
 export const view = reactive(fromUrl())
 view.sort = { key: '', desc: true }
-
-export const rangeText = computed(() => {
-  if (view.range === 'custom') return `${view.since || '…'} 至 ${view.until || '…'}`
-  if (view.range === 'all') return '全部历史'
-  return RANGES.find((item) => item.key === view.range)?.name || ''
-})
 
 // 请求参数：没选满来源时只带选中的那几个，命令行的 -s 语义。
 export function query(extra = {}) {

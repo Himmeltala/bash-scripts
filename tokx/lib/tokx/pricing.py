@@ -15,7 +15,6 @@ from zoneinfo import ZoneInfo
 from .model import Usage
 
 DEFAULT_TZ = "Asia/Shanghai"
-CURRENCY = "CNY"
 
 
 @dataclass(frozen=True, slots=True)

@@ -137,15 +137,6 @@ class Sessions:
         with self.lock:
             self.procs.pop(proc.pid, None)
 
-    def alive(self, sid):
-        try:
-            sid = int(sid)
-        except (TypeError, ValueError):
-            return False
-        with self.lock:
-            proc = self.procs.get(sid)
-        return proc is not None and proc.poll() is None
-
     def kill_group(self, sid, grace=10.0):
         """整组 TERM，超时再 KILL。会话首进程就是组长，组号等于会话号。"""
         try:

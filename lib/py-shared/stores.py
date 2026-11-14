@@ -20,14 +20,6 @@ class Row:
             return self.f[idx]
         return self.f[idx] if idx < len(self.f) else ""
 
-    @property
-    def id(self):
-        return self[1]
-
-    @property
-    def ws(self):
-        return self[2]
-
 
 def attach_alias_rel(snapshot, store):
     """把别名与相对家目录的路径拼进工作区列表。"""

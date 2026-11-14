@@ -23,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"
 from metrics import Metrics
 from runner import (
     LIVE,
-    RUN_FIELDS,
     RUN_KIND,
     RUN_STATUS,
     Sessions,
@@ -61,7 +60,6 @@ SVC_MODULE, SVC_ARGS = 5, 6
 RUN_DISPLAY = 7
 RUN_PORT = 12
 # run 行第 1 段是类型 run，第 2 段起依次是这 16 个字段，顺序与 lib/mvnx/server.sh 的 web_run_line 一致。
-# （RUN_FIELDS 由共享层给出，这里仍以同名留在模块顶层。）
 
 
 # 一次引擎调用的上限：扫描大工程几秒，留足余量。

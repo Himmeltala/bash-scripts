@@ -17,9 +17,6 @@ export const api = {
   logStreamUrl: (run) => `${PREFIX}/log/stream?run=${encodeURIComponent(run)}`,
   // 空路径取家目录这一层，其余取指定目录的下一层子目录。
   dirs: (path = '') => call('GET', `/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`),
-  // CPU、内存、磁盘的当前值，取一次算一个点。
-  metrics: () => call('GET', '/metrics'),
-  metricsStreamUrl: () => `${PREFIX}/metrics/stream`,
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
   setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),

@@ -2,7 +2,7 @@
 
 HOME_REAL=$(realpath -m -- "$HOME") || die "无法解析家目录 $HOME"
 CLAUDE_REAL=$(realpath -m -- "$CLAUDE_ROOT") || die "无法解析 $CLAUDE_ROOT"
-PROJECTS_REAL=$(realpath -m -- "$SESSION_ROOT") || die "无法解析 $SESSION_ROOT"
+realpath -m -- "$SESSION_ROOT" >/dev/null || die "无法解析 $SESSION_ROOT"
 ARCHIVE_REAL=$(realpath -m -- "$ARCHIVE_ROOT") || die "无法解析归档目录 $ARCHIVE_ROOT"
 
 declare -a A_DATE=()

@@ -9,8 +9,7 @@ RV_HOST='0.0.0.0'
 RV_OPEN=0
 # 停止时先 TERM，这么多秒还没退干净再 KILL。
 RV_GRACE=15
-# mvnx web 起 python 后每秒看一次它有没收摊，收摊了就退出；几秒内起不来就算启动失败。
-readonly WEB_ATTACH_INTERVAL=1
+# mvnx web 起 python 后最多等这么多秒；到时还没起来就算启动失败。
 readonly WEB_ATTACH_TIMEOUT=20
 
 readonly WEB_HOME="$CACHE_DIR/web"
@@ -24,8 +23,6 @@ readonly WEB_LOG_DIR="$WEB_HOME/logs"
 readonly WEB_PAGE="$mvnx_dir/mvnx/web/static/index.html"
 # 接口挂在单独的前缀下，HttpOnly 的 Cookie 只认 Path，前缀对得上才随请求上来。
 readonly WEB_API_PREFIX='/__mvnx/api'
-# 页面按 F5 刷新不是导航拦截，浏览器为兼容忽略这条但会打警告，这里点名它。
-readonly WEB_VIEW_TRANSITIONS='https://web.dev/bfcache/navigation/*'
 
 # 状态行首列决定这是什么，读写两侧照这张表：
 #   ws  |id|root|added
@@ -34,10 +31,8 @@ readonly WEB_VIEW_TRANSITIONS='https://web.dev/bfcache/navigation/*'
 #   run |id|ws|type|tag|path|pl|display|module|args|cmd|pid|port|status|started|code|err
 # run 的 status 取 starting、ready、exited、failed、stopped；pid 是它的会话号，也是进程组号。
 readonly WS_KIND='ws' SVC_KIND='svc' POM_KIND='pom' RUN_KIND='run'
-readonly RUN_COL_PL=7 RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_STARTED=15 RUN_COL_CODE=16 RUN_COL_ERR=17
+readonly RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_STARTED=15 RUN_COL_CODE=16 RUN_COL_ERR=17
 # run 行共 17 段：类型、运行号，加下面这 15 个字段。
-# 启动方式的取值与命令行一致；页面按这个直接改参数。
-readonly WEB_MODES='auto compile no-compile rebuild'
 # 共享状态层按这张表判断一行该有几列；键是首列的类型。
 declare -A WEB_STATE_WIDTHS=([ws]=4 [pom]=4 [svc]=9 [run]=17)
 

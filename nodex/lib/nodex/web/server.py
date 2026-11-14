@@ -28,7 +28,6 @@ from browse import inside
 from metrics import Metrics
 from runner import (
     LIVE,
-    RUN_FIELDS,
     RUN_KIND,
     RUN_PREFIX_RE,
     RUN_STATUS,
@@ -43,7 +42,7 @@ from runner import (
 )
 from runtime import check_static, serve as serve_web, start_streams
 from sse import MetricsStream, StateStream
-from stores import FS, AliasStore, HomeStore, LineStore, Row, attach_alias_rel, attach_home
+from stores import FS, AliasStore, HomeStore, LineStore, attach_alias_rel, attach_home
 from toolchain import effective_home, iter_home_dirs, prepend_bin
 from toolweb import NOT_HANDLED, WS_KIND, ToolHandler
 from web import ApiError, STREAMED, log, zip_dir
@@ -60,12 +59,10 @@ SVC_KIND, SCRIPT_KIND = "svc", "script"
 CO_ID, CO_WS, CO_TYPE = 1, 2, 3
 # svc 行：执行目录第 4 列、相对路径第 5 列、参数第 6 列、展示命令第 8 列、包管理器第 9 列。
 SVC_DIR, SVC_REL, SVC_ARGS, SVC_CMD, SVC_PM = 4, 5, 6, 8, 9
-# run 行（17 段，0 起）：脚本目录的相对路径第 6 列、展示路径第 7 列、端口 12。
-RUN_REL = 6
+# run 行（17 段，0 起）：展示路径第 7 列、端口 12。
 RUN_DISPLAY = 7
 RUN_PORT = 12
 # run 行第 1 段是类型 run，第 2 段起依次是这 16 个字段，顺序与 lib/nodex/server.sh 的 web_run_line 一致。
-# （RUN_FIELDS 由共享层给出，这里仍以同名留在模块顶层。）
 
 
 # 一次引擎调用的上限：扫描大工程几秒，留足余量。

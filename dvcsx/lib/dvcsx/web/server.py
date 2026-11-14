@@ -24,14 +24,14 @@ import uuid
 import webbrowser
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
 from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
 from netutil import is_loopback_address as is_loopback
 from pathutil import PathError, safe_relative, within
-from web import ApiError, CONTENT_TYPES, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
+from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
 MAX_TEXT = 2 * 1024 * 1024

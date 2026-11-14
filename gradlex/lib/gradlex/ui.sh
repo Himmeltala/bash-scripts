@@ -32,11 +32,6 @@ gradlex_ui_checklist() {
   _gradlex_checklist ui_checklist "$@"
 }
 
-# 带「全部」总开关的复选，参数与输出同 gradlex_ui_checklist。
-gradlex_ui_checklist_all() {
-  _gradlex_checklist ui_checklist_all "$@"
-}
-
 _gradlex_checklist() {
   local picker=$1 noun=$2
   shift 2
