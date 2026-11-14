@@ -121,7 +121,6 @@ const saved = ref(null)
 const copied = ref(false)
 
 let logSource = null
-let timer = null
 let copiedTimer = null
 
 // 树里的节点用 rel 认路、dir 判断目录；行内的勾选状态由这一侧提供。
@@ -177,7 +176,6 @@ watch(
   () => props.ws.id,
   () => {
     closeLog()
-    stopTimer()
     running.value = false
     reset()
   }
@@ -204,7 +202,6 @@ async function submit(payload) {
   const data = await api.zip(payload)
   name.value = data.name
   openLog(data.run)
-  poll(data.run)
 }
 
 function openLog(run) {
@@ -219,6 +216,33 @@ function openLog(run) {
     const data = JSON.parse(ev.data)
     if (data.text) log.value = log.value ? `${log.value}\n${data.text}` : data.text
   })
+  // 退出码由日志流一并推来，不再另起定时器轮询状态。
+  source.addEventListener('exit', () => finish(run))
+}
+
+async function finish(run) {
+  if (!running.value) return
+  running.value = false
+  try {
+    const data = await api.zipStatus(run)
+    if (data.code === 0) {
+      status.value = { text: '已完成', color: 'ready', icon: 'mdi-check-circle' }
+      const target = data.name || name.value
+      saved.value = {
+        name: target,
+        path: data.path,
+        size: data.size,
+        url: api.downloadUrl(props.ws.id, target),
+      }
+    } else {
+      status.value = { text: '失败', color: 'failed', icon: 'mdi-alert-circle' }
+      error.value = `zipx 退出码 ${data.code}，看下面的日志`
+    }
+  } catch (err) {
+    error.value = err.message
+  }
+  // 进程刚退出时最后几行可能还没推到页面上，稍等一下再断开。
+  setTimeout(closeLog, 600)
 }
 
 async function copyPath() {
@@ -237,48 +261,8 @@ function closeLog() {
   }
 }
 
-function stopTimer() {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-}
-
-// 退出码落在日志旁边的 .code 文件里，进程没退出来之前一直问。
-function poll(run) {
-  stopTimer()
-  timer = setInterval(async () => {
-    try {
-      const data = await api.zipStatus(run)
-      if (data.running) return
-      stopTimer()
-      running.value = false
-      if (data.code === 0) {
-        status.value = { text: '已完成', color: 'ready', icon: 'mdi-check-circle' }
-        const target = data.name || name.value
-        saved.value = {
-          name: target,
-          path: data.path,
-          size: data.size,
-          url: api.downloadUrl(props.ws.id, target),
-        }
-      } else {
-        status.value = { text: '失败', color: 'failed', icon: 'mdi-alert-circle' }
-        error.value = `zipx 退出码 ${data.code}，看下面的日志`
-      }
-      // 进程刚退出时最后几行可能还没推到页面上，稍等一下再断开。
-      setTimeout(closeLog, 600)
-    } catch (err) {
-      stopTimer()
-      running.value = false
-      error.value = err.message
-    }
-  }, 700)
-}
-
 onBeforeUnmount(() => {
   closeLog()
-  stopTimer()
   clearTimeout(copiedTimer)
 })
 </script>

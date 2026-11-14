@@ -76,6 +76,12 @@ class SseTest(unittest.TestCase):
                 self.assertEqual(event, "append")
                 self.assertEqual(json.loads(data)["text"], "three")
 
+                # 退出码写在日志旁边，日志流跟着发一条 exit，压缩任务靠它收尾。
+                Path(str(log) + ".code").write_text("7\n", encoding="utf-8")
+                event, data = testkit.read_sse_event(resp)
+                self.assertEqual(event, "exit")
+                self.assertEqual(json.loads(data)["code"], 7)
+
                 resp.close()
                 conn.close()
 

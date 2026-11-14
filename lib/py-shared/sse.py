@@ -290,6 +290,7 @@ class SSEMixin:
         buf = LineBuffer()
         last_write = time.time()
         fh = None
+        exited = False
         try:
             while True:
                 if fh is None:
@@ -319,6 +320,18 @@ class SSEMixin:
                                 self.wfile.write(sse_event(text, event="append", event_id=offset).encode("utf-8"))
                                 self.wfile.flush()
                                 last_write = time.time()
+                    # Sessions 退出后把退出码写在日志旁边；发一次就够。
+                    # 压缩任务靠它收尾，普通服务日志忽略这个事件。
+                    if not exited:
+                        try:
+                            code = int(Path(str(path) + ".code").read_text(encoding="utf-8").strip())
+                        except (OSError, ValueError):
+                            pass
+                        else:
+                            exited = True
+                            self.wfile.write(sse_data({"code": code}, event="exit", event_id=offset).encode("utf-8"))
+                            self.wfile.flush()
+                            last_write = time.time()
                 if time.time() - last_write >= 5:
                     self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
