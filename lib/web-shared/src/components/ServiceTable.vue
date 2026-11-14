@@ -11,7 +11,11 @@
     <tbody>
       <tr v-for="row in rows" :key="row.key">
         <td>
-          <div class="svc-name">{{ row.title }}</div>
+          <div class="svc-name">
+            <span>{{ row.title }}</span>
+            <!-- 同一张表里混着启动、构建、安装时靠它区分；不分栏的调用方不用给。 -->
+            <v-chip v-if="row.typeText" size="x-small" variant="tonal" class="type-chip">{{ row.typeText }}</v-chip>
+          </div>
           <div class="svc-path" :title="row.path">{{ row.path }}</div>
         </td>
         <td>
@@ -111,7 +115,14 @@ defineEmits(['start', 'stop', 'settings', 'log'])
   text-overflow: ellipsis;
 }
 .svc-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 500;
+}
+.type-chip {
+  font-size: 0.7rem;
+  height: 18px;
 }
 .svc-path,
 .meta {

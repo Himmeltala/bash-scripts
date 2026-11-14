@@ -291,8 +291,6 @@ class Engine(ToolEngine):
 # 压缩
 
 
-# 与 zipx 的默认排除一致：树里列出来但置灰，勾不上。
-ZIP_EXCLUDES = (".git", ".svn", ".idea", "node_modules", "target")
 # 一层最多回这么多个条目：几千个文件的目录摊开会把页面卡住。
 MAX_ENTRIES = 2000
 # 压缩任务的运行号，日志目录名也跟着它。
@@ -328,7 +326,7 @@ def resolve_in_root(root, rel, what="路径"):
 
 
 def list_entries(state, ws, rel):
-    """列工作区里某一层的内容：目录与文件分开，排除项原样带上，页面自己置灰。"""
+    """列工作区里某一层的内容：目录与文件分开，能列出来的都能勾去打包。"""
     root = ws_root(state, ws)
     base = resolve_in_root(root, rel or ".", "目录")
     if not base.is_dir():
@@ -354,7 +352,6 @@ def list_entries(state, ws, rel):
                     "rel": Path(entry.path).relative_to(root).as_posix(),
                     "dir": is_dir,
                     "size": size,
-                    "excluded": entry.name in ZIP_EXCLUDES,
                 }
                 (dirs if is_dir else files).append(item)
     except PermissionError:
@@ -371,7 +368,6 @@ def list_entries(state, ws, rel):
         "root": str(root),
         "rel": rel or ".",
         "entries": dirs + files,
-        "excluded": list(ZIP_EXCLUDES),
         "truncated": truncated,
     }
 
@@ -564,7 +560,7 @@ class Handler(ToolHandler):
         root = ws_root(self.state, ws)
         target = resolve_in_root(root, rel or ".", "路径")
         if target.is_dir():
-            path, _ = zip_dir(target, ZIP_EXCLUDES)
+            path, _ = zip_dir(target)
             name = (target.name or "download") + ".zip"
             try:
                 self._send_download(path, name, head=head)

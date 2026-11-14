@@ -140,9 +140,6 @@ function onContext(event) {
 .row.selected {
   background: rgba(var(--v-theme-primary), 0.14);
 }
-.row.excluded {
-  opacity: 0.45;
-}
 .arrow {
   flex: 0 0 auto;
 }

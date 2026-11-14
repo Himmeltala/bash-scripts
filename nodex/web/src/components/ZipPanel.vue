@@ -18,7 +18,6 @@
           label-class="mono"
           :root-path="ws.root"
           :download-of="downloadOf"
-          :row-class="rowClass"
           :active="active"
           :texts="treeTexts"
           @pick="togglePick"
@@ -28,13 +27,12 @@
               class="pick"
               density="compact"
               :model-value="checked(node)"
-              :disabled="node.excluded || locked(node)"
+              :disabled="locked(node)"
               @update:model-value="togglePick(node)"
             />
           </template>
           <template #row-after-label="{ node }">
-            <span v-if="node.excluded" class="meta">默认排除</span>
-            <span v-else-if="!node.dir && node.size" class="meta">{{ sizeText(node.size) }}</span>
+            <span v-if="!node.dir && node.size" class="meta">{{ sizeText(node.size) }}</span>
           </template>
         </FileTree>
       </div>
@@ -128,7 +126,6 @@ const loadLayer = (rel) => api.entries(props.ws.id, rel)
 const downloadOf = (node) => api.entryUrl(props.ws.id, node.rel)
 const keyOf = (node) => node.rel
 const dirOf = (node) => node.dir
-const rowClass = (node) => ({ excluded: node.excluded })
 const treeTexts = {
   rootLoading: '正在读取目录…',
   rootEmpty: '这个工作区是空的。',
@@ -149,7 +146,7 @@ function checked(node) {
 }
 
 function togglePick(node) {
-  if (node.excluded || covered(node.rel)) return
+  if (covered(node.rel)) return
   const at = picked.value.indexOf(node.rel)
   if (at >= 0) picked.value.splice(at, 1)
   else picked.value.push(node.rel)

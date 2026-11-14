@@ -247,10 +247,11 @@ class ZipHelpersTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_entries_list_dirs_first_and_mark_excluded(self):
+    def test_entries_list_dirs_first_without_exclusions(self):
+        """目录不排除任何条目：node_modules 也能勾、也能打包。"""
         data = server.list_entries(self.state, "w1", "")
         self.assertEqual([item["name"] for item in data["entries"]], ["node_modules", "src", "README.md"])
-        self.assertEqual([item["name"] for item in data["entries"] if item["excluded"]], ["node_modules"])
+        self.assertTrue(all("excluded" not in item for item in data["entries"]))
         self.assertTrue(data["entries"][1]["dir"])
         nested = server.list_entries(self.state, "w1", "src")
         self.assertEqual([item["rel"] for item in nested["entries"]], ["src/a.js"])

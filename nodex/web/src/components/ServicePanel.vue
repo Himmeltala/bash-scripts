@@ -37,7 +37,6 @@
         @click="tab = t.value"
       >
         {{ t.title }}
-        <v-chip v-if="count(t.value)" size="x-small" class="count" variant="text">{{ count(t.value) }}</v-chip>
       </v-btn>
       <v-spacer />
       <v-btn v-if="tab !== 'zip'" size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">
@@ -45,10 +44,24 @@
       </v-btn>
     </div>
 
+    <!-- 脚本一多，一堆 dev 变体与同名 build 混在一张表里不好找；超过两屏再给一排按类型的筛选。 -->
+    <div v-if="tab !== 'zip' && filterable" class="filters">
+      <v-chip
+        v-for="item in filters"
+        :key="item.value"
+        size="small"
+        :variant="filter === item.value ? 'flat' : 'text'"
+        :color="filter === item.value ? 'primary' : undefined"
+        @click="filter = item.value"
+      >
+        {{ item.title }}<span class="filter-count">{{ item.count }}</span>
+      </v-chip>
+    </div>
+
     <ZipPanel v-show="tab === 'zip'" :ws="ws" :dark="dark" :active="tab === 'zip'" />
 
     <div v-if="tab !== 'zip' && !rows.length" class="none">
-      这一栏没有可执行的脚本，换个栏目看看，或者添加一条自己的命令。
+      这个工作区没有可执行的脚本；换一条筛选看看，或者添加一条自己的命令。
     </div>
 
     <ServiceTable
@@ -76,8 +89,18 @@
 
     <v-dialog v-model="add.on" max-width="540">
       <v-card>
-        <v-card-title>添加{{ add.action }}命令</v-card-title>
+        <v-card-title>添加命令</v-card-title>
         <v-card-text>
+          <v-select
+            v-model="add.type"
+            :items="typeItems"
+            item-title="title"
+            item-value="value"
+            label="类型"
+            density="compact"
+            variant="outlined"
+            class="mb-4"
+          />
           <v-text-field
             v-model="add.tag"
             label="名称"
@@ -99,7 +122,7 @@
           <v-text-field
             v-model="add.args"
             label="完整命令"
-            :placeholder="add.placeholder"
+            :placeholder="addPlaceholder"
             density="compact"
             variant="outlined"
             @keyup.enter="saveCommand"
@@ -174,19 +197,20 @@ const props = defineProps({
 })
 const emit = defineEmits(['start', 'stop', 'save', 'setnode', 'scan', 'forget', 'notice'])
 
+// nodex 的脚本不分栏：dev/build/install 只是扫描时的归类，一张表加类型标签就够，
+// 只有压缩是目录树勾选，单独一栏。
 const tabs = [
-  { value: 'service', title: '启动服务' },
-  { value: 'package', title: '打包' },
-  { value: 'install', title: '安装' },
+  { value: 'scripts', title: '脚本' },
   { value: 'zip', title: '压缩' },
 ]
-const tab = ref('service')
+const tab = ref('scripts')
+const filter = ref('')
 const stopping = ref({})
 const starting = ref({})
 
 const settings = reactive({ on: false, svc: null })
 const custom = reactive({ on: false, path: '' })
-const add = reactive({ on: false, saving: false, error: '', type: 'dev', action: '启动', tag: '', rel: '.', args: '', placeholder: '' })
+const add = reactive({ on: false, saving: false, error: '', type: 'dev', tag: '', rel: '.', args: '' })
 // 日志弹窗的文本、翻页与状态跟着当前运行走。
 const {
   text: logText,
@@ -197,12 +221,11 @@ const {
   loadMore: loadMoreLog,
 } = useRunLog({ api, ws: () => props.ws, statusText: STATUS_TEXT })
 
-const ADD_META = {
-  dev: { action: '启动', placeholder: 'npm run dev' },
-  build: { action: '打包', placeholder: 'npm run build' },
-  install: { action: '安装', placeholder: 'npm install' },
-}
-const TAB_TYPE = { service: 'dev', package: 'build', install: 'install' }
+// 类型下拉与命令提示按同一组顺序排，添加时自己选类型，不再跟着当前栏走。
+const TYPE_ORDER = Object.keys(TYPE_TEXT)
+const typeItems = TYPE_ORDER.map((type) => ({ value: type, title: TYPE_TEXT[type] }))
+const ADD_PLACEHOLDER = { dev: 'npm run dev', build: 'npm run build', install: 'npm install' }
+const addPlaceholder = computed(() => ADD_PLACEHOLDER[add.type] || '')
 
 // 自定义命令可以指向工作区根，也可以指向某个子目录。
 const scriptItems = computed(() =>
@@ -248,20 +271,29 @@ function baseName(full) {
   return parts.length ? parts[parts.length - 1] : full
 }
 
-function typeTab(type) {
-  if (type === 'dev') return 'service'
-  if (type === 'build') return 'package'
-  return type
+// 超过两屏才给筛选，三五行的时候多一排按钮反而添乱。
+const filterable = computed(() => props.ws.services.length > 8)
+
+const filters = computed(() => {
+  const items = [{ value: '', title: '全部', count: props.ws.services.length }]
+  for (const type of TYPE_ORDER) {
+    const count = props.ws.services.filter((s) => s.type === type).length
+    if (count) items.push({ value: type, title: TYPE_TEXT[type], count })
+  }
+  return items
+})
+
+function typeRank(type) {
+  const rank = TYPE_ORDER.indexOf(type)
+  return rank < 0 ? TYPE_ORDER.length : rank
 }
 
-function count(value) {
-  return props.ws.services.filter((s) => typeTab(s.type) === value).length
-}
-
-// 列表按栏目拼：每个动作只看自己的脚本，日志也从这一行打开。
+// 一张表按类型分组排：启动在前、构建其次、安装最后，同类型按名字。
 const rows = computed(() => {
   return props.ws.services
-    .filter((s) => typeTab(s.type) === tab.value)
+    .filter((s) => !filter.value || s.type === filter.value)
+    .slice()
+    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || String(a.tag).localeCompare(String(b.tag), 'zh-CN'))
     .map((svc) => {
       const run = svc.run
       const live = !!run && LIVE.includes(run.status)
@@ -272,6 +304,7 @@ const rows = computed(() => {
         title: svc.tag,
         path: svc.display,
         cmd: svc.cmd,
+        typeText: TYPE_TEXT[svc.type] || '',
         action: TYPE_TEXT[svc.type] || '执行',
         live,
         statusText: run ? STATUS_TEXT[run.status] || run.status : '',
@@ -312,14 +345,10 @@ async function stop(row) {
 }
 
 function openAdd() {
-  const type = TAB_TYPE[tab.value]
-  const meta = ADD_META[type]
   add.on = true
   add.saving = false
   add.error = ''
-  add.type = type
-  add.action = meta.action
-  add.placeholder = meta.placeholder
+  add.type = 'dev'
   add.tag = ''
   add.rel = props.ws.scripts.some((item) => item.rel === '.') ? '.' : (props.ws.scripts[0] || {}).rel || '.'
   add.args = ''
@@ -367,6 +396,14 @@ function openLog(row) {
   settings.on = true
   openLogRun(row.run, (row.svc || {}).id || '')
 }
+
+// 换工作区时筛选回到全部，否则表里只剩空行，看着像脚本丢了。
+watch(
+  () => props.ws.id,
+  () => {
+    filter.value = ''
+  },
+)
 
 // 弹窗关掉就断开日志流，与以前的 watch(settings.on) 一致。
 watch(
@@ -425,8 +462,15 @@ function onSave({ args }) {
   margin: 14px 0 10px;
   flex-wrap: wrap;
 }
-.count {
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: -2px 0 8px;
+}
+.filter-count {
   margin-left: 6px;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
 .add-error {
   margin: 8px 0 0;
