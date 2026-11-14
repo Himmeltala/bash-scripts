@@ -134,8 +134,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { DirectoryPicker } from '../DirectoryPicker/index.js'
-import { copyText } from '../../utils/clipboard.js'
+import { DirectoryPicker } from './DirectoryPicker/index.js'
+import { copyText } from '../utils/clipboard.js'
 
 const props = defineProps({
   workspaces: { type: Array, required: true },

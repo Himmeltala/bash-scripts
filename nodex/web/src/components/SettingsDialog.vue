@@ -42,7 +42,7 @@
       <code>{{ preview }}</code>
     </div>
 
-    <ServiceLogPane
+    <RunLogPanel
       :text="logText"
       :more="logMore"
       :dark="dark"
@@ -63,7 +63,7 @@
 import { computed, ref, watch } from 'vue'
 import { TYPE_TEXT } from '../composables/format'
 import { colorize } from '../composables/logColor'
-import { FloatingDialog, ServiceLogPane } from '@bash-scripts/web-shared'
+import { FloatingDialog, RunLogPanel } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

@@ -1,6 +1,6 @@
 // 接口封装：所有请求都走 /__dvcsx/api，出错时把后端给的那句话抛出来。
 
-import { createJsonClient, q } from '@bash-scripts/web-shared/http'
+import { createJsonClient, encodeParam } from '@bash-scripts/web-shared/http'
 
 const PREFIX = '/__dvcsx/api'
 const { call } = createJsonClient({ prefix: PREFIX })
@@ -13,46 +13,46 @@ export function stateEventsUrl() {
 }
 
 export function workspaceEventsUrl(ws) {
-  return `${PREFIX}/events?ws=${q(ws)}`
+  return `${PREFIX}/events?ws=${encodeParam(ws)}`
 }
 
 export function jobEventsUrl(id) {
-  return `${PREFIX}/operations/${q(id)}/events`
+  return `${PREFIX}/operations/${encodeParam(id)}/events`
 }
 
 export const api = {
   state: () => call('GET', '/state'),
-  dirs: (path = '') => call('GET', `/dirs${path ? `?path=${q(path)}` : ''}`),
+  dirs: (path = '') => call('GET', `/dirs${path ? `?path=${encodeParam(path)}` : ''}`),
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
   setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),
-  changes: (ws) => call('GET', `/changes?ws=${q(ws)}`),
+  changes: (ws) => call('GET', `/changes?ws=${encodeParam(ws)}`),
   diff: (ws, path, item = '', full = false) =>
-    call('GET', `/diff?ws=${q(ws)}&path=${q(path)}&item=${q(item)}&full=${full ? 1 : 0}`),
+    call('GET', `/diff?ws=${encodeParam(ws)}&path=${encodeParam(path)}&item=${encodeParam(item)}&full=${full ? 1 : 0}`),
   log: (ws, limit = 50, skip = 0, sync = true, allRefs = true) =>
     call(
       'GET',
-      `/log?ws=${q(ws)}&limit=${limit}&skip=${skip}&sync=${sync ? 1 : 0}&all=${allRefs ? 1 : 0}`
+      `/log?ws=${encodeParam(ws)}&limit=${limit}&skip=${skip}&sync=${sync ? 1 : 0}&all=${allRefs ? 1 : 0}`
     ),
-  commit: (ws, rev) => call('GET', `/commit?ws=${q(ws)}&rev=${q(rev)}`),
+  commit: (ws, rev) => call('GET', `/commit?ws=${encodeParam(ws)}&rev=${encodeParam(rev)}`),
   revision: (ws, rev, path = '', full = false) =>
     call(
       'GET',
-      `/revision?ws=${q(ws)}&rev=${q(rev)}&path=${q(path)}&full=${full ? 1 : 0}`
+      `/revision?ws=${encodeParam(ws)}&rev=${encodeParam(rev)}&path=${encodeParam(path)}&full=${full ? 1 : 0}`
     ),
-  syncInfo: (ws) => call('GET', `/sync-info?ws=${q(ws)}`),
+  syncInfo: (ws) => call('GET', `/sync-info?ws=${encodeParam(ws)}`),
   startOperation: (body) => call('POST', '/operations', body),
-  latestOperation: (ws) => call('GET', `/operations?ws=${q(ws)}`),
-  job: (id) => call('GET', `/operations/${q(id)}`),
-  cancelOperation: (id) => call('POST', `/operations/${q(id)}/cancel`, {}),
-  tree: (ws, path = '') => call('GET', `/tree?ws=${q(ws)}&path=${q(path)}`),
-  file: (ws, path) => call('GET', `/file?ws=${q(ws)}&path=${q(path)}`),
+  latestOperation: (ws) => call('GET', `/operations?ws=${encodeParam(ws)}`),
+  job: (id) => call('GET', `/operations/${encodeParam(id)}`),
+  cancelOperation: (id) => call('POST', `/operations/${encodeParam(id)}/cancel`, {}),
+  tree: (ws, path = '') => call('GET', `/tree?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
+  file: (ws, path) => call('GET', `/file?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
   // 直接交给浏览器下；目录由后端现场压成 zip。
-  downloadUrl: (ws, path) => `${PREFIX}/download?ws=${q(ws)}&path=${q(path)}`,
+  downloadUrl: (ws, path) => `${PREFIX}/download?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,
   save: (ws, path, text) => call('POST', '/save', { ws, path, text }),
   search: (ws, text, mode = 'name', path = '') =>
     call(
       'GET',
-      `/search?ws=${q(ws)}&q=${q(text)}&mode=${q(mode)}&path=${q(path)}`
+      `/search?ws=${encodeParam(ws)}&q=${encodeParam(text)}&mode=${encodeParam(mode)}&path=${encodeParam(path)}`
     ),
 }
