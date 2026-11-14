@@ -1250,41 +1250,52 @@ LOG_FMT = "%x1e%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s"
 
 
 def parse_git_log(text):
-    """git log --name-status 的输出：每条提交一行 \\x1e 开头、\\x1f 分字段，后面跟路径动作行。"""
+    """git log --format=LOG_FMT 的输出：每条提交一行 \\x1e 开头、\\x1f 分字段。
+
+    路径不在这里取：列表里每条提交都带 --name-status 太慢，页面也只显示选中那一条的
+    文件，所以 paths 先留空，选中时由 git_commit_detail 现取。
+    """
     entries = []
-    current = None
     for line in text.split("\n"):
-        if line.startswith("\x1e"):
-            parts = line[1:].split("\x1f")
-            current = None
-            if len(parts) >= 6:
-                sha, short, author, date, parents, subject = parts[:6]
-                current = {
-                    "revision": sha,
-                    "short": short,
-                    "author": author,
-                    "date": date,
-                    # 父提交给页面画时间线用；根提交这里是空表。
-                    "parents": parents.split(),
-                    "message": subject,
-                    "paths": [],
-                }
-                entries.append(current)
+        if not line.startswith("\x1e"):
             continue
-        if current is None or not line.strip():
+        parts = line[1:].split("\x1f")
+        if len(parts) < 6:
+            continue
+        sha, short, author, date, parents, subject = parts[:6]
+        entries.append(
+            {
+                "revision": sha,
+                "short": short,
+                "author": author,
+                "date": date,
+                # 父提交给页面画时间线用；根提交这里是空表。
+                "parents": parents.split(),
+                "message": subject,
+                "paths": [],
+            }
+        )
+    return entries
+
+
+def parse_name_status(text):
+    """--name-status 的动作行：每行“动作 路径”，改名与复制是“动作 原路径 新路径”。"""
+    paths = []
+    for line in text.split("\n"):
+        if not line.strip():
             continue
         parts = line.split("\t")
         action = parts[0][:1]
+        if action not in ("A", "C", "D", "M", "R", "T", "U", "X"):
+            continue
         if action in ("R", "C") and len(parts) >= 3:
-            # 重命名与复制是“动作 原路径 新路径”，页面点到的是新路径。
+            # 页面点到的是改名后的路径，原路径留着显示“由…改名”。
             old_path, path = parts[1], parts[2]
         else:
             old_path, path = "", parts[1] if len(parts) > 1 else ""
         if path:
-            current["paths"].append(
-                {"action": action, "kind": "", "path": path, "copyfrom": old_path}
-            )
-    return entries
+            paths.append({"action": action, "kind": "", "path": path, "copyfrom": old_path})
+    return paths
 
 
 def git_upstream(root):
@@ -1668,7 +1679,7 @@ def git_sync_info(root):
 
 
 def git_commit_detail(root, sha):
-    """一次提交的完整说明与父提交；日志列表里只放得下第一行。"""
+    """一次提交的完整说明、父提交与改动路径；日志列表里只放得下第一行。"""
     if not re.fullmatch(r"[0-9a-fA-F]{4,40}", sha or ""):
         raise ApiError(400, "提交号不对：%s" % sha)
     fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%P%x1f%D%x1f%B"
@@ -1679,6 +1690,10 @@ def git_commit_detail(root, sha):
     if len(parts) < 8:
         raise ApiError(500, "git 返回的提交信息读不懂")
     full, short, author, email, date, parents, refs, body = parts
+    # 路径只在这一条上算，列表里不带 --name-status，省掉每条提交的树比对与改名配对。
+    names_rc, names, _ = git(
+        ["show", "--no-color", "--name-status", "--format=", sha], cwd=root
+    )
     return {
         "revision": full.strip(),
         "short": short.strip(),
@@ -1688,6 +1703,7 @@ def git_commit_detail(root, sha):
         "parents": parents.split(),
         "refs": [item.strip() for item in refs.split(",") if item.strip()],
         "message": body.strip("\n"),
+        "paths": parse_name_status(names.decode("utf-8", "replace")) if names_rc == 0 else [],
     }
 
 
@@ -1703,11 +1719,13 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
     else:
         revs = ["HEAD", upstream] if tracking else ["HEAD"]
     # --topo-order 保证子提交排在父提交前面，页面按列表顺序画连线不会错位。
+    # 不带 --name-status：列表不显示每条提交的文件，带上它每条都要做一次树比对与改名配对，
+    # 仓库大时这一项就要一秒多。选中哪条，再由 git_commit_detail 现取那条的路径。
     # -- . 让登记的是仓库子目录时只列这个子目录的提交，跟 svn log 从子目录跑一致。
     rc, out, err = git(
         [
             "log", "-n", str(limit), "--skip=%d" % skip,
-            "--no-color", "--name-status", "--topo-order",
+            "--no-color", "--topo-order",
             # 路径过滤默认会把没改这个目录的合并提交省掉，时间线就断开了；--full-history 留住它们。
             "--full-history",
             "--date=iso-strict", "--format=" + LOG_FMT, *revs, "--", ".",

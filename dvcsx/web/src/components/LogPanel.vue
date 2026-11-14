@@ -22,7 +22,7 @@
         </template>
         <template v-if="isGit && remote && remote.upstream">
           · <span class="mono">{{ remote.upstream }}</span>
-          {{ remote.fetched ? '已同步' : '未同步' }}
+          {{ syncing ? '同步中' : remote.fetched ? '已同步' : '未同步' }}
         </template>
         <template v-if="!isGit && remote">
           · 工作副本 r{{ remote.wc_revision }}
@@ -338,6 +338,7 @@ const remote = ref(null)
 const activePath = ref('')
 const content = ref({ text: '', truncated: false })
 const loading = ref(false)
+const syncing = ref(false)
 const moreLoading = ref(false)
 const exhausted = ref(false)
 const diffLoading = ref(false)
@@ -367,6 +368,8 @@ const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useS
   persist: 'dvcsx.log.list-width',
 })
 let diffSeq = 0
+// 连续切工作副本或连点刷新时，晚到的旧结果不能盖住新的一次加载。
+let loadSeq = 0
 
 // 树形视图的收起状态与摊平交给公共的文件树，平铺视图自己拼。
 const { rows: treeRows, collapsed: collapsedDirs, toggle: toggleDir } = useFileTree(
@@ -530,21 +533,57 @@ function tone(action) {
   return `rgb(var(--v-theme-${actionOf(action).color}))`
 }
 
+// 先用本地已有的记录把列表画出来，再让后端连远端同步一次。同步慢的是网络，不该挡着看日志。
 async function load() {
+  const mine = ++loadSeq
   loading.value = true
   error.value = ''
   try {
-    const data = await api.log(props.ws.id, PAGE, 0, true, logAllBranches.value)
-    entries.value = data.entries || []
-    exhausted.value = entries.value.length < PAGE
+    const data = await api.log(props.ws.id, PAGE, 0, false, logAllBranches.value)
+    if (mine !== loadSeq) return
+    await applyEntries(data.entries || [])
     remote.value = data.remote || null
-    const hit = entries.value.find((e) => current.value && e.revision === current.value.revision)
-    await select(hit || entries.value[0] || null)
   } catch (err) {
-    error.value = err.message
+    if (mine === loadSeq) error.value = err.message
   } finally {
-    loading.value = false
+    if (mine === loadSeq) loading.value = false
   }
+  // SVN 的日志每次都从仓库现取，没有“先本地后远端”这一说，不用再同步一次。
+  if (isGit.value) syncRemote(mine)
+}
+
+async function syncRemote(mine) {
+  syncing.value = true
+  try {
+    const data = await api.log(props.ws.id, PAGE, 0, true, logAllBranches.value)
+    if (mine !== loadSeq) return
+    remote.value = data.remote || null
+    // 已经翻过几页时不再替换首屏，免得把“加载更多”的结果截掉。
+    if (entries.value.length > PAGE) return
+    await applyEntries(data.entries || [])
+  } catch (err) {
+    if (mine === loadSeq) error.value = err.message
+  } finally {
+    if (mine === loadSeq) syncing.value = false
+  }
+}
+
+// 换一批提交：路径只取过一次，刷新后按提交号接着用，免得重复请求。
+async function applyEntries(list) {
+  const cached = new Map(entries.value.map((entry) => [entry.revision, entry.paths]))
+  for (const entry of list) {
+    if (!entry.paths.length && cached.has(entry.revision)) entry.paths = cached.get(entry.revision)
+  }
+  entries.value = list
+  exhausted.value = list.length < PAGE
+  const revision = current.value && current.value.revision
+  const hit = revision ? entries.value.find((entry) => entry.revision === revision) : null
+  if (hit) {
+    // 同一条提交还在，选中项换成新对象即可，详情与差异不动。
+    current.value = hit
+    return
+  }
+  await select(entries.value[0] || null)
 }
 
 async function more() {
@@ -576,7 +615,15 @@ async function select(entry) {
   content.value = { text: '', truncated: false }
   diffError.value = ''
   if (!entry) return
-  loadDetail(entry)
+  if (!entry.paths.length) {
+    // git 的列表不带路径，选中这一条时从提交详情里取一次，取到就记在这条提交上。
+    const data = await loadDetail(entry)
+    if (!current.value || current.value.revision !== entry.revision) return
+    if (data && data.paths) entry.paths = data.paths
+  } else {
+    // SVN 的日志本来就带路径，说明照样后台取，差异不用等它。
+    loadDetail(entry)
+  }
   // 提交里的文件常常好几个，默认打开第一个，省一次点击。
   if (entry.paths.length) await openPath(entry.paths[0].path)
 }
@@ -586,8 +633,10 @@ async function loadDetail(entry) {
     const data = await api.commit(props.ws.id, entry.revision)
     // 连点不同提交时，晚到的旧结果不能盖住当前选中的说明。
     if (current.value && current.value.revision === entry.revision) detail.value = data
+    return data
   } catch (err) {
     // 取不到就继续用列表里的第一行，不影响看差异。
+    return null
   }
 }
 

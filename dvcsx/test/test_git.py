@@ -131,7 +131,10 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(entries[0]["revision"], self.second)
         self.assertEqual(entries[0]["message"], "second")
         self.assertEqual(entries[0]["parents"], [self.first])
-        self.assertIn("notes.txt", [p["path"] for p in entries[0]["paths"]])
+        # 列表不再带路径，路径随选中提交的详情一起取。
+        self.assertEqual(entries[0]["paths"], [])
+        detail = gitmod.git_commit_detail(str(self.repo), self.second)
+        self.assertIn("notes.txt", [p["path"] for p in detail["paths"]])
         self.assertEqual(len(entries[0]["short"]), 7)
         self.assertTrue(entries[0]["local"])
 
