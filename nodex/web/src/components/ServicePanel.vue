@@ -51,88 +51,28 @@
       这一栏没有可执行的脚本，换个栏目看看，或者添加一条自己的命令。
     </div>
 
-    <v-table v-else-if="tab !== 'zip'" density="compact" class="table">
-      <thead>
-        <tr>
-          <th style="width: 42%">脚本</th>
-          <th>参数</th>
-          <th style="width: 200px">状态</th>
-          <th style="width: 230px"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.key">
-          <td>
-            <div class="svc-name">{{ row.title }}</div>
-            <div class="svc-path" :title="row.path">{{ row.path }}</div>
-          </td>
-          <td>
-            <div class="cmd" :title="row.cmd">{{ row.cmd }}</div>
-          </td>
-          <td>
-            <div class="status-line">
-              <template v-if="row.live">
-                <v-chip size="small" class="status-chip" :color="row.color" variant="tonal" :prepend-icon="row.icon">
-                  {{ row.statusText }}
-                </v-chip>
-                <span v-if="row.port" class="meta">端口 {{ row.port }}</span>
-                <span v-else-if="row.started" class="meta">{{ row.ago }}</span>
-              </template>
-              <template v-else-if="row.run">
-                <v-chip
-                  size="small"
-                  class="status-chip"
-                  :color="row.color"
-                  variant="tonal"
-                  :prepend-icon="row.icon"
-                  @click="openLog(row)"
-                >
-                  {{ row.statusText }}
-                </v-chip>
-                <span v-if="row.err" class="meta err" :title="row.err">{{ row.err }}</span>
-                <span v-else-if="row.started" class="meta">{{ row.ago }}</span>
-              </template>
-              <span v-else class="meta">—</span>
-            </div>
-          </td>
-          <td class="ops">
-            <template v-if="row.live">
-              <v-btn size="small" variant="text" prepend-icon="mdi-text-box-outline" @click="openLog(row)">日志</v-btn>
-              <v-btn size="small" color="error" variant="tonal" :loading="row.stopping" @click="stop(row)">
-                停止
-              </v-btn>
-            </template>
-            <template v-else>
-              <v-btn
-                size="small"
-                color="primary"
-                variant="flat"
-                :loading="row.starting"
-                @click="start(row)"
-              >
-                {{ row.action }}
-              </v-btn>
-              <v-btn size="small" variant="text" :icon="true" title="参数" @click="openSettings(row)">
-                <v-icon size="20">mdi-tune</v-icon>
-              </v-btn>
-              <v-btn v-if="row.run" size="small" variant="text" prepend-icon="mdi-text-box-outline" @click="openLog(row)">
-                日志
-              </v-btn>
-            </template>
-            <v-btn
-              v-if="row.svc.custom && !row.live"
-              size="small"
-              variant="text"
-              :icon="true"
-              title="删除自定义命令"
-              @click="dropCommand(row)"
-            >
-              <v-icon size="20">mdi-trash-can-outline</v-icon>
-            </v-btn>
-          </td>
-        </tr>
-      </tbody>
-    </v-table>
+    <ServiceTable
+      v-else-if="tab !== 'zip'"
+      :rows="rows"
+      name-title="脚本"
+      @start="start"
+      @stop="stop"
+      @settings="openSettings"
+      @log="openLog"
+    >
+      <template #row-extra="{ row }">
+        <v-btn
+          v-if="row.svc.custom && !row.live"
+          size="small"
+          variant="text"
+          :icon="true"
+          title="删除自定义命令"
+          @click="dropCommand(row)"
+        >
+          <v-icon size="20">mdi-trash-can-outline</v-icon>
+        </v-btn>
+      </template>
+    </ServiceTable>
 
     <v-dialog v-model="add.on" max-width="540">
       <v-card>
@@ -177,9 +117,9 @@
     <SettingsDialog
       v-model="settings.on"
       :svc="settings.svc"
-      :log-text="settings.log"
-      :log-more="settings.more"
-      :log-status="settings.logStatus"
+      :log-text="logText"
+      :log-more="logMore"
+      :log-status="logStatus"
       :dark="dark"
       @save="onSave"
       @load-more="loadMoreLog"
@@ -212,9 +152,10 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import SettingsDialog from './SettingsDialog.vue'
 import ZipPanel from './ZipPanel.vue'
+import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import {
   LIVE,
@@ -243,10 +184,18 @@ const tab = ref('service')
 const stopping = ref({})
 const starting = ref({})
 
-const settings = reactive({ on: false, svc: null, log: '', more: false, page: 0, logStatus: '' })
+const settings = reactive({ on: false, svc: null })
 const custom = reactive({ on: false, path: '' })
 const add = reactive({ on: false, saving: false, error: '', type: 'dev', action: '启动', tag: '', rel: '.', args: '', placeholder: '' })
-let logSource = null
+// 日志弹窗的文本、翻页与状态跟着当前运行走。
+const {
+  text: logText,
+  more: logMore,
+  status: logStatus,
+  open: openLogRun,
+  close: closeLogRun,
+  loadMore: loadMoreLog,
+} = useRunLog({ api, ws: () => props.ws, statusText: STATUS_TEXT })
 
 const ADD_META = {
   dev: { action: '启动', placeholder: 'npm run dev' },
@@ -408,84 +357,24 @@ async function dropCommand(row) {
 
 function openSettings(row) {
   settings.svc = row.svc
-  settings.log = ''
-  settings.more = false
-  settings.page = 0
-  settings.logStatus = row.run ? STATUS_TEXT[row.run.status] || row.run.status : ''
   settings.on = true
-  if (row.run) startLogStream(row.run.id)
-  else closeLogStream()
+  openLogRun(row.run, row.svc.id)
 }
 
 function openLog(row) {
   if (!row.run) return
   settings.svc = row.svc || null
   settings.on = true
-  settings.log = ''
-  settings.more = false
-  settings.page = 0
-  settings.logStatus = row.run ? STATUS_TEXT[row.run.status] || row.run.status : ''
-  startLogStream(row.run.id)
+  openLogRun(row.run, (row.svc || {}).id || '')
 }
 
-function closeLogStream() {
-  if (logSource) {
-    logSource.close()
-    logSource = null
-  }
-}
-
-// 先收尾部一页，之后文件有新行就追加；换运行号或关面板时断开。
-function startLogStream(run) {
-  closeLogStream()
-  const source = new EventSource(api.logStreamUrl(run))
-  logSource = source
-  source.addEventListener('tail', (ev) => {
-    const data = JSON.parse(ev.data)
-    settings.log = data.text || ''
-    settings.more = !!data.more
-    settings.page = 0
-  })
-  source.addEventListener('append', (ev) => {
-    const data = JSON.parse(ev.data)
-    if (data.text) settings.log = settings.log ? `${settings.log}\n${data.text}` : data.text
-  })
-}
-
+// 弹窗关掉就断开日志流，与以前的 watch(settings.on) 一致。
 watch(
   () => settings.on,
   (on) => {
-    if (!on) closeLogStream()
+    if (!on) closeLogRun()
   },
 )
-
-// 状态轮询每两秒换一份 ws，日志弹窗里的状态跟着最新运行走。
-watch(
-  () => props.ws,
-  () => {
-    if (!settings.on || !settings.svc) return
-    const svc = props.ws.services.find((s) => s.id === settings.svc.id)
-    if (svc && svc.run) settings.logStatus = STATUS_TEXT[svc.run.status] || svc.run.status
-  },
-)
-
-onBeforeUnmount(closeLogStream)
-
-async function loadLog(run, page) {
-  try {
-    const data = await api.log(run, page)
-    settings.log = page === 0 ? data.text : data.text + (settings.log ? '\n' + settings.log : '')
-    settings.more = data.more
-    settings.page = page
-    settings.logStatus = data.status ? STATUS_TEXT[data.status] || data.status : ''
-  } catch (err) {
-    settings.log = `读日志失败：${err.message}`
-  }
-}
-
-function loadMoreLog(run) {
-  if (settings.more) loadLog(run, settings.page + 1)
-}
 
 function onSave({ args }) {
   emit('save', { svc: settings.svc.id, args })
@@ -538,56 +427,6 @@ function onSave({ args }) {
 }
 .count {
   margin-left: 6px;
-}
-.table {
-  flex: 1 1 auto;
-  min-height: 0;
-  background: rgb(var(--v-theme-surface));
-  border-radius: 10px;
-}
-.status-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.status-chip {
-  flex: 0 0 auto;
-}
-.status-line .meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.svc-name {
-  font-weight: 500;
-}
-.svc-path,
-.meta {
-  font-size: 0.75rem;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.cmd {
-  font-family: inherit;
-  font-size: 0.76rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 420px;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.err {
-  color: rgb(var(--v-theme-failed));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 140px;
-}
-.ops {
-  text-align: right;
-  white-space: nowrap;
 }
 .add-error {
   margin: 8px 0 0;

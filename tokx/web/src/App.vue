@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { COMMANDS, EVERY, RANGES, SOURCES, view } from './composables/useView'
-import { busy, close as closeStream, data, error, load, loadedAt, subscribe } from './composables/useUsage'
+import { COMMANDS, RANGES, SOURCES, view } from './composables/useView'
+import { close as closeStream, data, error, loadedAt, subscribe } from './composables/useUsage'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { rememberTheme } from './plugins/vuetify'
 import BrandIcon from './components/BrandIcon.vue'
@@ -48,7 +48,7 @@ const { dark, toggle: flipTheme } = useThemeToggle({
 const stamp = computed(() => {
   if (error.value) return `读取失败：${error.value}`
   if (!loadedAt.value) return '正在读取…'
-  return `刷新于 ${loadedAt.value.replace('T', ' ')} · ${data.value?.timezone || ''}`
+  return `更新于 ${loadedAt.value.replace('T', ' ')} · ${data.value?.timezone || ''}`
 })
 
 const notice = computed(() => {
@@ -58,30 +58,21 @@ const notice = computed(() => {
 
 const hasRows = computed(() => !!data.value?.rows.length)
 
-function refresh() {
-  if (view.every) subscribe(view.every)
-  else load()
-}
-
 function reload() {
   view.sort = { key: '', desc: true }
-  refresh()
+  subscribe()
 }
 
-watch(() => view.every, (every) => {
-  if (every) subscribe(every)
-  else closeStream()
-})
 watch(() => [view.command, view.range, view.since, view.until, view.sources.join(',')], reload)
 
 function onVisible() {
   if (document.hidden) closeStream()
-  else refresh()
+  else subscribe()
 }
 
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisible)
-  refresh()
+  subscribe()
 })
 
 onBeforeUnmount(() => {
@@ -103,13 +94,6 @@ onBeforeUnmount(() => {
           :title="dark ? '切到浅色' : '切到深色'"
           variant="text"
           @click="flipTheme"
-        />
-        <v-btn
-          icon="mdi-refresh"
-          title="立刻刷新一次"
-          variant="text"
-          :loading="busy"
-          @click="load"
         />
       </template>
     </v-app-bar>
@@ -174,20 +158,6 @@ onBeforeUnmount(() => {
                 {{ item.name }}
               </v-chip>
             </v-chip-group>
-            <v-spacer />
-            <v-select
-              v-model.number="view.every"
-              :items="EVERY"
-              :item-title="(value) => (value ? `${value} 秒` : '关闭')"
-              label="自动刷新"
-              density="compact"
-              variant="outlined"
-              hide-details
-              class="pick-pull"
-            />
-            <v-btn variant="flat" color="primary" prepend-icon="mdi-check" :disabled="busy" @click="load">
-              刷新
-            </v-btn>
           </div>
         </v-sheet>
 
@@ -233,9 +203,4 @@ onBeforeUnmount(() => {
 .pick {
   flex: 0 0 9.5rem;
 }
-
-.pick-pull {
-  flex: 0 0 8rem;
-}
-
 </style>

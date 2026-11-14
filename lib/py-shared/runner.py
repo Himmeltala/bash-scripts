@@ -21,6 +21,10 @@ RUN_FIELDS = ("id", "ws", "type", "tag", "path", "pl", "display", "module", "arg
               "cmd", "pid", "port", "status", "started", "code", "err")
 RUN_KIND = "run"
 RUN_PREFIX_RE = re.compile(r"\.[0-9]+$")
+# 状态行的第 0 段是类型，列名对应的段号要加一。
+RUN_PID = RUN_FIELDS.index("pid") + 1
+RUN_STATUS = RUN_FIELDS.index("status") + 1
+LIVE = ("starting", "ready")
 
 
 def parse_fixed_rows(text, widths):
@@ -46,6 +50,16 @@ def run_info(row):
 def run_log_path(logs, runid):
     """运行号对应的日志：<logs>/<服务 id>/<运行号>.log。"""
     return Path(logs) / runid.split(".", 1)[0] / (runid + ".log")
+
+
+def parse_reserve(text, label="执行端"):
+    """解析 reserve 的回话：运行号|目录|参数|预排行|代次，预排行段数不定。"""
+    parts = text.split(FS)
+    if len(parts) < 5:
+        raise ApiError(500, "%s 没有给出启动参数：%r" % (label, text))
+    if parts[0] == "":
+        parts = parts[1:]
+    return parts[0], parts[1], parts[2], parts[-1], FS.join(parts[3:-1])
 
 
 def latest_runs(rows):
@@ -274,6 +288,31 @@ class EngineClient:
             if self.proc is None or self.proc.poll() is not None:
                 self._spawn()
             return self._request(op, *params)
+
+
+class ToolEngine(EngineClient):
+    """nodex 与 mvnx 共用的执行端动作：增删工作区、停止、解析 reserve 回话。"""
+
+    def add_workspace(self, root):
+        self.call("add", root)
+
+    def remove_workspace(self, ws):
+        for run in self.state.runs(ws):
+            if run[RUN_STATUS] in LIVE:
+                self.sessions.kill_group(run[RUN_PID])
+        # 正在跑的先停，再让 bash 删登记。
+        self.call("remove", ws)
+
+    def stop(self, runid):
+        run = self.state.find(RUN_KIND, runid)
+        if run is None or run[RUN_STATUS] not in LIVE:
+            raise ApiError(409, "这个服务没有在跑")
+        self.sessions.kill_group(run[RUN_PID])
+        self.call("stop", runid)
+
+    def reserve(self, svc, *extra):
+        """发 reserve 并拆回话，返回 (运行号, 目录, 参数, 代次, 预排行)。"""
+        return parse_reserve(self.call("reserve", svc, *extra), self.label)
 
 
 class StateRows:

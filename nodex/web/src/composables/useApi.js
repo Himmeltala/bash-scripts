@@ -26,7 +26,7 @@ export const api = {
   rescan: (ws) => call('POST', '/rescan', { ws }),
   start: (payload) => call('POST', '/start', payload),
   stop: (run) => call('POST', '/stop', { run }),
-  update: (svc, args) => call('POST', '/update', { svc, args }),
+  update: (payload) => call('POST', '/update', payload),
   addCommand: (payload) => call('POST', '/addcmd', payload),
   removeCommand: (svc) => call('POST', '/delcmd', { svc }),
   // 压缩栏：列工作区里一层的内容、起打包、问这次打包跑完没有。

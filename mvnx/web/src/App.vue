@@ -1,262 +1,105 @@
 <template>
-  <v-app>
-    <v-app-bar density="comfortable" flat border="b" class="app-bar">
-      <v-app-bar-title>
-        <span class="brand">mvnx</span>
-      </v-app-bar-title>
-      <v-spacer />
-      <v-chip
-        v-if="state.workspaces.length"
-        size="small"
-        variant="tonal"
-        class="running"
-        :color="running ? 'ready' : undefined"
-        prepend-icon="mdi-play-circle-outline"
-        :title="running ? `所有工作区共 ${running} 个进程在跑` : '所有工作区都没有在跑的进程'"
-      >
-        {{ running }} 个在跑
-      </v-chip>
+  <WorkspaceShell
+    title="mvnx"
+    :workspaces="state.workspaces"
+    :current="current"
+    :running="running"
+    :dark="dark"
+    :snack="snack"
+    :empty="empty"
+    :toggle-theme="toggleTheme"
+    @empty-action="addWorkspace()"
+  >
+    <template #sidebar>
+      <WorkspaceList
+        :workspaces="state.workspaces"
+        :current="currentId"
+        :busy="adding"
+        @select="select"
+        @add="addWorkspace"
+        @remove="removeWorkspace"
+        @changed="refresh"
+        @notice="toast($event.text, $event.color)"
+      />
+    </template>
+
+    <template #metrics>
       <Metrics :dark="dark" :metrics="metrics" />
-      <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" @click="toggleTheme" />
-    </v-app-bar>
+    </template>
 
-    <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
-
-    <v-main class="fill-height">
-      <div class="shell">
-        <aside class="side">
-          <WorkspaceList
-            :workspaces="state.workspaces"
-            :current="currentId"
-            :busy="adding"
-            @select="select"
-            @add="addWorkspace"
-            @remove="removeWorkspace"
-            @changed="refresh"
-            @notice="toast($event.text, $event.color)"
-          />
-        </aside>
-        <main class="content">
-          <ServicePanel
-            v-if="current"
-            :ws="current"
-            :dark="dark"
-            :jdks="state.jdks"
-            :current-jdk="state.currentJdk"
-            @start="startService"
-            @stop="stopService"
-            @save="saveService"
-            @setjdk="setWorkspaceJdk"
-            @scan="rescan"
-            @forget="removeWorkspace"
-          />
-          <EmptyState
-            v-else
-            icon="mdi-view-dashboard-outline"
-            title="先加一个工作区"
-            hint="填 Maven 工程里带 pom.xml 的目录，加了之后这里列出能启动、打包、安装的模块。"
-            action="添加工作区"
-            :hint-width="420"
-            @action="addWorkspace()"
-          />
-        </main>
-      </div>
-    </v-main>
-  </v-app>
+    <template #default="{ ws }">
+      <ServicePanel
+        v-if="ws"
+        :ws="ws"
+        :dark="dark"
+        :jdks="state.jdks"
+        :current-jdk="state.currentJdk"
+        @start="startService"
+        @stop="stopService"
+        @save="saveService"
+        @setjdk="setWorkspaceJdk"
+        @scan="rescan"
+        @forget="removeWorkspace"
+      />
+    </template>
+  </WorkspaceShell>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
+import { onMounted } from 'vue'
 import WorkspaceList from './components/WorkspaceList.vue'
 import ServicePanel from './components/ServicePanel.vue'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
-import { EmptyState, ToastHost, useToast } from '@bash-scripts/web-shared/ui'
+import { WorkspaceShell, useWorkspaceState } from '@bash-scripts/web-shared'
 import { api } from './composables/useApi'
-import { runningCount } from './composables/format'
 import { rememberTheme } from './plugins/vuetify'
 
-const VIEW_KEY = 'mvnx-ws'
-
 const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
-const state = reactive({ workspaces: [], jdks: [], currentJdk: '' })
-const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
-const adding = ref(false)
-const { snack, toast } = useToast()
-const metrics = ref(null)
 
-const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
-const running = computed(() => state.workspaces.reduce((sum, ws) => sum + runningCount(ws), 0))
-let source = null
-let busy = 0
-
-function select(id) {
-  currentId.value = id || ''
+const empty = {
+  icon: 'mdi-view-dashboard-outline',
+  title: '先加一个工作区',
+  hint: '填 Maven 工程里带 pom.xml 的目录，加了之后这里列出能启动、打包、安装的模块。',
+  action: '添加工作区',
+  hintWidth: 420,
 }
 
-function applyState(data) {
-  state.workspaces = data.workspaces || []
-  if (currentId.value && !current.value) select('')
-}
-
-async function refresh() {
-  if (busy) return
-  try {
-    applyState(await api.state())
-  } catch (err) {
-    // 取不到就先留着现有列表，下一次推送再补。
-  }
-}
-
-// 状态与头部指标共用一条连接，页面不再自己轮询。
-function connectState() {
-  source = new EventSource(api.stateStreamUrl())
-  source.addEventListener('state', (ev) => {
-    // 动作进行中就别画，免得把中间态当成结果。
-    if (busy) return
-    try {
-      applyState(JSON.parse(ev.data))
-    } catch (err) {
-      // 单条坏了跳过，下一次推送再补。
-    }
-  })
-  source.addEventListener('metrics', (ev) => {
-    if (document.hidden) return
-    try {
-      metrics.value = JSON.parse(ev.data)
-    } catch (err) {
-    }
-  })
-}
-
-async function loadJdks() {
-  try {
+const {
+  state,
+  current,
+  currentId,
+  adding,
+  snack,
+  toast,
+  metrics,
+  running,
+  select,
+  refresh,
+  act,
+  start,
+  addWorkspace,
+  removeWorkspace,
+  rescan,
+  startService,
+  stopService,
+  saveService,
+} = useWorkspaceState({
+  api,
+  storageKey: 'mvnx-ws',
+  extraState: { jdks: [], currentJdk: '' },
+  addedNotice: '已添加，正在列出模块',
+  loadExtra: async (snapshot) => {
     const data = await api.jdks()
-    state.jdks = data.jdks || []
-    state.currentJdk = data.current || ''
-  } catch (err) {
-    // 取不到只是下拉里没有候选，手动填路径仍然可用。
-  }
-}
-
-async function act(label, fn) {
-  busy += 1
-  try {
-    return await fn()
-  } catch (err) {
-    toast(`${label}失败：${err.message}`, 'error')
-    return null
-  } finally {
-    busy -= 1
-    refresh()
-  }
-}
-
-async function addWorkspace(root) {
-  const path = typeof root === 'string' ? root : ''
-  adding.value = true
-  const ok = await act('添加工作区', async () => {
-    await api.addWorkspace(path)
-    return true
-  })
-  adding.value = false
-  if (!ok) return
-  // 目录加来加去可能落到已有的工作区上，按目录重新找选中项。
-  await refresh()
-  const hit = state.workspaces.find((w) => w.root === path || w.root === path.replace(/\/+$/, ''))
-  if (hit) select(hit.id)
-  toast('已添加，正在列出模块', 'primary')
-}
-
-async function removeWorkspace(id) {
-  const ok = await act('移出工作区', async () => {
-    await api.forgetWorkspace(id)
-    return true
-  })
-  if (ok) {
-    if (currentId.value === id) select('')
-    toast('已移出，在跑的进程一并停了')
-  }
-}
-
-async function rescan() {
-  if (!current.value) return
-  await act('重新扫描', () => api.rescan(current.value.id))
-}
-
-async function startService(payload) {
-  const ok = await act('启动', () => api.start(payload))
-  if (ok) toast('已发出启动', 'primary')
-}
-
-async function stopService(run) {
-  const ok = await act('停止', () => api.stop(run))
-  if (ok) toast('已停止')
-}
-
-async function saveService({ svc, module, args }) {
-  const ok = await act('保存参数', () => api.update(svc, module, args))
-  if (ok) toast('参数已保存', 'primary')
-}
+    snapshot.jdks = data.jdks || []
+    snapshot.currentJdk = data.current || ''
+  },
+})
 
 async function setWorkspaceJdk({ ws, jdk }) {
   const ok = await act('设置 JDK', () => api.setJdk(ws, jdk))
   if (ok) toast(jdk ? 'JDK 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
 }
 
-onMounted(async () => {
-  connectState()
-  await refresh()
-  loadJdks()
-})
-
-onBeforeUnmount(() => {
-  if (source) source.close()
-})
+onMounted(start)
 </script>
-
-<style scoped>
-.app-bar {
-  background: rgb(var(--v-theme-surface));
-}
-.brand {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.running {
-  margin-right: 10px;
-}
-.shell {
-  display: flex;
-  height: calc(100vh - 64px);
-  overflow: hidden;
-}
-.side {
-  width: 268px;
-  flex: 0 0 268px;
-  border-right: 1px solid rgba(128, 128, 128, 0.22);
-  background: rgb(var(--v-theme-surface));
-  overflow-y: auto;
-}
-.content {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-}
-@media (max-width: 720px) {
-  .shell {
-    flex-direction: column;
-    height: auto;
-  }
-  .side {
-    width: 100%;
-    flex: 0 0 auto;
-    border-right: none;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.22);
-  }
-}
-</style>

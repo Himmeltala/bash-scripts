@@ -26,18 +26,6 @@ def safe_relative(rel, what="路径"):
     return rel
 
 
-def resolve_under(root, rel, what="路径"):
-    """把相对路径接到 root 底下并解析成真实路径；越界时抛 PathError。"""
-    rel = safe_relative(rel, what)
-    root = Path(root).resolve()
-    try:
-        target = (root / rel).resolve()
-        target.relative_to(root)
-    except (ValueError, OSError, RuntimeError):
-        raise PathError("%s要在根目录里：%s" % (what, rel))
-    return target
-
-
 def static_target(static, url_path, index="index.html"):
     """静态文件请求对应的真实路径；越界或解析不了时返回 None。目录补 index。"""
     static = Path(static).resolve()

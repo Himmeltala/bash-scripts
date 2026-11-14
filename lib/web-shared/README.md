@@ -20,11 +20,14 @@ src/
   index.js            主入口
   ui.js               轻量 UI 入口：EmptyState、ToastHost、useToast
   theme.js            Vuetify 主题工厂与 useThemeToggle（单独一个入口）
+  vite-preset.js      四个工程共用的 vite 配置工厂（源码，不进 dist）
   components/         LogView、EmptyState、ToastHost、DirectoryPicker/、FileTree/、
-                      FileEditor/、DiffView/、FloatingDialog/、WorkspaceList/、Metrics/、SplitHandle
-  composables/        useSplitPane、useFileTree、useDialogLayout、useToast
+                      FileEditor/、DiffView/、FloatingDialog/、WorkspaceList/、Metrics/、
+                      SplitHandle、WorkspaceShell、ServiceTable、ServiceLogPane
+  composables/        useSplitPane、useFileTree、useDialogLayout、useToast、useRunLog、
+                      useWorkspaceState
   styles/             base.css（字体与拖动时的全局规则）
-  utils/              fileIcons、highlight（代码着色）、format、http、logColor
+  utils/              fileIcons、highlight（代码着色）、format、http、logColor、services
 test/                 format 与 http 的 node:test 用例
 ```
 
@@ -39,8 +42,11 @@ test/                 format 与 http 的 node:test 用例
 代码里按包名引用：
 
 ```js
-import { LogView, DirectoryPicker, FileTree, FileEditor, FloatingDialog, WorkspaceList, SplitHandle, fileIcon, useSplitPane, useFileTree } from '@bash-scripts/web-shared'
+import { LogView, DirectoryPicker, FileTree, FileEditor, FloatingDialog, WorkspaceList, WorkspaceShell, ServiceTable, ServiceLogPane, SplitHandle, fileIcon, useSplitPane, useFileTree, useRunLog, useWorkspaceState } from '@bash-scripts/web-shared'
 import '@bash-scripts/web-shared/style.css'
+
+// vite 配置只差工具名、产物目录与代理前缀，公共部分走这个工厂。
+import { toolConfig } from '@bash-scripts/web-shared/vite-preset'
 
 // Vuetify 实例、公共主题与标题栏开关走单独的入口；tokx 也只用这一块。
 import { createThemedVuetify, useThemeToggle } from '@bash-scripts/web-shared/theme'
@@ -78,6 +84,12 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 | `DiffView`（子入口 `/diff`） | 差异视图：按行显示统一 diff，给了工作副本快照就能在行内直接改；快照与保存由调用方处理 | dvcsx |
 | `FloatingDialog` | 可拖动、可拉伸、位置与大小记忆的浮窗；`storageKey` 是窗名，`storage` 是浏览器里的位置表名 | nodex、mvnx |
 | `WorkspaceList` | 工作副本/工作区左栏：添加、移出、别名、右键复制路径；取目录与存别名的接口由调用方传 | dvcsx、nodex、mvnx |
+| `WorkspaceShell` | 工作区页面外壳：顶栏、在跑计数、指标插槽、主题开关、左栏与右侧内容插槽、空状态 | nodex、mvnx |
+| `ServiceTable` | 服务清单表格：状态、端口、耗时、启动/停止/参数/日志按钮；第一列表头由 `nameTitle` 给，工具独有的行内按钮走 `row-extra` 插槽 | nodex、mvnx |
+| `ServiceLogPane` | 设置与日志弹窗里的日志区：尾部一页、更早、行着色 | nodex、mvnx |
+| `useRunLog` | 日志弹窗的数据：SSE 尾部与追加、往前翻页、运行状态同步 | nodex、mvnx |
+| `useWorkspaceState` | 工作区状态：状态 SSE、动作串行、增删工作区、启停与保存参数；工具链候选走 `loadExtra`，业务文案由调用方给 | nodex、mvnx |
+| `runningCount` / `LIVE_STATUSES` | 服务在跑计数与活动状态，放在主入口，不进 `/format` | nodex、mvnx |
 | `createThemedVuetify` / `useThemeToggle`（子入口 `/theme`） | Vuetify 实例与深浅色主题；标题栏开关可跟随系统 | dvcsx、nodex、mvnx、tokx |
 | `baseName` / `dirName` / `shortPath` / `shortenPath` / `firstLine` / `formatDateTime` / `formatAgo` / `formatBytes` / `formatNumber` / `formatMoney` / `formatCompact`（子入口 `/format`） | 纯格式化函数，业务常量与端点表仍留在各工程 | 四边 |
 | `ApiError` / `q` / `createJsonClient`（子入口 `/http`） | 统一 JSON 请求与错误文案，前缀和文案由调用方传 | 四边 |
@@ -112,6 +124,22 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 
 `components/WorkspaceList/` 是左侧工作区列表：添加目录、移出、设置别名、右键复制相对/绝对路径。`dirs(path)` 给目录树取数，`saveAlias(id, alias)` 负责落盘，两者由调用方传；`texts` 覆盖文案（标题、按钮、提示、确认框），`title-extra` 插槽在名字后面补业务标签（dvcsx 用来放 Git/SVN 标记）。事件与原来一致：`select`、`add`、`remove`、`changed`、`notice`。
 
+### WorkspaceShell / ServiceTable / ServiceLogPane
+
+`WorkspaceShell` 是 nodex 与 mvnx 的页面外壳：顶栏标题、在跑计数、`metrics` 插槽、深浅色开关、左侧 `sidebar` 插槽与右侧默认插槽；默认插槽带 `ws` 参数，没有当前工作区时自动显示 `empty` 描述的空状态。主题切换函数由调用方传，组件不碰主题存储。
+
+`ServiceTable` 只画服务清单：`rows` 的字段与两个工程的 `rows` 一致（`title`、`path`、`cmd`、`statusText`、`color`、`icon`、`live`、`run`、`blocked` 等），事件为 `start`、`stop`、`settings`、`log`。`nameTitle` 必填，决定第一列表头；工具独有的行内按钮放在 `row-extra` 插槽里（nodex 用来放删除自定义命令）。
+
+`ServiceLogPane` 是弹窗里的日志区：`text`、`more`、`dark`、`colorize` 由调用方给，点「更早」发 `load-more`。日志怎么取、状态怎么来由 `useRunLog` 与调用方负责。
+
+`useRunLog({ api, ws, statusText })` 负责日志弹窗的数据：`open(run, svcId)` 先收尾部一页再按 SSE 追加，`loadMore()` 往前翻，`status` 跟着工作区最新运行更新，`close()` 断开。`api.log`、`api.logStreamUrl` 由各工程给。
+
+`useWorkspaceState({ api, storageKey, extraState, loadExtra, addedNotice })` 收工作区页面重复的状态与动作：状态 SSE、指标推送、动作进行中不画中间态、增删工作区、重新扫描、启停、保存参数与提示条。工具链候选（Node/JDK）通过 `loadExtra(state)` 载入；`api.state`、`api.update(payload)` 等接口签名两边一致。
+
+### vite 配置
+
+`vite-preset.js` 是四个工程 `vite.config.js` 的公共部分：Vue 插件、vuetify 别名、依赖去重、`base: './'`、产物目录、代理与 `fs.allow`。调用方传 `here: import.meta.url`，vuetify 就从本工程解析，避免出现两份 Vue；`apiPath`、`env`、`fallback`、`dedupe` 按工具传。
+
 ### 主题与基础样式
 
 `theme.js` 走子入口 `/theme`，导出 `createThemedVuetify({ storageKey, colors, options })`：底座色板（背景、表面、主色等）四边共用，`colors.light` / `colors.dark` 只补各自的语义色（`ready`/`failed`、`modified`/`added` 之类），`options` 原样并进 `createVuetify`（tokx 用它加中文 locale）。返回 `{ vuetify, initialTheme, rememberTheme }`，主题名存在 `storageKey` 里，兼容旧的单字符串与 JSON 字符串两种写法。
@@ -128,7 +156,7 @@ import { Metrics, MetricCpu, MetricDisk, MetricMemory, MetricSparkline } from '@
 
 ## 依赖怎么算
 
-`vue`、`vuetify`、`@xterm/xterm`、`@xterm/addon-fit` 是 peerDependencies，构建时外置，由使用方提供。各个工程的 `vite.config.js` 里都写了 `resolve.dedupe`，保证只用工程自己那一份，不会出现两个 Vue 实例。`highlight.js`、`echarts` 与两个 xterm 包是可选 peer：只有引了对应子入口或组件（`/highlight`、`/diff`、`/metrics`、`LogView`）的工程才需要装。`highlight.js` 同时给 `/highlight` 与 `/diff` 两个入口用；`vuetify` 只有 `/theme` 入口与各组件在运行时要。
+`vue`、`vuetify`、`@vueuse/core`、`@xterm/xterm`、`@xterm/addon-fit` 是 peerDependencies，构建时外置，由使用方提供。`@vueuse/core` 只给 `useWorkspaceState` 记当前工作区用。各个工程的 `vite.config.js` 里都写了 `resolve.dedupe`，保证只用工程自己那一份，不会出现两个 Vue 实例。`highlight.js`、`echarts` 与两个 xterm 包是可选 peer：只有引了对应子入口或组件（`/highlight`、`/diff`、`/metrics`、`LogView`）的工程才需要装。`highlight.js` 同时给 `/highlight` 与 `/diff` 两个入口用；`vuetify` 只有 `/theme` 入口与各组件在运行时要。
 
 ## 放进来之前先想清楚
 

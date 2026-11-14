@@ -26,5 +26,5 @@ export const api = {
   rescan: (ws) => call('POST', '/rescan', { ws }),
   start: (payload) => call('POST', '/start', payload),
   stop: (run) => call('POST', '/stop', { run }),
-  update: (svc, module, args) => call('POST', '/update', { svc, module, args }),
+  update: (payload) => call('POST', '/update', payload),
 }

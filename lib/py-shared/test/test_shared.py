@@ -18,6 +18,8 @@ import fileio
 import kvstore
 import netutil
 import pathutil
+import runner
+import stores
 import testkit
 
 
@@ -119,16 +121,6 @@ class PathUtilTest(unittest.TestCase):
             os.symlink(str(outside), str(root / "link"))
             self.assertFalse(pathutil.within(root / "link" / "secret.txt", root))
             self.assertFalse(pathutil.within(outside / "secret.txt", root))
-
-    def test_resolve_under(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td) / "root"
-            root.mkdir()
-            (root / "a.txt").write_text("a", "utf-8")
-            target = pathutil.resolve_under(root, "a.txt", "文件路径")
-            self.assertEqual(target, (root / "a.txt").resolve())
-            with self.assertRaises(pathutil.PathError):
-                pathutil.resolve_under(root, "../x", "文件路径")
 
     def test_static_target(self):
         with tempfile.TemporaryDirectory() as td:
@@ -307,6 +299,54 @@ class TestkitTest(unittest.TestCase):
         self.assertTrue(testkit.poll_until(step, timeout=2, interval=0.01))
         with self.assertRaises(AssertionError):
             testkit.poll_until(lambda: False, timeout=0.05, interval=0.01, message="没等到")
+
+
+class HomeStoreTest(unittest.TestCase):
+    def test_empty_value_removes_row(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "node.tsv"
+            store = stores.HomeStore(path, "Node")
+            store.set("ws1", "/opt/node20")
+            store.set("ws2", "/opt/node18")
+            self.assertEqual(store.get("ws1"), "/opt/node20")
+            store.set("ws1", "")
+            self.assertEqual(store.get("ws1"), "")
+
+    def test_attach_home_marks_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = stores.HomeStore(Path(td) / "node.tsv", "Node")
+            store.set("ok", td)
+            store.set("gone", "/nonexistent/nodex")
+
+            snapshot = {"workspaces": [{"id": "ok"}, {"id": "gone"}, {"id": "none"}]}
+            out = stores.attach_home(snapshot, store, "node", lambda value: Path(value).is_dir())
+
+            self.assertEqual(out["workspaces"][0]["node"], td)
+            self.assertFalse(out["workspaces"][0]["node_missing"])
+            self.assertTrue(out["workspaces"][1]["node_missing"])
+            self.assertEqual(out["workspaces"][2]["node"], "")
+
+
+class ParseReserveTest(unittest.TestCase):
+    def test_splits_short_and_long_rows(self):
+        runid, path, args, gen, row = runner.parse_reserve(
+            runner.FS.join(["run1", "/work", "mvn run", "a", "b", "gen"])
+        )
+        self.assertEqual((runid, path, args, gen), ("run1", "/work", "mvn run", "gen"))
+        self.assertEqual(row, runner.FS.join(["a", "b"]))
+
+    def test_leading_empty_field_is_dropped(self):
+        runid, path, _args, gen, row = runner.parse_reserve(
+            runner.FS.join(["", "run1", "/work", "npm run dev", "line", "gen"])
+        )
+        self.assertEqual((runid, path, gen), ("run1", "/work", "gen"))
+        self.assertEqual(row, "line")
+
+    def test_short_reply_rejected(self):
+        with self.assertRaises(runner.ApiError) as caught:
+            runner.parse_reserve(runner.FS.join(["run1", "/work"]), "nodex")
+        self.assertEqual(caught.exception.status, 500)
+        self.assertIn("nodex 没有给出启动参数", caught.exception.message)
 
 
 if __name__ == "__main__":

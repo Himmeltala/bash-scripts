@@ -23,5 +23,6 @@ const loadDirs = (path) => api.dirs(path)
 const saveAlias = (id, alias) => api.setAlias(id, alias)
 const texts = {
   addTip: '选 Node 工程所在的目录，加的时候会自动往上找声明了工作区的 package.json。',
+  removeText: '登记的服务与日志一起删掉，正在跑的进程会先停掉。工程目录本身不动。',
 }
 </script>

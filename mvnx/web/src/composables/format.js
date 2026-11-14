@@ -1,7 +1,9 @@
 // 页面上反复用到的小格式化：共享的纯函数走 /format，这里只留业务常量。
 
+import { LIVE_STATUSES } from '@bash-scripts/web-shared'
 import { formatAgo } from '@bash-scripts/web-shared/format'
 
+export { runningCount } from '@bash-scripts/web-shared'
 export const ago = formatAgo
 
 export const STATUS_TEXT = {
@@ -21,11 +23,7 @@ export const STATUS_COLOR = {
 }
 
 // 打包与安装跑完就结束，运行记录留在列表里，点开日志能看到结果。
-export const LIVE = ['starting', 'ready']
-
-export function runningCount(ws) {
-  return (ws.services || []).filter((s) => s.run && LIVE.includes(s.run.status)).length
-}
+export const LIVE = LIVE_STATUSES
 
 export const TYPE_TEXT = {
   run: '启动',

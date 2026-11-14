@@ -167,7 +167,7 @@ const DEFAULTS = {
   addPlaceholder: '~/pros/项目名',
   addConfirm: '添加此目录',
   removeTitle: '移出工作区',
-  removeText: '登记的服务与日志一起删掉，正在跑的进程会先停掉。工程目录本身不动。',
+  removeText: '只是从列表里移出，工程目录本身不动。',
   removeConfirm: '移出',
 }
 const labels = computed(() => ({ ...DEFAULTS, ...props.texts }))

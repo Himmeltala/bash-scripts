@@ -9,7 +9,7 @@ bash-scripts/
 ├── bash-tui.ref                  依赖的 bash-tui 标签
 ├── lib/
 │   ├── tui-path.sh               定位并加载 bash-tui
-│   ├── shell/                    nodex、mvnx 共用的 shell 基础件（退出码、记录界面、网页状态与启动）
+│   ├── shell-shared/             nodex、mvnx 共用的 shell 基础件（退出码、记录界面、网页状态与启动）
 │   ├── web-shared/               四个网页界面共用的前端组件（本地 npm 包）
 │   └── py-shared/                四个网页进程共用的 Python 骨架
 ├── mvnx/                     Maven 项目：发现模块与项目并执行 mvn
@@ -92,7 +92,7 @@ bash-scripts/
         └── run.sh                临时 HOME 下的回归测试
 ```
 
-除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`dvcsx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。例外是 `lib/` 下不是工具的三层共用代码：`lib/web-shared/` 是四个网页界面（nodex、mvnx、dvcsx、tokx）共用的前端组件与纯工具，做成本地 npm 包，改了源码要它自己 `npm run build` 出 `dist/`，四个工程按 `file:` 依赖引用；`lib/py-shared/` 是四个网页进程共用的 Python 骨架（HTTP 路由、SSE、指标、状态行、文件与路径工具、行式存储），直接被 `server.py` 按路径加进 `sys.path` 后引用，不需要构建；`lib/shell-shared/` 是 nodex 与 mvnx 共用的 shell 基础件（退出码、记录勾选、网页状态文件与启动流程），由各自的 `*-core.sh` 按顺序 source。
+除共享的 `lib/` 外，仓库根目录下的每个目录就是一个工具，目录名与命令名一致：`mvnx`、`nodex`、`dvcsx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex`、`tokx`。`tokx` 的采集、计价与出表用 Python 写，入口与菜单仍是 bash，界面因此与其他工具共用 `bash-tui`。工具目录里的 `bin/` 放可执行文件，`lib/` 放入口引用的库；安装时只软链 `bin/` 下的文件，`lib/` 不会出现在 PATH 里。加新工具就是新建一个同名目录。例外是 `lib/` 下不是工具的三层共用代码：`lib/web-shared/` 是四个网页界面（nodex、mvnx、dvcsx、tokx）共用的前端组件、工作区页面外壳、组合式函数与纯工具，做成本地 npm 包，改了源码要它自己 `npm run build` 出 `dist/`，四个工程按 `file:` 依赖引用，`vite.config.js` 也共用这里的配置工厂；`lib/py-shared/` 是四个网页进程共用的 Python 骨架（HTTP 路由、接口基类、启动流程、SSE、指标、状态行、文件与路径工具、行式存储），直接被 `server.py` 按路径加进 `sys.path` 后引用，不需要构建；`lib/shell-shared/` 是 nodex 与 mvnx 共用的 shell 基础件（退出码、记录勾选、网页状态文件与启动流程），由各自的 `*-core.sh` 按顺序 source。
 
 ## 安装
 

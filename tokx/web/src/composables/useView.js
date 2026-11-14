@@ -1,4 +1,4 @@
-// 视图状态：报表、范围、来源、排序、自动刷新，全部同步到地址栏，刷新页面或分享链接都能还原。
+// 视图状态：报表、范围、来源与排序同步到地址栏，刷新页面或分享链接都能还原。
 
 import { computed, reactive, watch } from 'vue'
 import { SOURCE_LIST } from './format'
@@ -20,8 +20,6 @@ export const RANGES = [
   { key: 'custom', name: '自定义' },
 ]
 
-export const EVERY = [0, 5, 10, 30, 60]
-
 function fromUrl() {
   const params = new URLSearchParams(location.search)
   const valid = (list, value, fallback) => (list.some((item) => item.key === value) ? value : fallback)
@@ -32,7 +30,6 @@ function fromUrl() {
     since: params.get('since') || '',
     until: params.get('until') || '',
     sources: SOURCE_LIST.filter((item) => (picked.length ? picked.includes(item.key) : true)).map((item) => item.key),
-    every: EVERY.includes(Number(params.get('every'))) ? Number(params.get('every')) : 5,
   }
 }
 
@@ -64,7 +61,6 @@ export function query(extra = {}) {
 export function href() {
   const params = query()
   params.set('range', view.range)
-  params.set('every', String(view.every))
   params.delete('command')
   if (view.command !== 'daily') params.set('command', view.command)
   const text = params.toString()
@@ -72,6 +68,6 @@ export function href() {
 }
 
 watch(
-  () => [view.command, view.range, view.since, view.until, view.sources.join(','), view.every],
+  () => [view.command, view.range, view.since, view.until, view.sources.join(',')],
   () => history.replaceState(null, '', href()),
 )

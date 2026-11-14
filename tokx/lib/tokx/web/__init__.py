@@ -19,13 +19,13 @@ from datetime import date
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
 import netutil
-from sse import sse_data
-from web import WebServer
+import pathutil
+from sse import SSE_INTERVAL, SSEMixin, sse_data
+from web import ApiError, WebHandler, WebServer
 
 from .. import cli
 from ..config import Config, load
@@ -91,8 +91,9 @@ def _current(config: Config) -> Config:
 
 
 def _stream_seconds(query: dict[str, list[str]]) -> int:
-    """推送间隔，默认 5 秒；0 表示只手动刷新，不接受。"""
-    text = (query.get("every") or ["5"])[0] or "5"
+    """推送间隔，默认与共享层一致取 5 秒；0 表示只手动刷新，不接受。"""
+    default = str(int(SSE_INTERVAL))
+    text = (query.get("every") or [default])[0] or default
     try:
         every = int(text)
     except ValueError as exc:
@@ -113,12 +114,9 @@ def _payload(config: Config, query: dict[str, list[str]]) -> dict:
 
 def _static_file(path: str) -> Path | None:
     """请求路径对应的打包文件；找不到或跑出目录时回 None，交给 index.html。"""
-    try:
-        target = (STATIC / (path.lstrip("/") or "index.html")).resolve()
-        target.relative_to(STATIC.resolve())
-    except (ValueError, OSError):
-        return None
-    return target if target.is_file() else None
+    # tokx 没有子目录首页：目录不补 index，交给 _asset 回落到根 index.html。
+    target = pathutil.static_target(STATIC, path, index="")
+    return target if target is not None and target.is_file() else None
 
 
 def _content_type(name: Path | None) -> str:
@@ -135,42 +133,58 @@ def _content_type(name: Path | None) -> str:
     return fixed.get(name.suffix) or mimetypes.guess_type(name.name)[0] or "application/octet-stream"
 
 
+def _guarded(build):
+    """采集一次并翻成 ApiError：UsageError 是 400，其余异常按 500 带回类型名。"""
+    with LOCK:
+        try:
+            return build()
+        except cli.UsageError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+        except Exception as exc:  # noqa: BLE001 - 采集失败也要把原因带回页面
+            raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
+
+
 def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(SSEMixin, WebHandler):
         server_version = f"tokx/{cli.VERSION}"
         sys_version = ""
+        api_prefix = "/api/"
+        static = STATIC
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             # 默认每个请求往 stderr 打一行，浏览器轮询起来会刷屏；只在调试时打开。
             if os.environ.get("TOKX_WEB_VERBOSE"):
-                super().log_message(format, *args)
-
-        def do_GET(self) -> None:  # noqa: N802
-            url = urlsplit(self.path)
-            query = parse_qs(url.query)
-            if url.path == "/api/usage":
-                self._json(lambda: _payload(config, query))
-            elif url.path == "/api/usage/stream":
-                self._stream_usage(config, query)
-            elif url.path == "/api/prices":
-                self._json(lambda: cli._price_data(_current(config).book))
-            elif url.path.startswith("/api/"):
-                self._error(HTTPStatus.NOT_FOUND, f"没有 {url.path}")
-            else:
-                self._asset(url.path)
+                BaseHTTPRequestHandler.log_message(self, format, *args)
 
         def do_HEAD(self) -> None:  # noqa: N802
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-        def _asset(self, path: str) -> None:
+        def do_POST(self) -> None:  # noqa: N802
+            # 页面只读，没有任何写接口；与 BaseHTTPRequestHandler 的默认回话一致。
+            self.send_error(HTTPStatus.NOT_IMPLEMENTED)
+
+        def _dispatch(self, method, route, query, body):
+            if route == "usage":
+                return _guarded(lambda: _payload(config, query))
+            if route == "prices":
+                return _guarded(lambda: cli._price_data(_current(config).book))
+            raise ApiError(HTTPStatus.NOT_FOUND, f"没有 /api/{route}")
+
+        def _stream_routes(self, route, query):
+            if route != "usage/stream":
+                return False
+            self._stream_usage(config, query)
+            return True
+
+        def _static(self, path: str, head: bool = False) -> None:
             # 只发打包目录里的文件；路径先解开再核对前缀，防止 ../ 跑出目录。
             name = _static_file(path)
             # 深链接（如 /?command=hour）回落成首页时 name 是 None，不能算带哈希的资源。
             hashed = name is not None and name.parent != STATIC
             try:
-                body = name.read_bytes() if name is not None else INDEX.read_bytes()
+                body = b"" if head else (name.read_bytes() if name is not None else INDEX.read_bytes())
             except OSError:
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "缺少 static/index.html，没有打包前端")
                 return
@@ -180,25 +194,8 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
             # assets 下的文件名带内容哈希，可以长缓存；页面本身每次核对。
             self.send_header("Cache-Control", _CACHED if hashed else "no-cache")
             self.end_headers()
-            self.wfile.write(body)
-
-        def _json(self, build) -> None:
-            with LOCK:
-                try:
-                    payload = build()
-                except cli.UsageError as exc:
-                    self._error(HTTPStatus.BAD_REQUEST, str(exc))
-                    return
-                except Exception as exc:  # noqa: BLE001 - 采集失败也要把原因带回页面
-                    self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
-                    return
-            body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
+            if body:
+                self.wfile.write(body)
 
         def _stream_usage(self, config: Config, query: dict[str, list[str]]) -> None:
             """一条长连接按间隔推用量：连上先推当前值，之后每轮重算并重读配置。"""
@@ -207,19 +204,11 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
                 with LOCK:
                     payload = _payload(config, query)
             except cli.UsageError as exc:
-                self._error(HTTPStatus.BAD_REQUEST, str(exc))
-                return
+                raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
             except Exception as exc:  # noqa: BLE001 - 首次采集失败按普通接口报错
-                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
-                return
+                raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
 
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "close")
-            self.send_header("X-Accel-Buffering", "no")
-            self.end_headers()
-            self.close_connection = True
+            self._sse_start()
             try:
                 self._sse_send(payload, "usage")
                 while True:
@@ -239,7 +228,16 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body.encode("utf-8"))
             self.wfile.flush()
 
-        def _error(self, status: HTTPStatus, message: str) -> None:
+        def _json(self, status: int, payload) -> None:
+            body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _error(self, status: int, message: str) -> None:
             body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")

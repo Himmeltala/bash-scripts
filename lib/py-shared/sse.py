@@ -15,8 +15,10 @@ from web import ApiError, log
 LOG_PAGE = 400
 # 闲太久发一条注释，免得代理把连接当死链掐掉。
 SSE_PING_SECONDS = 15
-# 指标栏的推送间隔；前端按这个节奏存点，60 个点正好覆盖 5 分钟。
-METRICS_STREAM_INTERVAL = 5.0
+# 所有 SSE 推送的默认间隔：5 秒一份。
+SSE_INTERVAL = 5.0
+# 指标栏按这个节奏推；前端照着存点，60 个点正好覆盖 5 分钟。
+METRICS_STREAM_INTERVAL = SSE_INTERVAL
 # 页面连着时按这个间隔收拾运行记录；文件有变化就推，最多晚半秒。
 STATE_TICK_INTERVAL = 2.0
 PUMP_INTERVAL = 0.5

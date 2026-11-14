@@ -1,21 +1,11 @@
-// 取数：页面保持一条 SSE 长连接，服务端按间隔推来整份报表，前端只负责画。
-// 手动刷新仍走一次 /api/usage；断线由 EventSource 自己重连，重连后服务端先推当前值。
+// 取数：页面保持一条 SSE 长连接，服务端每 5 秒推来整份报表，前端只负责画。
+// 断线由 EventSource 自己重连，重连后服务端先推当前值；页面不再手动刷新。
 
 import { ref } from 'vue'
-import { createJsonClient } from '@bash-scripts/web-shared/http'
 import { query } from './useView'
-
-// 手动刷新与 SSE 推送取的都是同一份报表；错误文案沿用原来的后端 error 优先。
-const client = createJsonClient({
-  prefix: '/api',
-  messageOf: ({ data, status, response }) =>
-    (data && data.error) || response.statusText || `请求失败（${status}）`,
-  treatPayloadError: true,
-})
 
 export const data = ref(null)
 export const error = ref('')
-export const busy = ref(false)
 export const loadedAt = ref('')
 
 let source = null
@@ -26,26 +16,10 @@ function apply(payload) {
   error.value = ''
 }
 
-export async function load() {
-  if (busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    const payload = await client.call('GET', `/usage?${query()}`)
-    apply(payload)
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    busy.value = false
-  }
-}
-
-// 换筛选条件或推送间隔时先关旧连接，再按新参数连；every 为 0 表示不自动更新。
-export function subscribe(every = 5) {
+// 换筛选条件时先关旧连接，再按新参数连；推送间隔由服务端统一取 5 秒。
+export function subscribe() {
   close()
-  if (!every) return
-  const params = query({ every: String(every) })
-  source = new EventSource(`/api/usage/stream?${params}`)
+  source = new EventSource(`/api/usage/stream?${query()}`)
   source.addEventListener('usage', (event) => {
     try {
       apply(JSON.parse(event.data))

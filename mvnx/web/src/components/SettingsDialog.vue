@@ -61,15 +61,13 @@
       <code>{{ preview }}</code>
     </div>
 
-    <div class="log-head">
-      <span class="label">日志</span>
-      <v-spacer />
-      <v-btn v-if="logMore" size="small" variant="text" prepend-icon="mdi-history" @click="$emit('load-more', logRun)">更早</v-btn>
-    </div>
-    <div class="log-box">
-      <LogView v-if="logText" :text="logText" :dark="dark" :colorize="colorize" />
-      <p v-else class="log-empty">还没有运行过</p>
-    </div>
+    <ServiceLogPane
+      :text="logText"
+      :more="logMore"
+      :dark="dark"
+      :colorize="colorize"
+      @load-more="$emit('load-more', logRun)"
+    />
 
     <template #actions>
       <span class="hint">{{ actionName }}的参数只存到这个动作上，不影响同一模块的其他动作</span>
@@ -84,7 +82,7 @@
 import { computed, ref, watch } from 'vue'
 import { MODE_ITEMS, TYPE_TEXT, moduleOf } from '../composables/format'
 import { colorize } from '../composables/logColor'
-import { FloatingDialog } from '@bash-scripts/web-shared'
+import { FloatingDialog, ServiceLogPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -142,15 +140,6 @@ function save() {
 </script>
 
 <style scoped>
-.log-box {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 200px;
-}
-.log-box > * {
-  flex: 1 1 auto;
-  min-width: 0;
-}
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -174,15 +163,6 @@ code {
   background: rgb(var(--v-theme-surface-variant));
   padding: 6px 8px;
   border-radius: 6px;
-}
-.log-head {
-  display: flex;
-  align-items: center;
-  margin-bottom: 6px;
-}
-.log-empty {
-  color: rgb(var(--v-theme-on-surface-variant));
-  font-size: 0.86rem;
 }
 .hint {
   font-size: 0.78rem;
