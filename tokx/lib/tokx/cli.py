@@ -26,7 +26,6 @@ VERSION = "0.2.0"
 COMMANDS = (
     "daily",
     "session",
-    "session-total",
     "hour",
     "project",
     "prices",
@@ -61,7 +60,6 @@ def build_parser() -> argparse.ArgumentParser:
     for name, text in (
         ("daily", "按天汇总，默认命令"),
         ("session", "按会话汇总"),
-        ("session-total", "按会话合计，模型与接口合并成一行"),
         ("hour", "按一天内的小时分布汇总"),
         ("project", "按项目汇总"),
         ("prices", "打印当前价格表"),
@@ -69,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("web", "在浏览器里看用量，定时自动刷新"),
     ):
         child = sub.add_parser(name, parents=[suppressed], help=text, description=text)
-        if name in ("daily", "session", "session-total", "hour", "project"):
+        if name in ("daily", "session", "hour", "project"):
             _add_watch(child, suppress=True)
         if name == "web":
             _add_web(child)
@@ -175,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = _fold_watch(argv)
     args = parser.parse_args(argv)
     command = getattr(args, "command", None) or "daily"
-    if command in ("daily", "session", "session-total", "hour", "project", "prices", "rebuild"):
+    if command in ("daily", "session", "hour", "project", "prices", "rebuild"):
         # 选项写在子命令前面时（tokx --watch 3 daily），argparse 会把它们记在一张空白的
         # 子命令命名空间上，子命令那份是空的，这里把前面那份补过来。两个都写了时子命令的优先。
         top = _top_values(argv)
@@ -266,8 +264,6 @@ def _collect(
     unpriced = _unpriced_models(records, book)
     if command == "session":
         rows, total = report.sessions(records, book)
-    elif command == "session-total":
-        rows, total = report.session_totals(records, book)
     elif command == "hour":
         rows, total = report.hours(records, book)
     elif command == "project":
@@ -308,8 +304,6 @@ def _report_command(
     rows, total, unpriced = data["rows"], data["totals"], data["unpriced_models"]
     if command == "session":
         text = report.table_sessions(rows, total, unpriced)
-    elif command == "session-total":
-        text = report.table_session_totals(rows, total, unpriced)
     elif command == "hour":
         text = report.table_hours(rows, total, unpriced)
     elif command == "project":

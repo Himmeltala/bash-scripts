@@ -237,54 +237,6 @@ def sessions(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     return rows, _totals(rows)
 
 
-def session_totals(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
-    """每个会话一行：把同一会话的多个模型、多个接口合起来，按费用从高到低排。"""
-    buckets: dict[tuple[str, str], Bucket] = {}
-    spans: dict[tuple[str, str], list[datetime]] = {}
-    projects: dict[tuple[str, str], str] = {}
-    models: dict[tuple[str, str], set[str]] = {}
-    origins: dict[tuple[str, str], str] = {}
-    for record in records:
-        key = (record.source, record.session)
-        buckets.setdefault(key, Bucket()).add(record, book)
-        times = spans.setdefault(key, [record.at, record.at])
-        times[0] = min(times[0], record.at)
-        times[1] = max(times[1], record.at)
-        if record.project:
-            projects[key] = record.project
-        models.setdefault(key, set()).add(_model_name(record, book))
-        if _origin(record) != ORIGIN_LIVE:
-            origins[key] = ORIGIN_CACHE
-        else:
-            origins.setdefault(key, ORIGIN_LIVE)
-
-    order = {name: index for index, name in enumerate(SOURCE_ORDER)}
-    rows = []
-    for key in sorted(
-        buckets,
-        key=lambda k: (
-            *_cost_key(buckets[k]),
-            spans[k][0],
-            order.get(k[0], 9),
-            k[1],
-        ),
-    ):
-        bucket = buckets[key]
-        row = _row("", key[0], bucket, "", "", origins.get(key, ORIGIN_LIVE))
-        row.pop("date", None)
-        start, end = spans[key]
-        row.update(
-            session=key[1],
-            project=_project_name(projects.get(key, "")),
-            start=start.astimezone(book.tz).strftime("%m-%d %H:%M"),
-            end=end.astimezone(book.tz).strftime("%m-%d %H:%M"),
-            duration=max(0, int((end - start).total_seconds())),
-            models="、".join(sorted(models[key])),
-        )
-        rows.append(row)
-    return rows, _totals(rows)
-
-
 def hours(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     # 同一个小时里，各来源、各模型、各接口分开算，各算各的。
     buckets: dict[tuple[int, str, str, str, str], Bucket] = {}
@@ -448,16 +400,6 @@ def _short_session(session: str) -> str:
     return session[:10] + ".."
 
 
-def _duration(seconds: int) -> str:
-    if seconds < 60:
-        return f"{seconds} 秒"
-    minutes = seconds // 60
-    if minutes < 60:
-        return f"{minutes} 分"
-    hours, rest = divmod(minutes, 60)
-    return f"{hours} 小时 {rest:02d} 分"
-
-
 def _project_name(path: str) -> str:
     if not path:
         return ""
@@ -618,68 +560,6 @@ def table_sessions(rows: list[dict], total: dict, unpriced: list[str] | None = N
         body,
         [
             "left",
-            "left",
-            "left",
-            "left",
-            "left",
-            "left",
-            "left",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-            "right",
-        ],
-    ) + _cache_note(rows, has_total) + _unpriced_note(unpriced or [], has_total) + _cost_parts_note(total)
-
-
-def table_session_totals(rows: list[dict], total: dict, unpriced: list[str] | None = None) -> str:
-    has_total = len(rows) > 1
-    body = [
-        [
-            row["source"],
-            _short_session(row["session"]),
-            row["project"] or "-",
-            row["start"],
-            _duration(row["duration"]),
-            _origin_name(row),
-            _number(row["requests"]),
-            _number(row["input"]),
-            _number(row["cache_read"]),
-            _number(row["output"]),
-            _number(row["total_tokens"]),
-            _cost(row["cost_peak"]),
-            _cost(row["cost_off"]),
-            _cost(row["cost"]),
-        ]
-        for row in rows
-    ]
-    if has_total:
-        body.append(
-            [
-                "合计",
-                "",
-                "",
-                "",
-                "",
-                "",
-                _number(total["requests"]),
-                _number(total["input"]),
-                _number(total["cache_read"]),
-                _number(total["output"]),
-                _number(total["total_tokens"]),
-                _cost(total["cost_peak"]),
-                _cost(total["cost_off"]),
-                _cost(total["cost"]),
-            ]
-        )
-    return render(
-        ["来源", "会话", "项目", "开始", "时长", "出处", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计"],
-        body,
-        [
             "left",
             "left",
             "left",

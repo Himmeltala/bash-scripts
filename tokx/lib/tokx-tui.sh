@@ -17,7 +17,6 @@ _tokx_menu_command() {
   ui_menu_named 'tokx' '看哪一类报表' \
     daily '按日汇总：每天每个来源的每个模型、每个接口一行' \
     session '按会话汇总：每个会话的每个模型、每个接口一行' \
-    session-total '按会话合计：同一个会话的模型与接口合并成一行' \
     hour '按小时汇总：各时段中每个模型、每个接口的用量' \
     project '按项目汇总：每个项目的每个模型、每个接口一行' \
     prices '价格表：模型单价与峰谷时段' \
@@ -122,7 +121,7 @@ tokx_tui() {
   while :; do
     choice=$(_tokx_menu_command) || return "$TOKX_EXIT_CANCEL"
     case "$choice" in
-      daily | session | session-total | hour | project) _tokx_view "$choice" || return 0 ;;
+      daily | session | hour | project) _tokx_view "$choice" || return 0 ;;
       prices) _tokx_report prices; ui_pause '任意键回到菜单，q 退出' || return 0 ;;
       db) _tokx_report db status; ui_pause '任意键回到菜单，q 退出' || return 0 ;;
       quit) return 0 ;;

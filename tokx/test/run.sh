@@ -255,21 +255,20 @@ session_out=$("$bin" session --all) || fail "session 命令失败"
 [[ "$session_out" == *"claude"* ]] || fail "会话表缺少来源列"
 ok 会话表带来源
 "$bin" hour --all >/dev/null || fail "hour 命令失败"
-session_total=$("$bin" session-total --all --json) || fail "session-total 命令失败"
-python3 - "$session_total" <<'PY' || exit 1
+session_json=$("$bin" session --all --json) || fail "session --json 失败"
+python3 - "$session_json" <<'PY' || exit 1
 import json, sys
 payload = json.loads(sys.argv[1])
 rows = payload["rows"]
 assert rows, payload
 row = next(item for item in rows if item["cost"] is not None)
-assert row["duration"] >= 0 and row["models"], row
 assert abs(row["cost"] - sum(row[key] for key in (
     "cost_input", "cost_cache_read", "cost_cache_write", "cost_output"))) < 1e-8, row
-print("ok - 会话合计与费用构成")
+print("ok - 会话费用构成")
 PY
 project_out=$("$bin" project --all) || fail "project 命令失败"
 [[ "$project_out" == *"项目"* && "$project_out" == *"demo"* ]] || fail "项目表缺少项目列或目录名"
-ok session、session-total、hour 与 project 命令
+ok session、hour 与 project 命令
 
 # 同一会话用过两个模型时，会话表按模型分成两行。
 session_json=$("$bin" session --all --json) || fail "session --json 失败"
@@ -583,6 +582,9 @@ assert "now" not in page and "store" not in page, page
 page = json.loads(get("/api/usage?command=session&days=30&source=dsh")[1])
 assert page["command"] == "session" and page["rows"], page
 assert {row["source"] for row in page["rows"]} == {"dsh"}, page["rows"]
+row = next(item for item in page["rows"] if item["cost"] is not None)
+assert abs(row["cost"] - sum(row[key] for key in (
+    "cost_input", "cost_cache_read", "cost_cache_write", "cost_output"))) < 1e-8, row
 
 page = json.loads(get("/api/usage?command=hour&days=30")[1])
 assert page["command"] == "hour" and page["rows"], page
@@ -590,13 +592,6 @@ assert page["command"] == "hour" and page["rows"], page
 page = json.loads(get("/api/usage?command=project&days=30")[1])
 assert page["command"] == "project" and page["rows"], page
 assert {row["project"] for row in page["rows"]} >= {"demo"}, page["rows"]
-
-page = json.loads(get("/api/usage?command=session-total&days=30")[1])
-assert page["command"] == "session-total" and page["rows"], page
-row = next(item for item in page["rows"] if item["cost"] is not None)
-assert "duration" in row and row["models"], row
-assert abs(row["cost"] - sum(row[key] for key in (
-    "cost_input", "cost_cache_read", "cost_cache_write", "cost_output"))) < 1e-8, row
 
 price = json.loads(get("/api/prices")[1])
 assert price["models"]["deepseek-flash"]["off"]["hit"] == 0.02, price

@@ -34,8 +34,6 @@ const WIDTH = {
   session: 124,
   project: 140,
   start: 136,
-  duration: 96,
-  models: 170,
   model: 132,
   api: 240,
   cache_hit: 88,
