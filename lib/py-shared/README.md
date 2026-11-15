@@ -6,7 +6,7 @@ nodex、mvnx、dvcsx、tokx 四个网页进程共用的 Python 骨架与工具�
 
 ```
 web.py / toolweb.py / runtime.py          路由、接口骨架、启动流程
-sse.py / metrics.py                       SSE 推送与指标
+sse.py / metrics.py / tomlout.py           SSE 推送、指标与 TOML 输出
 stores.py / kvstore.py / runner.py        状态行、行式存储、执行端与运行记录
 fileio.py / pathutil.py / netutil.py      文件、路径、监听地址
 browse.py / toolchain.py                  目录浏览、Node/JDK 等运行时
@@ -35,6 +35,7 @@ testkit.py / test/                        测试脚手架与共享用例
 | `LineBuffer`、`last_lines`、`sse_data`、`sse_event`、`tail` | 日志切行、尾部补发与 SSE 报文 |
 | `Fanout`、`StateStream`、`MetricsStream` | 一份数据推给所有页面；`SSE_INTERVAL` 是所有推送的默认间隔（3 秒） |
 | `Metrics` | `/proc` 与 statvfs 取 CPU、内存、磁盘 |
+| `dumps`、`Inline` | 把嵌套字典写成 TOML 文本，`Inline` 写成行内表；读仍用标准库 `tomllib` |
 | `Row`、`AliasStore`、`HomeStore`、`FS` | 状态行取值、工作区别名与工具链目录（空值删行） |
 | `attach_alias_rel`、`attach_home` | 把别名、相对家目录的路径、选中的工具链目录与失效标记拼进工作区列表 |
 | `Sessions` | 起进程、等退出码、整组杀进程；`fallback` 可选，给没写 shebang 的启动器兜底 |

@@ -80,55 +80,57 @@
       </template>
     </ServiceTable>
 
-    <v-dialog v-model="add.on" max-width="540">
-      <v-card>
-        <v-card-title>添加命令</v-card-title>
-        <v-card-text>
-          <v-select
-            v-model="add.type"
-            :items="typeItems"
-            item-title="title"
-            item-value="value"
-            label="类型"
-            density="compact"
-            variant="outlined"
-            class="mb-4"
-          />
-          <v-text-field
-            v-model="add.tag"
-            label="名称"
-            placeholder="例如 mock"
-            density="compact"
-            variant="outlined"
-            class="mb-4"
-          />
-          <v-select
-            v-model="add.rel"
-            :items="scriptItems"
-            item-title="label"
-            item-value="rel"
-            label="脚本"
-            density="compact"
-            variant="outlined"
-            class="mb-4"
-          />
-          <v-text-field
-            v-model="add.args"
-            label="完整命令"
-            :placeholder="addPlaceholder"
-            density="compact"
-            variant="outlined"
-            @keyup.enter="saveCommand"
-          />
-          <p v-if="add.error" class="add-error">{{ add.error }}</p>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="add.on = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" :loading="add.saving" @click="saveCommand">保存</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="add.on"
+      :initial-width="540"
+      :initial-height="560"
+      :min-width="420"
+      :min-height="320"
+    >
+      <template #title>添加命令</template>
+      <v-select
+        v-model="add.type"
+        :items="typeItems"
+        item-title="title"
+        item-value="value"
+        label="类型"
+        density="compact"
+        variant="outlined"
+        class="mb-4"
+      />
+      <v-text-field
+        v-model="add.tag"
+        label="名称"
+        placeholder="例如 mock"
+        density="compact"
+        variant="outlined"
+        class="mb-4"
+      />
+      <v-select
+        v-model="add.rel"
+        :items="scriptItems"
+        item-title="label"
+        item-value="rel"
+        label="脚本"
+        density="compact"
+        variant="outlined"
+        class="mb-4"
+      />
+      <v-text-field
+        v-model="add.args"
+        label="完整命令"
+        :placeholder="addPlaceholder"
+        density="compact"
+        variant="outlined"
+        @keyup.enter="saveCommand"
+      />
+      <p v-if="add.error" class="add-error">{{ add.error }}</p>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="add.on = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" :loading="add.saving" @click="saveCommand">保存</v-btn>
+      </template>
+    </FloatingDialog>
 
     <SettingsDialog
       v-model="settings.on"
@@ -141,29 +143,31 @@
       @load-more="loadMoreLog"
     />
 
-    <v-dialog v-model="custom.on" max-width="560">
-      <v-card>
-        <v-card-title>自定义 Node</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="custom.path"
-            label="Node 安装目录"
-            placeholder="/home/me/.nvm/versions/node/v20.11.1"
-            density="compact"
-            variant="outlined"
-            hide-details="auto"
-            hint="填版本目录，目录下要有 bin/node"
-            persistent-hint
-            autofocus
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="custom.on = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" @click="saveCustom">保存</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="custom.on"
+      :initial-width="560"
+      :initial-height="300"
+      :min-width="400"
+      :min-height="220"
+    >
+      <template #title>自定义 Node</template>
+      <v-text-field
+        v-model="custom.path"
+        label="Node 安装目录"
+        placeholder="/home/me/.nvm/versions/node/v20.11.1"
+        density="compact"
+        variant="outlined"
+        hide-details="auto"
+        hint="填版本目录，目录下要有 bin/node"
+        persistent-hint
+        autofocus
+      />
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="custom.on = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" @click="saveCustom">保存</v-btn>
+      </template>
+    </FloatingDialog>
   </div>
 </template>
 
@@ -173,7 +177,7 @@ import { storeToRefs } from 'pinia'
 import SettingsDialog from './SettingsDialog.vue'
 import { usePreferencesStore } from '../stores/preferences'
 import ZipPanel from './ZipPanel.vue'
-import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
+import { FloatingDialog, ServiceTable, useRunLog } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import {
   LIVE,

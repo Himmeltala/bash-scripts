@@ -64,77 +64,84 @@
       </button>
     </div>
 
-    <v-dialog v-model="aliasOn" max-width="460">
-      <v-card>
-        <v-card-title>{{ labels.aliasTitle }}</v-card-title>
-        <v-card-text>
-          <p class="tip">{{ aliasTarget ? aliasTarget.root : '' }}</p>
-          <v-text-field
-            v-model="aliasText"
-            label="别名"
-            density="compact"
-            variant="outlined"
-            maxlength="80"
-            clearable
-            autofocus
-            @keyup.enter="saveAlias"
-          />
-          <p class="tip">{{ labels.aliasHint }}</p>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="aliasOn = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" :loading="aliasSaving" @click="saveAlias">
-            保存
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="aliasOn"
+      :initial-width="460"
+      :initial-height="320"
+      :min-width="360"
+      :min-height="240"
+    >
+      <template #title>{{ labels.aliasTitle }}</template>
+      <p class="tip">{{ aliasTarget ? aliasTarget.root : '' }}</p>
+      <v-text-field
+        v-model="aliasText"
+        label="别名"
+        density="compact"
+        variant="outlined"
+        maxlength="80"
+        clearable
+        autofocus
+        @keyup.enter="saveAlias"
+      />
+      <p class="tip">{{ labels.aliasHint }}</p>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="aliasOn = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" :loading="aliasSaving" @click="saveAlias">
+          保存
+        </v-btn>
+      </template>
+    </FloatingDialog>
 
-    <v-dialog v-model="dialog" max-width="620">
-      <v-card>
-        <v-card-title>{{ labels.addTitle }}</v-card-title>
-        <v-card-text>
-          <DirectoryPicker
-            :key="dialogKey"
-            v-model="path"
-            :tip="labels.addTip"
-            :label="labels.addLabel"
-            :placeholder="labels.addPlaceholder"
-            :loader="dirs"
-            @update:valid="pathOk = $event"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="dialog = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" :disabled="!path.trim() || !pathOk" @click="submit">
-            {{ labels.addConfirm }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="dialog"
+      :initial-width="620"
+      :initial-height="460"
+      :min-width="420"
+      :min-height="300"
+    >
+      <template #title>{{ labels.addTitle }}</template>
+      <DirectoryPicker
+        :key="dialogKey"
+        v-model="path"
+        :tip="labels.addTip"
+        :label="labels.addLabel"
+        :placeholder="labels.addPlaceholder"
+        :loader="dirs"
+        @update:valid="pathOk = $event"
+      />
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="dialog = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" :disabled="!path.trim() || !pathOk" @click="submit">
+          {{ labels.addConfirm }}
+        </v-btn>
+      </template>
+    </FloatingDialog>
 
-    <v-dialog v-model="asking" max-width="440">
-      <v-card>
-        <v-card-title>{{ labels.removeTitle }}</v-card-title>
-        <v-card-text>
-          {{ asking ? asking.root : '' }}
-          <p class="tip">{{ labels.removeText }}</p>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="asking = null">取消</v-btn>
-          <v-btn color="error" variant="flat" @click="drop">{{ labels.removeConfirm }}</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="asking"
+      :initial-width="440"
+      :initial-height="260"
+      :min-width="340"
+      :min-height="200"
+    >
+      <template #title>{{ labels.removeTitle }}</template>
+      {{ asking ? asking.root : '' }}
+      <p class="tip">{{ labels.removeText }}</p>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="asking = null">取消</v-btn>
+        <v-btn color="error" variant="flat" @click="drop">{{ labels.removeConfirm }}</v-btn>
+      </template>
+    </FloatingDialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { DirectoryPicker } from './DirectoryPicker/index.js'
+import DirectoryPicker from './DirectoryPicker/index.js'
+import FloatingDialog from './FloatingDialog.vue'
 import { copyText } from '../utils/clipboard.js'
 
 const props = defineProps({

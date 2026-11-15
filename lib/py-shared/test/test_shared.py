@@ -11,6 +11,11 @@ import unittest
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
+try:
+    import tomllib
+except ImportError:  # 3.11 之前没有；这一组用例跟着跳过
+    tomllib = None
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
@@ -22,6 +27,7 @@ import pathutil
 import runner
 import stores
 import testkit
+import tomlout
 
 
 class FileIoTest(unittest.TestCase):
@@ -408,6 +414,60 @@ class MetricsNetTest(unittest.TestCase):
             reset = NET_DEV.replace("2000000", "100").replace("500000", "100")
             Path(dev).write_text(reset, "utf-8")
             self.assertEqual(meter.net(), {"down": 0, "up": 0, "iface": "eth0"})
+
+
+@unittest.skipIf(tomllib is None, "需要 Python 3.11 的 tomllib")
+class TomlOutTest(unittest.TestCase):
+    def test_scalars_tables_and_inline_tables_round_trip(self):
+        doc = {
+            "models": {
+                "deepseek-flash": {
+                    "off": tomlout.Inline(hit=0.02, miss=1.0, output=4.0),
+                    "peak": tomlout.Inline(hit=0.04, miss=2.0, output=8.0),
+                },
+                "free-model": {"free": True},
+            },
+            "aliases": {"deepseek-v4.1-flash": "deepseek-flash"},
+            "peak": {
+                "timezone": "Asia/Shanghai",
+                "windows": ["09:00-12:00", "14:00-18:00"],
+                "weekdays": [0, 1, 2, 3, 4],
+                "holidays": [],
+            },
+        }
+        text = tomlout.dumps(doc, header="# 价格表")
+        self.assertTrue(text.startswith("# 价格表\n"))
+        self.assertEqual(
+            tomllib.loads(text),
+            {
+                "models": {
+                    "deepseek-flash": {
+                        "off": {"hit": 0.02, "miss": 1.0, "output": 4.0},
+                        "peak": {"hit": 0.04, "miss": 2.0, "output": 8.0},
+                    },
+                    "free-model": {"free": True},
+                },
+                "aliases": {"deepseek-v4.1-flash": "deepseek-flash"},
+                "peak": {
+                    "timezone": "Asia/Shanghai",
+                    "windows": ["09:00-12:00", "14:00-18:00"],
+                    "weekdays": [0, 1, 2, 3, 4],
+                    "holidays": [],
+                },
+            },
+        )
+
+    def test_keys_and_strings_are_quoted_when_needed(self):
+        doc = {"models": {"带.点的 名字": {"note": '引号 " 与换行\n'}}}
+        text = tomlout.dumps(doc)
+        self.assertIn('[models."带.点的 名字"]', text)
+        self.assertEqual(
+            tomllib.loads(text),
+            {"models": {"带.点的 名字": {"note": '引号 " 与换行\n'}}},
+        )
+
+    def test_empty_document(self):
+        self.assertEqual(tomlout.dumps({}), "\n")
 
 
 if __name__ == "__main__":

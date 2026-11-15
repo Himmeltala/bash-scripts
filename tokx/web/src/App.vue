@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { COMMANDS, RANGES, SOURCES, view } from './composables/useView'
 import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { rememberTheme } from './plugins/vuetify'
 import BrandIcon from './components/BrandIcon.vue'
+import ConfigDialog from './components/ConfigDialog.vue'
 import CostBreakdown from './components/CostBreakdown.vue'
 import SummaryCards from './components/SummaryCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
@@ -53,6 +54,8 @@ const notice = computed(() => {
 
 const hasRows = computed(() => !!data.value?.rows.length)
 
+const configOpen = ref(false)
+
 function reload() {
   subscribe()
 }
@@ -82,6 +85,12 @@ onBeforeUnmount(() => {
         <span class="title">tokx</span>
       </v-app-bar-title>
       <template #append>
+        <v-btn
+          icon="mdi-tune-variant"
+          title="价格与配置"
+          variant="text"
+          @click="configOpen = true"
+        />
         <v-btn
           :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
           :title="dark ? '切到浅色' : '切到深色'"
@@ -174,6 +183,8 @@ onBeforeUnmount(() => {
 
       </v-container>
     </v-main>
+
+    <ConfigDialog v-model="configOpen" />
   </v-app>
 </template>
 

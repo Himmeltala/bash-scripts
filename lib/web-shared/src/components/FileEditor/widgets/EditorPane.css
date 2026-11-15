@@ -46,6 +46,10 @@
   line-height: 1.6;
   white-space: pre;
   tab-size: 4;
+  /* 弹窗的 v-card-text 会给内容加 0.5px 字距，而编辑框按表单控件默认用 normal；
+     两层字距不一致，越到行尾错得越多，光标会落在高亮文字前面。 */
+  letter-spacing: normal;
+  word-spacing: normal;
   pointer-events: none;
 }
 .layer-code code {
@@ -74,6 +78,8 @@
   background: transparent;
   color: transparent;
   caret-color: rgb(var(--v-theme-on-surface));
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 .editor::selection {
   background: rgba(var(--v-theme-primary), 0.28);

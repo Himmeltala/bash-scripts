@@ -164,6 +164,11 @@ def _add_web(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--port", type=int, default=0, metavar="端口", help="监听端口，默认 0 由系统挑一个空闲的")
     parser.add_argument("--open", action="store_true", help="启动后打开默认浏览器")
+    parser.add_argument(
+        "--allow-write",
+        action="store_true",
+        help="允许其他机器改价格配置；默认只有本机能改",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -232,7 +237,14 @@ def _web_command(args: argparse.Namespace, config: Config) -> int:
     except UsageError as exc:
         print(f"tokx: {exc}", file=sys.stderr)
         return 2
-    return web.serve(config, host=host, port=args.port, open_browser=args.open, as_json=getattr(args, "json", False))
+    return web.serve(
+        config,
+        host=host,
+        port=args.port,
+        open_browser=args.open,
+        as_json=getattr(args, "json", False),
+        allow_write=getattr(args, "allow_write", False),
+    )
 
 
 def _collect(

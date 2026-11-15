@@ -124,19 +124,25 @@
       </section>
     </div>
 
-    <v-dialog v-model="asking" max-width="420" persistent>
-      <v-card title="还没保存">
-        <v-card-text>当前文件在差异里改过，还没写回工作副本。</v-card-text>
-        <v-card-actions>
-          <v-btn variant="text" @click="answerLeave('cancel')">取消</v-btn>
-          <v-spacer />
-          <v-btn variant="text" color="error" @click="answerLeave('drop')">放弃改动</v-btn>
-          <v-btn variant="flat" color="primary" :loading="saving" @click="answerLeave('save')">
-            保存
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="asking"
+      :initial-width="420"
+      :initial-height="260"
+      :min-width="340"
+      :min-height="200"
+      persistent
+    >
+      <template #title>还没保存</template>
+      当前文件在差异里改过，还没写回工作副本。
+      <template #actions>
+        <v-btn variant="text" @click="answerLeave('cancel')">取消</v-btn>
+        <v-spacer />
+        <v-btn variant="text" color="error" @click="answerLeave('drop')">放弃改动</v-btn>
+        <v-btn variant="flat" color="primary" :loading="saving" @click="answerLeave('save')">
+          保存
+        </v-btn>
+      </template>
+    </FloatingDialog>
   </div>
 </template>
 
@@ -145,7 +151,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from '@bash-scripts/web-shared/diff'
 import { api } from '../composables/useApi'
-import { SplitHandle, fileIcon } from '@bash-scripts/web-shared'
+import { FloatingDialog, SplitHandle, fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree } from '@bash-scripts/web-shared'

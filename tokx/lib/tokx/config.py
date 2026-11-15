@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import date, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# 共用小件在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib" / "py-shared"))
+from tomlout import Inline, dumps
 
 from .api import ApiBook
 from .pricing import (
@@ -56,11 +61,12 @@ class StoreConfig:
 
 
 def config_path(explicit: str | None = None) -> Path:
+    """价格配置的位置：与 nodex、mvnx 一样放在缓存目录，页面与命令行读写同一份。"""
     if explicit:
         return Path(explicit).expanduser()
     if os.environ.get("TOKX_CONFIG"):
         return Path(os.environ["TOKX_CONFIG"]).expanduser()
-    base = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser()
+    base = Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser()
     return base / "tokx" / "config.toml"
 
 
@@ -135,26 +141,34 @@ def _parse_holidays(values: object) -> frozenset[date]:
     return frozenset(days)
 
 
-def load(explicit: str | None = None) -> Config:
-    path = config_path(explicit)
-    doc: dict = {}
-    if explicit and not path.is_file():
-        raise ConfigError(f"找不到配置文件 {path}")
-    if path.is_file():
-        try:
-            doc = tomllib.loads(path.read_text(encoding="utf-8"))
-        except (OSError, tomllib.TOMLDecodeError) as exc:
-            raise ConfigError(f"读取 {path} 失败: {exc}") from exc
+HEADER = """\
+# tokx 配置：模型单价按元每百万 token 计，是 DeepSeek 与 mimo 的官方价。
+# off 是空闲价，peak 是高峰价；不分峰谷的模型两档写一样的数。
+# 免费模型写 free = true，只统计 token，费用记 0。
+# 节假日每年安排不同，按 YYYY-MM-DD 补进 [peak].holidays。"""
 
+
+def _table(doc: dict, name: str) -> dict:
+    """取配置里的一节；没写算空表，写成了别的类型直接报错。"""
+    value = doc.get(name)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"{name} 需要写成表")
+    return value
+
+
+def _book(doc: dict) -> PriceBook:
+    """文档里的价格部分翻成价格表；配置文本校验与出表共用这一套规则。"""
     models = dict(DEFAULT_MODELS)
-    for name, spec in (doc.get("models") or {}).items():
+    for name, spec in _table(doc, "models").items():
         models[name] = _model_price(spec, name)
 
     aliases = dict(DEFAULT_ALIASES)
-    for old, new in (doc.get("aliases") or {}).items():
+    for old, new in _table(doc, "aliases").items():
         aliases[str(old)] = str(new)
 
-    peak = doc.get("peak") or {}
+    peak = _table(doc, "peak")
     tz_name = str(peak.get("timezone", DEFAULT_TZ))
     try:
         tz = ZoneInfo(tz_name)
@@ -174,14 +188,93 @@ def load(explicit: str | None = None) -> Config:
             raise ConfigError("peak.weekdays 需要写成 0 到 6 的整数列表")
 
     holidays = _parse_holidays(peak.get("holidays", []))
+    return PriceBook(
+        models=models,
+        aliases=aliases,
+        windows=windows,
+        weekdays=weekdays,
+        holidays=holidays,
+        tz=tz,
+    )
 
-    store = _store(doc.get("store") or {}, Path.home())
 
+def _apis(doc: dict) -> dict[str, str]:
     apis: dict[str, str] = {}
-    for name, value in (doc.get("apis") or {}).items():
+    for name, value in _table(doc, "apis").items():
         if not isinstance(value, str):
             raise ConfigError(f"apis.{name} 需要写成地址字符串")
         apis[str(name)] = value
+    return apis
+
+
+def parse_text(text: str) -> dict:
+    """配置文本 → 原始文档；语法有错就抛 ConfigError。"""
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"TOML 语法有错：{exc}") from exc
+
+
+def load_from_text(text: str) -> PriceBook:
+    """配置文本 → 价格表，不碰任何文件；网页校验与测试用。"""
+    return _book(parse_text(text))
+
+
+def validate_text(text: str) -> None:
+    """保存前把整份文本按加载时的规则走一遍，免得写进去的配置让下次读取失败。"""
+    doc = parse_text(text)
+    _book(doc)
+    _store(_table(doc, "store"), Path.home())
+    _apis(doc)
+
+
+def render(book: PriceBook) -> str:
+    """把当前价格表写成带说明的配置文本；网页里还没有配置文件时先给这一份。"""
+    models = {}
+    for name, price in book.models.items():
+        if price.free:
+            models[name] = {"free": True}
+        else:
+            models[name] = {
+                "off": Inline(hit=price.off.hit, miss=price.off.miss, output=price.off.output),
+                "peak": Inline(hit=price.peak.hit, miss=price.peak.miss, output=price.peak.output),
+            }
+    peak = {
+        "timezone": str(book.tz),
+        "windows": [
+            "%s-%s" % (start.strftime("%H:%M"), end.strftime("%H:%M"))
+            for start, end in book.windows
+        ],
+        "weekdays": sorted(book.weekdays),
+        "holidays": [day.isoformat() for day in sorted(book.holidays)],
+    }
+    parts = [
+        HEADER,
+        dumps({"models": models}),
+        dumps({"aliases": dict(book.aliases)}),
+        dumps({"peak": peak}),
+    ]
+    return "\n\n".join(part.strip("\n") for part in parts if part.strip("\n")) + "\n"
+
+
+def load(explicit: str | None = None) -> Config:
+    path = config_path(explicit)
+    doc: dict = {}
+    if explicit and not path.is_file():
+        raise ConfigError(f"找不到配置文件 {path}")
+    if path.is_file():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ConfigError(f"读取 {path} 失败: {exc}") from exc
+        try:
+            doc = parse_text(text)
+        except ConfigError as exc:
+            raise ConfigError(f"读取 {path} 失败: {exc}") from exc
+
+    book = _book(doc)
+    store = _store(_table(doc, "store"), Path.home())
+    apis = _apis(doc)
 
     home = Path.home()
     config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")).expanduser()
@@ -202,14 +295,6 @@ def load(explicit: str | None = None) -> Config:
         os.environ.get("TOKX_DSH_PROFILES", paths.dsh_sessions.parent / "profiles")
     ).expanduser()
 
-    book = PriceBook(
-        models=models,
-        aliases=aliases,
-        windows=windows,
-        weekdays=weekdays,
-        holidays=holidays,
-        tz=tz,
-    )
     api = ApiBook.load(
         apis,
         claude_dir=paths.claude,

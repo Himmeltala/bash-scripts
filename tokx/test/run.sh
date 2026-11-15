@@ -733,6 +733,8 @@ printf '' | "$bin" menu >/dev/null 2>&1
 [[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
 ok 取消菜单返回 3
 
+python3 "$repo/tokx/test/test_web_config.py" >/dev/null 2>&1 || fail '网页价格配置的测试未通过'
+
 if grep -q 'ui_pause' "$repo/tokx/lib/tokx-tui.sh" &&
   ! grep -q 'IFS= read -r key' "$repo/tokx/lib/tokx-tui.sh"; then
   ok 'tokx 用 bash-tui 的暂停'

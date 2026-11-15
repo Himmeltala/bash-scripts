@@ -238,27 +238,29 @@
       <p v-if="lastError" class="hint bad">{{ lastError }}</p>
     </div>
 
-    <v-dialog v-model="confirmOn" max-width="540">
-      <v-card>
-        <v-card-title>{{ confirmTitle }}</v-card-title>
-        <v-card-text>
-          <p class="confirm-text">{{ confirmText }}</p>
-          <p class="hint">执行后工作副本或远端会发生变化，请确认命令与目标都没问题。</p>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="confirmOn = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" :loading="!!running" @click="run">执行</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="confirmOn"
+      :initial-width="540"
+      :initial-height="300"
+      :min-width="400"
+      :min-height="220"
+    >
+      <template #title>{{ confirmTitle }}</template>
+      <p class="confirm-text">{{ confirmText }}</p>
+      <p class="hint">执行后工作副本或远端会发生变化，请确认命令与目标都没问题。</p>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="confirmOn = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" :loading="!!running" @click="run">执行</v-btn>
+      </template>
+    </FloatingDialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
-import { LogView } from '@bash-scripts/web-shared'
+import { FloatingDialog, LogView } from '@bash-scripts/web-shared'
 import { api, jobEventsUrl } from '../composables/useApi'
 import { statusOf } from '../composables/format'
 

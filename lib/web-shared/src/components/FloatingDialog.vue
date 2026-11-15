@@ -4,6 +4,7 @@
     :width="size.w"
     :height="size.h"
     :content-props="{ style: positionStyle }"
+    :persistent="persistent"
     scrollable
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -41,6 +42,8 @@ const props = defineProps({
   storageKey: { type: String, default: '' },
   // 存在浏览器里的位置表名，各工程各用一份。
   storage: { type: String, default: 'dialog-layouts' },
+  // 必须明确作答（比如“文件还没保存”）时用，点遮罩与 Esc 都不关。
+  persistent: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 

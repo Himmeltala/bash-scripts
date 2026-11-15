@@ -1,4 +1,4 @@
-# tokx 配置示例，复制到 ~/.config/tokx/config.toml 后按需修改。
+# tokx 配置示例，复制到 ~/.cache/tokx/config.toml 后按需修改。
 
 # 模型单价，单位是元每百万 token。off 是空闲价，peak 是高峰价。
 [models."deepseek-flash"]

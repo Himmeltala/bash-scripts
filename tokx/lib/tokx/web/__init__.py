@@ -22,13 +22,14 @@ from pathlib import Path
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+import fileio
 import netutil
 import pathutil
 from sse import SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
 from web import ApiError, WebHandler, WebServer
 
 from .. import cli
-from ..config import Config, load
+from ..config import Config, ConfigError, config_path, load, render, validate_text
 from ..sources import SOURCE_ORDER
 
 # vite 把 web/ 打包成 lib/tokx/web/static，这里只认打包产物；开发时用 web/README.md 里的代理。
@@ -142,12 +143,14 @@ def _guarded(build):
             raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(exc).__name__}: {exc}")
 
 
-def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
+def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPRequestHandler]:
     class Handler(SSEMixin, WebHandler):
         server_version = f"tokx/{cli.VERSION}"
         sys_version = ""
         api_prefix = "/api/"
         static = STATIC
+        # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
+        allow_write = False
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             # 默认每个请求往 stderr 打一行，浏览器轮询起来会刷屏；只在调试时打开。
@@ -160,15 +163,67 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
 
         def do_POST(self) -> None:  # noqa: N802
-            # 页面只读，没有任何写接口；与 BaseHTTPRequestHandler 的默认回话一致。
-            self.send_error(HTTPStatus.NOT_IMPLEMENTED)
+            # 只有价格配置能写，且默认只认本机；跨站写请求由共用的 WebHandler 挡。
+            self._route("POST")
 
         def _dispatch(self, method, route, query, body):
+            if route == "config":
+                if method == "POST":
+                    return self._config_save(body)
+                return self._config_get()
             if route == "usage":
                 return _guarded(lambda: _payload(config, query))
             if route == "prices":
                 return _guarded(lambda: cli._price_data(_current(config).book))
             raise ApiError(HTTPStatus.NOT_FOUND, f"没有 /api/{route}")
+
+        def _config_path(self):
+            """显式 --config 给的那份，或者默认缓存目录里的那一份。"""
+            return config.path or config_path()
+
+        def _config_get(self):
+            path = self._config_path()
+            if path.is_file():
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError as exc:
+                    raise ApiError(HTTPStatus.FORBIDDEN, f"读不了配置文件：{exc}")
+                except UnicodeDecodeError:
+                    raise ApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "配置文件不是 UTF-8，网页里改不了")
+            else:
+                # 还没有文件时先给一份由当前价生成的，保存后就是正式配置。
+                text = render(config.book)
+            return {
+                "path": str(path),
+                "text": text,
+                "size": len(text.encode("utf-8")),
+                "writable": self.allow_write or netutil.is_loopback_address(self.client_address[0]),
+            }
+
+        def _config_save(self, body):
+            self._check_write()
+            text = body.get("text")
+            if not isinstance(text, str):
+                raise ApiError(HTTPStatus.BAD_REQUEST, "配置内容要是文本")
+            # 先按加载时的规则验一遍，写坏的配置会让下一次读取失败、推送也跟着停。
+            try:
+                validate_text(text)
+            except ConfigError as exc:
+                raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+            path = self._config_path()
+            try:
+                fileio.atomic_write_text(path, text)
+            except OSError as exc:
+                raise ApiError(HTTPStatus.FORBIDDEN, f"写不了配置文件：{exc}")
+            return {"path": str(path), "size": len(text.encode("utf-8"))}
+
+        def _check_write(self):
+            if self.allow_write or netutil.is_loopback_address(self.client_address[0]):
+                return
+            raise ApiError(
+                HTTPStatus.FORBIDDEN,
+                "写操作只允许本机发起；要放开给其他机器，用 --allow-write 启动",
+            )
 
         def _stream_routes(self, route, query):
             if route != "usage/stream":
@@ -257,6 +312,7 @@ def _make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
+    Handler.allow_write = allow_write
     return Handler
 
 
@@ -283,6 +339,7 @@ def serve(
     port: int = 0,
     open_browser: bool = False,
     as_json: bool = False,
+    allow_write: bool = False,
 ) -> int:
     """起网页界面，一直服务到 Ctrl+C。"""
     if not (0 <= port <= 65535):
@@ -290,7 +347,7 @@ def serve(
         return 2
     try:
         # 客户端提前断开不算错误：共用 WebServer 已经按这个口径处理。
-        httpd = WebServer((host, port), _make_handler(config))
+        httpd = WebServer((host, port), _make_handler(config, allow_write=allow_write))
     except OSError as exc:
         print(f"tokx: 监听 {host}:{port} 失败：{exc}", file=sys.stderr)
         return 1
@@ -307,6 +364,11 @@ def serve(
                 "页面没有登录，同一网络里能连上的人都能看用量；只想本机看就加 --host 127.0.0.1",
                 file=sys.stderr,
             )
+            if not allow_write:
+                print(
+                    "改价格配置只认本机；要放开给其他机器，加 --allow-write",
+                    file=sys.stderr,
+                )
         print("按 Ctrl+C 退出。", file=sys.stderr)
     sys.stdout.flush()
     if open_browser:

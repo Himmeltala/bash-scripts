@@ -90,29 +90,31 @@
       @load-more="loadMoreLog"
     />
 
-    <v-dialog v-model="custom.on" max-width="560">
-      <v-card>
-        <v-card-title>自定义 JDK</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="custom.path"
-            label="JAVA_HOME"
-            placeholder="/opt/jdk-17"
-            density="compact"
-            variant="outlined"
-            hide-details="auto"
-            hint="填 JDK 根目录，目录下要有 bin/java 与 bin/javac"
-            persistent-hint
-            autofocus
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="custom.on = false">取消</v-btn>
-          <v-btn color="primary" variant="flat" @click="saveCustom">保存</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <FloatingDialog
+      v-model="custom.on"
+      :initial-width="560"
+      :initial-height="300"
+      :min-width="400"
+      :min-height="220"
+    >
+      <template #title>自定义 JDK</template>
+      <v-text-field
+        v-model="custom.path"
+        label="JAVA_HOME"
+        placeholder="/opt/jdk-17"
+        density="compact"
+        variant="outlined"
+        hide-details="auto"
+        hint="填 JDK 根目录，目录下要有 bin/java 与 bin/javac"
+        persistent-hint
+        autofocus
+      />
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="custom.on = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" @click="saveCustom">保存</v-btn>
+      </template>
+    </FloatingDialog>
   </div>
 </template>
 
@@ -121,7 +123,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingsDialog from './SettingsDialog.vue'
 import { usePreferencesStore } from '../stores/preferences'
-import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
+import { FloatingDialog, ServiceTable, useRunLog } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import {
   LIVE,
