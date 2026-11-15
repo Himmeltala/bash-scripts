@@ -296,6 +296,8 @@ const output = computed(() => outputLines.value.join('\n'))
 let stream = null
 let settled = false
 let opened = 0
+// 上次读同步信息的时间：操作刚结束时自己会读一次，紧跟的推送不必再读。
+let loadedAt = 0
 
 const pullModes = [
   { title: '只快进（推荐）', value: 'ff' },
@@ -406,6 +408,7 @@ const confirmText = computed(() => {
 })
 
 async function load() {
+  loadedAt = Date.now()
   loading.value = true
   error.value = ''
   try {
@@ -609,7 +612,10 @@ watch(
 watch(
   () => props.refresh,
   () => {
-    if (!busy.value) load()
+    if (busy.value) return
+    // 任务刚结束那一会儿已经读过一次了，别为同一次变化再发一遍请求。
+    if (Date.now() - loadedAt < 1000) return
+    load()
   },
 )
 onMounted(load)

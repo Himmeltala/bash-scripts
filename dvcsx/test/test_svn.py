@@ -108,6 +108,13 @@ class SvnWorkspace(unittest.TestCase):
         self.assertEqual(files.get("src/a.txt"), "modified")
         self.assertEqual(files.get("b.txt"), "unversioned")
 
+    def test_changes_signature_tracks_working_copy_revision(self):
+        # 本地没有改动时指纹不变，外面 svn update 拉下来的版本只能从版本号上看出来。
+        _, _, revision = svnmod.changes_signature(
+            {"id": "w", "root": str(self.wc), "vcs": "svn"}
+        )
+        self.assertEqual(revision, "1")
+
     def test_diff_shows_new_line(self):
         result = svnmod.change_diff(str(self.wc), "src/a.txt")
         self.assertIn("+world", result["text"])

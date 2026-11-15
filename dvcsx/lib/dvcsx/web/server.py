@@ -317,6 +317,7 @@ class EventHub:
     def _watch(self, ws):
         wid = ws["id"]
         last = None
+        last_revision = None
         while True:
             with self.lock:
                 if not self.subs.get(wid):
@@ -324,14 +325,19 @@ class EventHub:
                     self.watchers.pop(wid, None)
                     return
             try:
-                signature, count = changes_signature(ws)
+                signature, count, revision = changes_signature(ws)
             except Exception:
-                signature, count = None, 0
+                signature, count, revision = None, 0, None
             # 第一次也推一次：连接建立前后刚发生的改动不会漏掉，页面重载一次无妨。
             if signature is not None and signature != last:
                 self.broadcast(wid, "changes", {"ws": wid, "count": count})
             if signature is not None:
                 last = signature
+            # 版本变了说明外面提交或更新过，日志与同步页也要重读。
+            if revision is not None and revision != last_revision:
+                self.broadcast(wid, "head", {"ws": wid, "revision": revision})
+            if revision is not None:
+                last_revision = revision
             time.sleep(WATCH_INTERVAL)
 
 
@@ -1765,11 +1771,14 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
 
 
 def changes_signature(ws):
-    """工作副本当前状态的指纹：状态输出与分支或版本号一起哈希，变了才提醒页面。"""
+    """工作副本当前状态的指纹，外加当前指向的版本。
+
+    指纹变了才提醒页面；版本变了说明外面提交或更新过，日志与同步页要重读。
+    """
     if ws.get("vcs") == "git":
         rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=ws["root"])
         if rc != 0:
-            return None, 0
+            return None, 0, None
         files, _ = parse_git_status(out)
         has_head, head = git_head(ws["root"])
         rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=ws["root"])
@@ -1777,11 +1786,23 @@ def changes_signature(ws):
         sig.update(head.encode("utf-8") if has_head else b"")
         if rc == 0:
             sig.update(branch)
-        return sig.hexdigest(), len(files)
+        return sig.hexdigest(), len(files), head if has_head else ""
     rc, out, _ = svn(["status", "--xml"], cwd=ws["root"])
     if rc != 0:
-        return None, 0
-    return hashlib.sha1(out).hexdigest(), len(parse_status(out))
+        return None, 0, None
+    return hashlib.sha1(out).hexdigest(), len(parse_status(out)), svn_revision(ws["root"])
+
+
+def svn_revision(root):
+    """工作副本记着的版本号；查不到就返回 None，别把一次失败当成版本变了。"""
+    try:
+        rc, out, _ = svn(["info", "--xml"], cwd=root)
+        if rc != 0:
+            return None
+        entry = xml_of(out).find("entry")
+    except ApiError:
+        return None
+    return entry.get("revision", "") if entry is not None else None
 
 
 def list_dirs(raw):

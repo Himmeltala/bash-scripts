@@ -70,7 +70,8 @@ function closeEvents() {
 
 function openEvents() {
   closeEvents()
-  if (!props.ws || !props.ws.id) return
+  // 页面在后台就不占着服务端的检查线程，回到前台再连，首推会补上这段变化。
+  if (!props.ws || !props.ws.id || document.hidden) return
   events = new EventSource(workspaceEventsUrl(props.ws.id))
   events.addEventListener('changes', (event) => {
     let data = {}
@@ -87,7 +88,16 @@ function openEvents() {
     changesKey.value += 1
     repoKey.value += 1
   })
+  // 外面提交或更新过：日志与同步信息要重读。
+  events.addEventListener('head', () => {
+    repoKey.value += 1
+  })
   // 连接断了 EventSource 会自己重连，不必在这里处理。
+}
+
+function onVisibility() {
+  if (document.hidden) closeEvents()
+  else openEvents()
 }
 
 // 换工作副本时清掉上一个目录的变更数，页签保持不动。
@@ -98,8 +108,14 @@ watch(
     openEvents()
   }
 )
-onMounted(openEvents)
-onBeforeUnmount(closeEvents)
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibility)
+  openEvents()
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibility)
+  closeEvents()
+})
 </script>
 
 <style scoped>

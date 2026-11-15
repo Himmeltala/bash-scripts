@@ -106,6 +106,13 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(vcs, "git")
         self.assertEqual(info["top"], str(self.repo.resolve()))
 
+    def test_changes_signature_tracks_head(self):
+        # 指纹之外的版本也要给出来：外面提交后页面能据此重读日志与同步信息。
+        _, _, revision = gitmod.changes_signature(
+            {"id": "w", "root": str(self.repo), "vcs": "git"}
+        )
+        self.assertEqual(revision, self.second)
+
     def test_status_lists_changes(self):
         data = gitmod.git_changes(str(self.repo))
         items = {f["path"]: f["item"] for f in data["files"]}
