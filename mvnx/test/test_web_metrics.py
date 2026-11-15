@@ -32,7 +32,7 @@ class MetricsSseTest(unittest.TestCase):
                 event, data = testkit.read_sse_event(resp)
                 payload = json.loads(data)
                 self.assertEqual(event, "metrics")
-                for key in ("time", "cpu", "mem", "disk"):
+                for key in ("time", "cpu", "mem", "disk", "net"):
                     self.assertIn(key, payload)
 
                 resp.close()

@@ -16,6 +16,7 @@ sys.path.insert(0, str(HERE.parent))
 
 import fileio
 import kvstore
+import metrics
 import netutil
 import pathutil
 import runner
@@ -347,6 +348,66 @@ class ParseReserveTest(unittest.TestCase):
             runner.parse_reserve(runner.FS.join(["run1", "/work"]), "nodex")
         self.assertEqual(caught.exception.status, 500)
         self.assertIn("nodex 没有给出启动参数", caught.exception.message)
+
+
+NET_DEV = """Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:    1000       1    0    0    0     0          0         0     1000       1    0    0    0     0       0          0
+  eth0: 2000000    2000    0    0    0     0          0         0   500000     500    0    0    0     0       0          0
+"""
+
+NET_ROUTE = """Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT
+eth0\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0
+wlan0\t00000000\t0100A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0
+eth0\t0000A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0
+"""
+
+
+class MetricsNetTest(unittest.TestCase):
+    """网速：按默认出口网卡的收发计数差算，计数回落按 0 算。"""
+
+    def files(self, td, dev, route=NET_ROUTE):
+        base = Path(td)
+        dev_path = base / "net-dev"
+        route_path = base / "net-route"
+        dev_path.write_text(dev, "utf-8")
+        route_path.write_text(route, "utf-8")
+        return str(dev_path), str(route_path)
+
+    def test_parse_net_dev_reads_rx_and_tx(self):
+        counters = metrics.parse_net_dev(NET_DEV)
+        self.assertEqual(counters["eth0"], (2000000, 500000))
+        self.assertEqual(counters["lo"], (1000, 1000))
+
+    def test_default_iface_takes_lowest_metric(self):
+        self.assertEqual(metrics.default_iface(NET_ROUTE), "eth0")
+
+    def test_net_needs_two_samples(self):
+        with tempfile.TemporaryDirectory() as td:
+            dev, route = self.files(td, NET_DEV)
+            ticks = iter([10.0, 12.0])
+            meter = metrics.Metrics(
+                home=td, net_dev=dev, net_route=route, clock=lambda: next(ticks)
+            )
+            self.assertIsNone(meter.net())
+
+            after = NET_DEV.replace("2000000", "2020480").replace("500000", "504096")
+            Path(dev).write_text(after, "utf-8")
+            self.assertEqual(
+                meter.net(), {"down": 10240, "up": 2048, "iface": "eth0"}
+            )
+
+    def test_net_counts_counter_reset_as_zero(self):
+        with tempfile.TemporaryDirectory() as td:
+            dev, route = self.files(td, NET_DEV)
+            ticks = iter([10.0, 11.0])
+            meter = metrics.Metrics(
+                home=td, net_dev=dev, net_route=route, clock=lambda: next(ticks)
+            )
+            meter.net()
+            reset = NET_DEV.replace("2000000", "100").replace("500000", "100")
+            Path(dev).write_text(reset, "utf-8")
+            self.assertEqual(meter.net(), {"down": 0, "up": 0, "iface": "eth0"})
 
 
 if __name__ == "__main__":

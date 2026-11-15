@@ -14,6 +14,7 @@ import { init, use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { formatBytes } from '../../../utils/format.js'
 import { METRIC_COLORS } from '../palette.js'
 
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
@@ -25,6 +26,10 @@ const props = defineProps({
   time: { type: Number, default: null },
   color: { type: String, default: 'cpu' },
   hot: { type: Number, default: 85 },
+  // percent 显示百分比；speed 把数值当成字节/秒。
+  unit: { type: String, default: 'percent' },
+  // 速度没有固定上限，纵轴跟着最近的点走。
+  autoMax: { type: Boolean, default: false },
   dark: { type: Boolean, default: false },
   points: { type: Number, default: 60 },
 })
@@ -37,7 +42,16 @@ const labels = []
 let chart = null
 let observer = null
 
-const isHot = computed(() => now.value !== null && now.value >= props.hot)
+const isHot = computed(
+  () => props.unit === 'percent' && now.value !== null && now.value >= props.hot,
+)
+
+const BYTE_UNITS = { units: ['B', 'KB', 'MB', 'GB'], precision: [0, 1, 2, 2] }
+
+function textOf(value) {
+  if (props.unit === 'speed') return `${formatBytes(value, BYTE_UNITS)}/s`
+  return `${Math.round(value)}%`
+}
 
 function palette() {
   return METRIC_COLORS[props.dark ? 'dark' : 'light']
@@ -51,7 +65,12 @@ function option() {
     animation: false,
     grid: { left: 1, right: 1, top: 3, bottom: 1 },
     xAxis: { type: 'category', show: false, boundaryGap: false, data: labels.slice() },
-    yAxis: { type: 'value', show: false, min: 0, max: 100 },
+    yAxis: {
+      type: 'value',
+      show: false,
+      min: 0,
+      max: props.autoMax ? (range) => Math.max(range.max, 1) : 100,
+    },
     tooltip: {
       trigger: 'axis',
       confine: true,
@@ -59,7 +78,7 @@ function option() {
       borderWidth: 0,
       padding: [4, 8],
       textStyle: { color: p.tipText, fontSize: 12, fontFamily: 'Roboto, sans-serif' },
-      formatter: (ps) => `${props.name} ${ps[0].axisValue}　${ps[0].value}%`,
+      formatter: (ps) => `${props.name} ${ps[0].axisValue}　${textOf(ps[0].value)}`,
     },
     series: [
       {
@@ -97,7 +116,7 @@ watch(
       return
     }
     now.value = value
-    text.value = `${Math.round(value)}%`
+    text.value = textOf(value)
     data.push(value)
     labels.push(clock(time))
     if (data.length > props.points) {

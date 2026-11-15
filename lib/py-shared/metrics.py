@@ -1,4 +1,4 @@
-"""CPU、内存、磁盘占用，页面头部那三张小图用。
+"""CPU、内存、磁盘占用与网速，页面头部那几张小图用。
 
 只用 /proc 与 statvfs，不引第三方库。
 """
@@ -10,6 +10,9 @@ from pathlib import Path
 
 from web import log
 
+NET_DEV = "/proc/net/dev"
+NET_ROUTE = "/proc/net/route"
+
 
 def _percent(used, total):
     if not total:
@@ -17,16 +20,61 @@ def _percent(used, total):
     return round(100.0 * used / total, 1)
 
 
+def parse_net_dev(text):
+    """ /proc/net/dev 的内容 → {网卡: (收字节, 发字节)}。"""
+    out = {}
+    for line in text.splitlines():
+        name, sep, rest = line.partition(":")
+        if not sep:
+            continue
+        fields = rest.split()
+        if len(fields) < 9:
+            continue
+        out[name.strip()] = (int(fields[0]), int(fields[8]))
+    return out
+
+
+def default_iface(text):
+    """ /proc/net/route 里默认路由的网卡；有多条时取 metric 最小的。"""
+    best = None
+    for line in text.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 8 or fields[1] != "00000000":
+            continue
+        try:
+            cost = int(fields[6])
+        except ValueError:
+            continue
+        if best is None or cost < best[0]:
+            best = (cost, fields[0])
+    return best[1] if best else ""
+
+
+def net_rate(before, after, seconds):
+    """两次累计计数之间的收发速率（字节/秒）；计数回落（网卡重连）按 0 算。"""
+    if seconds <= 0:
+        return None
+    return {
+        "down": int(round(max(0, after[0] - before[0]) / seconds)),
+        "up": int(round(max(0, after[1] - before[1]) / seconds)),
+    }
+
+
 class Metrics:
-    """CPU 占用只有两次采样之间才算得出来：首次请求采样两次、间隔 200ms，之后沿用上次的计数器。"""
+    """页面头部的指标采集：CPU 首次请求采样两次、间隔 200ms；网速第一次只记基准，下一份才算得出速率。"""
 
     SAMPLE_PAUSE = 0.2
 
-    def __init__(self, home=None):
+    def __init__(self, home=None, net_dev=NET_DEV, net_route=NET_ROUTE, clock=time.monotonic):
         self.home = Path(home) if home else Path.home()
         self.mount = self._mount_of(self.home)
+        self.net_dev = net_dev
+        self.net_route = net_route
+        self.clock = clock
         self._lock = threading.Lock()
         self._prev = None
+        self._net = None
+        self._net_lock = threading.Lock()
 
     @staticmethod
     def _counters():
@@ -84,6 +132,31 @@ class Metrics:
         used = max(0, total - avail)
         return {"used": used, "total": total, "percent": _percent(used, total)}
 
+    @staticmethod
+    def _read(path):
+        with open(path, "r") as fh:
+            return fh.read()
+
+    def net(self):
+        """默认出口网卡的收发速率；第一次采样没有基准，返回 None。"""
+        try:
+            iface = default_iface(self._read(self.net_route))
+            counters = parse_net_dev(self._read(self.net_dev)).get(iface) if iface else None
+        except OSError:
+            return None
+        now = self.clock()
+        with self._net_lock:
+            prev = self._net
+            self._net = (iface, counters, now)
+        # 换了网卡或上次没读到时，这一份只当基准，等下一次再算速率。
+        if counters is None or prev is None or prev[0] != iface or prev[1] is None:
+            return None
+        rate = net_rate(prev[1], counters, now - prev[2])
+        if rate is None:
+            return None
+        rate["iface"] = iface
+        return rate
+
     def disk(self):
         st = os.statvfs(str(self.home))
         total = st.f_frsize * st.f_blocks
@@ -100,7 +173,7 @@ class Metrics:
 
     def snapshot(self):
         out = {"time": int(time.time())}
-        for key in ("cpu", "mem", "disk"):
+        for key in ("cpu", "mem", "disk", "net"):
             try:
                 out[key] = getattr(self, key)()
             except (OSError, ValueError) as exc:
