@@ -24,6 +24,16 @@
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+/* 光标所在行：与变更差异里正在编辑的那一行同一套着色，垫在代码文字底下。 */
+.cur-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: rgba(var(--v-theme-primary), 0.1);
 }
 .layer-code {
   position: absolute;
