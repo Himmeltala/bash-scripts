@@ -91,7 +91,7 @@ def _current(config: Config) -> Config:
 
 
 def _stream_seconds(query: dict[str, list[str]]) -> int:
-    """推送间隔，默认与共享层一致取 5 秒；0 表示只手动刷新，不接受。"""
+    """推送间隔，默认与共享层一致取 3 秒；0 表示只手动刷新，不接受。"""
     default = str(int(SSE_INTERVAL))
     text = (query.get("every") or [default])[0] or default
     try:

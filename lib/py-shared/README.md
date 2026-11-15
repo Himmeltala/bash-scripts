@@ -33,7 +33,7 @@ testkit.py / test/                        测试脚手架与共享用例
 | `SSEMixin` | `_sse_start` / `_sse` / `_stream_log`，nodex、mvnx、tokx 用 |
 | `log_page` | 运行日志的分页读取，返回字段与 nodex/mvnx 原来的 `_log` 一致 |
 | `LineBuffer`、`last_lines`、`sse_data`、`sse_event`、`tail` | 日志切行、尾部补发与 SSE 报文 |
-| `Fanout`、`StateStream`、`MetricsStream` | 一份数据推给所有页面；`SSE_INTERVAL` 是所有推送的默认间隔（5 秒） |
+| `Fanout`、`StateStream`、`MetricsStream` | 一份数据推给所有页面；`SSE_INTERVAL` 是所有推送的默认间隔（3 秒） |
 | `Metrics` | `/proc` 与 statvfs 取 CPU、内存、磁盘 |
 | `Row`、`AliasStore`、`HomeStore`、`FS` | 状态行取值、工作区别名与工具链目录（空值删行） |
 | `attach_alias_rel`、`attach_home` | 把别名、相对家目录的路径、选中的工具链目录与失效标记拼进工作区列表 |
