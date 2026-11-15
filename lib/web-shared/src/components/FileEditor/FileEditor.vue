@@ -8,6 +8,19 @@
       @navigate="emit('navigate', $event)"
     >
       <template #actions>
+        <v-btn-toggle
+          v-if="modes.length > 1"
+          v-model="mode"
+          density="compact"
+          variant="text"
+          divided
+          mandatory
+          class="views"
+        >
+          <v-btn v-for="item in modes" :key="item.id" :value="item.id" size="small">
+            {{ item.title }}
+          </v-btn>
+        </v-btn-toggle>
         <div v-if="dirty && !state.loading" class="actions">
           <v-chip size="x-small" variant="flat" color="modified">未保存</v-chip>
           <v-btn
@@ -29,13 +42,16 @@
     <p v-if="state.loading" class="hint">正在读取文件…</p>
     <p v-else-if="state.error" class="hint bad">{{ state.error }}</p>
     <div v-else-if="path" class="edit-wrap">
+      <p v-if="modeError" class="hint bad edit-error">{{ modeError }}</p>
       <p v-if="state.saveError" class="hint bad edit-error">{{ state.saveError }}</p>
-      <EditorPane
+      <component
+        :is="modeComp"
+        v-if="modeComp"
         ref="paneRef"
         v-model="state.draft"
-        :highlighted="highlighted"
-        :line-count="lineCount"
+        :path="path"
       />
+      <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
     <div v-else class="none">从左边选一个文件，右边显示它的内容。</div>
 
@@ -44,11 +60,16 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, ref } from 'vue'
-import EditorPane from './widgets/EditorPane.vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import FileHead from './widgets/FileHead.vue'
 import SaveLeaveDialog from './widgets/SaveLeaveDialog.vue'
 import { useFileEditor } from './useFileEditor'
+import {
+  modesOf,
+  resolveMode,
+  viewForOpen,
+  viewLoadFailure,
+} from './handlers/registry.js'
 
 const props = defineProps({
   rootName: { type: String, default: '/' },
@@ -64,8 +85,6 @@ const {
   path,
   state,
   dirty,
-  lineCount,
-  highlighted,
   load,
   save: saveDraft,
   discard: discardDraft,
@@ -75,6 +94,62 @@ const {
   saver: props.saver,
 })
 const paneRef = ref(null)
+
+// 文件类型处理器给出这类文件的渲染与编辑方式，具体组件按需加载。
+const mode = ref('source')
+const modes = computed(() => modesOf(path.value))
+const modeEntry = computed(() => modes.value.find((item) => item.id === mode.value) || null)
+const modeComp = shallowRef(null)
+const modeLoading = ref(false)
+const modeError = ref('')
+// 搜索命中要求的行号：处理器组件可能还在加载，挂上之后再定位。
+let pendingLocate = 0
+
+function locateWhenReady() {
+  if (!pendingLocate) return
+  const pane = paneRef.value
+  if (!pane || typeof pane.locate !== 'function') return
+  const line = pendingLocate
+  pendingLocate = 0
+  pane.locate(line)
+}
+
+// 换到没有这个视图的文件时回源码；同一会话里换文件不重置已选模式。
+watch(
+  modes,
+  (list) => {
+    mode.value = resolveMode(mode.value, list)
+  },
+  { immediate: true },
+)
+
+watch(
+  modeEntry,
+  async (target) => {
+    modeComp.value = null
+    modeLoading.value = !!target
+    if (!target) return
+    modeError.value = ''
+    try {
+      const mod = await target.load()
+      // 加载期间可能已经切走，别把旧组件挂上来。
+      if (modeEntry.value !== target) return
+      modeComp.value = mod.default
+      await nextTick()
+      locateWhenReady()
+    } catch (err) {
+      // 分块加载失败（旧页面、断网、产物没同步）：退回源码并说明，别让按钮停在别的视图。
+      if (modeEntry.value === target) {
+        const failed = viewLoadFailure(err)
+        modeError.value = failed.message
+        mode.value = failed.mode
+      }
+    } finally {
+      if (modeEntry.value === target) modeLoading.value = false
+    }
+  },
+  { immediate: true },
+)
 
 // 保存成功后把结果交给调用方：目录树里的文件大小、差异都要跟着刷新。
 async function save() {
@@ -92,10 +167,18 @@ const leaveAsk = ref(false)
 let leaveResolve = null
 
 async function open(target, line = 0) {
-  if (!(await load(target))) return false
+  modeError.value = ''
+  // 搜索命中带行号：渲染视图定位不了那一行，先回源码，跟改动前的跳行一致。
+  mode.value = viewForOpen(mode.value, line)
+  pendingLocate = line
+  if (!(await load(target))) {
+    pendingLocate = 0
+    return false
+  }
   await nextTick()
-  paneRef.value?.resetScroll()
-  if (line) paneRef.value?.locate(line)
+  if (!line) paneRef.value?.resetScroll()
+  // 处理器组件可能还在加载，挂上后由 locateWhenReady 接着定位。
+  locateWhenReady()
   return true
 }
 

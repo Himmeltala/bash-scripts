@@ -11,6 +11,9 @@
   align-items: center;
   gap: 4px;
 }
+.views {
+  flex: 0 0 auto;
+}
 .edit-wrap {
   flex: 1 1 auto;
   min-height: 0;
