@@ -62,7 +62,6 @@
     </v-sheet>
 
     <SummaryCards v-if="data" class="mb-2" />
-    <CostBreakdown v-if="hasRows" class="mb-2" />
 
     <v-alert v-if="notice" type="warning" variant="tonal" density="compact" class="mb-2">
       {{ notice }}
@@ -86,7 +85,6 @@ import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { COMMANDS, RANGES, SOURCES, syncUrl, view } from './composables/useView'
 import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import BrandIcon from '../../components/BrandIcon.vue'
-import CostBreakdown from './components/CostBreakdown.vue'
 import SummaryCards from './components/SummaryCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
