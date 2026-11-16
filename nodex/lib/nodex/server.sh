@@ -3,7 +3,7 @@
 # 脚本怎么找、命令怎么拼，与命令行同源：同一批脚本、同一套参数，网页与终端跑出来的结果一样。
 
 # 缺省值在这里定，parse_args 里覆盖，nodex -p 9999 web 与 nodex web -p 9999 等价。
-RV_PORT=0
+RV_PORT=8200
 RV_HOST='0.0.0.0'
 RV_OPEN=0
 # 停止时先 TERM，这么多秒还没退干净再 KILL。

@@ -425,7 +425,7 @@ function onSave({ args }) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 16px 20px 40px;
+  padding: 8px;
 }
 .head {
   display: flex;

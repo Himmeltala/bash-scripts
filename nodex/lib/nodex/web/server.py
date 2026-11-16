@@ -725,7 +725,7 @@ def main(argv=None):
     parser.add_argument("--api", default="/__nodex/api", help="接口前缀")
     parser.add_argument("--nodex", required=True, help="nodex 入口")
     parser.add_argument("--host", default="0.0.0.0", help="监听地址，默认所有网卡")
-    parser.add_argument("--port", type=int, default=0, help="监听端口，默认 0 由系统挑")
+    parser.add_argument("--port", type=int, default=8200, help="监听端口，默认 8200")
     parser.add_argument("--open", action="store_true", help="起来后打开浏览器")
     return serve(parser.parse_args(argv))
 

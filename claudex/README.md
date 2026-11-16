@@ -1,85 +1,62 @@
 # claudex
 
-管理本机 Claude Code 会话：列出项目与会话、继续会话、归档与恢复归档、删除旧会话，并清理运行缓存。不带命令时打开菜单。
+管理本机 Claude Code 会话：列出、继续、归档、恢复、删除，并清理运行缓存。
 
 ## 用法
 
 ```
 claudex                              打开菜单
-claudex list                         列出当前目录所属项目的会话
-claudex list --all                   列出全部项目的会话
-claudex list --all --older-than 30   只看 30 天前修改的会话
+claudex list [--all] [--older-than N]
 claudex resume <会话id或前缀>         切到原目录并执行 claude --resume
-claudex archive <会话id...>          归档，默认只预览
-claudex archive <会话id...> --yes    真正归档
-claudex delete <会话id...> --yes     永久删除，默认只预览
-claudex archives                     列出归档条目
-claudex restore                      交互选择归档并恢复
-claudex restore <会话id> --yes       按 id 恢复归档
-claudex cache                        预览默认缓存清理项
-claudex cache cache.orphans --yes    只清孤儿关联数据
-claudex cache --days 30 --yes        按 30 天阈值清默认项
-claudex --help                       显示帮助
+claudex archive <会话id...> [--yes]
+claudex delete <会话id...> [--yes]
+claudex archives                     列出归档
+claudex restore [<会话id>] [--yes]
+claudex cache [编号] [--days N] [--yes]
 ```
+
+归档、删除与缓存清理默认只预览，加 `--yes` 才执行。
 
 ## 会话数据
 
-一个会话由四块数据组成，共用同一个 session id：
+一个会话由四块数据组成，共用同一个 id：
 
 ```
-~/.claude/projects/<编码项目目录>/<会话id>.jsonl      正文
-~/.claude/projects/<编码项目目录>/<会话id>/          工具结果
-~/.claude/file-history/<会话id>/                     文件修改历史
-~/.claude/session-env/<会话id>/                      会话环境
+~/.claude/projects/<编码项目目录>/<会话id>.jsonl   正文
+~/.claude/projects/<编码项目目录>/<会话id>/       工具结果
+~/.claude/file-history/<会话id>/                  文件修改历史
+~/.claude/session-env/<会话id>/                   会话环境
 ```
 
-项目目录名里的非 ASCII 字符会被替换成 `-`，不能用来反推真实路径。工具从正文的 `cwd` 字段取原路径，继续会话时切换到那里。
-
-运行中的会话从 `~/.claude/sessions/<pid>.json` 判断：pid 仍然存在，并且进程命令行里包含 `claude`，就算运行中。运行中的会话可以看见，但不能继续、归档或删除。
+项目目录名不可逆，原路径从正文的 `cwd` 取。运行中的会话由 `~/.claude/sessions/<pid>.json` 判断（pid 存在且命令行含 `claude`），只能查看，不能继续、归档或删除。
 
 ## 归档
 
-归档根目录默认 `~/.claude/archive`，可用 `CLAUDEX_ARCHIVE_DIR` 覆盖。布局：
-
-```
-<归档根>/<YYYY-MM-DD>/<会话id>/
-├── session.jsonl
-├── session/
-├── file-history/
-├── session-env/
-├── meta
-└── title
-```
-
-`meta` 保存会话 id、项目目录名与原路径，`title` 保存标题原文。恢复时按 `meta` 放回原项目目录；目标已存在就拒绝，不覆盖。归档是移动操作，四项数据都处理成功才算完成，中途失败会回滚。
-
-同一个会话 id 在不同日期各归档一次时，按 id 恢复会报歧义，需要先看 `claudex archives`。
+归档根默认 `~/.claude/archive`，可用 `CLAUDEX_ARCHIVE_DIR` 覆盖；按 `<日期>/<会话id>/` 存放四块数据与 `meta`、`title`。恢复按 `meta` 放回原项目，目标已存在就拒绝。同一 id 在不同日期归档过时，按 id 恢复会报歧义。
 
 ## 缓存清理
 
-| 编号                | 内容                                                                       | 默认   |
-| ------------------- | -------------------------------------------------------------------------- | ------ |
-| `cache.snapshots` | `shell-snapshots/snapshot-bash-*` 与 `paste-cache/*` 中超过 N 天的文件 | 勾选   |
-| `cache.orphans`   | 找不到对应正文的 `file-history`、`session-env` 与会话目录              | 勾选   |
-| `cache.plugins`   | 清空 `plugins/cache`，插件可能重新下载                                   | 不勾选 |
-| `cache.history`   | 删除 `history.jsonl`，把 `daemon.log` 清空                             | 不勾选 |
+| 编号 | 内容 | 默认 |
+| --- | --- | --- |
+| `cache.snapshots` | 超过 N 天的 shell 快照与 paste 缓存 | 勾选 |
+| `cache.orphans` | 找不到正文的 file-history、session-env 与会话目录 | 勾选 |
+| `cache.plugins` | 清空 `plugins/cache` | 不勾选 |
+| `cache.history` | 删除 `history.jsonl`，清空 `daemon.log` | 不勾选 |
 
-天数阈值默认 7 天，用 `--days` 改。孤儿判定以现有 jsonl 的 id 为准，`projects/*/memory` 永远跳过，运行中的会话也跳过。插件缓存只清 `cache` 子目录，不碰 `installed_plugins.json`、`marketplaces` 与 `data`。`daemon.log` 用 `truncate -s 0`，不删文件。
+阈值默认 7 天，用 `--days` 改。孤儿判定以现有 jsonl 的 id 为准；`memory` 与运行中的会话跳过。
 
 ## 安全约定
 
-- 归档、删除、缓存清理默认只预览，打印将执行的 `mv`、`rm` 命令与大小；加 `--yes` 才会真正执行。
-- 所有移动与删除路径必须在 `~/.claude` 或归档根目录内，拒绝 `..`、符号链接与系统目录。
-- 运行中的会话一律拒绝继续、归档与删除。
-- 删除会话时保留项目目录与 `memory`，即使项目目录已经删空，也不会动它。
-- 恢复归档时目标已存在就拒绝，不静默覆盖。
-- 归档根目录由环境变量指定时，不能落在 `/`、家目录本身或 `/usr`、`/etc`、`/var` 等系统目录。
+- 归档、删除、缓存清理默认只预览。
+- 所有路径必须在 `~/.claude` 或归档根内，拒绝 `..`、符号链接与系统目录。
+- 运行中的会话拒绝操作；删除会话保留项目目录与 `memory`。
+- 恢复时目标已存在就拒绝。
 
 ## 退出码
 
-| 码 | 含义                       |
-| -- | -------------------------- |
-| 0  | 成功，或预览完成           |
-| 1  | 至少有一项没完成           |
-| 2  | 用法错误，包括 id 前缀歧义 |
-| 3  | 用户取消                   |
+| 码 | 含义 |
+| -- | --- |
+| 0 | 成功或预览完成 |
+| 1 | 至少一项没完成 |
+| 2 | 用法错误，包括 id 前缀歧义 |
+| 3 | 用户取消 |

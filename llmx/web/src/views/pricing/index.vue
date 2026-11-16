@@ -1,5 +1,5 @@
 <template>
-  <v-container fluid class="pa-4 page">
+  <v-container fluid class="pa-2 page">
     <v-alert
       v-if="loaded && !writable"
       type="info"

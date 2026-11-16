@@ -217,10 +217,9 @@ class WebHandler(BaseHTTPRequestHandler):
                 return
             target = self.static / "index.html"
         ctype = CONTENT_TYPES.get(target.suffix.lower(), "application/octet-stream")
-        # 带哈希的资源缓存十分钟；首页不缓存，重新打包立刻生效。
-        cache = "no-cache" if target.name == "index.html" else "public, max-age=600"
+        # 产物文件名不带哈希，所有静态文件都走协商缓存，重新打包后立刻生效。
         data = b"" if head else target.read_bytes()
-        self._send(200, data, ctype, head=head, cache=cache)
+        self._send(200, data, ctype, head=head, cache="no-cache")
 
     def _json(self, status, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")

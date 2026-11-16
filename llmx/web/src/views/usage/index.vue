@@ -1,5 +1,5 @@
 <template>
-  <v-container fluid class="pa-4 page">
+  <v-container fluid class="pa-2 page">
     <v-sheet rounded class="filters pa-3 mb-2">
       <div class="filters-row">
         <v-select

@@ -1,5 +1,5 @@
 <template>
-  <v-container fluid class="pa-4 page">
+  <v-container fluid class="pa-2 page">
     <div class="tabs">
       <v-tabs v-model="tab" density="compact" show-arrows>
         <v-tab

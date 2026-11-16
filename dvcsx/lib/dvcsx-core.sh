@@ -17,7 +17,7 @@ source "$dvcsx_dir"/../../lib/shell-shared/base.sh
 source "$dvcsx_dir"/../../lib/shell-shared/web-command.sh
 
 for dvcsx_module in \
-  "$dvcsx_dir"/dvcsx/web.sh
+  "$dvcsx_dir"/dvcsx/server.sh
 do
   source "$dvcsx_module"
 done

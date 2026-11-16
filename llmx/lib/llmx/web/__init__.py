@@ -36,8 +36,6 @@ from ..sources import SOURCE_ORDER
 # vite 把 web/ 打包成 lib/llmx/web/static，这里只认打包产物；开发时用 web/README.md 里的代理。
 STATIC = Path(__file__).resolve().parent / "static"
 INDEX = STATIC / "index.html"
-# 带内容哈希的资源可以长期缓存。
-_CACHED = "public, max-age=31536000, immutable"
 COMMANDS = ("daily", "session", "hour", "project", "api")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
 LOCK = threading.Lock()
@@ -343,8 +341,6 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
         def _static(self, path: str, head: bool = False) -> None:
             # 只发打包目录里的文件；路径先解开再核对前缀，防止 ../ 跑出目录。
             name = _static_file(path)
-            # 深链接（如 /?command=hour）回落成首页时 name 是 None，不能算带哈希的资源。
-            hashed = name is not None and name.parent != STATIC
             try:
                 body = b"" if head else (name.read_bytes() if name is not None else INDEX.read_bytes())
             except OSError:
@@ -353,8 +349,8 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", _content_type(name if name is not None else INDEX))
             self.send_header("Content-Length", str(len(body)))
-            # assets 下的文件名带内容哈希，可以长缓存；页面本身每次核对。
-            self.send_header("Cache-Control", _CACHED if hashed else "no-cache")
+            # 产物文件名不带哈希，全部走协商缓存，重新打包后立刻生效。
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             if body:
                 self.wfile.write(body)
@@ -446,7 +442,7 @@ def urls(host: str, port: int) -> tuple[str, str]:
 def serve(
     config: Config,
     host: str = "0.0.0.0",
-    port: int = 0,
+    port: int = 8000,
     open_browser: bool = False,
     as_json: bool = False,
     allow_write: bool = False,

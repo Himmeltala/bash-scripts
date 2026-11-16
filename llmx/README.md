@@ -1,6 +1,6 @@
 # llmx
 
-统计本机三个编码代理的 token 用量，并按 DeepSeek 与 mimo 的官方单价折算成人民币费用：Claude Code、opencode、DeepSeek Harness。
+统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 与 mimo 官方价折算成人民币。
 
 ## 用法
 
@@ -8,216 +8,118 @@
 llmx [选项] [命令]
 
 命令:
-  daily          按天汇总，每个模型、每个接口地址一行，默认命令
-  session        按会话汇总，每个模型、每个接口地址一行
-  hour           按一天内的小时分布汇总，每个模型、每个接口地址一行
-  project        按项目汇总，每个项目里每个模型、每个接口地址一行
-  api            按 API 地址汇总，每个地址下每个来源、模型一行
+  daily          按天汇总（默认）
+  session        按会话汇总
+  hour           按小时汇总
+  project        按项目汇总
+  api            按 API 地址汇总
   rebuild        清空账本后全量重扫、重建
-  db             用量账本：import 采集入库，status 看概况，gc 清理过期记录
-  web            在浏览器里看用量，SSE 每 3 秒检查一次
-  menu           打开交互菜单
+  db             import 采集入库、status 看账本、gc 清理旧记录
+  web            网页看板，SSE 每 3 秒检查一次
+  menu           交互菜单
 
 选项:
-  -s, --source 名称   只看某个来源，可选 claude、opencode、dsh，可重复
-  --since 日期        起始日期，含当天，格式 YYYY-MM-DD
-  --until 日期        结束日期，含当天，格式 YYYY-MM-DD
+  -s, --source 名称   claude、opencode、dsh，可重复
+  --since 日期        起始日期，含当天
+  --until 日期        结束日期，含当天
   --days N            最近 N 天，默认 14
   --all               不限日期
-  --json              输出 JSON，供脚本读取
-  --watch [秒]        每 N 秒原地刷新一次表格，默认 5 秒，按 q 或 Ctrl+C 退出
+  --json              输出 JSON
+  --watch [秒]        原地刷新，默认 5 秒，按 q 退出
   --config 路径       指定配置文件
 ```
 
-不带任何参数、并且三个标准流都连着终端时打开交互菜单；输出接管道或重定向时仍按 `daily` 出表，脚本里的行为不变。
-
-常用写法：
+不带参数且连着终端时打开菜单；输出接管道时按 `daily` 出表。常用写法：
 
 ```
-llmx                                  不带参数，连着终端时打开菜单
-llmx menu                             显式打开菜单，管道里也能用
-llmx --all                            全部历史
-llmx session --all                    按会话看，每个会话的每个模型一行
-llmx project --all                    按项目看，找出最烧钱的项目
-llmx api --all                        按接口地址看，找出最烧钱的接口
-llmx hour --all                       按时段看，看高峰时段用了多少
-llmx -s dsh --since 2026-10-01        只看 DeepSeek Harness
-llmx --json                           输出 JSON，交给脚本处理
-llmx db status                        看账本里存了多少、覆盖到哪天
-llmx --watch                          每天每 5 秒原地重画一次，盯着用量涨
-llmx session --watch 2 --days 1       按会话看今天，每 2 秒刷新
-llmx web                              打开网页界面
-llmx web --open --days 7              网页界面并自动开浏览器，默认看近 7 天
+llmx --all                全部历史
+llmx api --all            按接口地址看
+llmx -s dsh --since 2026-10-01
+llmx --json               给脚本读
+llmx --watch 2 --days 1   只看今天，每 2 秒刷新
+llmx web --open           打开网页看板
 ```
 
-`daily` 的输出（下表是示例数据，只用来说明格式）。一行是某天某个来源的某个模型走的某个接口地址，一个来源用了几个模型、几个接口地址就出几行，各算各的费用。总 token 是输入、缓存读、缓存写与输出之和，缓存读也算消耗；`--all` 时合计行就是全部历史的总量：
+报表前几列固定为 `来源`、`模型`、`API 地址`，接着是这张表自己的列（日期、小时、会话、项目等），然后是请求数、各类 token、高峰费用、空闲费用与合计。查不到价格的模型费用显示 `--`，合计只累加计得出来的行。表下会按输入未命中、缓存读、缓存写、输出拆一遍费用。`出处` 列为 `缓存` 的行来自账本，不是本次现扫。
 
-```
-来源      模型            API 地址                            日期        出处  请求    输入     缓存读    输出   总 token  高峰费用  空闲费用      合计
---------  --------------  ----------------------------------  ----------  ----  ----  ------  ---------  ------  ---------  --------  --------  --------
-claude    deepseek-flash  https://api.anthropic.com           2026-10-26         120  12,000    300,000   8,000    320,000   ¥1.2000   ¥0.6000   ¥1.8000
-claude    deepseek-flash  https://api.anthropic.com           2026-10-27          98   9,500    240,000   6,400    255,900   ¥0.9820   ¥0.4910   ¥1.4730
-opencode  deepseek-flash  https://api.deepseek.com            2026-10-27          15   1,200     20,000     900     22,100   ¥0.0500   ¥0.0250   ¥0.0750
-dsh       deepseek-flash  https://api.deepseek.com/anthropic  2026-10-27         210  25,000    900,000  15,000    940,000   ¥4.8000   ¥2.4000   ¥7.2000
-dsh       qwen3.8-27b     https://api.deepseek.com/anthropic  2026-10-27          40   8,000          0   2,000     10,000        --        --        --
-合计                                                                             483  55,700  1,460,000  32,300  1,548,000   ¥7.0320   ¥3.5160  ¥10.5480
-
-未计价模型：qwen3.8-27b；这些行没有单价，费用显示 --，合计只累加计得出来的行。
-```
-
-各表前几列统一：`来源`、`模型`、`API 地址`，接着是这张表自己的列（按天是 `日期`、按小时是 `小时` 与 `时段`、按会话是 `开始`、`会话`、`项目`、按项目是 `项目`），然后是 `请求` 到 `合计` 那八列数字。按项目出表时先按项目合计费用从高到低排，同名目录补上一级目录名区分，不会合并。
-
-表下会按 `输入未命中`、`缓存读`、`缓存写`、`输出` 拆一遍费用，给出各类金额与占比；没有可计价的行时不显示。
-
-`出处` 列留空的是本次现扫到的行；会话文件已经不在了、数字从账本读回来的行标成 `缓存`，表下会多一行说明。
-
-`API 地址` 列是请求实际走的接口地址。Claude Code 按「托管设置 → 项目 `.claude/settings.local.json` → 项目 `.claude/settings.json` → 用户设置 → 环境变量」取 `ANTHROPIC_BASE_URL`；opencode 取项目配置、`OPENCODE_CONFIG`、全局配置里的 `provider.<id>.options.baseURL`，都没写时用内置默认地址；DeepSeek Harness 取 profile 补丁里的 `providers.<id>.baseURL`，支持 `${VAR}` 展开，多个 profile 地址冲突时不做猜测，显示 `-`。已入库的记录保留入库时的地址，升级前没有地址的按当前配置补。同一模型走了多个地址时，各地址单独成行；费用仍按模型单价计算。
+`API 地址` 是请求实际走的地址：Claude Code 取 `ANTHROPIC_BASE_URL`，opencode 取 `provider.<id>.options.baseURL`，DeepSeek Harness 取 profile 补丁里的 `providers.<id>.baseURL`；已入库的记录保留当时的地址。多个地址各成一行，费用仍按模型单价算。
 
 ## 原地刷新
 
-`--watch` 让表格画在同一个位置、隔一段时间重画一次，不再每次往终端下面追一份：
-
-```
-llmx --watch                  日报，每 5 秒刷新
-llmx --watch 2 --days 1       每 2 秒刷新，只看今天
-llmx session --watch 10       按会话看，每 10 秒刷新
-```
-
-- 每轮都先现扫入库，再从账本出数：新写进会话文件的用量下一轮就出现。
-- 表格按窗口宽高裁剪：行太多时保留表头与最近的几行，中间换成"另有 N 行未显示"；宽度不够时把中间的 API 地址省略，两头的数字列保住。终端窄到放不下整张表时，直接提示表格要多少列。
-- 写 `--watch` 时不带秒数用 5 秒；秒数也可以写成 `--watch=3`。放在子命令前后都认：`llmx --watch 3 daily` 与 `llmx daily --watch 3` 等价。
-- 按 `q` 或 Ctrl+C 退出，退出时的终端设置会还原，终端里留着最后一帧。
-- `--watch` 只出表格：和 `--json` 一起用会报错；`--all` 配 `--watch` 也会报错，全量表塞不进一屏，看全量时去掉 `--watch` 翻屏看。
-- 输出没接终端（`llmx --watch | cat`）时报错退出，免得脚本里无限循环。测试时可用环境变量 `LLMX_WATCH_FRAMES=N` 让它连出 N 帧就停。
+`--watch` 在固定位置重画表格，每轮先现扫入库再出数。行数超出屏幕时保留表头与最近几行，宽度不足时省略中间的 API 地址。`--watch` 不能和 `--json`、`--all` 或管道输出一起用；测试时可用 `LLMX_WATCH_FRAMES=N` 让它连出 N 帧就停。
 
 ## 网页界面
 
-`llmx web` 在本机起一个小服务，浏览器打开就是可筛选的用量看板，左侧菜单还有配置管理与价格配置：
-
 ```
-llmx web                      绑所有网卡，打印局域网地址后按 Ctrl+C 退出
-llmx web --port 8770          固定端口
-llmx web --host 127.0.0.1     只给本机用，别的机器连不上
-llmx web --open               起好后顺手打开默认浏览器
-llmx web --json               给脚本用：只打一行 {"url","local","host","port"} 再接着服务
-llmx web --allow-write        放开配置的读写与会话清理，其他机器打开页面也能改
+llmx web                      默认 8000，绑所有网卡
+llmx web --port 8770          换端口
+llmx web --host 127.0.0.1     只给本机用
+llmx web --open               自动开浏览器
+llmx web --json               只打一行地址，给脚本起服务
+llmx web --allow-write        放开配置读写与会话清理
 ```
 
-配置管理按工具分页签，每个工具下面再分功能：Claude Code 目前有配置档、`CLAUDE.md` 与会话三块。配置档是一份完整的 `settings.json`，可以建多份、任选一份应用到用户级 `settings.json`，应用前会备份原文件并给出差异。会话可以筛选、看用量明细，删除是把文件移进数据目录下的回收目录，账本里的历史用量不受影响，只有 `llmx db gc` 才清陈旧会话。
+页面是 Vuetify + ECharts 的用量看板，含筛选、合计卡片、图表与明细表；左侧菜单有配置管理与价格配置。筛选条件写在地址里，可直接收藏。接口：
 
-- 默认绑 `0.0.0.0`，端口交给系统挑，打印的是局域网里能直接打开的地址（按出口网卡猜，猜不出来退回 `127.0.0.1`），另给一行本机地址。网页没有登录，同一网络里能连上的人都能看用量和接口地址；配置档、`CLAUDE.md` 与生效 `settings.json` 的内容可能带密钥，这些只给本机看，写操作也只认本机，`--allow-write` 才放开。只想本机看就加 `--host 127.0.0.1`。
-- 想在后台常驻：`setsid nohup llmx web --port 8780 --json >/tmp/llmx-web.log 2>&1 &`。加了 `--json` 才能重定向，否则 stdout 接管道会直接报错。
-- 数据与 `--json` 同源：每一轮推送都先现扫入库，再从账本统计、按当前价格表计价，页面上看到的就是此刻 `llmx --json` 的数字。配置也每轮重读，改了 `~/.claude/settings.json` 里的 `ANTHROPIC_BASE_URL` 或价格表，不用重启服务。
-- 页面保持一条 SSE 连接，服务端默认每 3 秒重算一次，数字有变化才推，没变化只留一条心跳注释；连上先推当前值，换筛选条件就按新参数重连。标签页切到后台断开，切回来重连并立刻拿到最新数据。
-- 界面用 Vuetify 3 组件拼，ECharts 图表的配色取自 Vuetify 主题。标题栏右上角可以切深浅色，没手动切过时跟着系统走。
-- 页面顶部是四张合计卡片（请求、总 token、平均每请求费用、合计），下面是柱状图与可排序的明细表；表格排序按报表记在浏览器本地，刷新不丢。出处标成"缓存"的行有不同底色，与命令行一致。
-- 点卡片区右侧的「更多指标」打开详情弹窗，用 `FloatingDialog` 展示：各项每请求平均值（费用、总 token、输入、缓存读、缓存写、输出、高峰与空闲费用）、汇总指标（含缓存命中率与缓存节省）、以及费用构成的 ECharts 饼图。明细表也有 `缓存命中` 与 `缓存节省` 两列，`--json` 与网页接口的 `total`、每行都带 `cache_hit`、`cache_saved`；每行与合计都带对应的 `cost_input`、`cost_cache_read`、`cost_cache_write`、`cost_output`。
-- 费用构成在详情弹窗里：输入未命中、缓存读、缓存写、输出四类的金额与占比，跟当前筛选的合计一致。
-- 柱状图用 ECharts，颜色按来源区分：Claude Code 紫、opencode 橙、DeepSeek Harness 蓝，图例写在图内右上角。
-  - 按天报表：每天里各来源分别花了多少，同一天的几根柱子并排。
-  - 按小时报表看两张，横轴都是 0 到 23 点：左边是每小时合计，落在高峰窗口的小时画橙柱、其余画蓝柱；右边把同一个小时按来源拆开。左图一根柱子的高度等于右图同一个小时几根柱子之和。
-  - 按项目报表：费用最高的前 12 个项目，各来源分别花了多少。
-  - 按 API 报表：费用最高的前 12 个接口地址，各来源分别花了多少。
-- 当前筛选写在地址里了：`http://127.0.0.1:8770/?command=hour&range=all` 这样带参数的链接打开就是那个视图，可以直接收藏或发给别人。
-- 筛选都在页面上改，也可以直接拼查询串：`/api/usage?command=session&days=7&source=dsh`，日期用 `since`、`until`，与命令行同名同义。`/api/usage/stream` 是同一份数据的 SSE 推送，默认每 3 秒检查一次、有变化才推，脚本可以用 `every` 指定 1 到 60 秒；`/api/prices` 给当前价格表。
-- `--json` 只打一行地址就转去服务，适合脚本起服务；stdout 不是终端又没加 `--json` 时直接报错，免得接上管道后服务挂在后台。
+- `/api/usage?command=session&days=7&source=dsh`
+- `/api/usage/stream`：SSE，默认 3 秒一轮，可用 `every` 指定 1 到 60 秒
+- `/api/prices`：当前价格表
+- `/api/config`：整份读写价格配置
 
-前端用 Vite + Vue 3 + Vuetify 3 + ECharts，产物随仓库提供，所以 `./install.sh` 装完整棵树后不需要 Node。改前端时先在另一个终端起 `llmx web --port 8770`，再在 `llmx/web` 里 `npm install && npm run dev`；打包用 `npm run build`。服务端只认静态文件：带哈希的资源长期缓存，首页 `no-cache`，`/api` 不缓存，其余路径回落到首页由页面按地址栏还原筛选。
-
-## 交互界面
-
-不带参数运行 `llmx`，并且三个标准流都连着终端时，进入交互菜单：先选报表，再选统计范围，最后勾来源。
-
-1. 报表：按日汇总、按会话汇总、按小时汇总、按项目汇总、按 API 汇总、价格表。
-2. 范围：今天、近 7 天、近 14 天、近 30 天、全部历史、自定义起止日期。
-3. 来源：Claude Code、opencode、DeepSeek Harness，默认全选，空格勾掉不要的。
-
-报表跑完后会问一次"就这么看，还是盯着刷新"：选"盯着刷新"就退到普通屏上每 5 秒原地重画，按 `q` 退出；选"看完"则按任意键回菜单，输入 `q` 退出。报表直接打在终端上，等待提示不会切走屏幕，现有输出保持可见。没有画进界面里的分页，是因为会话表有 15 列，塞进一屏会裁掉右侧的高峰与空闲费用列。
-
-菜单由仓库共用的 `bash-tui` 绘制，与其他工具一致。探不到终端时退回编号输入，所以 `llmx menu` 也能在管道里驱动：
-
-```
-printf '1\n5\n1 3\n1\n8\n' | llmx menu    按日汇总、全部历史、只勾 claude 与 dsh，看完回菜单再退出
-```
-
-界面里的选择与命令行选项等价，`--config`、`LLMX_CONFIG` 等环境变量照常生效。没装 `bash-tui` 时，`llmx` 不带参数会退回默认范围的日报，`llmx menu` 则直接报错。
+配置档、`CLAUDE.md` 与会话操作只给本机看，写操作也只认本机；`--allow-write` 才放开。后台常驻用 `setsid nohup llmx web --json >/tmp/llmx-web.log 2>&1 &`。
 
 ## 计费规则
 
-高峰时段是北京时间周一至周五的 9:00 到 12:00 与 14:00 到 18:00，其余时段按空闲价，空闲价是高峰价的一半。法定节假日全天按空闲价，节假日日期需要写进配置，程序不内置。
+高峰是北京时间周一至周五 9:00-12:00、14:00-18:00，其余时段与法定节假日按空闲价（高峰价的一半）。节假日要自己写进配置。
 
-计费口径：
+| 项目 | 单价 |
+| --- | --- |
+| 输入（缓存未命中） | miss 价 |
+| 输入（缓存命中） | hit 价 |
+| 缓存写入 | 按 miss 价 |
+| 输出 | output 价，含思考 token |
 
-| 项目               | 单价                                |
-| ------------------ | ----------------------------------- |
-| 输入（缓存未命中） | miss 价                             |
-| 输入（缓存命中）   | hit 价                              |
-| 缓存写入           | 按 miss 价，DeepSeek 不单独收写入费 |
-| 输出               | output 价，含思考 token             |
+默认定价（元 / 百万 token，2026-10）：
 
-默认单价来自 DeepSeek 与 mimo 的官方价（2026 年 10 月），单位是元每百万 token。mimo 不分峰谷，两档同价：
+| 模型 | 空闲 命中/未命中/输出 | 高峰 命中/未命中/输出 |
+| --- | --- | --- |
+| deepseek-flash | 0.02 / 1 / 4 | 0.04 / 2 / 8 |
+| deepseek-v4-pro | 0.15 / 4.5 / 13.5 | 0.3 / 9 / 27 |
+| mimo-v2.6-flash | 0.02 / 1 / 2 | 同空闲 |
+| mimo-v2.6-pro | 0.025 / 3 / 6 | 同空闲 |
+| mimo-v2.6-pro-ultraspeed | 0.25 / 30 / 60 | 同空闲 |
 
-| 模型                     | 空闲·命中 | 空闲·未命中 | 空闲·输出 | 高峰·命中 | 高峰·未命中 | 高峰·输出 |
-| ------------------------ | --------- | ----------- | --------- | --------- | ----------- | --------- |
-| deepseek-flash           | 0.02      | 1           | 4         | 0.04      | 2           | 8         |
-| deepseek-v4-pro          | 0.15      | 4.5         | 13.5      | 0.3       | 9           | 27        |
-| mimo-v2.6-flash          | 0.02      | 1           | 2         | 0.02      | 1           | 2         |
-| mimo-v2.6-pro            | 0.025     | 3           | 6         | 0.025     | 3           | 6         |
-| mimo-v2.6-pro-ultraspeed | 0.25      | 30          | 60        | 0.25      | 30          | 60        |
-
-
-另外几条：
-
-- mimo 分实时推理与批量推理两套价，批量价大约是实时价的一半；三个来源发的都是实时请求，所以按实时价计，批量价不采用。
-- 模型名带 `free` 的记为免费，例如 opencode 的 `deepseek-v4.1-flash-free`，只统计 token，费用为 0。
-- 查不到价格的模型照样出表，占自己的一行，token 照常统计，高峰费用、空闲费用、合计三列显示 `--`；`--` 表示没有可用的金额，不是 0。同一来源的其他模型不受牵连，金额照常给出。
-- 合计行只累加计得出来的行，表下注明未计价的是哪几个模型。
-- 模型名会去掉方括号后缀与厂商前缀，`deepseek-flash[1m]` 按 `deepseek-flash` 计价。
-- Claude Code 如果走代理或中转站，代理的加价与折扣不体现，这里算的是 DeepSeek 与 mimo 的官方价。
-- 历史请求一律按当前价格表重算，官方调价后，旧日期的费用会跟着变。
+mimo 只按实时推理价，批量价不采用；模型名带 `free` 的记为免费；模型名会去掉方括号后缀与厂商前缀；历史请求一律按当前价格表重算。
 
 ## 用量账本
 
-报表每次运行时先现扫三个来源，把扫到的每条请求写进本机账本 `~/.cache/llmx/usage.db`（sqlite3），统计再统一从账本读出来。扫描只负责入库，不直接参与出数；会话文件被删掉、被工具自己清理以后，账本里的用量照样出表，不会因为文件没了就从报表里消失。账本关掉或写不进去时退回纯现扫。
+每次出表先现扫三个来源并写入 `~/.cache/llmx/usage.db`（sqlite3），统计从账本读。会话文件删掉后用量仍能出表；账本不可用时退回纯现扫。
 
-- 一行一条请求，主键是来源、会话与去重键，重复导入不会翻倍。去重键：Claude Code 用 `message.id`，opencode 用消息 id，DeepSeek Harness 用 `turn:step`。
-- 接口地址随请求一起入库，之后再换地址，老记录仍显示当时那一个；升级前入库的记录没有地址，仍按当前配置显示。费用不入账，出表时按当前价格表现算，改价后历史数字跟着变。
-- 本次没扫到的会话，记录从账本读回来，`出处` 列标成 `缓存`，表下也有一行说明；正常现扫的行 `出处` 留空。
-- 出表时选的日期范围只影响看到哪些行，不会删账本里的记录；清理只在 `llmx db gc` 或 `llmx rebuild` 时发生。
-- 会话文件被重写变短时以现扫为准：同一会话这次采到的条数比账本里见过的最大值少，就删掉这个会话的旧记录再写，不会把已经不存在的请求当成历史回显。
-- 现扫结果另有一层快照缓存 `~/.cache/llmx/cache/<来源>.json`，按文件大小与修改时间判断，没变的会话不重复解压；缓存丢了只会慢一点，不影响数字。
-- 账本目录可以用 `LLMX_STATE_DIR` 换位置，配置里的 `[store]` 节可以整个关掉或改路径。
-
-维护命令：
+- 主键是来源、会话与去重键：Claude Code 用 `message.id`，opencode 用消息 id，DSH 用 `turn:step`。
+- 费用不入账，出表时按当前价现算。
+- 日期范围只影响看哪些行，不删记录；清理只在 `db gc` 或 `rebuild`。
+- 现扫结果另有快照缓存 `~/.cache/llmx/cache/`，按文件大小与修改时间判断。
 
 ```
-llmx db status              账本有多少条、覆盖到哪天、各来源多少
-llmx db import              只采集入库、不出报表，适合挂到工具的结束钩子上
-llmx db gc --keep-days 180  清掉 180 天内没再出现的会话
-llmx rebuild                清空账本后按当前口径全量重扫，改过采集口径或时区后执行
+llmx db status
+llmx db import
+llmx db gc --keep-days 180
+llmx rebuild
 ```
 
 ## 数据来源
 
-| 来源             | 位置                                          | 说明                                                                               |
-| ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Claude Code      | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`（默认 `~/.claude`） | 一条回复按内容块写成多行，按 `message.id` 合并，取 token 数最大的那一行          |
-| opencode         | `$XDG_DATA_HOME/opencode/opencode.db`（默认 `~/.local/share/opencode`） | 读 `message` 表，旧版本回退到 `storage/message` 下的 JSON；`OPENCODE_DB` 可换库文件 |
-| DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd` | 需要 `zstd` 命令，模型从 `request/header` 事件取，同一步骤重试只留最后一次结算；只读每个会话版本号最高的那一代日志 |
+| 来源 | 位置 |
+| --- | --- |
+| Claude Code | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`，默认 `~/.claude` |
+| opencode | `$XDG_DATA_HOME/opencode/opencode.db`，旧版本回退到 `storage/message` 下的 JSON |
+| DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd`，需要 `zstd` |
 
-三个位置都可以用环境变量覆盖：`LLMX_CLAUDE_DIR`、`LLMX_OPENCODE_DIR`、`LLMX_DSH_SESSIONS`；没覆盖时，Claude Code 跟随 `CLAUDE_CONFIG_DIR`，opencode 跟随 `XDG_DATA_HOME`。读接口地址的配置位置另有 `OPENCODE_CONFIG`、`LLMX_OPENCODE_CONFIG` 与 `LLMX_DSH_PROFILES`。
-
-已知缺口：
-
-- DeepSeek Harness 的标题生成与上下文压缩请求没有记录 usage，未计入。
-- 网页搜索与抓取按成功次数计费，每千次 5 元，和 token 无关，未计入。
-- Claude Code 的子代理会话写在独立的 jsonl 里，会单独计数，不会并进父会话。
-- Claude Code 的日志不记录接口地址，项目级设置按仓库根（没有仓库时按工作目录）读取；同一项目里换过地址时，已入库的记录保留原地址，还没入库的按当前配置补。
-- opencode 的 `tokens.total` 把思考 token 又加了一遍，llmx 不使用该字段，直接按 input、output、cache 拆分。
+可用 `LLMX_CLAUDE_DIR`、`LLMX_OPENCODE_DIR`、`LLMX_DSH_SESSIONS` 覆盖位置。已知缺口：DSH 的标题生成与上下文压缩、网页搜索与抓取不计费；Claude Code 子代理会话单独计数；opencode 的 `tokens.total` 重复计算思考 token，不使用该字段。
 
 ## 配置
 
-配置文件默认读 `~/.cache/llmx/config.toml`，也可以用 `--config` 指定。改价格、加模型、补节假日都在这里：
+配置默认读 `~/.cache/llmx/config.toml`，也可用 `--config`：
 
 ```toml
 [models."deepseek-flash"]
@@ -237,33 +139,25 @@ free = true
 timezone = "Asia/Shanghai"
 windows  = ["09:00-12:00", "14:00-18:00"]
 weekdays = [0, 1, 2, 3, 4]
-holidays = ["2026-10-01", "2026-10-02", "2026-10-03"]
+holidays = ["2026-10-01"]
 ```
 
-`weekdays` 用 0 表示周一，用 6 表示周日。`holidays` 只列法定节假日当天，程序不内置，因为每年安排不同，需要自己补。
-
-左侧菜单的「价格与配置」页也能改这份文件：整份读、整份写，保存前先按加载时的规则校验语法与模型字段，写坏的配置不会落盘。改完下一轮推送就按新价重算，不用重启。默认只有本机能保存，其他机器打开只能看；要放开就加 `--allow-write` 启动。文件还不存在时，页面先给一份按当前内置价生成的完整配置，保存后就是正式配置。
-
-`[apis]` 按 provider 覆盖接口地址，优先于从各工具配置文件里读到的值。日志里只记 provider，地址靠配置文件补；配置里查不到、`[apis]` 也没写时，表里显示 `-`。DSH 的多个 profile 对同一 provider 写了不同地址时也显示 `-`，在 `[apis]` 里指定即可。
-
-账本与快照缓存的位置也可以配置，默认放在 `~/.cache/llmx`：
+`weekdays` 0 是周一。网页「价格与配置」页可整份读写这份文件，保存前按加载规则校验；改完下一轮推送就按新价算，不用重启。`[apis]` 的地址优先于从工具配置里读到的值。
 
 ```toml
 [store]
-enabled   = true                          # 关掉后完全按现扫出表，不回显、不写账本
+enabled   = true
 db        = "~/.cache/llmx/usage.db"
 cache_dir = "~/.cache/llmx/cache"
-keep_days = 180                           # db gc 默认保留多少天
+keep_days = 180
 ```
 
 ## 安装
 
-在仓库根目录执行 `./install.sh`，会把 `llmx` 命令软链到 `~/.local/bin`。也可以直接运行仓库里的 `llmx/bin/llmx`。
-
-入口是 bash，负责菜单与分发；采集、计价与出表是 Python 包，也可以绕开入口直接调：
+仓库根目录跑 `./install.sh`，或直接运行 `llmx/bin/llmx`。也可以绕开入口：
 
 ```
 PYTHONPATH=llmx/lib python3 -m llmx --all
 ```
 
-依赖：Python 3.11 或更高版本（用到 `tomllib`），读 DeepSeek Harness 时需要 `zstd` 命令，其余都是标准库。菜单依赖 `bash-tui` 与 bash 4.2 以上。
+需要 Python 3.11+，读 DSH 日志需要 `zstd`；其余是标准库。菜单依赖 `bash-tui` 与 bash 4.2+。

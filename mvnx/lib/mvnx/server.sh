@@ -4,7 +4,7 @@
 
 # 缺省值在这里定，parse_args 里覆盖，mvnx -p 9999 web 与 mvnx web -p 9999 等价。
 # 与 llmx 一致：默认绑所有网卡，同网络的机器能直接打开；端口 0 由系统挑一个空闲的。
-RV_PORT=0
+RV_PORT=8300
 RV_HOST='0.0.0.0'
 RV_OPEN=0
 # 停止时先 TERM，这么多秒还没退干净再 KILL。

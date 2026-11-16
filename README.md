@@ -1,36 +1,30 @@
 # bash-scripts
 
-自用 bash 工具集合，按用途分目录存放。
+自用的 bash 工具集合，一个目录一个命令；`bin/` 放可执行文件，`lib/` 放实现，安装时只软链 `bin/`。
 
-```
-bash-scripts/
-├── install.sh / uninstall.sh      安装与卸载
-├── bash-tui.ref                   依赖的 bash-tui 标签
-├── lib/                           共用的 shell、Python 与前端代码
-├── nodex/  mvnx/  dvcsx/  llmx/   带网页界面的工具
-└── gradlex/  zipx/  portx/  cleanx/  claudex/   终端工具
-```
+| 命令 | 说明 |
+| --- | --- |
+| `mvnx` | 发现 Maven 模块并执行 `spring-boot:run`、`clean install` 或 `clean package` |
+| `dvcsx` | 网页里查看与操作 SVN / Git 工作副本：变更、差异、日志、拉取推送、切换分支、更新提交、浏览编辑文件 |
+| `nodex` | 网页里管理 Node 工作区、启停脚本、选 Node 版本、看日志与指标 |
+| `llmx` | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量并折算费用 |
+| `gradlex` | 发现 Gradle 构建并执行 `bootRun`、`run`、`bootJar` 或 `assemble` |
+| `zipx` | 压缩、解压、校验、包内增删，只管 zip |
+| `portx` | 按端口查占用或浏览监听端口，`-k` 才结束进程 |
+| `cleanx` | 清理缓存、回收站、系统日志与构建产物，默认只预览 |
+| `claudex` | 管理 Claude Code 会话：列表、继续、归档、删除、清理旧数据 |
 
-每个工具目录名就是命令名，`bin/` 放可执行文件，`lib/` 放实现；安装时只软链 `bin/`，`lib/` 不会出现在 PATH 里。`lib/` 下不是工具：`web-shared/`、`py-shared/`、`shell-shared/` 分别给四个网页界面、四个网页进程和 nodex/mvnx 的 shell 层共用，细节见各自的 README。
+各工具的详细用法见对应目录下的 README。四个网页工具的默认端口：`llmx` 8000、`dvcsx` 8100、`nodex` 8200、`mvnx` 8300。
 
 ## 安装
 
-一行装完：
+需要 bash 4 以上；网页工具需要 Python 3.7 以上（`llmx` 要 3.11）；安装时用 Node 与 npm 构建前端。
 
 ```bash
 curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/install.sh | bash
 ```
 
-装完重开 shell，让 PATH 生效。
-
-安装脚本只在需要时才改 `~/.bashrc`。默认链接目录 `~/.local/bin` 在这台机器上已经被系统配置加进 PATH 时不写，只提示一句：
-
-- Debian / Ubuntu 的 `~/.profile` 里有「`~/.local/bin` 存在就加进 PATH」那段，登录 shell 会读它。
-- `/etc/environment` 里的 `PATH=` 已经包含链接目录时同样算已有设置。
-
-两种都不满足（比如 `BASH_SCRIPTS_BIN_DIR` 指到了别处、`.profile` 没有那段、或者不是 Debian 系）才写 `.bashrc`，写入的是带 `# bash-scripts 装的工具` 标记的两行，卸载时按标记摘掉。
-
-也可以先 clone 仓库再安装，适合要改源码的情形：
+或者先 clone 再装：
 
 ```bash
 git clone git@github.com:Himmeltala/bash-scripts.git
@@ -38,74 +32,9 @@ cd bash-scripts
 ./install.sh
 ```
 
-## 依赖 bash-tui
+装完重开 shell。重复执行 `install.sh` 等于先卸载再安装：源码复制到 `~/.local/share/bash-scripts`，各工具 `bin/` 下的可执行文件软链到 `~/.local/bin`，需要时再往 `~/.bashrc` 写带 `# bash-scripts 装的工具` 标记的 PATH 设置。安装目录是仓库镜像，不要直接改。
 
-界面组件来自独立仓库 `Himmeltala/bash-tui`，版本固定在 `bash-tui.ref`。
-
-- 本地开发时，把 `bash-scripts` 与 `bash-tui` 放在同一父目录，加载器就会直接使用同级检出。
-- 安装时优先复制同级检出；没有同级检出时，按 `bash-tui.ref` 的标签下载归档。
-- 安装后依赖位于 `~/.local/share/bash-scripts/vendor/bash-tui`。
-- 也可以用 `BASH_TUI_DIR` 显式指定依赖目录。
-
-### 重复安装
-
-再跑一次 `install.sh` 等价于「先卸载再安装」。脚本先删掉链接目录里指向安装目录的软链，再删掉安装目录，然后摘掉 `.bashrc` 里那段 PATH 设置；之后重新拷贝一份源码、重新创建链接，再按上面的规则决定要不要重新写 PATH 设置。
-
-这么做是因为安装脚本只加不删：工具改名或换目录结构之后，旧目录会一直留在安装目录里，链接目录里还会留下指向已删路径的死链。卸载脚本的逻辑与这里一致，区别只是那边多一个 `--dry-run` 与 `--keep-path`。
-
-两条注意：
-
-- 安装目录是仓库的镜像，不要直接改那边的文件，否则下次安装会把改动整个清掉。
-- 安装目录可以由 `BASH_SCRIPTS_INSTALL_DIR` 指到别处。清理之前，脚本会确认那个目录里装的确实是本项目的东西（目录名是 `bash-scripts`，或者里面有带 `bin` 的工具目录），对不上就报错退出，不会删。
-
-### 安装地址说明
-
-用 jsDelivr 的 CDN 地址，是因为部分网络访问不到 `raw.githubusercontent.com`，直连会超时。仓库里文件的规范地址是：
-
-```
-https://raw.githubusercontent.com/Himmeltala/bash-scripts/main/install.sh
-```
-
-网络通的时候，用哪条都行。jsDelivr 对分支引用有缓存；如果要固定到某个版本，可以把 `@main` 换成具体的提交哈希。
-
-安装脚本内部下载仓库归档时走的是 `codeload.github.com`，与上面两条地址属于不同域名。如果这个域名也不通，就用环境变量 `BASH_SCRIPTS_TARBALL_URL` 换成别的地址，或者先 clone 再本地安装。
-
-## 界面约定
-
-菜单与勾选的每一项都由「标签」与「说明」组成，两种模式画出来的东西不一样：
-
-- 终端界面画主文本与次要文本，标签只用来回传选中结果，不显示。
-- 编号回退画标签与说明，标签本身就是名字。
-
-命令菜单（`pack`、`clean`、`quit` 这类关键词）用 bash-tui 的 `ui_menu_named`：界面上主文本写命令名，小字写对命令名的解释。数据列表（包名、会话标题、归档）仍用 `ui_menu`，主文本写数据本身。名字与标签相同的勾选项用 `ui_item_text` 拼文本，两种模式下名字都可见且不重复。
-
-界面之外的东西不再各写一份：终端探测、暂停等键、空选当成功、同名标签去重、勾选记忆都由 bash-tui 提供，见 [bash-tui 的组件文档](https://github.com/Himmeltala/bash-tui/blob/main/docs/components.md)。
-
-## 卸载
-
-```bash
-curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/uninstall.sh | bash
-```
-
-clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
-
-```bash
-./uninstall.sh --dry-run     只打印要删什么，不会真的删除
-./uninstall.sh --keep-path   保留 ~/.bashrc 里的 PATH 设置
-```
-
-卸载只清自己装进去的东西：指向本项目源码目录的软链、源码目录，以及带 `# bash-scripts 装的工具` 标记的那段 PATH 设置（安装时没写就没有可摘的）。链接目录里不是本项目的文件一律不碰。
-
-## 装到哪里
-
-```
-~/.local/share/bash-scripts/     源码，目录结构与仓库一致
-~/.local/bin/mvnx                软链，指向源码目录里 mvnx/bin/ 下的可执行文件
-```
-
-源码树里每个 `*/bin/` 下的可执行文件都会软链到链接目录，各工具目录的 `lib/` 不会被软链。
-
-两个位置都遵循 XDG 规范，也都可以用环境变量覆盖：
+可用环境变量覆盖：
 
 | 变量 | 默认值 |
 | --- | --- |
@@ -114,21 +43,16 @@ clone 过仓库的，可以直接跑 `./uninstall.sh`。两个常用开关：
 | `BASH_SCRIPTS_TARBALL_URL` | 仓库 main 分支的归档地址 |
 | `BASH_SCRIPTS_ENVIRONMENT` | 核对 PATH 用的系统配置文件，默认 `/etc/environment` |
 
-## 工具清单
+界面组件来自 `Himmeltala/bash-tui`，版本固定在 `bash-tui.ref`：安装时优先用同级检出，没有就按标签下载到 `vendor/bash-tui`；`BASH_TUI_DIR` 可显式指定。
 
-| 命令 | 目录 | 说明 |
-| --- | --- | --- |
-| `mvnx` | mvnx | 递归发现 Maven 模块与项目，勾选后执行 `spring-boot:run`、`clean install` 或 `clean package`；不带参数时先选命令再选目标，启动方式有自动判定、强制编译、跳过编译、先 clean 四种 |
-| `dvcsx` | dvcsx | 网页里看 SVN 工作副本或 Git 仓库：变更按类型列出、点文件看差异，提交日志带分支时间线；也能拉取、推送、切换分支、更新与提交，并浏览、编辑工作副本里的文件 |
-| `gradlex` | gradlex | 递归发现 Gradle 构建与可运行模块，勾选后执行 `bootRun` 或 `run`，或者 `bootJar` 或 `assemble`；支持 `--rebuild` 与 `--refresh`，自动选 wrapper 或系统 Gradle |
-| `zipx` | zipx | 压缩、解压、查看校验、包内增删四类操作收在一个菜单里，勾选目标；只管 zip，默认排除 `.git`、`target`、`node_modules` 等，不静默覆盖已有包 |
-| `portx` | portx | 按端口查询占用它的应用与进程，或浏览当前监听端口；默认只读，加 `-k` 才结束进程，系统级端口需 `--force`；不带参数进入终端菜单 |
-| `cleanx` | cleanx | 清理用户缓存、回收站、系统包缓存与日志、开发缓存，另带大文件与构建产物扫描；默认只预览，加了 `--yes` 才会删除，需要 root 的项用 sudo 逐项确认 |
-| `claudex` | claudex | 管理 Claude Code 会话：列表、继续、归档、恢复归档、永久删除，另清旧快照、孤儿数据与插件缓存；归档与删除默认只预览，运行中的会话受保护 |
-| `llmx` | llmx | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 峰谷价与 mimo 实时价折算费用；不带参数时进菜单选报表、统计范围与来源，报表按天、按会话或按小时汇总 |
+## 卸载
 
-各工具的详细用法见对应目录下的 README。
+```bash
+curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/uninstall.sh | bash
+```
+
+clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-path` 保留 PATH 设置。只清本项目的软链、源码目录和带标记的 PATH 段。
 
 ## 环境要求
 
-需要 bash 4 以上。`mvnx` 还需要 Maven 在 PATH 里。`dvcsx`、`nodex`、`mvnx` 与 `llmx` 都有网页界面，需要 Python 3.7 以上（`llmx` 的统计部分要 3.11），前端产物随仓库提供；`dvcsx` 另需 `svn` 或 `git` 在 PATH 里。`gradlex` 需要 Gradle 在 PATH 里，或项目自带 `gradlew`；`GRADLEX_GRADLE` 可强制指定入口。`mvnx`、`gradlex`、`zipx`、`portx`、`cleanx`、`claudex` 与 `llmx` 的界面都在终端里自绘，探不到终端时退回编号输入。`llmx` 的统计部分用 Python 3.11 以上，读 DeepSeek Harness 的会话日志需要 `zstd`。`zipx` 需要 `zip` 与 `unzip`，缺失时启动就报错。`portx` 需要 `ss`（iproute2）或 `lsof`，两者都没有时会报错退出。`cleanx` 需要 GNU `du`、`find` 与 `realpath`；系统类清理需要 `sudo`，`sys.journal` 需要 `journalctl`，`sys.tmp` 需要 `systemd-tmpfiles`。`claudex` 需要 GNU `stat`、`du`、`find` 与 `truncate`，继续会话需要 `claude` 在 PATH 里。
+`mvnx` 需要 Maven 或 `./mvnw`；`dvcsx` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`；`cleanx` 需要 GNU `du`、`find`、`realpath`；`claudex` 需要 GNU `stat`、`du`、`find`、`truncate`，继续会话需要 `claude`。终端界面探不到终端时自动退回编号输入。

@@ -208,6 +208,23 @@ install_tree() {
   copy_tree "$src" "$INSTALL_DIR"
 }
 
+# 前端产物与源码一起提交，但每次安装都按当前源码重建：文件名不带哈希，
+# 重新打包只改同名文件；浏览器端由服务端的 no-cache 保证拿到新版本。
+build_web() {
+  local dir
+  need_cmd node
+  need_cmd npm
+  for dir in lib/web-shared llmx/web nodex/web mvnx/web dvcsx/web; do
+    [[ -d "$SRC_DIR/$dir" ]] || continue
+    if [[ ! -d "$SRC_DIR/$dir/node_modules" ]]; then
+      info "安装 $dir 的前端依赖"
+      ( cd "$SRC_DIR/$dir" && npm ci --no-audit --no-fund ) || die "安装 $dir 的前端依赖失败"
+    fi
+    info "构建 $dir"
+    ( cd "$SRC_DIR/$dir" && npm run build ) || die "构建 $dir 失败"
+  done
+}
+
 # 删掉链接目录里指向本项目安装目录的软链。链接目录里别人的东西一律不碰。
 remove_links() {
   local link target removed=0
@@ -336,6 +353,7 @@ main() {
   resolve_source
   [[ -n "$SRC_DIR" ]] || die '没能确定源码位置'
   resolve_bash_tui
+  build_web
 
   clean_previous
   install_tree "$SRC_DIR"

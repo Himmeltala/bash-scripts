@@ -1,122 +1,58 @@
 # gradlex
 
-省去手敲 `gradle :模块:bootRun` 这类长命令。从当前目录递归找出 Gradle 构建与可运行模块，勾选后启动或构建。
+从当前目录递归找 Gradle 构建与可运行模块，勾选后启动或构建，省去手敲 `gradle :模块:bootRun`。
 
 ## 用法
 
 ```
 gradlex                 先选命令，再勾目标
-gradlex run             同上，显式写命令名
-gradlex build           构建可运行模块
-gradlex admin           带关键词时跳过界面，按子串匹配标签或路径后直接执行
-gradlex run admin       先写命令名，再写关键词
-gradlex --list          只列出目标，不执行；没写命令时按 run 列
-gradlex --rebuild       任务前加 clean，先清理再执行
-gradlex --refresh       追加 --refresh-dependencies，强制刷新依赖
-gradlex --reset         清掉当前命令上次的勾选记录，重新开始
-gradlex --help          显示帮助，命令清单从注册表生成
+gradlex run|build
+gradlex admin           带关键词时跳过界面，直接匹配标签或路径
+gradlex run admin       命令在前，关键词在后
+gradlex --list          只列目标；默认按 run 列
+gradlex --rebuild       任务前加 clean
+gradlex --refresh       追加 --refresh-dependencies
+gradlex --reset         清掉当前命令的勾选记录
 ```
 
-## 两条命令
+| 命令 | 目标 | 任务 |
+| --- | --- | --- |
+| `run` | Spring Boot 或 application 模块 | `bootRun` / `run` |
+| `build` | 同一批模块 | `bootJar` / `assemble` |
 
-| 命令      | 目标                                     | 执行的 Gradle 任务                                          |
-| --------- | ---------------------------------------- | ----------------------------------------------------------- |
-| `run`   | 可运行的 Spring Boot 或 application 模块 | Spring Boot 模块 `bootRun`，application 模块 `run`      |
-| `build` | 与 `run` 同一批模块                    | Spring Boot 模块 `bootJar`，application 模块 `assemble` |
-
-`build` 与 `run` 使用同一批目标，纯库模块不进入清单。
+纯库模块不进入清单。
 
 ## 目标判定
 
-`run` 与 `build` 看同一批模块：
+模块自己的 `build.gradle(.kts)`、构建根的 `project(":名字") { apply plugin }` 或 `subprojects` / `allprojects` 块里应用了 Spring Boot 插件，且 `src/main/java` 或 `src/main/kotlin` 下有 `@SpringBootApplication`；或者应用了 `application` 插件并声明了 `mainClass` / `mainClassName`，或存在 `main` 方法。构建根顶部的 `plugins` 只作用于根项目。
 
-- 应用了 Spring Boot 插件，并且 `src/main/java` 或 `src/main/kotlin` 下存在带 `@SpringBootApplication` 的类。
-- 或者应用了 `application` 插件，并且声明了 `mainClass` 或 `mainClassName`，或者存在带 `public static void main` 或 `fun main` 的类。
+## 构建根与入口
 
-插件可以写在三个位置：
+从当前目录向下找 `settings.gradle(.kts)`，每个文件是一个构建根；向下找不到就向上找，再没有则把带 `build.gradle(.kts)` 的当前目录当单项目。递归跳过 `build`、`.gradle`、`.git`、`.svn`、`node_modules`、`.idea`、`.settings`、`out`、`target`。`include` 支持单行、多行与 Kotlin 写法；`project(":名字").projectDir` 可以改目录；include 了但目录不存在就跳过。
 
-1. 模块自己的 `build.gradle` 或 `build.gradle.kts`。
-2. 构建根 `build.gradle` 的 `project(":名字") { apply plugin: ... }` 块。
-3. 构建根 `build.gradle` 的 `subprojects { ... }` 或 `allprojects { ... }` 块。
-
-构建根顶部的 `plugins { id 'org.springframework.boot' }` 只作用于根项目，不会把子模块都算成可运行模块。
-
-## 构建根与模块
-
-从当前目录递归查找 `settings.gradle` 与 `settings.gradle.kts`，跳过 `build`、`.gradle`、`.git`、`.svn`、`node_modules`、`.idea`、`.settings`、`out`、`target`。每个 settings 文件对应一个构建根。
-
-当前目录及其子目录没有 settings 时，从当前目录向上找最近的构建根，所以在子模块目录里也能直接运行。再找不到时，若当前目录有 `build.gradle` 或 `build.gradle.kts`，按单项目构建处理。
-
-解析 `include` 时支持：
-
-```groovy
-include 'app', ':lib'
-include(
-  ':worker'
-)
-```
-
-```kotlin
-include(":app", ":lib")
-```
-
-模块目录默认为 `<构建根>/<路径>`，路径里的 `:` 换成 `/`。`project(":名字").projectDir = file("...")` 可以覆盖目录。settings 里 include 了但目录不存在的模块会被跳过。
-
-## Gradle 入口
-
-按以下优先级选择：
-
-1. 环境变量 `GRADLEX_GRADLE` 指定的入口。
-2. 构建根及其上层目录里最近的 `gradlew`；不可执行时用 `sh gradlew`。
-3. PATH 里的 `gradle`。
-
-如果 `gradlew` 带 CRLF 换行，在 Linux 上就跑不起来（shebang 会带上 `\r`，`sh` 又把行尾 `\r` 当命令）。这种情况会打一行警告，然后改用系统 `gradle`；系统 `gradle` 也没有时才报错退出。想强制用系统 Gradle：
+入口按顺序取：`GRADLEX_GRADLE`、最近的 `gradlew`（不可执行时用 `sh gradlew`）、PATH 里的 `gradle`。`gradlew` 带 CRLF 时先警告并改用系统 `gradle`，都没有才报错。强制用系统 Gradle：
 
 ```bash
 GRADLEX_GRADLE=gradle gradlex run
 ```
 
-## 执行方式
+## 执行
 
-命令在构建根执行，项目路径用 Gradle 的 `:模块:任务` 形式：
+在构建根执行 `gradle :模块:任务`；模块是根项目时直接 `gradle bootRun`。默认不 clean、不跳过编译，增量交给 Gradle。`--rebuild` 在任务前加 `clean`，`--refresh` 追加 `--refresh-dependencies`，可以同时用。
 
-```
-gradle :app:bootRun
-```
-
-模块是根项目时直接执行 `gradle bootRun`。
-
-默认不 clean，不跳过编译，增量交给 Gradle 自己判断。Gradle 没有 Maven `maven.main.skip` 的等价参数，强跳编译容易跑到旧代码，所以 `gradlex` 不做自动跳过编译。
-
-两个可选参数：
-
-| 参数          | 行为                                                   |
-| ------------- | ------------------------------------------------------ |
-| `--rebuild` | 任务前加 `clean`，执行 `:模块:clean :模块:bootRun` |
-| `--refresh` | 追加 `--refresh-dependencies`                        |
-
-两个参数可以同时写。
-
-## 勾选记录
-
-勾选记录存在 `~/.cache/gradlex/<当前目录的哈希>.<命令名>.selected`，按「所在目录加命令」分开记，`run` 的勾选不会串到 `build` 上。`--reset` 只清当前目录当前命令这一份。
-
-## 非终端输出
-
-没有终端时，菜单与勾选退回统一编号清单，按编号输入选择；选择语义与退出码不变。
+勾选记录存在 `~/.cache/gradlex/<目录哈希>.<命令>.selected`，`--reset` 只清当前目录当前命令那份。
 
 ## 退出码
 
-| 码 | 含义                                                   |
-| -- | ------------------------------------------------------ |
-| 0  | 成功                                                   |
-| 1  | 找到了目标但执行失败，或者当前目录下没找到目标         |
-| 2  | 用法错误：未知选项                                     |
-| 3  | 用户取消：在菜单或勾选界面里取消，或者确认时一个都没勾 |
+| 码 | 含义 |
+| -- | --- |
+| 0 | 成功 |
+| 1 | 执行失败，或没找到目标 |
+| 2 | 用法错误 |
+| 3 | 用户取消 |
 
-## 安全约定
+## 约定
 
-- 只在 `--rebuild` 时执行 `clean`。
-- 不修改源码，不删除构建产物，不终止 Gradle 守护进程。
-- wrapper 带 CRLF 或不可执行时会报告；CRLF 会先警告，再改用系统 `gradle`，没有 `gradle` 才报错退出。
-- 勾选记录只写缓存目录（`~/.cache/gradlex`）。
+- 只在 `--rebuild` 时 `clean`；不改源码、不删构建产物、不杀 Gradle 守护进程。
+- 勾选记录只写 `~/.cache/gradlex`。
+- 没有终端时退回编号输入，语义与退出码不变。

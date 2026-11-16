@@ -1,79 +1,60 @@
 # cleanx
 
-Linux 家目录与系统垃圾清理工具，清理范围分用户缓存、系统包与日志、开发缓存三类，另带大文件与构建产物扫描。不带参数时打开菜单；带参数时默认只预览清单与大小，加 `--yes` 才真正删除。
+清理 Linux 家目录与系统垃圾，分用户缓存、系统包与日志、开发缓存三类，另带大文件与构建产物扫描。默认只预览，加 `--yes` 才删除。
 
 ## 用法
 
 ```
-cleanx                         打开菜单，逐类勾选后确认清理
-cleanx user                    预览用户缓存与回收站的默认清理项
-cleanx user --yes              真正执行用户类清理
+cleanx                         打开菜单，勾选后确认清理
+cleanx user                    预览用户类默认清理项
+cleanx user --yes              执行用户类清理
 cleanx user user.trash --yes   只清回收站
-cleanx system                  预览系统类清理，命令带 sudo 但不执行
-cleanx dev --yes               清理开发缓存的默认项
-cleanx scan                    扫描家目录里的大文件，只出报告
+cleanx system                  预览系统类（命令带 sudo，不执行）
+cleanx dev --yes               清理开发缓存
+cleanx scan                    扫描家目录大文件
 cleanx scan --min-size 1G --top 50
-cleanx build-scan              扫描 node_modules、target 等构建产物目录，同样只出报告
-cleanx list                    列出全部清理项编号与可用状态
-cleanx list dev                只列开发类的清理项
-cleanx -n dev --yes            预览优先，不执行
-cleanx --help                  显示帮助
+cleanx build-scan              扫描 node_modules、target 等构建产物
+cleanx list [类别]             列出清理项编号与可用状态
+cleanx -n ...                  强制预览
 ```
 
-在菜单里用方向键移动，用空格勾选，用回车确认，按 `q` 退出。探不到终端时退回编号输入：菜单输入一个编号，复选输入多个编号，用空格分隔。
-
-## 默认行为
-
-- 不带类别时进入菜单，勾选后还有一次确认框，确认之后才会删除。
-- 带类别时默认只预览：打印每一项的大小与将执行的命令，不会动磁盘。加了 `--yes` 才会删除；`-n` 优先级高于 `--yes`，用来强制预览。
-- 不写清理项编号时，执行该类别里默认勾选的项。指定编号时按给定顺序执行，默认不勾选的项也可以显式选中。
-- 带类别时，非交互环境（标准输入不是终端）必须加 `--yes` 才会删除；菜单模式无论有没有终端，都要经过一次确认框。需要 root 的项在非交互且加了 `--yes` 时改用 `sudo -n`，没有免密权限就报告失败，不会挂起等密码。
+不带类别进菜单；带类别默认只打印大小与命令，`--yes` 才动磁盘，`-n` 优先于 `--yes`。不写编号就执行该类默认勾选项；路径不存在的项不出现在菜单里。
 
 ## 清理项
 
-| 编号                | 类别   | 说明                                                  | 默认   |
-| ------------------- | ------ | ----------------------------------------------------- | ------ |
-| `user.thumbnails` | user   | `~/.cache/thumbnails`，缩略图缓存                   | 勾选   |
-| `user.fontconfig` | user   | `~/.cache/fontconfig`，字体索引缓存                 | 勾选   |
-| `user.browser`    | user   | Firefox 与 Chrome 系网页缓存，建议先关浏览器          | 不勾选 |
-| `user.trash`      | user   | 清空回收站，文件与 `.trashinfo` 一并删除            | 勾选   |
-| `sys.apt`         | system | `apt-get clean`，清 `/var/cache/apt/archives`     | 勾选   |
-| `sys.journal`     | system | `journalctl --vacuum-time=14d`，保留 14 天          | 勾选   |
-| `sys.tmp`         | system | `systemd-tmpfiles --clean`，按发行版规则清 `/tmp` | 不勾选 |
-| `dev.maven`       | dev    | `~/.m2/repository`                                  | 勾选   |
-| `dev.gradle`      | dev    | `~/.gradle/caches`                                  | 勾选   |
-| `dev.npm`         | dev    | `~/.npm/_cacache`                                   | 勾选   |
-| `dev.yarn`        | dev    | `~/.cache/yarn`                                     | 勾选   |
-| `dev.pnpm`        | dev    | `~/.local/share/pnpm/store`                         | 勾选   |
-| `dev.pip`         | dev    | `~/.cache/pip`                                      | 勾选   |
-| `dev.go`          | dev    | `~/.cache/go-build` 与 `~/go/pkg/mod`             | 勾选   |
-| `dev.cargo`       | dev    | `~/.cargo/registry` 下的下载缓存与解包源码          | 勾选   |
-| `dev.ide`         | dev    | JetBrains 与 VS Code 的缓存，建议先关 IDE             | 不勾选 |
-| `dev.docker`      | dev    | 悬空镜像与构建缓存，需要 docker 与 sudo               | 勾选   |
-
-路径不存在的项不会出现在菜单与默认清单里，`cleanx list` 里会标为「不适用」。
+| 编号 | 类别 | 说明 | 默认 |
+| --- | --- | --- | --- |
+| `user.thumbnails` | user | 缩略图缓存 | 勾选 |
+| `user.fontconfig` | user | 字体索引缓存 | 勾选 |
+| `user.browser` | user | Firefox / Chrome 网页缓存 | 不勾选 |
+| `user.trash` | user | 清空回收站 | 勾选 |
+| `sys.apt` | system | `apt-get clean` | 勾选 |
+| `sys.journal` | system | 日志保留 14 天 | 勾选 |
+| `sys.tmp` | system | `systemd-tmpfiles --clean` | 不勾选 |
+| `dev.maven` / `dev.gradle` | dev | `~/.m2/repository`、`~/.gradle/caches` | 勾选 |
+| `dev.npm` / `dev.yarn` / `dev.pnpm` / `dev.pip` | dev | 包管理器缓存 | 勾选 |
+| `dev.go` / `dev.cargo` | dev | Go 与 Rust 缓存 | 勾选 |
+| `dev.ide` | dev | JetBrains 与 VS Code 缓存 | 不勾选 |
+| `dev.docker` | dev | 悬空镜像与构建缓存，需要 docker 与 sudo | 勾选 |
 
 ## 安全约定
 
-- **路径只在家目录以内。** 每一条路径在删除前都要解析成真实路径，解析之后如果仍在家目录之外，就直接拒绝；`$HOME` 本身、`/` 与含 `..` 的路径也拒绝。
-- **符号链接不跟随。** 遇到符号链接的路径项就直接跳过并报告原因，避免顺链接删到家目录之外。
-- **挂载点只清内容。** `~/.cache` 等目录如果是独立挂载点，只删里面的内容，不删挂载点本身。
-- **回收站成对删除。** `files` 与 `info` 两个目录一起清，避免回收站里留下没有文件的 `.trashinfo`。
-- **系统类不自己拼删除命令。** apt 用 `apt-get clean`，日志用 `journalctl --vacuum-time`，`/tmp` 用 `systemd-tmpfiles --clean`，行为与系统自带规则一致。
-- **Docker 只清悬空对象。** 执行 `docker image prune -f` 与 `docker builder prune -f`，不加 `-a`，不动正在使用的镜像。
-- **root 项逐项确认。** 菜单里每一项需要 sudo 的操作单独询问一次；`--yes` 视为已经确认。预览模式只打印 `sudo` 命令，不弹密码。
+- 路径解析后必须仍在 `$HOME` 内，`$HOME` 本身、`/` 与含 `..` 的路径拒绝。
+- 符号链接不跟随；挂载点只清内容。
+- 回收站的 `files` 与 `info` 成对删除。
+- 系统类用系统自带命令：`apt-get clean`、`journalctl --vacuum-time`、`systemd-tmpfiles --clean`。
+- Docker 只清悬空对象，不加 `-a`。
+- root 项逐项确认；非交互加 `--yes` 时用 `sudo -n`，没有免密权限就报告失败。
 
-## 扫描报告
+## 扫描
 
-`scan` 扫描 `$HOME`，列出超过阈值（默认 500M）的文件里最大的 30 个，以及最大的 30 个一级目录。`--min-size` 支持 `k`、`M`、`G`，只给数字时按字节算；`--top` 改条数。扫描只读，不删任何东西。
-
-`build-scan` 查找 `node_modules`、`target`、`build`、`dist`、`.venv` 这几类目录，按大小列出前 30 个，同样只出报告。家目录大、项目多时扫描较慢，这是预期行为。
+`scan` 列出 `$HOME` 中超过阈值（默认 500M）的最大 30 个文件和 30 个一级目录；`--min-size` 支持 `k`、`M`、`G`，`--top` 改条数。`build-scan` 查 `node_modules`、`target`、`build`、`dist`、`.venv` 并列出前 30 个。两者都只读。
 
 ## 退出码
 
-| 码 | 含义                                                  |
-| -- | ----------------------------------------------------- |
-| 0  | 成功，或预览完成                                      |
-| 1  | 至少有一项没完成：路径校验拒绝、删除失败、sudo 不可用 |
-| 2  | 用法错误                                              |
-| 3  | 用户取消                                              |
+| 码 | 含义 |
+| -- | --- |
+| 0 | 成功或预览完成 |
+| 1 | 至少一项没完成：校验拒绝、删除失败、sudo 不可用 |
+| 2 | 用法错误 |
+| 3 | 用户取消 |
