@@ -1,14 +1,46 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import BrandIcon from '../../../components/BrandIcon.vue'
 import { data } from '../composables/useUsage'
 import { formatNumber } from '@bash-scripts/web-shared/format'
 import { COLUMNS, SOURCE_LIST, cellValue } from '../composables/format'
 
-const sortKey = ref('')
-const sortDesc = ref(false)
+// 排序记在本地：刷新或切走再回来时保持上次排的列与方向，每张报表各记一份。
+const SORT_PREFIX = 'llmx.table-sort.'
 
-const columns = computed(() => COLUMNS[data.value?.command || 'daily'] || COLUMNS.daily)
+function loadSort(command) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_PREFIX + command) || 'null')
+    if (saved && typeof saved.key === 'string') return saved
+  } catch (err) {
+    // 存的内容坏了就当没存过，不耽误出表。
+  }
+  return { key: '', desc: false }
+}
+
+function saveSort(command, key, desc) {
+  try {
+    localStorage.setItem(SORT_PREFIX + command, JSON.stringify({ key, desc }))
+  } catch (err) {
+    // 存不进去只影响下次恢复，当前这次排序照常。
+  }
+}
+
+const command = computed(() => data.value?.command || 'daily')
+const initial = loadSort(command.value)
+const sortKey = ref(initial.key)
+const sortDesc = ref(initial.desc)
+
+// 换报表时列不一样，取那张报表自己记住的排序。
+watch(command, (name) => {
+  const saved = loadSort(name)
+  sortKey.value = saved.key
+  sortDesc.value = saved.desc
+})
+
+watch([sortKey, sortDesc], () => saveSort(command.value, sortKey.value, sortDesc.value))
+
+const columns = computed(() => COLUMNS[command.value] || COLUMNS.daily)
 
 const rows = computed(() => {
   const list = [...(data.value?.rows || [])]
