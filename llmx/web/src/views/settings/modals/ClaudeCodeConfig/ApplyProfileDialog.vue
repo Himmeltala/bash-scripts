@@ -31,8 +31,6 @@
     </v-alert>
 
     <template #actions>
-      <span class="hint">应用后只影响之后启动的 Claude Code 会话。</span>
-      <v-spacer />
       <v-btn variant="text" @click="close">取消</v-btn>
       <v-btn
         color="primary"
