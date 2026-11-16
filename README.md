@@ -12,7 +12,6 @@
 | `zipx` | 压缩、解压、校验、包内增删，只管 zip |
 | `portx` | 按端口查占用或浏览监听端口，`-k` 才结束进程 |
 | `cleanx` | 清理缓存、回收站、系统日志与构建产物，默认只预览 |
-| `claudex` | 管理 Claude Code 会话：列表、继续、归档、删除、清理旧数据 |
 
 各工具的详细用法见对应目录下的 README。四个网页工具的默认端口：`llmx` 8000、`dvcsx` 8100、`nodex` 8200、`mvnx` 8300。
 
@@ -55,4 +54,4 @@ clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-p
 
 ## 环境要求
 
-`mvnx` 需要 Maven 或 `./mvnw`；`dvcsx` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`；`cleanx` 需要 GNU `du`、`find`、`realpath`；`claudex` 需要 GNU `stat`、`du`、`find`、`truncate`，继续会话需要 `claude`。终端界面探不到终端时自动退回编号输入。
+`mvnx` 需要 Maven 或 `./mvnw`；`dvcsx` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`；`cleanx` 需要 GNU `du`、`find`、`realpath`。终端界面探不到终端时自动退回编号输入。
