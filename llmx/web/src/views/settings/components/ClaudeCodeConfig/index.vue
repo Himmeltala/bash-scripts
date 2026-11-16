@@ -4,8 +4,10 @@
       <SectionNav v-model="section" :items="sections" />
     </div>
     <div class="body">
+      <!-- 必须带上分区键：v-if 分支由编译器补了固定 key（0），keep-alive 会按它命中
+           第一次缓存的组件，切到别的分区也拿回旧组件。 -->
       <keep-alive>
-        <component :is="active" v-if="active" />
+        <component :is="active" :key="section" v-if="active" />
       </keep-alive>
     </div>
   </div>

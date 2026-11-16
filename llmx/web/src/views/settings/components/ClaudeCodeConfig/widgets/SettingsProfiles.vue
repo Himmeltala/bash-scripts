@@ -4,7 +4,7 @@
       <div class="head">
         <span class="head-title">配置档</span>
         <v-spacer />
-        <v-btn size="small" variant="text" icon="mdi-refresh" title="刷新" @click="profiles.refresh()" />
+        <v-btn size="small" variant="text" icon="mdi-refresh" title="刷新" @click="refreshAll" />
         <v-btn
           size="small"
           variant="text"
@@ -70,6 +70,7 @@
         <v-chip v-if="changed" size="x-small" variant="tonal" color="warning">已改动</v-chip>
         <span v-if="notice" class="hint">{{ notice }}</span>
         <v-spacer />
+        <span v-if="applyHint" class="hint">{{ applyHint }}</span>
         <v-btn
           color="primary"
           variant="flat"
@@ -163,6 +164,14 @@ const canApply = computed(
   () => !!selected.value && !selected.value.applied && profiles.writable,
 )
 
+// 按钮禁用时把原因写出来：内容一致时应用是空操作，不改动也能点会误导。
+const applyHint = computed(() => {
+  if (!selected.value) return ''
+  if (!profiles.writable) return '只允许本机应用配置'
+  if (selected.value.applied) return '与当前 settings.json 一致，无需应用'
+  return ''
+})
+
 function loadFile() {
   if (!selected.value) return Promise.reject(new Error('还没选配置档'))
   return profiles.load(selected.value.name)
@@ -189,6 +198,12 @@ function refreshSelected() {
   if (!selected.value) return
   const fresh = profiles.items.find((item) => item.name === selected.value.name)
   if (fresh) selected.value = fresh
+}
+
+// 手点刷新时连选中项一起更新，生效标记不会停留在旧快照上。
+async function refreshAll() {
+  await profiles.refresh()
+  refreshSelected()
 }
 
 async function onSaved() {
