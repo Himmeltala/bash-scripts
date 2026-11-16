@@ -82,6 +82,7 @@ web_svc_line() {
 web_scan() {
   local id=$1 root=$2
   local rec tag workdir plpath mvnargs display cmdtext sub pom args
+  local -a subs=()
 
   prepare_scan "$root"
 
@@ -101,11 +102,16 @@ web_scan() {
 
   while IFS= read -r rec; do
     IFS="$FS" read -r tag workdir plpath mvnargs display cmdtext <<<"$rec"
-    while IFS= read -r sub; do
+    mapfile -t subs < <(emit_project_modules "$workdir" "$tag")
+    # 独立项目没有子模块，把它自己列进安装；与命令行 select_install 的清单一致。
+    if ((${#subs[@]} == 0)); then
+      subs=("$rec")
+    fi
+    for sub in "${subs[@]}"; do
       # 子模块的六列：标签、工作目录、-pl 的值、mvn 参数、展示路径、展示命令。
       IFS="$FS" read -r tag workdir plpath mvnargs display cmdtext <<<"$sub"
       web_svc_line "$id" install "$tag" "$workdir" "$plpath" "$mvnargs" "$display" "$cmdtext"
-    done < <(emit_project_modules "$workdir" "$tag")
+    done
   done < <(collect_toplevel | shell_assign_tags)
 
   # pom 清单给页面的模块下拉用。
