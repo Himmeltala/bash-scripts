@@ -397,12 +397,14 @@ class GitWorkspace(unittest.TestCase):
             target.unlink()
         self.call("/forget", {"ws": wid})
 
-    def test_api_rejects_foreign_dir(self):
-        # 仓库之外的临时目录既不在 SVN 里，也不在 Git 里，加不进来。
+    def test_api_accepts_plain_dir(self):
+        # 仓库之外的临时目录既不在 SVN 里，也不在 Git 里，按普通目录收下，只给浏览目录。
         with tempfile.TemporaryDirectory() as tmp:
             status, data = self.call("/workspaces", {"root": tmp})
-        self.assertEqual(status, 400)
-        self.assertIn("Git", data["error"])
+            self.assertEqual(status, 200, data)
+            self.assertEqual(data["workspace"]["vcs"], "none")
+            # 别的用例共用这份登记表，用完移走。
+            self.call("/forget", {"ws": data["workspace"]["id"]})
 
     def test_api_serves_static_page(self):
         with urllib.request.urlopen(self.base.rsplit("/__dvcsx/api", 1)[0] + "/") as resp:

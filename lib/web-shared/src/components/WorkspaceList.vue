@@ -40,7 +40,7 @@
         </v-list-item-title>
         <template v-else>
           <v-list-item-title class="name" :title="row.ws.alias ? row.ws.root : ''">
-            {{ row.ws.alias || baseName(row.ws.root) }}
+            <span class="nm">{{ row.ws.alias || baseName(row.ws.root) }}</span>
             <slot name="title-extra" :ws="row.ws" />
           </v-list-item-title>
           <v-list-item-subtitle class="path" :title="row.ws.url || row.ws.root">
@@ -672,8 +672,19 @@ function drop() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 名字太长时只把名字截掉，右边的标签与图标始终露出来。 */
 .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-weight: 500;
+}
+.nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .path {
   font-size: 0.74rem;

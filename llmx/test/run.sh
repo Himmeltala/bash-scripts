@@ -733,7 +733,7 @@ printf '' | "$bin" menu >/dev/null 2>&1
 [[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
 ok 取消菜单返回 3
 
-for name in test_web_config test_web_profiles test_web_memory test_web_sessions; do
+for name in test_web_config test_web_metrics test_web_profiles test_web_memory test_web_sessions; do
   python3 "$repo/llmx/test/$name.py" >/dev/null 2>&1 || fail "网页测试 $name 未通过"
 done
 ok '网页接口的单元测试通过'

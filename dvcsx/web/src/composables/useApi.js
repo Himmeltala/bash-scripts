@@ -12,6 +12,10 @@ export function stateEventsUrl() {
   return `${PREFIX}/state/stream`
 }
 
+export function metricsEventsUrl() {
+  return `${PREFIX}/metrics/stream`
+}
+
 export function workspaceEventsUrl(ws) {
   return `${PREFIX}/events?ws=${encodeParam(ws)}`
 }

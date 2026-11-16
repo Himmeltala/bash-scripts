@@ -10,9 +10,19 @@
     @groups-change="$emit('groups-change', $event)"
   >
     <template #title-extra="{ ws }">
-      <v-chip size="x-small" variant="tonal" class="vcs">
-        {{ ws.vcs === 'git' ? 'Git' : 'SVN' }}
-      </v-chip>
+      <v-icon
+        size="14"
+        class="vcs"
+        :title="ws.vcs === 'git' ? 'Git 仓库' : ws.vcs === 'svn' ? 'SVN 工作副本' : '普通目录'"
+      >
+        {{
+          ws.vcs === 'git'
+            ? 'mdi-git'
+            : ws.vcs === 'svn'
+              ? 'mdi-source-repository'
+              : 'mdi-folder-outline'
+        }}
+      </v-icon>
     </template>
   </WorkspaceList>
 </template>
@@ -37,7 +47,7 @@ const texts = {
   empty: '还没有添加过工作副本',
   forgetTitle: '移出列表',
   addTitle: '添加工作副本',
-  addTip: '选 SVN 工作副本或 Git 仓库所在的目录，加的时候会先确认这个目录在版本控制里。',
+  addTip: '选 SVN 工作副本、Git 仓库或普通目录；普通目录只能浏览和编辑文件。',
   addLabel: '工作副本目录',
   addPlaceholder: '~/pros/svn/省/项目/前端/仓库名',
   removeTitle: '移出列表',
@@ -47,7 +57,7 @@ const texts = {
 
 <style scoped>
 .vcs {
-  margin-left: 6px;
-  vertical-align: middle;
+  flex: 0 0 auto;
+  opacity: 0.65;
 }
 </style>

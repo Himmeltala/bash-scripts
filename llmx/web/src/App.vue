@@ -6,6 +6,7 @@
         <span class="title">llmx</span>
       </v-app-bar-title>
       <template #append>
+        <Metrics :dark="dark" :metrics="metrics" />
         <v-btn
           :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
           :title="dark ? '切到浅色' : '切到深色'"
@@ -15,25 +16,36 @@
       </template>
     </v-app-bar>
 
-    <v-navigation-drawer v-model="drawer" :rail="rail" width="200">
-      <v-list nav density="compact">
-        <v-list-item
-          v-for="item in PAGES"
-          :key="item.key"
-          :prepend-icon="item.icon"
-          :title="item.title"
-          :active="page.key === item.key"
-          @click="go(item.key)"
+    <v-navigation-drawer v-model="drawer" :rail="rail" :width="navWidth">
+      <div class="nav">
+        <div class="nav-body">
+          <v-list nav density="compact">
+            <v-list-item
+              v-for="item in PAGES"
+              :key="item.key"
+              :prepend-icon="item.icon"
+              :title="item.title"
+              :active="page.key === item.key"
+              @click="go(item.key)"
+            />
+          </v-list>
+          <v-divider class="my-2" />
+          <v-list nav density="compact">
+            <v-list-item
+              :prepend-icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
+              :title="rail ? '' : '收起菜单'"
+              @click="rail = !rail"
+            />
+          </v-list>
+        </div>
+        <SplitHandle
+          v-if="!rail"
+          axis="x"
+          :active="resizing"
+          @start="startSplit"
+          @reset="resetSplit"
         />
-      </v-list>
-      <v-divider class="my-2" />
-      <v-list nav density="compact">
-        <v-list-item
-          :prepend-icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-          :title="rail ? '' : '收起菜单'"
-          @click="rail = !rail"
-        />
-      </v-list>
+      </div>
     </v-navigation-drawer>
 
     <v-main>
@@ -43,9 +55,11 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { PAGES, page, writePageUrl } from './composables/usePage'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
+import { Metrics } from '@bash-scripts/web-shared/metrics'
+import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEWS = {
@@ -57,6 +71,36 @@ const VIEWS = {
 const current = computed(() => VIEWS[page.key] || VIEWS.usage)
 const drawer = ref(true)
 const rail = ref(false)
+
+// 左侧菜单的宽度随分隔条拖动改变，双击还原；上限按整个窗口算，右侧至少留出正文的宽度。
+const viewport = shallowRef(document.documentElement)
+const { size: navWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: viewport,
+  initial: 200,
+  min: 160,
+  rightMin: 420,
+  persist: 'llmx.nav-width',
+})
+
+// 头部性能指标：CPU、内存、磁盘与网速，单独一条推送。
+const metrics = ref(null)
+let metricsSource = null
+
+function connectMetrics() {
+  metricsSource = new EventSource('/api/metrics/stream')
+  metricsSource.addEventListener('metrics', (ev) => {
+    try {
+      metrics.value = JSON.parse(ev.data)
+    } catch (err) {
+      // 单条坏了跳过，下一份再补。
+    }
+  })
+}
+
+onMounted(connectMetrics)
+onBeforeUnmount(() => {
+  if (metricsSource) metricsSource.close()
+})
 
 function go(key) {
   if (page.key === key) return
@@ -75,5 +119,15 @@ const { dark, toggle: flipTheme } = useThemeToggle({
 <style scoped>
 .title {
   font-weight: 700;
+}
+/* 菜单内容自己滚，右沿留一条拖拽手柄。 */
+.nav {
+  display: flex;
+  height: 100%;
+}
+.nav-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
 }
 </style>

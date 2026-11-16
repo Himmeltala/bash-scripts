@@ -29,8 +29,10 @@ from urllib.parse import unquote, urlparse
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
 from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
+from metrics import Metrics
 from netutil import is_loopback_address as is_loopback
 from pathutil import PathError, safe_relative, within
+from sse import MetricsStream
 from stores import LayoutStore
 from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
 
@@ -62,6 +64,8 @@ SSE_HEARTBEAT = 15
 WATCH_INTERVAL = 3
 # 登记表很小，变了就推，稍快一点页面也不觉得有延迟。
 STATE_WATCH_INTERVAL = 0.5
+# 页面头部的性能指标只采一份给所有页面。
+METRICS = Metrics()
 
 
 # 同一个工作副本同时只跑一个写操作，避免两次提交或一次更新与一次提交撞在一起。
@@ -1145,7 +1149,7 @@ def git_info(root):
 
 
 def detect_vcs(root):
-    """认工作副本：先按 SVN 看，不是再看 Git；都不是就拒绝加进列表。"""
+    """认工作副本：先按 SVN 看，不是再看 Git；都不是就当普通目录收下，只给浏览目录。"""
     if shutil.which("svn"):
         try:
             return "svn", svn_info(root)
@@ -1156,10 +1160,7 @@ def detect_vcs(root):
             return "git", git_info(root)
         except ApiError:
             pass
-    missing = " 与 ".join(name for name in ("svn", "git") if not shutil.which(name))
-    if missing:
-        raise ApiError(400, "没找到 %s 命令，认不出这个目录属于哪种版本控制：%s" % (missing, root))
-    raise ApiError(400, "这个目录既不是 SVN 工作副本，也不是 Git 仓库：%s" % root)
+    return "none", {"url": ""}
 
 
 def workspace_paths(ws):
@@ -1785,6 +1786,9 @@ def changes_signature(ws):
 
     指纹变了才提醒页面；版本变了说明外面提交或更新过，日志与同步页要重读。
     """
+    # 普通目录没有版本控制可查，页面也只开浏览目录，不接这条推送。
+    if ws.get("vcs") == "none":
+        return None, 0, None
     if ws.get("vcs") == "git":
         rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=ws["root"])
         if rc != 0:
@@ -1850,6 +1854,7 @@ class Handler(WebHandler):
     # 左侧工作副本的分组结构，存在 state.json 旁边。
     groups = None
     state_stream = None
+    metrics_stream = None
     api_prefix = "/__dvcsx/api"
     # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
     allow_write = False
@@ -1868,6 +1873,9 @@ class Handler(WebHandler):
             return True
         if route == "events":
             self._sse_workspace(query)
+            return True
+        if route == "metrics/stream":
+            self._sse_metrics()
             return True
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/events", route)
         if match:
@@ -2166,6 +2174,28 @@ class Handler(WebHandler):
         finally:
             stream.unsubscribe(box)
 
+    def _sse_metrics(self):
+        stream = self.metrics_stream
+        if stream is None:
+            raise ApiError(503, "指标推送没有起来")
+        box = stream.subscribe()
+        try:
+            try:
+                self._sse_headers()
+            except OSError:
+                return
+            while True:
+                try:
+                    payload = box.get(timeout=SSE_HEARTBEAT)
+                except queue.Empty:
+                    if not self._sse_ping():
+                        return
+                    continue
+                if not self._sse_send("metrics", json.dumps(payload, ensure_ascii=False)):
+                    return
+        finally:
+            stream.unsubscribe(box)
+
     def _sse_workspace(self, query):
         ws = self._ws(query)
         box = HUB.subscribe(ws)
@@ -2245,6 +2275,8 @@ def serve(args):
         lambda: {"workspaces": Handler.store.workspaces(), "groups": Handler.groups.nodes()},
     )
     Handler.state_stream.start()
+    Handler.metrics_stream = MetricsStream(METRICS)
+    Handler.metrics_stream.start()
 
     try:
         httpd = WebServer((args.host, args.port), Handler)

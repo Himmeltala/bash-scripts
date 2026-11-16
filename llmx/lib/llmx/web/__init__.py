@@ -23,9 +23,10 @@ from pathlib import Path
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
 import fileio
+import metrics as metrics_mod
 import netutil
 import pathutil
-from sse import SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
+from sse import MetricsStream, SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
 from web import ApiError, WebHandler, WebServer
 
 from .. import cli, profiles, sessions
@@ -40,6 +41,19 @@ _CACHED = "public, max-age=31536000, immutable"
 COMMANDS = ("daily", "session", "hour", "project")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
 LOCK = threading.Lock()
+# 页面头部的性能指标只采一份给所有页面。
+METRICS_STREAM = MetricsStream(metrics_mod.Metrics())
+_METRICS_LOCK = threading.Lock()
+_METRICS_STARTED = False
+
+
+def _start_metrics() -> None:
+    """指标后台线程只起一次；多次建 Handler 不会多出几条采样线程。"""
+    global _METRICS_STARTED
+    with _METRICS_LOCK:
+        if not _METRICS_STARTED:
+            METRICS_STREAM.start()
+            _METRICS_STARTED = True
 
 
 def _parse_date(text: str | None) -> date | None:
@@ -162,6 +176,8 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
         sys_version = ""
         api_prefix = "/api/"
         static = STATIC
+        # 头部指标走一条独立推送，与用量那条互不影响。
+        metrics_stream = METRICS_STREAM
         # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
         allow_write = False
 
@@ -316,6 +332,9 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
             )
 
         def _stream_routes(self, route, query):
+            if route == "metrics/stream":
+                self._sse([(self.metrics_stream, "metrics")])
+                return True
             if route != "usage/stream":
                 return False
             self._stream_usage(config, query)
@@ -403,6 +422,7 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
             self.wfile.write(body)
 
     Handler.allow_write = allow_write
+    _start_metrics()
     return Handler
 
 

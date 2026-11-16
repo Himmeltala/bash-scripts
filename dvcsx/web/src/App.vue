@@ -5,6 +5,7 @@
         <span class="brand">dvcsx</span>
       </v-app-bar-title>
       <v-spacer />
+      <Metrics :dark="dark" :metrics="metrics" />
       <v-btn
         :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
         variant="text"
@@ -40,7 +41,7 @@
             v-else
             icon="mdi-source-branch"
             title="先加一个工作副本"
-            hint="选一个 SVN 工作副本或 Git 仓库的目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、切换分支、更新、提交和浏览目录看代码。"
+            hint="选一个 SVN 工作副本、Git 仓库或普通目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、切换分支、更新、提交和浏览目录看代码；普通目录只能浏览和编辑文件。"
             action="添加工作副本"
             @action="addWorkspace()"
           />
@@ -58,7 +59,8 @@ import WorkspacePanel from './components/WorkspacePanel.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState, ToastHost, useToast } from '@bash-scripts/web-shared/ui'
 import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
-import { api, stateEventsUrl } from './composables/useApi'
+import { Metrics } from '@bash-scripts/web-shared/metrics'
+import { api, metricsEventsUrl, stateEventsUrl } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'dvcsx-ws'
@@ -80,7 +82,10 @@ const { size: sideWidth, resizing, start: startSplit, reset: resetSplit } = useS
 })
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
+// 头部性能指标：CPU、内存、磁盘与网速，单独一条推送。
+const metrics = ref(null)
 let source = null
+let metricsSource = null
 
 function select(id) {
   currentId.value = id || ''
@@ -127,6 +132,17 @@ function connectState() {
   })
 }
 
+function connectMetrics() {
+  metricsSource = new EventSource(metricsEventsUrl())
+  metricsSource.addEventListener('metrics', (ev) => {
+    try {
+      metrics.value = JSON.parse(ev.data)
+    } catch (err) {
+      // 单条坏了跳过，下一份再补。
+    }
+  })
+}
+
 async function addWorkspace(root) {
   const path = typeof root === 'string' ? root : ''
   adding.value = true
@@ -155,11 +171,13 @@ async function removeWorkspace(id) {
 
 onMounted(async () => {
   connectState()
+  connectMetrics()
   await refresh()
 })
 
 onBeforeUnmount(() => {
   if (source) source.close()
+  if (metricsSource) metricsSource.close()
 })
 </script>
 

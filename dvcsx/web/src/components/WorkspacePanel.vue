@@ -1,19 +1,24 @@
 <template>
   <div class="wp">
     <div class="tabsbar">
-      <v-tabs v-model="tab" density="compact" color="primary">
-        <v-tab value="changes">
+      <v-tabs
+        :model-value="shownTab"
+        density="compact"
+        color="primary"
+        @update:model-value="tab = $event"
+      >
+        <v-tab v-if="!plain" value="changes">
           <v-icon start size="18">mdi-file-compare</v-icon>
           变更
           <v-chip v-if="count" class="badge" size="x-small" variant="flat" color="primary">
             {{ count }}
           </v-chip>
         </v-tab>
-        <v-tab value="log">
+        <v-tab v-if="!plain" value="log">
           <v-icon start size="18">mdi-history</v-icon>
           提交日志
         </v-tab>
-        <v-tab value="sync">
+        <v-tab v-if="!plain" value="sync">
           <v-icon start size="18">mdi-cloud-sync-outline</v-icon>
           同步
         </v-tab>
@@ -26,20 +31,20 @@
 
     <div class="tabbody">
       <ChangesPanel
-        v-if="tab === 'changes'"
+        v-if="shownTab === 'changes'"
         :ws="ws"
         :refresh="changesKey"
         @loaded="count = $event"
       />
-      <LogPanel v-else-if="tab === 'log'" :ws="ws" :refresh="repoKey" />
-      <SyncPanel v-else-if="tab === 'sync'" :ws="ws" :refresh="repoKey" />
+      <LogPanel v-else-if="shownTab === 'log'" :ws="ws" :refresh="repoKey" />
+      <SyncPanel v-else-if="shownTab === 'sync'" :ws="ws" :refresh="repoKey" />
       <BrowsePanel v-else :ws="ws" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BrowsePanel from './BrowsePanel.vue'
 import ChangesPanel from './ChangesPanel.vue'
@@ -55,6 +60,9 @@ const props = defineProps({
 // 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
 const preferences = usePreferencesStore()
 const { activeTab: tab } = storeToRefs(preferences)
+// 不是 SVN 工作副本或 Git 仓库时只留浏览目录，别的页签没有东西可查。
+const plain = computed(() => props.ws.vcs !== 'git' && props.ws.vcs !== 'svn')
+const shownTab = computed(() => (plain.value ? 'browse' : tab.value))
 const count = ref(0)
 // changes 只影响变更页；repo 是写操作结束，日志与同步信息也要重载。
 const changesKey = ref(0)
@@ -71,7 +79,8 @@ function closeEvents() {
 function openEvents() {
   closeEvents()
   // 页面在后台就不占着服务端的检查线程，回到前台再连，首推会补上这段变化。
-  if (!props.ws || !props.ws.id || document.hidden) return
+  // 普通目录没有版本控制可查，不用连这条推送。
+  if (!props.ws || !props.ws.id || plain.value || document.hidden) return
   events = new EventSource(workspaceEventsUrl(props.ws.id))
   events.addEventListener('changes', (event) => {
     let data = {}
