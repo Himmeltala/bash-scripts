@@ -28,10 +28,11 @@
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
 
     <v-main class="fill-height">
-      <div class="shell">
-        <aside class="side">
+      <div ref="shellRef" class="shell">
+        <aside class="side" :style="{ width: `${sideWidth}px` }">
           <slot name="sidebar" />
         </aside>
+        <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
         <main class="content">
           <slot :ws="current" />
           <EmptyState v-if="!current" v-bind="empty" @action="$emit('empty-action')" />
@@ -42,10 +43,13 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import EmptyState from './EmptyState.vue'
+import SplitHandle from './SplitHandle.vue'
 import ToastHost from './ToastHost.vue'
+import { useSplitPane } from '../composables/useSplitPane.js'
 
-defineProps({
+const props = defineProps({
   title: { type: String, required: true },
   workspaces: { type: Array, default: () => [] },
   current: { type: Object, default: null },
@@ -58,6 +62,16 @@ defineProps({
 })
 
 defineEmits(['empty-action'])
+
+// 左侧工作区列表的宽度随分隔条拖动改变，双击分隔条还原；按工具名下记着，下次打开接着用。
+const shellRef = ref(null)
+const { size: sideWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: shellRef,
+  initial: 268,
+  min: 200,
+  rightMin: 420,
+  persist: `${props.title}.shell.side-width`,
+})
 </script>
 
 <style scoped>
@@ -77,9 +91,7 @@ defineEmits(['empty-action'])
   overflow: hidden;
 }
 .side {
-  width: 268px;
-  flex: 0 0 268px;
-  border-right: 1px solid rgba(128, 128, 128, 0.22);
+  flex: 0 0 auto;
   background: rgb(var(--v-theme-surface));
   overflow-y: auto;
 }

@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"
 from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
 from netutil import is_loopback_address as is_loopback
 from pathutil import PathError, safe_relative, within
+from stores import LayoutStore
 from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
@@ -344,8 +345,11 @@ class EventHub:
 class StateStream:
     """登记表一变就推一份给所有页面；页面不用再定时来取。"""
 
-    def __init__(self, path, build):
-        self.path = Path(path)
+    def __init__(self, paths, build):
+        # 登记表与分组结构各一个文件，哪个变了都推一份；只给一个路径也照收。
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+        self.paths = [Path(p) for p in paths]
         self.build = build
         self.lock = threading.Lock()
         self.subs = set()
@@ -381,15 +385,21 @@ class StateStream:
             except queue.Full:
                 pass
 
+    def _mtimes(self):
+        out = []
+        for path in self.paths:
+            try:
+                out.append(path.stat().st_mtime_ns)
+            except OSError:
+                out.append(None)
+        return tuple(out)
+
     def _run(self):
         seen = None
         while True:
-            try:
-                mtime = self.path.stat().st_mtime_ns
-            except OSError:
-                mtime = None
-            if mtime != seen:
-                seen = mtime
+            mtimes = self._mtimes()
+            if mtimes != seen:
+                seen = mtimes
                 try:
                     self._publish(self.build())
                 except Exception as exc:
@@ -1837,6 +1847,8 @@ class Handler(WebHandler):
 
     static = None
     store = None
+    # 左侧工作副本的分组结构，存在 state.json 旁边。
+    groups = None
     state_stream = None
     api_prefix = "/__dvcsx/api"
     # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
@@ -1845,6 +1857,9 @@ class Handler(WebHandler):
     def _error_log(self, msg):
         # 这一侧的日志带时间戳，骨架里的默认写法没有。
         log(msg)
+
+    def _group_nodes(self):
+        return self.groups.nodes() if self.groups is not None else []
 
     def _stream_routes(self, route, query):
         # SSE 自己写响应头与数据流，不走一次性回 JSON 的路。
@@ -1862,7 +1877,7 @@ class Handler(WebHandler):
 
     def _dispatch(self, method, route, query, body):
         if route == "state":
-            return {"workspaces": self.store.workspaces()}
+            return {"workspaces": self.store.workspaces(), "groups": self._group_nodes()}
         if route == "dirs":
             return list_dirs((query.get("path") or [""])[0])
         if route == "changes":
@@ -1907,6 +1922,11 @@ class Handler(WebHandler):
                 raise ApiError(404, "没有这个工作区")
             self.store.set_alias(ws["id"], str(body.get("alias", "")))
             return {"ok": True}
+        if route == "groups":
+            if self.groups is None:
+                raise ApiError(404, "分组结构没有起来")
+            # 整份替换：页面改完一次就发整张表，服务端只做清洗。
+            return {"ok": True, "groups": self.groups.set(body.get("nodes") or [])}
         if route == "save":
             return self._save(body)
         if route == "operations":
@@ -2217,9 +2237,13 @@ def serve(args):
 
     Handler.static = static
     Handler.store = Workspaces(args.state)
+    Handler.groups = LayoutStore(Path(args.state).parent / "groups.json")
     Handler.api_prefix = args.api
     Handler.allow_write = args.allow_write
-    Handler.state_stream = StateStream(args.state, lambda: {"workspaces": Handler.store.workspaces()})
+    Handler.state_stream = StateStream(
+        [args.state, Path(args.state).parent / "groups.json"],
+        lambda: {"workspaces": Handler.store.workspaces(), "groups": Handler.groups.nodes()},
+    )
     Handler.state_stream.start()
 
     try:

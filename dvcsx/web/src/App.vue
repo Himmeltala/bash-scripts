@@ -16,19 +16,22 @@
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
 
     <v-main class="fill-height">
-      <div class="shell">
-        <aside class="side">
+      <div ref="shellRef" class="shell">
+        <aside class="side" :style="{ width: `${sideWidth}px` }">
           <WorkspaceList
             :workspaces="state.workspaces"
+            :groups="state.groups"
             :current="currentId"
             :busy="adding"
             @select="select"
             @add="addWorkspace"
             @remove="removeWorkspace"
             @changed="refresh"
+            @groups-change="setGroups"
             @notice="toast($event.text, $event.color)"
           />
         </aside>
+        <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
         <main class="content">
           <div v-if="current" class="panelwrap">
             <WorkspacePanel :key="current.id" :ws="current" />
@@ -54,16 +57,27 @@ import WorkspaceList from './components/WorkspaceList.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState, ToastHost, useToast } from '@bash-scripts/web-shared/ui'
+import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
 import { api, stateEventsUrl } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'dvcsx-ws'
 
 const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
-const state = reactive({ workspaces: [] })
+const state = reactive({ workspaces: [], groups: [] })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
 const { snack, toast } = useToast()
+
+// 左侧工作副本列表的宽度随分隔条拖动改变，双击分隔条还原；记在本地下次打开接着用。
+const shellRef = ref(null)
+const { size: sideWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: shellRef,
+  initial: 268,
+  min: 200,
+  rightMin: 420,
+  persist: 'dvcsx.shell.side-width',
+})
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
 let source = null
@@ -72,8 +86,22 @@ function select(id) {
   currentId.value = id || ''
 }
 
+// 分组结构先照着页面的改法摆上，存失败再退回服务端那一份。
+async function setGroups(nodes) {
+  const before = state.groups
+  state.groups = nodes
+  try {
+    const data = await api.saveGroups(nodes)
+    if (data && data.groups) state.groups = data.groups
+  } catch (err) {
+    state.groups = before
+    toast(`保存分组失败：${err.message}`, 'error')
+  }
+}
+
 function applyState(data) {
   state.workspaces = data.workspaces || []
+  state.groups = data.groups || []
   // 没选中或选中的已经移出时，落到第一个；列表空着就清空选中。
   if (!currentId.value && state.workspaces.length) select(state.workspaces[0].id)
   else if (currentId.value && !current.value) select('')
@@ -149,9 +177,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .side {
-  width: 268px;
-  flex: 0 0 268px;
-  border-right: 1px solid rgba(128, 128, 128, 0.22);
+  flex: 0 0 auto;
   background: rgb(var(--v-theme-surface));
   overflow-y: auto;
 }

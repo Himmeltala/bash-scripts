@@ -23,6 +23,8 @@ class ToolHandler(SSEMixin, WebHandler):
     sessions = None
     engine = None
     aliases = None
+    # 左侧分组结构；不配就回 404，页面也不会去存。
+    layout = None
     logs = None
     state_stream = None
     metrics_stream = None
@@ -102,6 +104,11 @@ class ToolHandler(SSEMixin, WebHandler):
                 raise ApiError(404, "没有这个工作区：%s" % ws)
             self.aliases.set(ws, str(body.get("alias", "")))
             return {"ok": True}
+        if route == "groups":
+            if self.layout is None:
+                raise ApiError(404, "这个工具没有分组结构")
+            # 整份替换：页面改完一次就发整张表，服务端只做清洗。
+            return {"ok": True, "groups": self.layout.set(body.get("nodes") or [])}
         if route == "start":
             return engine.start(body)
         if route == "stop":

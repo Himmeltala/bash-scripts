@@ -334,6 +334,62 @@ class HomeStoreTest(unittest.TestCase):
             self.assertEqual(out["workspaces"][2]["node"], "")
 
 
+class LayoutStoreTest(unittest.TestCase):
+    def test_round_trip_and_cleaning(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "groups.json"
+            store = stores.LayoutStore(path)
+            self.assertEqual(store.nodes(), [])
+
+            out = store.set(
+                [
+                    {"kind": "group", "id": "g1", "name": "  前端\n组 ", "parent": ""},
+                    {"kind": "ws", "id": "ws1", "parent": "g1", "name": "多余的字段"},
+                    {"kind": "group", "id": "g2", "name": "", "parent": ""},
+                    {"kind": "nope", "id": "x"},
+                    "不是对象",
+                ]
+            )
+            self.assertEqual(
+                out,
+                [
+                    {"kind": "group", "id": "g1", "name": "前端 组", "parent": ""},
+                    {"kind": "ws", "id": "ws1", "parent": "g1"},
+                ],
+            )
+            self.assertEqual(store.nodes(), out)
+
+    def test_self_parent_and_oversize_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = stores.LayoutStore(Path(td) / "groups.json")
+            out = store.set([{"kind": "group", "id": "g1", "name": "名" * 200, "parent": "g1"}])
+            self.assertEqual(out[0]["parent"], "")
+            self.assertEqual(len(out[0]["name"]), stores.LAYOUT_MAX_NAME)
+
+    def test_rejects_too_many_nodes_and_bad_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = stores.LayoutStore(Path(td) / "groups.json")
+            with self.assertRaises(Exception):
+                store.set("不是数组")
+            many = [{"kind": "ws", "id": "w%s" % i} for i in range(stores.LAYOUT_MAX_NODES + 1)]
+            with self.assertRaises(Exception):
+                store.set(many)
+
+    def test_broken_file_reads_as_empty(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "groups.json"
+            path.write_text('{"nodes": ', "utf-8")
+            self.assertEqual(stores.LayoutStore(path).nodes(), [])
+
+    def test_attach_layout(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = stores.LayoutStore(Path(td) / "groups.json")
+            store.set([{"kind": "group", "id": "g1", "name": "前端"}])
+            snapshot = stores.attach_layout({"workspaces": []}, store)
+            self.assertEqual(snapshot["groups"], [{"kind": "group", "id": "g1", "name": "前端", "parent": ""}])
+            self.assertEqual(stores.attach_layout({"workspaces": []}, None), {"workspaces": []})
+
+
 class ParseReserveTest(unittest.TestCase):
     def test_splits_short_and_long_rows(self):
         runid, path, args, gen, row = runner.parse_reserve(

@@ -3,9 +3,11 @@
     :workspaces="workspaces"
     :current="current"
     :busy="busy"
+    :groups="groups"
     :dirs="loadDirs"
     :save-alias="saveAlias"
     :texts="texts"
+    @groups-change="$emit('groups-change', $event)"
   />
 </template>
 
@@ -17,7 +19,10 @@ defineProps({
   workspaces: { type: Array, required: true },
   current: { type: String, default: '' },
   busy: { type: Boolean, default: false },
+  groups: { type: Array, default: () => [] },
 })
+
+defineEmits(['groups-change'])
 
 const loadDirs = (path) => api.dirs(path)
 const saveAlias = (id, alias) => api.setAlias(id, alias)

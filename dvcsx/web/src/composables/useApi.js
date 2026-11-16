@@ -26,6 +26,7 @@ export const api = {
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
   setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),
+  saveGroups: (nodes) => call('POST', '/groups', { nodes }),
   changes: (ws) => call('GET', `/changes?ws=${encodeParam(ws)}`),
   diff: (ws, path, item = '', full = false) =>
     call('GET', `/diff?ws=${encodeParam(ws)}&path=${encodeParam(path)}&item=${encodeParam(item)}&full=${full ? 1 : 0}`),

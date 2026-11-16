@@ -20,6 +20,7 @@ export const api = {
   addWorkspace: (root) => call('POST', '/workspaces', { root }),
   forgetWorkspace: (ws) => call('POST', '/forget', { ws }),
   setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),
+  saveGroups: (nodes) => call('POST', '/groups', { nodes }),
   rescan: (ws) => call('POST', '/rescan', { ws }),
   start: (payload) => call('POST', '/start', payload),
   stop: (run) => call('POST', '/stop', { run }),

@@ -42,7 +42,16 @@ from runner import (
 )
 from runtime import check_static, serve as serve_web, start_streams
 from sse import MetricsStream, StateStream
-from stores import FS, AliasStore, HomeStore, LineStore, attach_alias_rel, attach_home
+from stores import (
+    FS,
+    AliasStore,
+    HomeStore,
+    LayoutStore,
+    LineStore,
+    attach_alias_rel,
+    attach_home,
+    attach_layout,
+)
 from toolchain import effective_home, iter_home_dirs, prepend_bin
 from toolweb import NOT_HANDLED, WS_KIND, ToolHandler
 from web import ApiError, STREAMED, log, zip_dir
@@ -163,9 +172,9 @@ class CustomStore(LineStore):
         return out
 
 
-def state_payload(state, nodes, aliases, custom):
-    """页面要的整份状态：工作区、脚本、服务、运行记录，加上别名与 Node 选择。"""
-    return attach_alias_rel(attach_nodes(state.snapshot(custom), nodes), aliases)
+def state_payload(state, nodes, aliases, custom, groups):
+    """页面要的整份状态：工作区、脚本、服务、运行记录，加上别名、Node 选择与分组。"""
+    return attach_layout(attach_alias_rel(attach_nodes(state.snapshot(custom), nodes), aliases), groups)
 
 
 # 状态文件
@@ -435,6 +444,8 @@ class Handler(ToolHandler):
     custom = None
     # 移出工作区时一并清掉这个工作区选的 Node。
     home_store = None
+    # 左侧工作区的分组结构，存在状态文件旁边。
+    layout = None
     api_prefix = "/__nodex/api"
     metrics = METRICS
     # 压缩任务的包名与落点，按运行号记着，页面问状态时回给它。
@@ -444,7 +455,7 @@ class Handler(ToolHandler):
     # 路由
 
     def build_state(self):
-        return state_payload(self.state, self.nodes, self.aliases, self.custom)
+        return state_payload(self.state, self.nodes, self.aliases, self.custom, self.layout)
 
     def _tool_get(self, route, query, method):
         if route == "nodes":
@@ -662,6 +673,7 @@ def serve(args):
     sessions = Sessions(fallback=sh_shell_argv)
     nodes = NodeStore(Path(args.state).parent / "node.tsv")
     aliases = AliasStore(Path(args.state).parent / "alias.tsv")
+    groups = LayoutStore(Path(args.state).parent / "groups.json")
     custom = CustomStore(Path(args.custom)) if args.custom else None
     engine = Engine(os.path.abspath(args.nodex), state, sessions, args.logs, nodes)
 
@@ -672,17 +684,23 @@ def serve(args):
     Handler.nodes = nodes
     Handler.home_store = nodes
     Handler.aliases = aliases
+    Handler.layout = groups
     Handler.custom = custom
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
 
     # 状态与指标各一条后台线程，页面开几个都共用这一份。
-    watched = [args.state, Path(args.state).parent / "alias.tsv", Path(args.state).parent / "node.tsv"]
+    watched = [
+        args.state,
+        Path(args.state).parent / "alias.tsv",
+        Path(args.state).parent / "node.tsv",
+        Path(args.state).parent / "groups.json",
+    ]
     if args.custom:
         watched.append(args.custom)
     Handler.state_stream = StateStream(
         watched,
-        build=lambda: state_payload(state, nodes, aliases, custom),
+        build=lambda: state_payload(state, nodes, aliases, custom, groups),
         tick=lambda: engine.call("tick"),
     )
     Handler.metrics_stream = MetricsStream(METRICS)

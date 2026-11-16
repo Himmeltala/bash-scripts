@@ -13,12 +13,14 @@
     <template #sidebar>
       <WorkspaceList
         :workspaces="state.workspaces"
+        :groups="state.groups"
         :current="currentId"
         :busy="adding"
         @select="select"
         @add="addWorkspace"
         @remove="removeWorkspace"
         @changed="refresh"
+        @groups-change="setGroups"
         @notice="toast($event.text, $event.color)"
       />
     </template>
@@ -76,6 +78,7 @@ const {
   metrics,
   running,
   select,
+  setGroups,
   refresh,
   act,
   start,

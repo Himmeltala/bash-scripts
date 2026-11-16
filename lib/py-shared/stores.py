@@ -1,7 +1,10 @@
-"""状态行与别名存储：bash 写状态文件，这里只读行、另存别名。"""
+"""状态行与别名存储：bash 写状态文件，这里只读行、另存别名与左侧分组。"""
 
 import os
+import threading
+from pathlib import Path
 
+from fileio import read_json, write_json
 from kvstore import FS, LineStore
 from web import ApiError, log
 
@@ -79,3 +82,74 @@ class AliasStore(LineStore):
     def validate(self, key, value):
         if len(value) > 80:
             raise ApiError(400, "别名太长，最多 80 个字")
+
+
+# 左侧分组结构的规模上限：节点条数与分组名的长度。
+LAYOUT_MAX_NODES = 2000
+LAYOUT_MAX_NAME = 80
+LAYOUT_ID_MAX = 64
+
+
+def clean_node(item):
+    """一条节点：分组要有名字，工作区只认 id；不合格的丢掉。"""
+    if not isinstance(item, dict):
+        return None
+    kind = item.get("kind")
+    if kind not in ("group", "ws"):
+        return None
+    ident = str(item.get("id") or "").strip()
+    if not ident or len(ident) > LAYOUT_ID_MAX:
+        return None
+    parent = str(item.get("parent") or "").strip()
+    if len(parent) > LAYOUT_ID_MAX or parent == ident:
+        parent = ""
+    node = {"kind": kind, "id": ident, "parent": parent}
+    if kind == "group":
+        name = " ".join(str(item.get("name") or "").split())[:LAYOUT_MAX_NAME]
+        if not name:
+            return None
+        node["name"] = name
+    return node
+
+
+class LayoutStore:
+    """左侧工作区的分组结构，存在状态文件旁边；整份读写，同一父级下的先后按数组位置。"""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+
+    def nodes(self):
+        data = read_json(self.path, default=None)
+        items = data.get("nodes") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            return []
+        out = []
+        for item in items:
+            node = clean_node(item)
+            if node is not None:
+                out.append(node)
+            if len(out) >= LAYOUT_MAX_NODES:
+                break
+        return out
+
+    def set(self, items):
+        if not isinstance(items, list):
+            raise ApiError(400, "分组结构不对")
+        if len(items) > LAYOUT_MAX_NODES:
+            raise ApiError(400, "节点太多，最多 %s 个" % LAYOUT_MAX_NODES)
+        out = []
+        for item in items:
+            node = clean_node(item)
+            if node is not None:
+                out.append(node)
+        with self._lock:
+            write_json(self.path, {"nodes": out}, ensure_ascii=False)
+        return out
+
+
+def attach_layout(snapshot, store):
+    """把左侧分组结构拼进状态回话。"""
+    if store is not None:
+        snapshot["groups"] = store.nodes()
+    return snapshot

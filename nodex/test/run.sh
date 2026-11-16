@@ -122,6 +122,7 @@ grep -q "pack" "$custom" && ! grep -q "mock" "$custom" &&
   ok '登记表只留没删的命令' || bad '登记表与删除结果不一致'
 
 python3 "$repo/nodex/test/test_web_node.py" >/dev/null 2>&1 || bad '网页工作区与别名的测试未通过'
+python3 "$repo/nodex/test/test_web_groups.py" >/dev/null 2>&1 || bad '网页左侧分组的测试未通过'
 
 "$nodex" --help >/dev/null 2>&1 && ok '--help 正常' || bad '--help 失败'
 

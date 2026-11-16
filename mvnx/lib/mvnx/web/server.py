@@ -44,7 +44,16 @@ from sse import (
     sse_event,
     tail,
 )
-from stores import FS, AliasStore, HomeStore, Row, attach_alias_rel, attach_home
+from stores import (
+    FS,
+    AliasStore,
+    HomeStore,
+    LayoutStore,
+    Row,
+    attach_alias_rel,
+    attach_home,
+    attach_layout,
+)
 from toolchain import effective_home, iter_home_dirs, prepend_bin
 from toolweb import NOT_HANDLED, WS_KIND, ToolHandler
 from web import ApiError, log
@@ -138,9 +147,9 @@ def attach_jdks(snapshot, store):
     return attach_home(snapshot, store, "jdk", is_jdk_home)
 
 
-def state_payload(state, jdks, aliases):
-    """页面要的整份状态：工作区、模块、服务、运行记录，加上别名与 JDK 选择。"""
-    return attach_alias_rel(attach_jdks(state.snapshot(), jdks), aliases)
+def state_payload(state, jdks, aliases, groups):
+    """页面要的整份状态：工作区、模块、服务、运行记录，加上别名、JDK 选择与分组。"""
+    return attach_layout(attach_alias_rel(attach_jdks(state.snapshot(), jdks), aliases), groups)
 
 
 # 状态文件
@@ -285,13 +294,15 @@ class Handler(ToolHandler):
     jdks = None
     # 移出工作区时一并清掉这个工作区选的 JDK。
     home_store = None
+    # 左侧工作区的分组结构，存在状态文件旁边。
+    layout = None
     api_prefix = "/__mvnx/api"
     metrics = METRICS
 
     # 路由
 
     def build_state(self):
-        return state_payload(self.state, self.jdks, self.aliases)
+        return state_payload(self.state, self.jdks, self.aliases, self.layout)
 
     def _tool_get(self, route, query, method):
         if route == "jdks":
@@ -329,6 +340,7 @@ def serve(args):
     sessions = Sessions()
     jdks = JdkStore(Path(args.state).parent / "jdk.tsv")
     aliases = AliasStore(Path(args.state).parent / "alias.tsv")
+    groups = LayoutStore(Path(args.state).parent / "groups.json")
     engine = Engine(os.path.abspath(args.mvnx), state, sessions, args.logs, jdks)
 
     Handler.static = static
@@ -338,13 +350,19 @@ def serve(args):
     Handler.jdks = jdks
     Handler.home_store = jdks
     Handler.aliases = aliases
+    Handler.layout = groups
     Handler.logs = str(Path(args.logs).resolve())
     Handler.api_prefix = args.api
 
     # 状态与指标各一条后台线程，页面开几个都共用这一份。
     Handler.state_stream = StateStream(
-        [args.state, Path(args.state).parent / "alias.tsv", Path(args.state).parent / "jdk.tsv"],
-        build=lambda: state_payload(state, jdks, aliases),
+        [
+            args.state,
+            Path(args.state).parent / "alias.tsv",
+            Path(args.state).parent / "jdk.tsv",
+            Path(args.state).parent / "groups.json",
+        ],
+        build=lambda: state_payload(state, jdks, aliases, groups),
         tick=lambda: engine.call("tick"),
     )
     Handler.metrics_stream = MetricsStream(METRICS)
