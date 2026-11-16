@@ -2,6 +2,15 @@
 
 nodex、jvmx、dvcsx、llmx 共用的 Vue 组件、组合式函数与主题，做成 `file:` 依赖的本地包：源码在这里，编出 `dist/` 供各工程引用。
 
+## 目录约定
+
+`components`、`composables`、`utils`、`styles` 都分 `commons` 与 `services` 两层：
+
+- `commons/`：与具体工具无关，新起一个不相干的项目也能直接用。文件编辑器、差异视图、日志终端、指标、浮窗、提示条、分隔条、目录选择、文件树、格式化与 HTTP 工具都在这里。
+- `services/`：当前几个工具共用的「工作区 / 服务」业务件，只有做同类页面的项目才会用。`WorkspaceShell`、`WorkspaceList`、`ServiceTable`、`RunLogPanel`、`useWorkspaceState`、`useRunLog`、`serviceStatus`、`workspaceLayout` 属于这一类。
+
+判断标准：B 项目与 A/C/D 无关时能否原样使用；能就是 `commons`，只是这几个工具之间共享的就是 `services`。业务样式留在组件自己的 scoped CSS 里，`styles/commons/base.css` 只放全局基础样式。
+
 ## 编译
 
 ```bash

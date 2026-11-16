@@ -10,7 +10,7 @@
 <script setup>
 import { ref } from 'vue'
 import TextEditor from '../TextEditor.vue'
-import { languageOf } from '../../../../utils/highlight.js'
+import { languageOf } from '../../../../../utils/commons/highlight.js'
 
 defineProps({
   modelValue: { type: String, default: '' },

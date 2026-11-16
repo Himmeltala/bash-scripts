@@ -30,7 +30,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useDialogLayout } from '../composables/useDialogLayout'
+import { useDialogLayout } from '../../composables/commons/useDialogLayout.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

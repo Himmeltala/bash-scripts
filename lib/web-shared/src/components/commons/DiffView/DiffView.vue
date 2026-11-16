@@ -58,7 +58,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { MAX_HIGHLIGHT, highlightCode, languageOf } from '../../utils/highlight.js'
+import { MAX_HIGHLIGHT, highlightCode, languageOf } from '../../../utils/commons/highlight.js'
 
 const props = defineProps({
   text: { type: String, default: '' },

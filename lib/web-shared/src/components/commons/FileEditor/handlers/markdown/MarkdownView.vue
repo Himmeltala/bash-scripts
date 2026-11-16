@@ -7,7 +7,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { renderMarkdown, shouldRenderMarkdown } from '../../../../utils/markdown.js'
+import { renderMarkdown, shouldRenderMarkdown } from '../../../../../utils/commons/markdown.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },

@@ -65,7 +65,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { fileIcon } from '../../utils/fileIcons.js'
+import { fileIcon } from '../../../utils/commons/fileIcons.js'
 
 const props = defineProps({
   node: { type: Object, required: true },

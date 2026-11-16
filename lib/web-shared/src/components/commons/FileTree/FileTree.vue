@@ -98,7 +98,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import FileTreeNode from './FileTreeNode.vue'
-import { copyText } from '../../utils/clipboard.js'
+import { copyText } from '../../../utils/commons/clipboard.js'
 
 const props = defineProps({
   loader: { type: Function, required: true },

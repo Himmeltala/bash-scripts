@@ -240,15 +240,15 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import DirectoryPicker from './DirectoryPicker/index.js'
-import FloatingDialog from './FloatingDialog.vue'
-import { copyText } from '../utils/clipboard.js'
+import DirectoryPicker from '../commons/DirectoryPicker/index.js'
+import FloatingDialog from '../commons/FloatingDialog.vue'
+import { copyText } from '../../utils/commons/clipboard.js'
 import {
   flattenRows,
   fullNodes as buildNodes,
   inSubtree as isInside,
   listGroups,
-} from '../utils/workspaceLayout.js'
+} from '../../utils/services/workspaceLayout.js'
 
 const props = defineProps({
   workspaces: { type: Array, required: true },

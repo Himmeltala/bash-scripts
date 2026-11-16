@@ -13,7 +13,7 @@
 </template>
 
 <script setup>
-import LogView from './LogView.vue'
+import LogView from '../commons/LogView.vue'
 
 defineProps({
   text: { type: String, default: '' },

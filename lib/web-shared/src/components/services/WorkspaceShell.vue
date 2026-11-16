@@ -44,10 +44,10 @@
 
 <script setup>
 import { ref } from 'vue'
-import EmptyState from './EmptyState.vue'
-import SplitHandle from './SplitHandle.vue'
-import ToastHost from './ToastHost.vue'
-import { useSplitPane } from '../composables/useSplitPane.js'
+import EmptyState from '../commons/EmptyState.vue'
+import SplitHandle from '../commons/SplitHandle.vue'
+import ToastHost from '../commons/Feedback/ToastHost.vue'
+import { useSplitPane } from '../../composables/commons/useSplitPane.js'
 
 const props = defineProps({
   title: { type: String, required: true },

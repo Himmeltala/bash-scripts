@@ -11,7 +11,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import EditorPane from '../widgets/EditorPane.vue'
-import { highlightCode } from '../../../utils/highlight.js'
+import { highlightCode } from '../../../../utils/commons/highlight.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
