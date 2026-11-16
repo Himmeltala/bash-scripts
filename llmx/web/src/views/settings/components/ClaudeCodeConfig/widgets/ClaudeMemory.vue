@@ -1,12 +1,9 @@
 <template>
   <div class="memory">
     <div class="bar">
-      <span class="path mono">{{ info.path || '~/.claude/CLAUDE.md' }}</span>
       <v-chip v-if="loaded && !info.writable" size="x-small" variant="tonal">只读</v-chip>
       <v-spacer />
-      <span class="hint">
-        {{ info.exists ? '' : '文件还不存在，保存时新建。' }}改完对新开的会话生效。
-      </span>
+      <span v-if="!info.exists" class="hint">文件还不存在，保存时新建。</span>
     </div>
     <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2">
       {{ error }}
@@ -79,15 +76,6 @@ onMounted(async () => {
 .editor > * {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.path {
-  font-size: 0.8rem;
-  word-break: break-all;
-}
-
-.mono {
-  font-family: 'JetBrains Mono', monospace;
 }
 
 .hint {

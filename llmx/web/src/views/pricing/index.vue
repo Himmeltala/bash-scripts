@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { FileEditor } from '@bash-scripts/web-shared'
 import { configApi } from './composables/useConfig'
 
@@ -53,6 +53,8 @@ onMounted(async () => {
     info = await configApi.get()
     writable.value = info.writable
     loaded.value = true
+    // 编辑器挂在 loaded 后面，同一个 tick 里 ref 还是空的，等这轮渲染完再打开。
+    await nextTick()
     await editorRef.value?.open(info.path)
   } catch (err) {
     loadError.value = err.message

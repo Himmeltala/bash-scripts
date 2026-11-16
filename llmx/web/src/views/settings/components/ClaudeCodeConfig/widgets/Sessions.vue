@@ -61,7 +61,6 @@
         show-select
         density="compact"
         fixed-header
-        height="100%"
         :loading="!sessions.loaded"
         :items-per-page="50"
       >
@@ -215,7 +214,17 @@ onMounted(refresh)
   flex: 0 1 18rem;
 }
 
+/* 表格自己滚，底下的目录说明才不会被长表格压住：不把高度收在容器里，
+   v-table 会按内容长出去，行直接盖到说明文字上。 */
 .table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table :deep(.v-data-table) {
   flex: 1 1 auto;
   min-height: 0;
 }
