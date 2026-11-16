@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# llmx 入口：无参数且连着终端时进交互菜单，其余参数交给 Python。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+root=${self%/bin/*}
+export PYTHONPATH="$root/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+menu=0
+if (($# == 0)); then
+  [[ -t 0 && -t 1 && -t 2 ]] && menu=1
+elif [[ $# -eq 1 && $1 == menu ]]; then
+  menu=1
+fi
+
+if ((menu)); then
+  # shellcheck source=../lib/llmx-tui.sh
+  if source "$root/lib/llmx-tui.sh"; then
+    llmx_tui
+    exit $?
+  fi
+  # 显式要菜单却没界面组件是错误；无参数时退回默认日报，不让工具整个不可用。
+  if (($# > 0)); then
+    printf 'llmx: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
+    exit 1
+  fi
+  printf 'llmx: 界面不可用，按默认范围输出日报\n' >&2
+fi
+
+exec "${LLMX_PYTHON:-python3}" -m llmx "$@"

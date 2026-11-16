@@ -1,6 +1,6 @@
 # web-shared
 
-nodex、mvnx、dvcsx、tokx 四个网页界面共用的组件、组合式函数与主题，做成一个本地 npm 包：源码在这里，编出 `dist/`，各个工程按 `file:` 依赖装进去引用。
+nodex、mvnx、dvcsx、llmx 四个网页界面共用的组件、组合式函数与主题，做成一个本地 npm 包：源码在这里，编出 `dist/`，各个工程按 `file:` 依赖装进去引用。
 
 ## 编译
 
@@ -59,7 +59,7 @@ import '@bash-scripts/web-shared/style.css'
 | `useRunLog` | 日志弹窗的数据：SSE 尾部与追加、往前翻页、运行状态同步 | nodex、mvnx |
 | `useWorkspaceState` | 工作区状态：状态 SSE、动作串行、增删工作区、启停与保存参数；工具链候选走 `loadExtra`，业务文案由调用方给 | nodex、mvnx |
 | `runningCount` / `LIVE_STATUSES` | 服务在跑计数与活动状态，放在主入口，不进 `/format` | nodex、mvnx |
-| `createThemedVuetify` / `useThemeToggle`（子入口 `/theme`） | Vuetify 实例与深浅色主题；标题栏开关可跟随系统 | dvcsx、nodex、mvnx、tokx |
+| `createThemedVuetify` / `useThemeToggle`（子入口 `/theme`） | Vuetify 实例与深浅色主题；标题栏开关可跟随系统 | dvcsx、nodex、mvnx、llmx |
 | `baseName` / `dirName` / `shortPath` / `shortenPath` / `firstLine` / `formatDateTime` / `formatAgo` / `formatBytes` / `formatNumber` / `formatMoney` / `formatCompact`（子入口 `/format`） | 纯格式化函数，业务常量与端点表仍留在各工程 | 四边 |
 | `ApiError` / `encodeParam` / `createJsonClient`（子入口 `/http`） | 统一 JSON 请求与错误文案，前缀和文案由调用方传 | 四边 |
 | `paint` / `createLogColorizer`（子入口 `/logs`） | 日志着色骨架，规则表由调用方传 | nodex、mvnx |
