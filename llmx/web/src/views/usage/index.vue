@@ -24,26 +24,17 @@
           hide-details
           class="pick"
         />
-        <template v-if="view.range === 'custom'">
-          <v-date-input
-            v-model="sinceDate"
-            label="起始日期"
-            density="compact"
-            variant="outlined"
-            hide-details
-            clearable
-            class="pick"
-          />
-          <v-date-input
-            v-model="untilDate"
-            label="结束日期"
-            density="compact"
-            variant="outlined"
-            hide-details
-            clearable
-            class="pick"
-          />
-        </template>
+        <v-date-input
+          v-if="view.range === 'custom'"
+          v-model="rangeDates"
+          label="日期范围"
+          density="compact"
+          variant="outlined"
+          hide-details
+          clearable
+          multiple="range"
+          class="range-pick"
+        />
         <v-chip-group v-model="view.sources" multiple filter selected-class="text-primary">
           <v-chip
             v-for="item in SOURCES"
@@ -105,16 +96,14 @@ function dateToDay(value) {
   return `${value.getFullYear()}-${month}-${day}`
 }
 
-const sinceDate = computed({
-  get: () => dayToDate(view.since),
+// Vuetify 没有独立的日期范围组件，VDateInput 的 multiple="range" 就是范围选择：
+// 选满两个端点后模型里是整段日期，这里只留首尾，对应地址栏的 since 与 until。
+const rangeDates = computed({
+  get: () => [dayToDate(view.since), dayToDate(view.until)].filter(Boolean),
   set: (value) => {
-    view.since = dateToDay(value)
-  },
-})
-const untilDate = computed({
-  get: () => dayToDate(view.until),
-  set: (value) => {
-    view.until = dateToDay(value)
+    const list = Array.isArray(value) ? value.filter(Boolean) : []
+    view.since = dateToDay(list[0])
+    view.until = dateToDay(list[list.length - 1])
   },
 })
 
@@ -183,5 +172,11 @@ onBeforeUnmount(() => {
 
 .pick {
   flex: 0 0 9.5rem;
+}
+
+/* 范围输入要放下两个日期和清除按钮，比单个下拉宽一些。 */
+.range-pick {
+  flex: 0 0 20rem;
+  max-width: 100%;
 }
 </style>
