@@ -5,9 +5,6 @@
       <v-spacer />
       <span v-if="!info.exists" class="hint">文件还不存在，保存时新建。</span>
     </div>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2">
-      {{ error }}
-    </v-alert>
     <div class="editor">
       <FileEditor
         ref="editorRef"
@@ -20,13 +17,15 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { watch, onMounted, ref } from 'vue'
+import { toast } from '../../../../../composables/notice'
 import { FileEditor } from '@bash-scripts/web-shared'
 import { get, post } from '../../../../../composables/useApi'
 
 const info = ref({ path: '', exists: false, text: '', size: 0, writable: true })
 const loaded = ref(false)
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 const editorRef = ref(null)
 
 function loadFile() {

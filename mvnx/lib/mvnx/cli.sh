@@ -46,18 +46,18 @@ EOF
 
   cat <<'EOF'
 
-网页命令:
-  mvnx web       起网页界面，左侧添加工作区，右侧点按钮启停、打包、装本地仓库
-      --host 地址  监听地址，默认 0.0.0.0，同一网络里的机器都能开；只想本机用 --host 127.0.0.1
-  -p, --port 端口  监听端口，默认 8300
-  -o, --open     起来后打开默认浏览器
-      --json     只打一行 {"url":…,"local":…,"host":…,"port":…}，给脚本起服务用
 
 选项:
   -l, --list     只列出目标，不执行；没写命令时按 run 列
       --refresh  清掉当前命令上次的勾选记录，重新开始
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
+
+机器接口（供 jvmx 网页壳调用）:
+  mvnx --list --json [命令]   输出目标 JSON
+  mvnx exec --id <id>         执行单个目标
+      --mode auto|compile|no-compile|rebuild  指定启动方式
+      --args "参数"           追加到 mvn 参数尾部，可与其他选项同用
 
 启动方式（只对 run 与 war 有效，命令行里后面写的覆盖前面的）:
   （不写）       自动：源码与各级 pom 都没比 target/classes 新就跳过编译
@@ -84,10 +84,13 @@ EOF
 # 解析结果放全局。不用命令替换接：命令替换会开子 shell，函数里的赋值出不来。
 ACTION=''
 # 网页模式：不写参数是主进程，--engine 是 python 拉起来的执行进程，只接请求流。
-WEB_ENGINE=0
 JSON_ONLY=0
 LIST_ONLY=0
 REFRESH=0
+# 机器接口：exec --id 与 jvmx 每行保存的额外参数。
+MACHINE_EXEC=0
+EXEC_ID=''
+EXTRA_ARGS=''
 # --no-am 由 package 与 install 共用，NO_AM_FLAG 只在报错时回显用户写的那个参数。
 NO_AM=0
 NO_AM_FLAG=''
@@ -118,14 +121,23 @@ parse_args() {
       -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$a ;;
       --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$a ;;
       --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$a ;;
+      # 机器接口用一档写全：jvmx 按每行保存的方式传 auto|compile|no-compile|rebuild。
+      --mode)
+        case "${args[$i]:-}" in
+          "$MODE_AUTO") START_MODE=$MODE_AUTO; MODE_FLAG='' ;;
+          "$MODE_COMPILE") START_MODE=$MODE_COMPILE; MODE_FLAG='--mode compile' ;;
+          "$MODE_NO_COMPILE") START_MODE=$MODE_NO_COMPILE; MODE_FLAG='--mode no-compile' ;;
+          "$MODE_REBUILD") START_MODE=$MODE_REBUILD; MODE_FLAG='--mode rebuild' ;;
+          *) usage_error '--mode 取 auto、compile、no-compile、rebuild' ;;
+        esac
+        i=$((i + 1))
+        ;;
       --no-am) NO_AM=1; NO_AM_FLAG=$a ;;
       --no-clean) PACK_NO_CLEAN=1; PACK_NO_CLEAN_FLAG=$a ;;
-      -p|--port) RV_PORT=${args[$i]:-}; i=$((i + 1)) ;;
-      --host) RV_HOST=${args[$i]:-}; i=$((i + 1)) ;;
-      -o|--open) RV_OPEN=1 ;;
-      --json) JSON_ONLY=1; WEB_JSON_FLAG=1 ;;
-      --engine) WEB_ENGINE=1 ;;
-      web) if [[ -z "$ACTION" ]]; then ACTION='web'; else POSITIONAL+=("$a"); fi ;;
+      --json) JSON_ONLY=1 ;;
+      exec) if [[ -z "$ACTION" ]]; then MACHINE_EXEC=1; else POSITIONAL+=("$a"); fi ;;
+      --id) EXEC_ID=${args[$i]:-}; i=$((i + 1)) ;;
+      --args) EXTRA_ARGS=${args[$i]:-}; i=$((i + 1)) ;;
       -*) usage_error "未知选项 $a" ;;
       *)
         if [[ -z "$ACTION" ]] && is_action "$a"; then
@@ -185,6 +197,10 @@ run_action() {
 
   local -a recs=()
   mapfile -t recs < <("$collector" | shell_assign_tags)
+  if ((LIST_ONLY && JSON_ONLY)); then
+    machine_json "$cmd"
+    return 0
+  fi
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
 
   local rec tag workdir plpath mvnargs display cmdtext
@@ -272,14 +288,13 @@ ui_main() {
 main() {
   parse_args "$@"
 
-  # 网页模式的三个入口先分流，不走后面的目标收集与勾选。
-  if ((WEB_ENGINE)); then
-    web_engine
+  # 机器接口：jvmx 网页壳按 id 调一个目标，不经过菜单与勾选。
+  if ((MACHINE_EXEC)); then
+    machine_exec
     return
   fi
-  if [[ "$ACTION" == 'web' ]]; then
-    web_command
-    return
+  if [[ -n "$EXEC_ID" || -n "$EXTRA_ARGS" ]]; then
+    usage_error '--id 与 --args 只用于 exec'
   fi
   command -v mvn >/dev/null || die '找不到 mvn，确认 Maven 在 PATH 中'
   # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。

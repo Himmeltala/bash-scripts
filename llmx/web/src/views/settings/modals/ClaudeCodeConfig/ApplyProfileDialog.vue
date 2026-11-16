@@ -23,12 +23,9 @@
       :loading="loading"
       :error="loadError"
     />
-    <v-alert v-if="!loading && !loadError && same" type="info" variant="tonal" density="compact">
+    <p v-if="!loading && !loadError && same" class="text-body-2 text-medium-emphasis">
       这份内容与当前生效文件相同，不用再应用。
-    </v-alert>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-2">
-      {{ error }}
-    </v-alert>
+    </p>
 
     <template #actions>
       <v-btn variant="text" @click="close">取消</v-btn>
@@ -47,6 +44,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { toast } from '../../../../composables/notice'
 import { FloatingDialog } from '@bash-scripts/web-shared'
 import { DiffView } from '@bash-scripts/web-shared/diff'
 
@@ -64,6 +62,7 @@ const same = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 const busy = ref(false)
 
 watch(

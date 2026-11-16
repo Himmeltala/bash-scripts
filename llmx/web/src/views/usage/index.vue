@@ -54,20 +54,11 @@
 
     <SummaryCards v-if="data" class="mb-2" />
 
-    <v-alert v-if="notice" type="warning" variant="tonal" density="compact" class="mb-2">
-      {{ notice }}
-    </v-alert>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2">
-      {{ error }}
-    </v-alert>
-
     <UsageCharts v-if="hasRows" class="mb-2" />
     <div v-if="hasRows" class="table-area">
       <UsageTable />
     </div>
-    <v-alert v-else-if="data && !error" type="info" variant="tonal" density="compact">
-      没有找到用量记录。
-    </v-alert>
+    <p v-else-if="data && !error" class="hint">没有找到用量记录。</p>
   </v-container>
 </template>
 
@@ -80,6 +71,7 @@ import SummaryCards from './components/SummaryCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
 import { VDateInput } from 'vuetify/labs/VDateInput'
+import { toast } from '../../composables/notice'
 
 // 地址栏里存 YYYY-MM-DD，日期组件收发的是本地时区的 Date，两边在这里换。
 function dayToDate(text) {
@@ -114,6 +106,10 @@ const notice = computed(() => {
 
 const hasRows = computed(() => !!data.value?.rows.length)
 
+// 提示与错误走全局 snackbar，页面不再为一条消息让出布局。
+watch(notice, (text) => text && toast(text, 'warning'))
+watch(error, (text) => text && toast(text, 'error'))
+
 function reload() {
   subscribe()
 }
@@ -139,6 +135,12 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.hint {
+  margin: 16px 0;
+  font-size: 0.84rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+
 /* 整页按一屏高排，表格占满余下的空间，行多时只让表格自己滚动。 */
 .page {
   display: flex;

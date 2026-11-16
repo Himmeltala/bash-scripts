@@ -51,6 +51,8 @@
     <v-main>
       <component :is="current" />
     </v-main>
+
+    <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
   </v-app>
 </template>
 
@@ -60,6 +62,8 @@ import { PAGES, page, writePageUrl } from './composables/usePage'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
+import { ToastHost } from '@bash-scripts/web-shared/ui'
+import { snack } from './composables/notice'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEWS = {

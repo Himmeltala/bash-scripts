@@ -1,17 +1,5 @@
 <template>
   <v-container fluid class="pa-2 page">
-    <v-alert
-      v-if="loaded && !writable"
-      type="info"
-      variant="tonal"
-      density="compact"
-      class="mb-2"
-    >
-      当前页面不是从本机打开的，只能查看；要在这台机器外修改，用 --allow-write 启动服务。
-    </v-alert>
-    <v-alert v-if="loadError" type="error" variant="tonal" density="compact" class="mb-2">
-      {{ loadError }}
-    </v-alert>
     <p v-if="loaded && !loadError" class="hint">
       保存后下一轮推送就按新价重算，不用重启服务。
     </p>
@@ -27,13 +15,22 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { FileEditor } from '@bash-scripts/web-shared'
 import { configApi } from './composables/useConfig'
+import { toast } from '../../composables/notice'
 
 const loaded = ref(false)
 const loadError = ref('')
 const writable = ref(true)
+
+// 反馈统一走 snackbar：加载失败与“只能查看”都不再占页面位置。
+watch(loadError, (text) => text && toast(text, 'error'))
+watch([loaded, writable], ([ready, ok]) => {
+  if (ready && !ok) {
+    toast('当前页面不是从本机打开的，只能查看；要修改请用 --allow-write 启动服务。', 'warning')
+  }
+})
 const editorRef = ref(null)
 // 打开时只取一份：FileEditor 接着要内容时用同一份，免得一秒内发两次请求。
 let info = null

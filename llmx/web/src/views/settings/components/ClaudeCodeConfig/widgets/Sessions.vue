@@ -40,18 +40,6 @@
     </div>
 
     <p v-if="sessions.error" class="hint bad">{{ sessions.error }}</p>
-    <v-alert
-      v-if="notice"
-      type="success"
-      variant="tonal"
-      density="compact"
-      class="mb-2"
-      closable
-      @click:close="notice = ''"
-    >
-      {{ notice }}
-    </v-alert>
-
     <div class="table">
       <v-data-table
         v-model="selected"
@@ -101,6 +89,8 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { watch } from 'vue'
+import { toast } from '../../../../../composables/notice'
 import { formatBytes, formatCompact, formatMoney } from '@bash-scripts/web-shared/format'
 import { useClaudeSessions } from '../../../composables/ClaudeCodeConfig/useClaudeSessions'
 import DeleteSessionsDialog from '../../../modals/ClaudeCodeConfig/DeleteSessionsDialog.vue'
@@ -111,6 +101,7 @@ const project = ref('')
 const search = ref('')
 const selected = ref([])
 const notice = ref('')
+watch(notice, (text) => text && toast(text, 'success'))
 const deleteOpen = ref(false)
 const detailId = ref('')
 

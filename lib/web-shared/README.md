@@ -1,6 +1,6 @@
 # web-shared
 
-nodex、mvnx、dvcsx、llmx 共用的 Vue 组件、组合式函数与主题，做成 `file:` 依赖的本地包：源码在这里，编出 `dist/` 供各工程引用。
+nodex、jvmx、dvcsx、llmx 共用的 Vue 组件、组合式函数与主题，做成 `file:` 依赖的本地包：源码在这里，编出 `dist/` 供各工程引用。
 
 ## 编译
 

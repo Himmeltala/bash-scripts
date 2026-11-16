@@ -21,10 +21,6 @@
       autofocus
       @keyup.enter="submit"
     />
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-2">
-      {{ error }}
-    </v-alert>
-
     <template #actions>
       <v-spacer />
       <v-btn variant="text" @click="close">取消</v-btn>
@@ -43,6 +39,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { toast } from '../../../../composables/notice'
 import { FloatingDialog } from '@bash-scripts/web-shared'
 
 const props = defineProps({
@@ -54,6 +51,7 @@ const emit = defineEmits(['update:modelValue'])
 
 const name = ref('')
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 const busy = ref(false)
 
 watch(

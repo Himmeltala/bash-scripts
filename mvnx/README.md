@@ -15,7 +15,6 @@ mvnx --rebuild        先 clean 再编译
 mvnx -c               强制编译
 mvnx --list           只列目标；默认按 run 列
 mvnx --refresh        清掉当前命令的勾选记录
-mvnx web              起网页界面
 ```
 
 四个命令：
@@ -29,22 +28,9 @@ mvnx web              起网页界面
 
 `install` 带 `resources.skip`，只用于把依赖补进本地仓库，产物不适合部署。`package` 的 `--no-am` 去掉 `-am`，`--no-clean` 去掉 `clean`。
 
-## 网页模式
+## 网页
 
-```
-mvnx web              默认 8300
-mvnx web --host 127.0.0.1 -p 8770
-mvnx web --json
-```
-
-| 选项 | 说明 |
-| --- | --- |
-| `--host 地址` | 默认 `0.0.0.0`；只想本机用 `127.0.0.1` |
-| `-p, --port 端口` | 默认 8300 |
-| `-o, --open` | 打开默认浏览器 |
-| `--json` | 只打一行地址给脚本用 |
-
-页面左侧添加工作区，右侧启停、打包、装本地仓库，看运行日志与指标。写操作只接受本机。工作区右键可设别名、复制路径；别名在 `~/.cache/mvnx/web/alias.tsv`。前端产物随仓库提交，`./install.sh` 每次用 Node 重新构建。
+网页入口已拆到 jvmx：`jvmx web` 统一管理 Maven 与 Gradle 工作区，mvnx 只保留终端与机器接口。
 
 ## 启动方式
 

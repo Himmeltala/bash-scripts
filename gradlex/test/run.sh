@@ -215,6 +215,11 @@ else
   printf 'ok - 已删除自定义编号清单\n'
 fi
 
+bash "$repo/gradlex/test/test_machine.sh" >/dev/null 2>&1 || {
+  printf 'FAIL - 机器接口测试未通过\n' >&2
+  fail=1
+}
+
 if ((fail)); then
   printf '\n有测试失败\n' >&2
   exit 1

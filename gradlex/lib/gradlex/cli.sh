@@ -50,6 +50,11 @@ EOF
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
 
+机器接口（供 jvmx 网页壳调用）:
+  gradlex --list --json [命令]   输出目标 JSON
+  gradlex exec --id <id>         执行单个目标
+      --args "参数"              追加到任务尾部
+
 构建参数（run 与 build 都可用，可同时写）:
   --rebuild      任务前加 clean，先清理再执行
       --refresh  追加 --refresh-dependencies，强制刷新依赖
@@ -69,7 +74,11 @@ EOF
 # 解析结果放全局。不用命令替换接：命令替换会开子 shell，函数里的赋值出不来。
 ACTION=''
 LIST_ONLY=0
+JSON_ONLY=0
 RESET_SELECTION=0
+MACHINE_EXEC=0
+EXEC_ID=''
+EXTRA_ARGS=''
 declare -a POSITIONAL=()
 declare -a UI_ACTION_ITEMS=()
 
@@ -96,6 +105,10 @@ parse_args() {
       --reset) RESET_SELECTION=1 ;;
       --rebuild) REBUILD=1 ;;
       --refresh) REFRESH_DEPS=1 ;;
+      --json) JSON_ONLY=1 ;;
+      exec) if [[ -z "$ACTION" ]]; then MACHINE_EXEC=1; else POSITIONAL+=("$a"); fi ;;
+      --id) EXEC_ID=${args[$i]:-}; i=$((i + 1)) ;;
+      --args) EXTRA_ARGS=${args[$i]:-}; i=$((i + 1)) ;;
       -*) usage_error "未知选项 $a" ;;
       *)
         if [[ -z "$ACTION" ]] && is_action "$a"; then
@@ -141,6 +154,10 @@ run_action() {
 
   local -a recs=()
   mapfile -t recs < <("$collector" | assign_tags | apply_start_mode)
+  if ((LIST_ONLY && JSON_ONLY)); then
+    machine_json "$cmd"
+    return 0
+  fi
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
 
   local rec tag workdir projectpath taskargs display cmdtext
@@ -212,6 +229,15 @@ ui_main() {
 
 main() {
   parse_args "$@"
+
+  # 机器接口：jvmx 网页壳按 id 调一个目标，不经过菜单与勾选。
+  if ((MACHINE_EXEC)); then
+    machine_exec
+    return
+  fi
+  if [[ -n "$EXEC_ID" || -n "$EXTRA_ARGS" ]]; then
+    usage_error '--id 与 --args 只用于 exec'
+  fi
   # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。
   ui_detect
   build_action_items

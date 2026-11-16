@@ -12,7 +12,7 @@
     <template #title>会话 {{ id }}</template>
 
     <p v-if="loading" class="hint">正在读取…</p>
-    <v-alert v-else-if="error" type="error" variant="tonal" density="compact">{{ error }}</v-alert>
+    <template v-else-if="error" />
     <template v-else-if="info">
       <div class="facts">
         <span>项目：{{ info.project || '-' }}</span>
@@ -28,15 +28,9 @@
           {{ model }}
         </v-chip>
       </v-chip-group>
-      <v-alert
-        v-if="info.unpriced_models.length"
-        type="warning"
-        variant="tonal"
-        density="compact"
-        class="my-2"
-      >
+      <p v-if="info.unpriced_models.length" class="text-body-2 text-medium-emphasis my-2">
         这些模型没有价格，只算 token 不算钱：{{ info.unpriced_models.join('、') }}
-      </v-alert>
+      </p>
 
       <v-table density="compact" class="rows">
         <thead>
@@ -73,6 +67,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { toast } from '../../../../composables/notice'
 import { FloatingDialog } from '@bash-scripts/web-shared'
 import { formatBytes, formatCompact, formatMoney } from '@bash-scripts/web-shared/format'
 
@@ -86,6 +81,7 @@ const emit = defineEmits(['update:modelValue'])
 const info = ref(null)
 const loading = ref(false)
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 
 watch(
   () => props.modelValue,

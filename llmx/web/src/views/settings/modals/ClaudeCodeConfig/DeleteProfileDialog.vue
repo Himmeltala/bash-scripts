@@ -16,10 +16,6 @@
     <p class="hint">
       只删这份配置档文件，<code>settings.json</code> 不动；正在生效的配置删掉后只是不再标记。
     </p>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-2">
-      {{ error }}
-    </v-alert>
-
     <template #actions>
       <v-spacer />
       <v-btn variant="text" @click="close">取消</v-btn>
@@ -29,7 +25,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { watch, ref } from 'vue'
+import { toast } from '../../../../composables/notice'
 import { FloatingDialog } from '@bash-scripts/web-shared'
 
 const props = defineProps({
@@ -40,6 +37,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 const busy = ref(false)
 
 function close() {

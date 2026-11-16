@@ -19,7 +19,8 @@ for gradlex_module in \
   "$gradlex_dir"/gradlex/util.sh \
   "$gradlex_dir"/gradlex/scan.sh \
   "$gradlex_dir"/gradlex/ui.sh \
-  "$gradlex_dir"/gradlex/exec.sh
+  "$gradlex_dir"/gradlex/exec.sh \
+  "$gradlex_dir"/gradlex/machine.sh
 do
   source "$gradlex_module"
 done

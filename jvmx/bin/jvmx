@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# jvmx 入口：只起网页壳，Maven 与 Gradle 的目标发现、执行交给 mvnx / gradlex。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+root=${self%/bin/*}
+export PYTHONPATH="$root/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+exec "${JVMX_PYTHON:-python3}" -m jvmx "$@"

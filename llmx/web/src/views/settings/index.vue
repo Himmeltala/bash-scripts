@@ -18,9 +18,7 @@
 
     <div class="body">
       <component :is="active" v-if="active" />
-      <v-alert v-else type="info" variant="tonal" density="compact">
-        这个页签还没接入。
-      </v-alert>
+      <p v-else class="hint">这个页签还没接入。</p>
     </div>
   </v-container>
 </template>
@@ -62,6 +60,12 @@ watch(tab, (value) => {
 </script>
 
 <style scoped>
+.hint {
+  margin: 16px 0;
+  font-size: 0.84rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+
 .page {
   display: flex;
   flex-direction: column;

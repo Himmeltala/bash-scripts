@@ -38,10 +38,6 @@
       variant="outlined"
     />
     <p class="hint">名称就是文件名，允许中文，不能带路径分隔符，也不能与已有配置档重名。</p>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-2">
-      {{ error }}
-    </v-alert>
-
     <template #actions>
       <v-spacer />
       <v-btn variant="text" @click="close">取消</v-btn>
@@ -54,6 +50,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { toast } from '../../../../composables/notice'
 import { FloatingDialog } from '@bash-scripts/web-shared'
 
 const props = defineProps({
@@ -70,6 +67,7 @@ const name = ref('')
 const source = ref('blank')
 const origin = ref('')
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 const busy = ref(false)
 
 const sources = computed(() => {

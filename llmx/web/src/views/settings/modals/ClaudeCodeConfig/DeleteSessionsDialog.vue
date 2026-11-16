@@ -23,10 +23,6 @@
       文件会移到 <code>{{ garbage }}</code>，账本里的用量记录不动，历史统计不会变小。
       回收目录要腾空间时自己清。
     </p>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-2">
-      {{ error }}
-    </v-alert>
-
     <template #actions>
       <v-spacer />
       <v-btn variant="text" @click="close">取消</v-btn>
@@ -36,7 +32,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { watch, computed, ref } from 'vue'
+import { toast } from '../../../../composables/notice'
 import { FloatingDialog } from '@bash-scripts/web-shared'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 
@@ -49,6 +46,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const error = ref('')
+watch(error, (text) => text && toast(text, 'error'))
 const busy = ref(false)
 
 const size = computed(() => props.rows.reduce((sum, row) => sum + (row.size || 0), 0))

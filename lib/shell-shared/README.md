@@ -1,6 +1,6 @@
 # shell-shared
 
-nodex 与 mvnx 共用的 shell 基础件，dvcsx 只用 `base.sh` 与 `web-command.sh`。不是工具，没有入口；各工具按顺序 `source`。
+nodex 用全部基础件，mvnx 用 `base.sh` 与 `ui-records.sh`，dvcsx 用 `base.sh` 与 `web-command.sh`。不是工具，没有入口；各工具按顺序 `source`。
 
 ```
 base.sh         退出码、FS、CACHE_DIR、die/usage_error、路径工具
