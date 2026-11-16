@@ -12,6 +12,7 @@ llmx [选项] [命令]
   session        按会话汇总，每个模型、每个接口地址一行
   hour           按一天内的小时分布汇总，每个模型、每个接口地址一行
   project        按项目汇总，每个项目里每个模型、每个接口地址一行
+  api            按 API 地址汇总，每个地址下每个来源、模型一行
   rebuild        清空账本后全量重扫、重建
   db             用量账本：import 采集入库，status 看概况，gc 清理过期记录
   web            在浏览器里看用量，SSE 每 3 秒检查一次
@@ -38,6 +39,7 @@ llmx menu                             显式打开菜单，管道里也能用
 llmx --all                            全部历史
 llmx session --all                    按会话看，每个会话的每个模型一行
 llmx project --all                    按项目看，找出最烧钱的项目
+llmx api --all                        按接口地址看，找出最烧钱的接口
 llmx hour --all                       按时段看，看高峰时段用了多少
 llmx -s dsh --since 2026-10-01        只看 DeepSeek Harness
 llmx --json                           输出 JSON，交给脚本处理
@@ -69,7 +71,7 @@ dsh       qwen3.8-27b     https://api.deepseek.com/anthropic  2026-10-27        
 
 `出处` 列留空的是本次现扫到的行；会话文件已经不在了、数字从账本读回来的行标成 `缓存`，表下会多一行说明。
 
-`API 地址` 列是请求实际走的接口地址：Claude Code 取设置文件里的 `ANTHROPIC_BASE_URL`，opencode 取配置文件里 `provider.<id>.options.baseURL`，DeepSeek Harness 取 profile 补丁里 `providers.<id>.baseURL`。配置里没写地址的常见 provider 用内置默认地址，其余查不到时显示 `-`。地址按当前配置解析，换了地址后旧日期也跟着变。同一模型走了多个地址时，各地址单独成行；费用仍按模型单价计算。
+`API 地址` 列是请求实际走的接口地址。Claude Code 按「托管设置 → 项目 `.claude/settings.local.json` → 项目 `.claude/settings.json` → 用户设置 → 环境变量」取 `ANTHROPIC_BASE_URL`；opencode 取项目配置、`OPENCODE_CONFIG`、全局配置里的 `provider.<id>.options.baseURL`，都没写时用内置默认地址；DeepSeek Harness 取 profile 补丁里的 `providers.<id>.baseURL`，支持 `${VAR}` 展开，多个 profile 地址冲突时不做猜测，显示 `-`。已入库的记录保留入库时的地址，升级前没有地址的按当前配置补。同一模型走了多个地址时，各地址单独成行；费用仍按模型单价计算。
 
 ## 原地刷新
 
@@ -108,13 +110,14 @@ llmx web --allow-write        放开配置的读写与会话清理，其他机�
 - 数据与 `--json` 同源：每一轮推送都先现扫入库，再从账本统计、按当前价格表计价，页面上看到的就是此刻 `llmx --json` 的数字。配置也每轮重读，改了 `~/.claude/settings.json` 里的 `ANTHROPIC_BASE_URL` 或价格表，不用重启服务。
 - 页面保持一条 SSE 连接，服务端默认每 3 秒重算一次，数字有变化才推，没变化只留一条心跳注释；连上先推当前值，换筛选条件就按新参数重连。标签页切到后台断开，切回来重连并立刻拿到最新数据。
 - 界面用 Vuetify 3 组件拼，ECharts 图表的配色取自 Vuetify 主题。标题栏右上角可以切深浅色，没手动切过时跟着系统走。
-- 页面里有合计卡片、费用柱状图、可排序的明细表；出处标成"缓存"的行有不同底色，与命令行一致。
-- 卡片里多一格缓存指标：缓存命中率与按当前价算出的缓存节省金额；明细表也有 `缓存命中` 与 `缓存节省` 两列，`--json` 与网页接口的 `total`、每行都带 `cache_hit`、`cache_saved`。
-- 概览下方有一条费用构成：输入未命中、缓存读、缓存写、输出四段的金额与占比，跟当前筛选的合计一致；网页接口的每行与合计都带对应的 `cost_input`、`cost_cache_read`、`cost_cache_write`、`cost_output`。
+- 页面顶部是四张合计卡片（请求、总 token、平均每请求费用、合计），下面是柱状图与可排序的明细表；表格排序按报表记在浏览器本地，刷新不丢。出处标成"缓存"的行有不同底色，与命令行一致。
+- 点卡片区右侧的「更多指标」打开详情弹窗，用 `FloatingDialog` 展示：各项每请求平均值（费用、总 token、输入、缓存读、缓存写、输出、高峰与空闲费用）、汇总指标（含缓存命中率与缓存节省）、以及费用构成的 ECharts 饼图。明细表也有 `缓存命中` 与 `缓存节省` 两列，`--json` 与网页接口的 `total`、每行都带 `cache_hit`、`cache_saved`；每行与合计都带对应的 `cost_input`、`cost_cache_read`、`cost_cache_write`、`cost_output`。
+- 费用构成在详情弹窗里：输入未命中、缓存读、缓存写、输出四类的金额与占比，跟当前筛选的合计一致。
 - 柱状图用 ECharts，颜色按来源区分：Claude Code 紫、opencode 橙、DeepSeek Harness 蓝，图例写在图内右上角。
   - 按天报表：每天里各来源分别花了多少，同一天的几根柱子并排。
   - 按小时报表看两张，横轴都是 0 到 23 点：左边是每小时合计，落在高峰窗口的小时画橙柱、其余画蓝柱；右边把同一个小时按来源拆开。左图一根柱子的高度等于右图同一个小时几根柱子之和。
   - 按项目报表：费用最高的前 12 个项目，各来源分别花了多少。
+  - 按 API 报表：费用最高的前 12 个接口地址，各来源分别花了多少。
 - 当前筛选写在地址里了：`http://127.0.0.1:8770/?command=hour&range=all` 这样带参数的链接打开就是那个视图，可以直接收藏或发给别人。
 - 筛选都在页面上改，也可以直接拼查询串：`/api/usage?command=session&days=7&source=dsh`，日期用 `since`、`until`，与命令行同名同义。`/api/usage/stream` 是同一份数据的 SSE 推送，默认每 3 秒检查一次、有变化才推，脚本可以用 `every` 指定 1 到 60 秒；`/api/prices` 给当前价格表。
 - `--json` 只打一行地址就转去服务，适合脚本起服务；stdout 不是终端又没加 `--json` 时直接报错，免得接上管道后服务挂在后台。
@@ -125,7 +128,7 @@ llmx web --allow-write        放开配置的读写与会话清理，其他机�
 
 不带参数运行 `llmx`，并且三个标准流都连着终端时，进入交互菜单：先选报表，再选统计范围，最后勾来源。
 
-1. 报表：按日汇总、按会话汇总、按小时汇总、按项目汇总、价格表。
+1. 报表：按日汇总、按会话汇总、按小时汇总、按项目汇总、按 API 汇总、价格表。
 2. 范围：今天、近 7 天、近 14 天、近 30 天、全部历史、自定义起止日期。
 3. 来源：Claude Code、opencode、DeepSeek Harness，默认全选，空格勾掉不要的。
 
@@ -134,7 +137,7 @@ llmx web --allow-write        放开配置的读写与会话清理，其他机�
 菜单由仓库共用的 `bash-tui` 绘制，与其他工具一致。探不到终端时退回编号输入，所以 `llmx menu` 也能在管道里驱动：
 
 ```
-printf '1\n5\n1 3\n1\n5\n' | llmx menu    按日汇总、全部历史、只勾 claude 与 dsh，看完回菜单再退出
+printf '1\n5\n1 3\n1\n8\n' | llmx menu    按日汇总、全部历史、只勾 claude 与 dsh，看完回菜单再退出
 ```
 
 界面里的选择与命令行选项等价，`--config`、`LLMX_CONFIG` 等环境变量照常生效。没装 `bash-tui` 时，`llmx` 不带参数会退回默认范围的日报，`llmx menu` 则直接报错。
@@ -198,18 +201,18 @@ llmx rebuild                清空账本后按当前口径全量重扫，改过�
 
 | 来源             | 位置                                          | 说明                                                                               |
 | ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Claude Code      | `~/.claude/projects/**/*.jsonl`             | 一条回复按内容块写成多行，按 `message.id` 合并，取 token 数最大的那一行          |
-| opencode         | `~/.local/share/opencode/opencode.db`       | 读 `message` 表，旧版本回退到 `storage/message` 下的 JSON                      |
+| Claude Code      | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`（默认 `~/.claude`） | 一条回复按内容块写成多行，按 `message.id` 合并，取 token 数最大的那一行          |
+| opencode         | `$XDG_DATA_HOME/opencode/opencode.db`（默认 `~/.local/share/opencode`） | 读 `message` 表，旧版本回退到 `storage/message` 下的 JSON；`OPENCODE_DB` 可换库文件 |
 | DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd` | 需要 `zstd` 命令，模型从 `request/header` 事件取，同一步骤重试只留最后一次结算；只读每个会话版本号最高的那一代日志 |
 
-三个位置都可以用环境变量覆盖：`LLMX_CLAUDE_DIR`、`LLMX_OPENCODE_DIR`、`LLMX_DSH_SESSIONS`。读接口地址的配置位置另有 `LLMX_OPENCODE_CONFIG` 与 `LLMX_DSH_PROFILES`。
+三个位置都可以用环境变量覆盖：`LLMX_CLAUDE_DIR`、`LLMX_OPENCODE_DIR`、`LLMX_DSH_SESSIONS`；没覆盖时，Claude Code 跟随 `CLAUDE_CONFIG_DIR`，opencode 跟随 `XDG_DATA_HOME`。读接口地址的配置位置另有 `OPENCODE_CONFIG`、`LLMX_OPENCODE_CONFIG` 与 `LLMX_DSH_PROFILES`。
 
 已知缺口：
 
 - DeepSeek Harness 的标题生成与上下文压缩请求没有记录 usage，未计入。
 - 网页搜索与抓取按成功次数计费，每千次 5 元，和 token 无关，未计入。
 - Claude Code 的子代理会话写在独立的 jsonl 里，会单独计数，不会并进父会话。
-- Claude Code 的日志不记录接口地址，API 地址列取当前设置文件里的 `ANTHROPIC_BASE_URL`；换过地址时，旧会话也显示当前地址。
+- Claude Code 的日志不记录接口地址，项目级设置按仓库根（没有仓库时按工作目录）读取；同一项目里换过地址时，已入库的记录保留原地址，还没入库的按当前配置补。
 - opencode 的 `tokens.total` 把思考 token 又加了一遍，llmx 不使用该字段，直接按 input、output、cache 拆分。
 
 ## 配置
@@ -241,7 +244,7 @@ holidays = ["2026-10-01", "2026-10-02", "2026-10-03"]
 
 左侧菜单的「价格与配置」页也能改这份文件：整份读、整份写，保存前先按加载时的规则校验语法与模型字段，写坏的配置不会落盘。改完下一轮推送就按新价重算，不用重启。默认只有本机能保存，其他机器打开只能看；要放开就加 `--allow-write` 启动。文件还不存在时，页面先给一份按当前内置价生成的完整配置，保存后就是正式配置。
 
-`[apis]` 按 provider 覆盖接口地址，优先于从各工具配置文件里读到的值。日志里只记 provider，地址靠配置文件补；配置里查不到、`[apis]` 也没写时，表里显示 `-`。
+`[apis]` 按 provider 覆盖接口地址，优先于从各工具配置文件里读到的值。日志里只记 provider，地址靠配置文件补；配置里查不到、`[apis]` 也没写时，表里显示 `-`。DSH 的多个 profile 对同一 provider 写了不同地址时也显示 `-`，在 `[apis]` 里指定即可。
 
 账本与快照缓存的位置也可以配置，默认放在 `~/.cache/llmx`：
 

@@ -270,6 +270,28 @@ project_out=$("$bin" project --all) || fail "project 命令失败"
 [[ "$project_out" == *"项目"* && "$project_out" == *"demo"* ]] || fail "项目表缺少项目列或目录名"
 ok session、hour 与 project 命令
 
+# 按 API 汇总：每个地址一组，组内再按来源、模型、出处分行，合计与日报一致。
+api_out=$("$bin" api --all) || fail "api 命令失败"
+[[ "$api_out" == *"API 地址"* && "$api_out" == *"http://127.0.0.1:9000"* ]] ||
+  fail "API 表缺少地址列或地址值"
+api_json=$("$bin" api --all --json) || fail "api --json 失败"
+daily_json=$("$bin" --all --json) || fail "日报 --json 失败"
+python3 - "$api_json" "$daily_json" <<'PY' || exit 1
+import json, sys
+api = json.loads(sys.argv[1])
+daily = json.loads(sys.argv[2])
+rows = api["rows"]
+assert api["command"] == "api" and rows, api
+assert all(row["api"] for row in rows), rows[0]
+keys = [(row["api"], row["source"], row["model"], row["origin"]) for row in rows]
+assert len(keys) == len(set(keys)), keys
+# 只换分组方式，请求数与 token 总量应与日报完全相同。
+for key in ("requests", "total_tokens"):
+    assert api["totals"][key] == daily["totals"][key], (key, api["totals"], daily["totals"])
+assert abs(api["totals"]["cost"] - daily["totals"]["cost"]) < 1e-8, api["totals"]
+print("ok - 按 API 汇总")
+PY
+
 # 同一会话用过两个模型时，会话表按模型分成两行。
 session_json=$("$bin" session --all --json) || fail "session --json 失败"
 python3 - "$session_json" <<'PY' || exit 1
@@ -483,7 +505,7 @@ print("ok - mimo 不分峰谷")
 PY
 
 # 菜单在非终端下退回编号输入：全历史、只勾 claude 与 dsh，看完选回主菜单，然后退出。
-printf '1\n5\n1 3\n1\n7\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
+printf '1\n5\n1 3\n1\n8\n' | "$bin" menu >"$tmp/menu.out" 2>"$tmp/menu.err" || fail "菜单退出码非 0"
 grep -q '^claude' "$tmp/menu.out" || fail "菜单输出缺少 claude"
 grep -q '^dsh' "$tmp/menu.out" || fail "菜单输出缺少 dsh"
 grep -q '^opencode' "$tmp/menu.out" && fail "菜单没有排除 opencode"
@@ -592,6 +614,12 @@ assert page["command"] == "hour" and page["rows"], page
 page = json.loads(get("/api/usage?command=project&days=30")[1])
 assert page["command"] == "project" and page["rows"], page
 assert {row["project"] for row in page["rows"]} >= {"demo"}, page["rows"]
+
+page = json.loads(get("/api/usage?command=api&days=30")[1])
+assert page["command"] == "api" and page["rows"], page
+assert {row["api"] for row in page["rows"]} == {
+    "http://127.0.0.1:9000", "https://opencode.test/v1", "http://127.0.0.1:9001/v1"
+}, page["rows"]
 
 price = json.loads(get("/api/prices")[1])
 assert price["models"]["deepseek-flash"]["off"]["hit"] == 0.02, price
@@ -732,6 +760,9 @@ wait "$web_pid" 2>/dev/null
 printf '' | "$bin" menu >/dev/null 2>&1
 [[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
 ok 取消菜单返回 3
+
+python3 "$repo/llmx/test/test_api.py" >/dev/null 2>&1 || fail '地址与配置识别的测试未通过'
+ok 地址与配置识别
 
 for name in test_web_config test_web_metrics test_web_profiles test_web_memory test_web_sessions; do
   python3 "$repo/llmx/test/$name.py" >/dev/null 2>&1 || fail "网页测试 $name 未通过"

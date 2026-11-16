@@ -28,6 +28,7 @@ COMMANDS = (
     "session",
     "hour",
     "project",
+    "api",
     "prices",
     "rebuild",
     "db",
@@ -62,12 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
         ("session", "按会话汇总"),
         ("hour", "按一天内的小时分布汇总"),
         ("project", "按项目汇总"),
+        ("api", "按 API 地址汇总"),
         ("prices", "打印当前价格表"),
         ("rebuild", "清空账本后全量重扫并重建"),
         ("web", "在浏览器里看用量，定时自动刷新"),
     ):
         child = sub.add_parser(name, parents=[suppressed], help=text, description=text)
-        if name in ("daily", "session", "hour", "project"):
+        if name in ("daily", "session", "hour", "project", "api"):
             _add_watch(child, suppress=True)
         if name == "web":
             _add_web(child)
@@ -178,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = _fold_watch(argv)
     args = parser.parse_args(argv)
     command = getattr(args, "command", None) or "daily"
-    if command in ("daily", "session", "hour", "project", "prices", "rebuild"):
+    if command in ("daily", "session", "hour", "project", "api", "prices", "rebuild"):
         # 选项写在子命令前面时（llmx --watch 3 daily），argparse 会把它们记在一张空白的
         # 子命令命名空间上，子命令那份是空的，这里把前面那份补过来。两个都写了时子命令的优先。
         top = _top_values(argv)
@@ -269,7 +271,7 @@ def _collect(
     # 老账本里的记录没有存地址，读出来时按当前配置补一次；新记录一律用入库时那份。
     for record in records:
         if not record.api:
-            record.api = config.api.address(record.source, record.provider)
+            record.api = config.api.address(record.source, record.provider, record.project)
     records.sort(key=lambda record: record.at)
 
     book = config.book
@@ -280,6 +282,8 @@ def _collect(
         rows, total = report.hours(records, book)
     elif command == "project":
         rows, total = report.projects(records, book)
+    elif command == "api":
+        rows, total = report.api(records, book)
     else:
         rows, total = report.daily(records, book)
     return {
@@ -320,6 +324,8 @@ def _report_command(
         text = report.table_hours(rows, total, unpriced)
     elif command == "project":
         text = report.table_projects(rows, total, unpriced)
+    elif command == "api":
+        text = report.table_api(rows, total, unpriced)
     else:
         text = report.table_daily(rows, total, unpriced)
 
@@ -348,7 +354,7 @@ def _scan(config: Config, sources: list[str]):
         # 接口地址随请求一起入库：换过地址之后，老记录仍按当时的地址显示。
         for record in found:
             if not record.api:
-                record.api = config.api.address(source, record.provider)
+                record.api = config.api.address(source, record.provider, record.project)
         records.extend(found)
         batches[source] = _by_session(found)
     return records, batches, snapshots

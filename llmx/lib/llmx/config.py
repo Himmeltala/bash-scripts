@@ -283,11 +283,16 @@ def load(explicit: str | None = None) -> Config:
 
     home = Path.home()
     config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")).expanduser()
+    data_home = Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share")).expanduser()
     state = _state_dir(home)
     paths = Paths(
-        claude=Path(os.environ.get("LLMX_CLAUDE_DIR", home / ".claude")).expanduser(),
+        claude=Path(
+            os.environ.get("LLMX_CLAUDE_DIR")
+            or os.environ.get("CLAUDE_CONFIG_DIR")
+            or (home / ".claude")
+        ).expanduser(),
         opencode=Path(
-            os.environ.get("LLMX_OPENCODE_DIR", home / ".local" / "share" / "opencode")
+            os.environ.get("LLMX_OPENCODE_DIR", data_home / "opencode")
         ).expanduser(),
         opencode_config=Path(
             os.environ.get("LLMX_OPENCODE_CONFIG", config_home / "opencode")

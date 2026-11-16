@@ -38,7 +38,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 INDEX = STATIC / "index.html"
 # 带内容哈希的资源可以长期缓存。
 _CACHED = "public, max-age=31536000, immutable"
-COMMANDS = ("daily", "session", "hour", "project")
+COMMANDS = ("daily", "session", "hour", "project", "api")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
 LOCK = threading.Lock()
 # 页面头部的性能指标只采一份给所有页面。

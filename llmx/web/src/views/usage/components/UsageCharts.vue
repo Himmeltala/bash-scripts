@@ -76,10 +76,34 @@ const projectChart = computed(() => {
     .map(([name]) => name)
   return split(top, (row) => row.project || '未记录')
 })
+
+// 按 API 报表的图：取费用最高的前 12 个接口地址，各来源分别花了多少。
+const apiChart = computed(() => {
+  const money = new Map()
+  for (const row of rows.value) {
+    const name = row.api || '未记录'
+    money.set(name, (money.get(name) || 0) + (Number(row.cost) || 0))
+  }
+  const top = [...money.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([name]) => name)
+  return split(top, (row) => row.api || '未记录')
+})
 </script>
 
 <template>
   <v-row dense>
+    <v-col v-if="command === 'api'" cols="12">
+      <v-card variant="flat">
+        <BarChart
+          :categories="apiChart.categories"
+          :series="apiChart.series"
+          title="各 API 费用（元）"
+          legend
+        />
+      </v-card>
+    </v-col>
     <v-col v-if="command === 'project'" cols="12">
       <v-card variant="flat">
         <BarChart

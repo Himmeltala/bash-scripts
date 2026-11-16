@@ -11,6 +11,7 @@ export const COMMANDS = [
   { key: 'session', name: '按会话汇总' },
   { key: 'hour', name: '按小时汇总' },
   { key: 'project', name: '按项目汇总' },
+  { key: 'api', name: '按 API 汇总' },
 ]
 
 export const RANGES = [

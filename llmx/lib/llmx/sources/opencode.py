@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -13,12 +14,21 @@ from . import parse_epoch_ms
 
 def collect(root: Path, snapshot: Snapshot | None = None) -> list[Record]:
     """优先读库；库里什么都读不出来时才退回 storage/message 下的 JSON。"""
-    database = root / "opencode.db"
+    database = _database(root)
     if database.is_file():
         records = _from_db(database, snapshot)
         if records:
             return records
     return _from_storage(root / "storage" / "message", snapshot)
+
+
+def _database(root: Path) -> Path:
+    """opencode 用 OPENCODE_DB 指定库文件；相对路径按数据目录算。"""
+    name = os.environ.get("OPENCODE_DB")
+    if name:
+        path = Path(name).expanduser()
+        return path if path.is_absolute() else root / path
+    return root / "opencode.db"
 
 
 def _from_db(database: Path, snapshot: Snapshot | None = None) -> list[Record]:

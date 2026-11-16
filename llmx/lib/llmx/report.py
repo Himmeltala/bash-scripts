@@ -319,6 +319,44 @@ def projects(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
     return rows, _totals(rows)
 
 
+def api(records: list[Record], book: PriceBook) -> tuple[list[dict], dict]:
+    # 一个接口地址下可能有好几个来源、模型，各算各的行；地址之间按合计费用从高到低排。
+    buckets: dict[tuple[str, str, str, str], Bucket] = {}
+    for record in records:
+        key = (record.api, record.source, _model_name(record, book), _origin(record))
+        buckets.setdefault(key, Bucket()).add(record, book)
+
+    money: dict[str, float] = {}
+    for key, bucket in buckets.items():
+        if bucket.unpriced == 0:
+            money[key[0]] = money.get(key[0], 0.0) + bucket.cost
+    rank = {
+        address: index
+        for index, address in enumerate(sorted(money, key=lambda address: (-money[address], address)))
+    }
+    # 全是未计价模型的地址没有金额可比，按地址排在最后。
+    rest = sorted({key[0] for key in buckets} - set(rank))
+    for address in rest:
+        rank[address] = len(rank)
+
+    order = {name: index for index, name in enumerate(SOURCE_ORDER)}
+    rows = []
+    for key in sorted(
+        buckets,
+        key=lambda k: (
+            rank[k[0]],
+            order.get(k[1], 9),
+            *_cost_key(buckets[k]),
+            k[2],
+            k[3],
+        ),
+    ):
+        row = _row("", key[1], buckets[key], key[2], key[0], key[3])
+        row.pop("date", None)
+        rows.append(row)
+    return rows, _totals(rows)
+
+
 def _project_labels(paths: set[str]) -> dict[str, str]:
     """项目列显示目录名；不同路径同名时补上一级目录，不把两个项目并成一行。"""
     bases: dict[str, set[str]] = {}
@@ -675,6 +713,62 @@ def table_projects(rows: list[dict], total: dict, unpriced: list[str] | None = N
         body,
         [
             "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+        ],
+    ) + _cache_note(rows, has_total) + _unpriced_note(unpriced or [], has_total) + _cost_parts_note(total)
+
+
+def table_api(rows: list[dict], total: dict, unpriced: list[str] | None = None) -> str:
+    has_total = len(rows) > 1
+    body = [
+        [
+            row["api"] or "-",
+            row["source"],
+            row["model"],
+            _origin_name(row),
+            _number(row["requests"]),
+            _number(row["input"]),
+            _number(row["cache_read"]),
+            _number(row["output"]),
+            _number(row["total_tokens"]),
+            _cost(row["cost_peak"]),
+            _cost(row["cost_off"]),
+            _cost(row["cost"]),
+        ]
+        for row in rows
+    ]
+    if has_total:
+        body.append(
+            [
+                "合计",
+                "",
+                "",
+                "",
+                _number(total["requests"]),
+                _number(total["input"]),
+                _number(total["cache_read"]),
+                _number(total["output"]),
+                _number(total["total_tokens"]),
+                _cost(total["cost_peak"]),
+                _cost(total["cost_off"]),
+                _cost(total["cost"]),
+            ]
+        )
+    return render(
+        ["API 地址", "来源", "模型", "出处", "请求", "输入", "缓存读", "输出", "总 token", "高峰费用", "空闲费用", "合计"],
+        body,
+        [
             "left",
             "left",
             "left",

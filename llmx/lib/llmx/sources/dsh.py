@@ -4,12 +4,31 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Iterator
 
 from ..model import Record, Usage
 from ..snapshot import Snapshot, dsh_generations
 from . import parse_epoch_ms
+
+# 没装 zstd 时每次扫描都会碰到，提醒一次就够，别把终端刷满。
+_ZSTD_WARNED = False
+
+
+class MissingZstd(RuntimeError):
+    """会话日志是压缩的，但机器上没有 zstd 命令。"""
+
+
+def _warn_missing_zstd() -> None:
+    global _ZSTD_WARNED
+    if _ZSTD_WARNED:
+        return
+    _ZSTD_WARNED = True
+    print(
+        "llmx: 需要 zstd 命令解压 DeepSeek Harness 的会话日志，压缩会话本次跳过",
+        file=sys.stderr,
+    )
 
 
 def collect(root: Path, snapshot: Snapshot | None = None) -> list[Record]:
@@ -29,6 +48,9 @@ def collect(root: Path, snapshot: Snapshot | None = None) -> list[Record]:
                 continue
         try:
             parsed = _session(path)
+        except MissingZstd:
+            _warn_missing_zstd()
+            continue
         except (OSError, RuntimeError, ValueError, TypeError, KeyError):
             continue
         # 记缓存用读之前那份标识，免得刚读完日志又追加了内容、结果被当成最新。
@@ -105,7 +127,7 @@ def _lines(path: Path) -> Iterator[str]:
                 stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError as exc:
-            raise RuntimeError("需要 zstd 命令解压会话日志") from exc
+            raise MissingZstd("需要 zstd 命令解压会话日志") from exc
         assert proc.stdout is not None
         try:
             for raw in proc.stdout:

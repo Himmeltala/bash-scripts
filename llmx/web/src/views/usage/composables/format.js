@@ -51,6 +51,7 @@ export const COLUMNS = {
   session: ['source', 'model', 'api', 'start', 'session', 'project', 'origin', ...TAIL].map((key) => HEAD[key]),
   hour: ['source', 'model', 'api', 'slot', 'label', ...TAIL].map((key) => HEAD[key]),
   project: ['project', 'source', 'model', 'api', 'origin', ...TAIL].map((key) => HEAD[key]),
+  api: ['api', 'source', 'model', 'origin', ...TAIL].map((key) => HEAD[key]),
 }
 
 export function cellValue(column, row, blankMissing = false) {
