@@ -33,51 +33,66 @@
       <div class="nav">
         <div class="nav-body">
           <div class="section">
-            <div class="section-title">筛选</div>
-            <v-select
-              v-model="minutes"
-              :items="RANGES"
-              item-title="label"
-              item-value="value"
-              label="时间范围"
-              density="compact"
-              variant="outlined"
-              hide-details
-            />
-            <v-text-field
-              v-model="search"
-              label="进程、PID 或目标地址"
-              prepend-inner-icon="mdi-magnify"
-              density="compact"
-              variant="outlined"
-              clearable
-              hide-details
-              class="field"
-            />
-            <p class="hint">搜索只过滤当前这张表，不影响采集。</p>
+            <button class="section-title" :aria-expanded="!isCollapsed('filter')" @click="toggleSection('filter')">
+              <v-icon size="16">{{ isCollapsed('filter') ? 'mdi-chevron-right' : 'mdi-chevron-down' }}</v-icon>
+              <span>筛选</span>
+            </button>
+            <div v-show="!isCollapsed('filter')">
+              <v-select
+                v-model="minutes"
+                :items="RANGES"
+                item-title="label"
+                item-value="value"
+                label="时间范围"
+                density="compact"
+                variant="outlined"
+                hide-details
+              />
+              <v-text-field
+                v-model="search"
+                label="进程、PID 或目标地址"
+                prepend-inner-icon="mdi-magnify"
+                density="compact"
+                variant="outlined"
+                clearable
+                hide-details
+                class="field"
+              />
+              <p class="hint">搜索只过滤当前这张表，不影响采集。</p>
+            </div>
           </div>
           <v-divider />
           <div class="section">
-            <div class="section-title">采集</div>
-            <div class="meta"><span>最后事件</span><b>{{ lastEvent }}</b></div>
-            <div class="meta"><span>推送</span><b :class="{ bad: !!streamError }">{{ streamText }}</b></div>
-            <div class="meta"><span>记录窗口</span><b>{{ rangeLabel }}</b></div>
+            <button class="section-title" :aria-expanded="!isCollapsed('collect')" @click="toggleSection('collect')">
+              <v-icon size="16">{{ isCollapsed('collect') ? 'mdi-chevron-right' : 'mdi-chevron-down' }}</v-icon>
+              <span>采集</span>
+            </button>
+            <div v-show="!isCollapsed('collect')">
+              <div class="meta"><span>最后事件</span><b>{{ lastEvent }}</b></div>
+              <div class="meta"><span>推送</span><b :class="{ bad: !!streamError }">{{ streamText }}</b></div>
+              <div class="meta"><span>记录窗口</span><b>{{ rangeLabel }}</b></div>
+            </div>
           </div>
           <v-divider />
           <div class="section">
-            <div class="section-title">数据</div>
-            <div class="meta"><span>数据库占用</span><b>{{ dbSize }}</b></div>
-            <div class="meta"><span>连接 / 详情</span><b>{{ flowCount }}</b></div>
-            <v-btn
-              class="clean-btn"
-              size="small"
-              variant="tonal"
-              block
-              prepend-icon="mdi-delete-sweep-outline"
-              @click="cleanupOpen = true"
-            >
-              清理数据
-            </v-btn>
+            <button class="section-title" :aria-expanded="!isCollapsed('data')" @click="toggleSection('data')">
+              <v-icon size="16">{{ isCollapsed('data') ? 'mdi-chevron-right' : 'mdi-chevron-down' }}</v-icon>
+              <span>数据</span>
+            </button>
+            <div v-show="!isCollapsed('data')">
+              <div class="meta"><span>数据库占用</span><b>{{ dbSize }}</b></div>
+              <div class="meta"><span>连接 / 详情</span><b>{{ flowCount }}</b></div>
+              <v-btn
+                class="clean-btn"
+                size="small"
+                variant="tonal"
+                block
+                prepend-icon="mdi-delete-sweep-outline"
+                @click="cleanupOpen = true"
+              >
+                清理数据
+              </v-btn>
+            </div>
           </div>
         </div>
         <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
@@ -126,6 +141,7 @@
 
 <script setup>
 import { computed, onMounted, ref, shallowRef } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import FlowsTable from './components/FlowsTable.vue'
 import FlowDetailDialog from './components/FlowDetailDialog.vue'
 import CleanupDialog from './components/CleanupDialog.vue'
@@ -153,6 +169,8 @@ const STATES = {
 }
 
 const drawer = ref(true)
+// 分组收起状态记在本地下次接着用，键名跟侧栏宽度、主题保持同一前缀。
+const collapsed = useLocalStorage('netx.nav-collapsed', {})
 const minutes = ref(60)
 const search = ref('')
 const detailOpen = ref(false)
@@ -160,6 +178,14 @@ const detailId = ref(null)
 const cleanupOpen = ref(false)
 const summaryInfo = ref(null)
 const { snack, toast } = useToast()
+
+function isCollapsed(key) {
+  return collapsed.value[key] === true
+}
+
+function toggleSection(key) {
+  collapsed.value = { ...collapsed.value, [key]: !isCollapsed(key) }
+}
 
 function openDetail(item) {
   detailId.value = item.id
@@ -268,11 +294,23 @@ const filtered = computed(() => {
   padding: 16px;
 }
 .section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
   color: rgb(var(--v-theme-on-surface-variant));
+  font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   margin-bottom: 10px;
+}
+.section-title:hover {
+  color: rgb(var(--v-theme-on-surface));
 }
 .field {
   margin-top: 12px;
