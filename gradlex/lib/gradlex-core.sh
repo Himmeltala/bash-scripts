@@ -15,10 +15,19 @@ if ! source "$gradlex_dir"/../../lib/shell-shared/commons/tui-path.sh; then
   exit 1
 fi
 
+# 共享层：base 约定先设 SHELL_TOOL，再加载记录界面、命令注册表与机器接口。
+SHELL_TOOL=gradlex
+# shellcheck source=../../lib/shell-shared/commons/base.sh
+source "$gradlex_dir"/../../lib/shell-shared/commons/base.sh
+# shellcheck source=../../lib/shell-shared/services/ui-records.sh
+source "$gradlex_dir"/../../lib/shell-shared/services/ui-records.sh
+# shellcheck source=../../lib/shell-shared/services/command-table.sh
+source "$gradlex_dir"/../../lib/shell-shared/services/command-table.sh
+# shellcheck source=../../lib/shell-shared/services/machine.sh
+source "$gradlex_dir"/../../lib/shell-shared/services/machine.sh
+
 for gradlex_module in \
-  "$gradlex_dir"/gradlex/util.sh \
   "$gradlex_dir"/gradlex/scan.sh \
-  "$gradlex_dir"/gradlex/ui.sh \
   "$gradlex_dir"/gradlex/exec.sh \
   "$gradlex_dir"/gradlex/machine.sh
 do

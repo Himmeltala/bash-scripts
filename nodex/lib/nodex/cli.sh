@@ -8,29 +8,6 @@ readonly COMMANDS=(
 )
 readonly DEFAULT_COMMAND='dev'
 
-command_exists() {
-  local row
-  for row in "${COMMANDS[@]}"; do
-    [[ "${row%%|*}" == "$1" ]] && return 0
-  done
-  return 1
-}
-
-# 取注册表某行的第 idx 列，1 是命令名。纯 bash 拆，不调 cut。
-command_field() {
-  local name=$1 idx=$2 row rest i
-  for row in "${COMMANDS[@]}"; do
-    [[ "${row%%|*}" == "$name" ]] || continue
-    rest="${row#*|}"
-    for ((i = 2; i < idx; i++)); do
-      rest="${rest#*|}"
-    done
-    printf '%s\n' "${rest%%|*}"
-    return 0
-  done
-  return 1
-}
-
 usage() {
   cat <<'EOF'
 用法: nodex [命令] [选项] [关键词]
@@ -42,7 +19,7 @@ usage() {
 EOF
   local row
   for row in "${COMMANDS[@]}"; do
-    printf '  %-10s %s\n' "${row%%|*}" "$(command_field "${row%%|*}" 2)"
+    printf '  %-10s %s\n' "${row%%|*}" "$(shell_command_field "${row%%|*}" 2)"
   done
 
   cat <<'EOF'
@@ -79,7 +56,7 @@ REFRESH=0
 declare -a POSITIONAL=()
 declare -a UI_ACTION_ITEMS=()
 
-is_action() { command_exists "$1"; }
+is_action() { shell_command_exists "$1"; }
 
 parse_args() {
   local -a args=("$@")
@@ -116,16 +93,6 @@ parse_args() {
   done
 }
 
-build_action_items() {
-  UI_ACTION_ITEMS=()
-  local row name
-  for row in "${COMMANDS[@]}"; do
-    name="${row%%|*}"
-    UI_ACTION_ITEMS+=("$name" "$(command_field "$name" 2)")
-  done
-  UI_ACTION_ITEMS+=('quit' '退出')
-}
-
 # 执行一个动作。$1 是命令名，$2 起是位置参数，只取第一个当关键词。
 run_action() {
   local cmd=$1
@@ -133,8 +100,8 @@ run_action() {
   local kw=${1:-}
 
   local noun collector root
-  noun=$(command_field "$cmd" 4)
-  collector=$(command_field "$cmd" 3)
+  noun=$(shell_command_field "$cmd" 4)
+  collector=$(shell_command_field "$cmd" 3)
 
   mkdir -p "$CACHE_DIR"
   local key
@@ -196,20 +163,6 @@ run_action() {
   launch_records "${chosen[@]}" || die '执行失败，工作目录可能不存在'
 }
 
-# 不带参数时的主菜单：先选动作再勾目标，执行完或返回上一步都回到这里，选退出才离开。
-ui_main() {
-  local action rc=0
-  while :; do
-    action=$(ui_menu_named 'nodex' '选命令' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
-    [[ "$action" == 'quit' ]] && break
-    rc=0
-    run_action "$action" || rc=$?
-    ((rc == 0 || rc == EXIT_BACK)) && continue
-    return "$rc"
-  done
-  return 0
-}
-
 main() {
   parse_args "$@"
 
@@ -225,7 +178,7 @@ main() {
   command -v node >/dev/null || die '找不到 node，确认 Node.js 在 PATH 中'
   # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。
   ui_detect
-  build_action_items
+  shell_build_action_items
 
   local rc=0
   if [[ -n "$ACTION" ]]; then
@@ -240,5 +193,5 @@ main() {
     return "$rc"
   fi
 
-  ui_main
+  shell_ui_main
 }

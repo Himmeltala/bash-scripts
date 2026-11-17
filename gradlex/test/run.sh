@@ -193,12 +193,12 @@ rec() {
 
 records=$(rec web /w/a '' '' a/web 'mvn -pl a'; rec web /w/b '' '' b/web 'mvn -pl b')
 expected=$(rec 'web@a/web' /w/a '' '' a/web 'mvn -pl a'; rec 'web@b/web' /w/b '' '' b/web 'mvn -pl b')
-got=$(printf '%s\n' "$records" | bash -c 'source "$1/gradlex/lib/gradlex-core.sh"; assign_tags' _ "$repo")
+got=$(printf '%s\n' "$records" | bash -c 'source "$1/gradlex/lib/gradlex-core.sh"; shell_assign_tags' _ "$repo")
 [[ "$got" == "$expected" ]] && ok '标签去重后记录仍是六列' || bad '标签去重改动了记录'
 
 # 勾选结果按标签映射回整条记录，执行时不用再猜字段。
 one=$(rec web /w/a '' '' a/web 'mvn -pl a')
-got=$(printf '1\n' | bash -c 'source "$1/gradlex/lib/gradlex-core.sh"; UI_MODE=0; gradlex_ui_checklist 模块 "$2"' _ "$repo" "$one" 2>/dev/null)
+got=$(printf '1\n' | bash -c 'source "$1/gradlex/lib/gradlex-core.sh"; UI_MODE=0; shell_ui_checklist 模块 "$2"' _ "$repo" "$one" 2>/dev/null)
 [[ "$got" == "$one" ]] && ok '勾选结果映射回整条记录' || bad '勾选结果丢了记录字段'
 
 # 终端探测、暂停与空选判断都在 bash-tui，本地不再各写一份。
@@ -208,11 +208,18 @@ else
   ok '终端探测交给 bash-tui'
 fi
 
-if grep -q 'gradlex_plain_checklist' "$repo/gradlex/lib/gradlex/ui.sh"; then
+if grep -rq 'gradlex_plain_checklist' "$repo/gradlex/lib"; then
   printf 'FAIL - 仍保留自定义编号清单\n' >&2
   fail=1
 else
   printf 'ok - 已删除自定义编号清单\n'
+fi
+
+# 共享层留在 lib/shell-shared，不能搬回 gradlex/lib。
+if grep -rqE '^shell_(assign_tags|ui_checklist|ui_checklist_all|save_selection|command_exists|command_field|build_action_items|ui_main|json_escape|machine_json|launch_records)\(\)' "$repo/gradlex/lib"; then
+  bad '共享层不能放回 gradlex/lib'
+else
+  ok '共享层没有放回 gradlex/lib'
 fi
 
 bash "$repo/gradlex/test/test_machine.sh" >/dev/null 2>&1 || {

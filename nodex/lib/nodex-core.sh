@@ -15,12 +15,16 @@ if ! source "$nodex_dir"/../../lib/shell-shared/commons/tui-path.sh; then
   exit 1
 fi
 
-# 共享层：base 约定先设 SHELL_TOOL，再按需加载记录界面、网页状态与网页启动流程。
+# 共享层：base 约定先设 SHELL_TOOL，再按需加载记录界面、命令注册表、机器接口与网页状态。
 SHELL_TOOL=nodex
 # shellcheck source=../../lib/shell-shared/commons/base.sh
 source "$nodex_dir"/../../lib/shell-shared/commons/base.sh
 # shellcheck source=../../lib/shell-shared/services/ui-records.sh
 source "$nodex_dir"/../../lib/shell-shared/services/ui-records.sh
+# shellcheck source=../../lib/shell-shared/services/command-table.sh
+source "$nodex_dir"/../../lib/shell-shared/services/command-table.sh
+# shellcheck source=../../lib/shell-shared/services/machine.sh
+source "$nodex_dir"/../../lib/shell-shared/services/machine.sh
 # shellcheck source=../../lib/shell-shared/services/web-state.sh
 source "$nodex_dir"/../../lib/shell-shared/services/web-state.sh
 # shellcheck source=../../lib/shell-shared/services/web-command.sh

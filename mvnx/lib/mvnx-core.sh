@@ -15,12 +15,16 @@ if ! source "$mvnx_dir"/../../lib/shell-shared/commons/tui-path.sh; then
   exit 1
 fi
 
-# 共享层：base 约定先设 SHELL_TOOL，再加载记录界面；网页已拆到 jvmx，这里不再接网页状态层。
+# 共享层：base 约定先设 SHELL_TOOL，再加载记录界面、命令注册表与机器接口；网页已拆到 jvmx，这里不再接网页状态层。
 SHELL_TOOL=mvnx
 # shellcheck source=../../lib/shell-shared/commons/base.sh
 source "$mvnx_dir"/../../lib/shell-shared/commons/base.sh
 # shellcheck source=../../lib/shell-shared/services/ui-records.sh
 source "$mvnx_dir"/../../lib/shell-shared/services/ui-records.sh
+# shellcheck source=../../lib/shell-shared/services/command-table.sh
+source "$mvnx_dir"/../../lib/shell-shared/services/command-table.sh
+# shellcheck source=../../lib/shell-shared/services/machine.sh
+source "$mvnx_dir"/../../lib/shell-shared/services/machine.sh
 
 for mvnx_module in \
   "$mvnx_dir"/mvnx/pom.sh \

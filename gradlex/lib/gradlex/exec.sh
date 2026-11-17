@@ -99,31 +99,3 @@ launch_one() {
 
   exec "${argv[@]}"
 }
-
-launch_records() {
-  local -a recs=("$@")
-  local rec tag workdir projectpath taskargs display cmdtext
-
-  if [[ ${#recs[@]} -eq 1 ]]; then
-    IFS=$FS read -r tag workdir projectpath taskargs display cmdtext <<< "${recs[0]}"
-    printf '在 %s 执行 %s\n' "$workdir" "$cmdtext" >&2
-    launch_one "$workdir" "$projectpath" "$taskargs"
-    return 1
-  fi
-
-  local -a pids=()
-  # 中断只收掉等待，子进程照常收到内核发出的 SIGINT 并优雅退出。
-  trap ':' INT TERM
-  for rec in "${recs[@]}"; do
-    IFS=$FS read -r tag workdir projectpath taskargs display cmdtext <<< "$rec"
-    printf '后台执行 %s\n' "$cmdtext" >&2
-    ( launch_one "$workdir" "$projectpath" "$taskargs" ) &
-    pids+=($!)
-  done
-  printf '%d 个已在后台执行，Ctrl+C 停止全部\n' "${#pids[@]}" >&2
-
-  local p
-  for p in "${pids[@]}"; do wait "$p" 2>/dev/null; done
-  printf '全部已退出\n' >&2
-  return 0
-}

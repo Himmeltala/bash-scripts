@@ -2,16 +2,6 @@
 # 目标记录仍是六段：标签|工作目录|-pl 路径|mvn 参数|展示路径|展示命令。
 # id 取「命令:标签」；标签在一次收集里唯一，跨次稳定，网页拿它回传即可。
 
-json_escape() {
-  local text=$1
-  text=${text//\\/\\\\}
-  text=${text//\"/\\\"}
-  text=${text//$'\n'/\\n}
-  text=${text//$'\r'/\\r}
-  text=${text//$'\t'/\\t}
-  printf '%s' "$text"
-}
-
 # 一条命令的可执行目标。install 与终端一致，展开成各项目下可选装的子模块。
 machine_collect() {
   local cmd=$1 rec tag workdir
@@ -25,23 +15,7 @@ machine_collect() {
     done < <(collect_toplevel | shell_assign_tags)
     return 0
   fi
-  "$(command_field "$cmd" 3)" | shell_assign_tags
-}
-
-machine_json() {
-  local cmd=$1 first=1 rec tag workdir plpath args display cmdtext
-  printf '{"command":"%s","root":"%s","targets":[' \
-    "$(json_escape "$cmd")" "$(json_escape "$PWD")"
-  while IFS= read -r rec; do
-    [[ -n "$rec" ]] || continue
-    IFS=$FS read -r tag workdir plpath args display cmdtext <<< "$rec"
-    ((first)) || printf ','
-    first=0
-    printf '{"id":"%s","command":"%s","tag":"%s","path":"%s","cwd":"%s","display":"%s"}' \
-      "$(json_escape "$cmd:$tag")" "$(json_escape "$cmd")" "$(json_escape "$tag")" \
-      "$(json_escape "$plpath")" "$(json_escape "$workdir")" "$(json_escape "$cmdtext")"
-  done < <(machine_collect "$cmd")
-  printf ']}\n'
+  "$(shell_command_field "$cmd" 3)" | shell_assign_tags
 }
 
 # 网页传来的每行参数追加到 mvn 参数尾部，展示命令同步重拼。
@@ -65,10 +39,10 @@ machine_exec() {
   command -v mvn >/dev/null || die '找不到 mvn，确认 Maven 在 PATH 中'
 
   local cmd=${id%%:*}
-  command_exists "$cmd" || usage_error "未知目标 $id"
+  shell_command_exists "$cmd" || usage_error "未知目标 $id"
 
   local allow_skip
-  allow_skip=$(command_field "$cmd" 5)
+  allow_skip=$(shell_command_field "$cmd" 5)
   if [[ $allow_skip -eq 0 && $START_MODE != "$MODE_AUTO" && $START_MODE != "$MODE_COMPILE" ]]; then
     usage_error "「$cmd」命令不支持 $MODE_FLAG"
   fi
@@ -98,5 +72,5 @@ machine_exec() {
   fi
 
   match=$(printf '%s\n' "$match" | apply_start_mode "$allow_skip" | apply_extra_args)
-  launch_records "$match" || die '执行失败，工作目录可能不存在'
+  shell_launch_records launch_one "$match" || die '执行失败，工作目录可能不存在'
 }

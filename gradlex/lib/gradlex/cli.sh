@@ -6,29 +6,6 @@ readonly COMMANDS=(
 )
 readonly DEFAULT_COMMAND='run'
 
-command_exists() {
-  local row
-  for row in "${COMMANDS[@]}"; do
-    [[ "${row%%|*}" == "$1" ]] && return 0
-  done
-  return 1
-}
-
-# 取注册表某行的第 idx 列，1 是命令名。纯 bash 拆，不调 cut。
-command_field() {
-  local name=$1 idx=$2 row rest i
-  for row in "${COMMANDS[@]}"; do
-    [[ "${row%%|*}" == "$name" ]] || continue
-    rest="${row#*|}"
-    for ((i = 2; i < idx; i++)); do
-      rest="${rest#*|}"
-    done
-    printf '%s\n' "${rest%%|*}"
-    return 0
-  done
-  return 1
-}
-
 usage() {
   cat <<'EOF'
 用法: gradlex [命令] [选项] [关键词]
@@ -39,7 +16,7 @@ usage() {
 EOF
   local row
   for row in "${COMMANDS[@]}"; do
-    printf '  %-10s %s\n' "${row%%|*}" "$(command_field "${row%%|*}" 2)"
+    printf '  %-10s %s\n' "${row%%|*}" "$(shell_command_field "${row%%|*}" 2)"
   done
 
   cat <<'EOF'
@@ -83,7 +60,7 @@ declare -a POSITIONAL=()
 declare -a UI_ACTION_ITEMS=()
 
 # 命令名是否登记在注册表里，加命令不必改这里。
-is_action() { command_exists "$1"; }
+is_action() { shell_command_exists "$1"; }
 
 parse_args() {
   local -a args=("$@")
@@ -121,17 +98,6 @@ parse_args() {
   done
 }
 
-# 主菜单的选项从注册表生成，加命令时不必改这里；末尾补一项退出。
-build_action_items() {
-  UI_ACTION_ITEMS=()
-  local row name
-  for row in "${COMMANDS[@]}"; do
-    name="${row%%|*}"
-    UI_ACTION_ITEMS+=("$name" "$(command_field "$name" 2)")
-  done
-  UI_ACTION_ITEMS+=('quit' '退出')
-}
-
 # 执行一个动作。$1 是命令名，$2 起是位置参数，只取第一个当关键词。
 run_action() {
   local cmd=$1
@@ -139,9 +105,9 @@ run_action() {
   local kw=${1:-}
 
   local noun collector selector
-  noun=$(command_field "$cmd" 4)
-  collector=$(command_field "$cmd" 3)
-  selector=$(command_field "$cmd" 6)
+  noun=$(shell_command_field "$cmd" 4)
+  collector=$(shell_command_field "$cmd" 3)
+  selector=$(shell_command_field "$cmd" 6)
 
   mkdir -p "$CACHE_DIR"
   local key
@@ -153,9 +119,9 @@ run_action() {
   prepare_scan "$PWD"
 
   local -a recs=()
-  mapfile -t recs < <("$collector" | assign_tags | apply_start_mode)
+  mapfile -t recs < <("$collector" | shell_assign_tags | apply_start_mode)
   if ((LIST_ONLY && JSON_ONLY)); then
-    machine_json "$cmd"
+    shell_machine_json "$cmd" machine_collect
     return 0
   fi
   [[ ${#recs[@]} -gt 0 ]] || die "当前目录下没有找到$noun"
@@ -189,7 +155,7 @@ run_action() {
     if [[ -n "$selector" ]]; then
       out=$("$selector" "$noun" "${recs[@]}") || rc=$?
     else
-      out=$(gradlex_ui_checklist "$noun" "${recs[@]}") || rc=$?
+      out=$(shell_ui_checklist "$noun" "${recs[@]}") || rc=$?
     fi
     case "$rc" in
       0) : ;;
@@ -207,24 +173,10 @@ run_action() {
   fi
 
   # 自带选择函数的命令在函数里写勾选记录。
-  [[ -z "$selector" || -n "$kw" ]] && save_selection "${chosen[@]}"
+  [[ -z "$selector" || -n "$kw" ]] && shell_save_selection "${chosen[@]}"
 
   # 单条记录会 exec 成 Gradle，正常情况下回不来；能回来只可能是工作目录进不去。
-  launch_records "${chosen[@]}" || die '执行失败，工作目录可能不存在'
-}
-
-# 不带参数时的主菜单：先选动作再勾目标，执行完或返回上一步都回到这里，选退出才离开。
-ui_main() {
-  local action rc=0
-  while :; do
-    action=$(ui_menu_named 'gradlex' '选命令' "${UI_ACTION_ITEMS[@]}") || return "$EXIT_CANCEL"
-    [[ "$action" == 'quit' ]] && break
-    rc=0
-    run_action "$action" || rc=$?
-    ((rc == 0 || rc == EXIT_BACK)) && continue
-    return "$rc"
-  done
-  return 0
+  shell_launch_records launch_one "${chosen[@]}" || die '执行失败，工作目录可能不存在'
 }
 
 main() {
@@ -240,7 +192,7 @@ main() {
   fi
   # 终端探测只做一次且必须在命令替换之前，替换里的 stdout 是管道，那时 [[ -t 1 ]] 永远为假。
   ui_detect
-  build_action_items
+  shell_build_action_items
 
   # 直接写命令时没有上一步可回，返回与取消同义。
   local rc=0
@@ -257,5 +209,5 @@ main() {
     return "$rc"
   fi
 
-  ui_main
+  shell_ui_main
 }
