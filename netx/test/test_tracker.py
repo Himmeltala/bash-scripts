@@ -204,6 +204,63 @@ class TrackerTest(unittest.TestCase):
         row = self.db.flows(minutes=None)[0]
         self.assertIsNotNone(row["ended"])
 
+    def _payload(self, data, pid=100, fd=5, length=None):
+        self.tracker.on_event(
+            {
+                "type": "payload",
+                "pid": pid,
+                "fd": fd,
+                "nsecs": 1,
+                "length": len(data) if length is None else length,
+                "data": data,
+            }
+        )
+
+    def test_payload_is_parsed_on_close(self):
+        self._connect()
+        self._payload(b"GET /x HTTP/1.1\r\nHost: a.test\r\n\r\n")
+        self.tracker.on_event({"type": "close", "pid": 100, "fd": 5})
+
+        row = self.db.flows(minutes=None)[0]
+        detail = self.db.detail(row["id"])
+        self.assertEqual(detail["kind"], "http")
+        self.assertEqual(detail["host"], "a.test")
+        self.assertEqual(detail["parsed"]["method"], "GET")
+
+    def test_payload_chunks_join_before_parse(self):
+        self._connect()
+        self._payload(b"GET /join HTTP/1.1\r\nHos")
+        self._payload(b"t: j.test\r\n\r\n")
+        self.tracker.on_event({"type": "close", "pid": 100, "fd": 5})
+
+        detail = self.db.detail(self.db.flows(minutes=None)[0]["id"])
+        self.assertEqual(detail["host"], "j.test")
+        self.assertTrue(detail["parsed"]["headers_complete"])
+
+    def test_payload_flushes_while_active(self):
+        self._connect()
+        self._payload(b"GET /live HTTP/1.1\r\nHost: live.test\r\n\r\n")
+        self.now += FlowTracker.FLUSH_SECONDS + 0.1
+        self.tracker.tick()
+
+        row = self.db.flows(minutes=None)[0]
+        self.assertIsNone(row["ended"])
+        detail = self.db.detail(row["id"])
+        self.assertEqual(detail["host"], "live.test")
+
+    def test_payload_over_cap_marks_truncated(self):
+        self._connect()
+        self._payload(b"X" * (FlowTracker.CAPTURE_BYTES + 10))
+        self.tracker.on_event({"type": "close", "pid": 100, "fd": 5})
+
+        detail = self.db.detail(self.db.flows(minutes=None)[0]["id"])
+        self.assertTrue(detail["truncated"])
+        self.assertEqual(len(detail["raw"]), FlowTracker.CAPTURE_BYTES)
+
+    def test_payload_without_active_flow_is_ignored(self):
+        self._payload(b"hello")
+        self.assertEqual(self.db.count_flows(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
