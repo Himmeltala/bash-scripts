@@ -64,7 +64,7 @@ kprobe:__sys_sendto
       $take = $room;
     }
     if ($take > 0) {
-      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
+      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
       @cap[pid, arg0] = @cap[pid, arg0] + $take;
     }
   }
@@ -95,7 +95,7 @@ kprobe:ksys_write
       $take = $room;
     }
     if ($take > 0) {
-      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
+      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
       @cap[pid, arg0] = @cap[pid, arg0] + $take;
     }
   }
@@ -132,7 +132,7 @@ kprobe:__x64_sys_writev
         $take = $room;
       }
       if ($take > 0) {
-        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, $fd, nsecs, $len, buf(uptr($base), $take));
+        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, $fd, nsecs, $len, buf(uptr($base), $take));
         @cap[pid, $fd] = @cap[pid, $fd] + $take;
       }
     }
@@ -169,7 +169,7 @@ kprobe:__sys_sendmsg
         $take = $room;
       }
       if ($take > 0) {
-        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, arg0, nsecs, $len, buf(uptr($base), $take));
+        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, arg0, nsecs, $len, buf(uptr($base), $take));
         @cap[pid, arg0] = @cap[pid, arg0] + $take;
       }
     }
