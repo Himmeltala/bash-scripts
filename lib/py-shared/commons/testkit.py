@@ -1,7 +1,9 @@
-"""测试用的小工具：按路径加载模块、读 SSE、调 JSON 接口、起临时服务。
-
-这里不能 import web、sse、stores：它要能先于这三层被测试自己加载。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\commons\testkit.py
+# @Description: 测试用的小工具：按路径加载模块、读 SSE、调 JSON 接口、起临时服务。
 
 import importlib.util
 import json

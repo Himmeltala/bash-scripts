@@ -3,21 +3,26 @@
 nodex 用全部基础件，mvnx 用 `base.sh` 与 `ui-records.sh`，dvcsx 用 `base.sh` 与 `web-command.sh`。不是工具，没有入口；各工具按顺序 `source`。
 
 ```
-base.sh         退出码、FS、CACHE_DIR、die/usage_error、路径工具
-ui-records.sh   记录勾选与标签：shell_assign_tags、shell_ui_checklist*、shell_save_selection
-web-state.sh    网页状态文件、目录锁、列操作、工作区辅助
-web-command.sh  起 python、等 READY、打印地址或 JSON、trap、wait
+commons/                                  与工具无关的通用件
+  base.sh        退出码、FS、CACHE_DIR、die/usage_error、路径工具
+  tui-path.sh    定位并加载 bash-tui
+services/                                 这几个工具共用的业务骨架
+  ui-records.sh   记录勾选与标签：shell_assign_tags、shell_ui_checklist*、shell_save_selection
+  web-state.sh    网页状态文件、目录锁、列操作、工作区辅助
+  web-command.sh  起 python、等 READY、打印地址或 JSON、trap、wait
 ```
+
+`commons` 不引用 `services`，`services` 可以引用 `commons`。
 
 ## 加载
 
 ```bash
-source lib/tui-path.sh              # 需要 bash-tui 的工具
-SHELL_TOOL=nodex                    # 必须先设，base.sh 用它拼 CACHE_DIR 与错误前缀
-source lib/shell-shared/base.sh
-source lib/shell-shared/ui-records.sh
-source lib/shell-shared/web-state.sh
-source lib/shell-shared/web-command.sh
+source lib/shell-shared/commons/tui-path.sh   # 需要 bash-tui 的工具
+SHELL_TOOL=nodex                              # 必须先设，base.sh 用它拼 CACHE_DIR 与错误前缀
+source lib/shell-shared/commons/base.sh
+source lib/shell-shared/services/ui-records.sh
+source lib/shell-shared/services/web-state.sh
+source lib/shell-shared/services/web-command.sh
 ```
 
 `SHELL_TOOL`、`EXIT_*`、`FS`、`CACHE_DIR` 是 `readonly`，工具里不要重名定义。

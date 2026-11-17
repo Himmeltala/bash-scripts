@@ -9,8 +9,8 @@ gradlex_dir=${BASH_SOURCE[0]%/*}
 [[ "$gradlex_dir" == "${BASH_SOURCE[0]}" ]] && gradlex_dir='.'
 readonly gradlex_dir
 
-# shellcheck source=../../lib/tui-path.sh
-if ! source "$gradlex_dir"/../../lib/tui-path.sh; then
+# shellcheck source=../../lib/shell-shared/commons/tui-path.sh
+if ! source "$gradlex_dir"/../../lib/shell-shared/commons/tui-path.sh; then
   printf 'gradlex: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
   exit 1
 fi

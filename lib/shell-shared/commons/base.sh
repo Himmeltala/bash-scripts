@@ -1,4 +1,9 @@
-# 基础设施：退出码、报错、记录分列、路径计算，以及单元分隔符与缓存目录。
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:33:29
+# @FilePath: \lib\shell-shared\commons\base.sh
+# @Description: 基础设施：退出码、报错、记录分列、路径计算，以及单元分隔符与缓存目录。
 # 调用方先设 SHELL_TOOL（工具名），再 source 本文件；base 之外再 source 需要的共享模块。
 # shellcheck shell=bash
 # shellcheck disable=SC2154

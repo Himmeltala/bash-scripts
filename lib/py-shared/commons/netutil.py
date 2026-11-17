@@ -1,4 +1,9 @@
-"""监听地址与回环判断：三个网页进程对 --host 的口径保持一致。"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\commons\netutil.py
+# @Description: 监听地址与回环判断：三个网页进程对 --host 的口径保持一致。
 
 import ipaddress
 import socket

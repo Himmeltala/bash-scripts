@@ -1,8 +1,13 @@
-# 定位并加载 bash-tui：BASH_TUI_DIR、同级检出、安装目录 vendor 依次尝试。
+# @Author: Himmeltala
+# @Date: 2026-10-21 20:15:31
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:33:29
+# @FilePath: \lib\shell-shared\commons\tui-path.sh
+# @Description: 定位并加载 bash-tui：BASH_TUI_DIR、同级检出、安装目录 vendor 依次尝试。
 
 _tui_path_root=${BASH_SOURCE[0]%/*}
 [[ "$_tui_path_root" == "${BASH_SOURCE[0]}" ]] && _tui_path_root='.'
-_tui_path_root=$(cd "$_tui_path_root/.." && pwd)
+_tui_path_root=$(cd "$_tui_path_root/../../.." && pwd)
 
 _tui_path_candidates=(
   "${BASH_TUI_DIR:-}"

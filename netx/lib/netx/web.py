@@ -11,7 +11,8 @@ import webbrowser
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO / "lib" / "py-shared"))
+sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
 
 from netutil import is_loopback_address, is_loopback_host  # noqa: E402
 from sse import SSEMixin, sse_data  # noqa: E402

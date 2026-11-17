@@ -1,4 +1,9 @@
-"""行式键值文件：一行一条，字段用 FS 分隔，读写都加锁、落盘用原子替换。"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\commons\kvstore.py
+# @Description: 行式键值文件：一行一条，字段用 FS 分隔，读写都加锁、落盘用原子替换。
 
 import threading
 from pathlib import Path

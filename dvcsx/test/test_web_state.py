@@ -13,7 +13,8 @@ HERE = Path(__file__).resolve().parent
 SERVER = HERE.parent / "lib" / "dvcsx" / "web" / "server.py"
 
 # 测试按 python3 -I 跑，共享层不在 sys.path 上，显式加进去。
-sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared"))
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import load_module, read_sse_event, serve
 
 web = load_module("dvcsx_web_server", SERVER)

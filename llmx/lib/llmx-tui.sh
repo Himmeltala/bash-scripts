@@ -2,7 +2,7 @@
 # 报表打印到终端而不是画在界面里，宽表不丢列，退出后还能翻回滚。
 
 # 界面组件来自 bash-tui，路径由仓库根下的 tui-path.sh 定位。
-if ! source "${BASH_SOURCE[0]%/*}/../../lib/tui-path.sh"; then
+if ! source "${BASH_SOURCE[0]%/*}/../../lib/shell-shared/commons/tui-path.sh"; then
   return 1
 fi
 

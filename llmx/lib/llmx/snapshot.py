@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # 共用小件在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib" / "py-shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib" / "py-shared" / "services"))
 from fileio import read_json, write_json
 
 from .model import Record, Usage

@@ -8,8 +8,8 @@ portx_dir=${BASH_SOURCE[0]%/*}
 [[ "$portx_dir" == "${BASH_SOURCE[0]}" ]] && portx_dir='.'
 readonly portx_dir
 
-# shellcheck source=../../lib/tui-path.sh
-if ! source "$portx_dir"/../../lib/tui-path.sh; then
+# shellcheck source=../../lib/shell-shared/commons/tui-path.sh
+if ! source "$portx_dir"/../../lib/shell-shared/commons/tui-path.sh; then
   printf 'portx: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
   exit 1
 fi

@@ -9,18 +9,18 @@ mvnx_dir=${BASH_SOURCE[0]%/*}
 [[ "$mvnx_dir" == "${BASH_SOURCE[0]}" ]] && mvnx_dir='.'
 readonly mvnx_dir
 
-# shellcheck source=../../lib/tui-path.sh
-if ! source "$mvnx_dir"/../../lib/tui-path.sh; then
+# shellcheck source=../../lib/shell-shared/commons/tui-path.sh
+if ! source "$mvnx_dir"/../../lib/shell-shared/commons/tui-path.sh; then
   printf 'mvnx: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
   exit 1
 fi
 
 # 共享层：base 约定先设 SHELL_TOOL，再加载记录界面；网页已拆到 jvmx，这里不再接网页状态层。
 SHELL_TOOL=mvnx
-# shellcheck source=../../lib/shell-shared/base.sh
-source "$mvnx_dir"/../../lib/shell-shared/base.sh
-# shellcheck source=../../lib/shell-shared/ui-records.sh
-source "$mvnx_dir"/../../lib/shell-shared/ui-records.sh
+# shellcheck source=../../lib/shell-shared/commons/base.sh
+source "$mvnx_dir"/../../lib/shell-shared/commons/base.sh
+# shellcheck source=../../lib/shell-shared/services/ui-records.sh
+source "$mvnx_dir"/../../lib/shell-shared/services/ui-records.sh
 
 for mvnx_module in \
   "$mvnx_dir"/mvnx/pom.sh \

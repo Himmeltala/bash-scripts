@@ -1,9 +1,9 @@
-"""nodex 与 mvnx 共用的网页接口骨架：状态、日志、指标、别名与启停的公共路由。
-
-各工具的 ``Handler`` 继承 ``ToolHandler``，只补自己的接口：
-``build_state`` 拼状态回话，``_tool_get`` / ``_tool_post`` 接工具独有的路由，
-``_tool_update_args`` 给出 update 请求要带的字段。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:58:46
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\toolweb.py
+# @Description: nodex 与 mvnx 共用的网页接口骨架：状态、日志、指标、别名与启停的公共路由。
 
 from browse import list_dirs
 from sse import SSEMixin, log_page

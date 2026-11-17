@@ -1,8 +1,9 @@
-"""网页进程的公共骨架：请求路由、JSON 回话、静态页面、监听地址。
-
-三个工具的 ``server.py`` 各自继承 ``WebHandler``，只实现 ``_dispatch``；
-需要先接下的流式接口覆写 ``_stream_routes``。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-13 23:20:04
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\web.py
+# @Description: 网页进程的公共骨架：请求路由、JSON 回话、静态页面、监听地址。
 
 import json
 import os

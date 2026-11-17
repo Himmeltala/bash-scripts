@@ -1,4 +1,9 @@
-# 勾选界面与勾选记录：记录映射、同名标签去重、上次勾选回填。
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:33:29
+# @FilePath: \lib\shell-shared\services\ui-records.sh
+# @Description: 勾选界面与勾选记录：记录映射、同名标签去重、上次勾选回填。
 # 界面自绘由 bash-tui 提供；复选输出到 stdout，取消返回 1、没勾返回 2、上一步返回 4。
 # 依赖 base.sh 的 FS、emit_record 与 SHELL_TOOL。
 # shellcheck shell=bash

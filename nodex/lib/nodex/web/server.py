@@ -23,7 +23,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "services"))
 from browse import inside
 from metrics import Metrics
 from runner import (

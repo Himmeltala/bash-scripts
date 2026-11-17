@@ -1,4 +1,9 @@
-"""文件读写小件：文本与 JSON、原子替换、预览与换行保留。"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\commons\fileio.py
+# @Description: 文件读写小件：文本与 JSON、原子替换、预览与换行保留。
 
 import json
 import os

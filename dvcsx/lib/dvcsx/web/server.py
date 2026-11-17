@@ -27,7 +27,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "services"))
 from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
 from metrics import Metrics
 from netutil import is_loopback_address as is_loopback

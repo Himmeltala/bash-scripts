@@ -1,4 +1,9 @@
-"""路径校验：相对路径不许跳出根目录，静态文件也不许顺着 ../ 跑出去。"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\commons\pathutil.py
+# @Description: 路径校验：相对路径不许跳出根目录，静态文件也不许顺着 ../ 跑出去。
 
 from pathlib import Path
 

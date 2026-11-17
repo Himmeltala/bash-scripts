@@ -1,7 +1,9 @@
-"""网页进程的启动骨架：检查打包目录、起监听、打印就绪行与信号处理。
-
-nodex 与 mvnx 的 ``server.py`` 只组装状态、引擎与 Handler，起服务的骨架走这里。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:58:46
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\runtime.py
+# @Description: 网页进程的启动骨架：检查打包目录、起监听、打印就绪行与信号处理。
 
 import signal
 import threading

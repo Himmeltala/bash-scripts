@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "lib" / "py-shared"))
+sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
 
 import testkit
 

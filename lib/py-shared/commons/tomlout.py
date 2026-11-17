@@ -1,9 +1,9 @@
-"""TOML 输出：把字典按插入顺序写成配置文件文本。
-
-标准库只有读的 tomllib，没有写的。这里只覆盖配置里常见的那几种值：标量、
-数组、嵌套表与行内表；不写注释，文件头由调用方拼好传进来。读回来交给
-tomllib 校验，格式与官方示例保持一致。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-15 19:35:44
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\commons\tomlout.py
+# @Description: TOML 输出：把字典按插入顺序写成配置文件文本。
 
 import json
 import re

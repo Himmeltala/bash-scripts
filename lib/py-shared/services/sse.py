@@ -1,4 +1,9 @@
-"""SSE 相关的公共件：行缓冲、尾部补发、一份数据推给所有页面。"""
+# @Author: Himmeltala
+# @Date: 2026-11-13 23:20:04
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\sse.py
+# @Description: SSE 相关的公共件：行缓冲、尾部补发、一份数据推给所有页面。
 
 import codecs
 import json

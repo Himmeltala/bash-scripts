@@ -619,7 +619,7 @@ web_engine() {
   return 0
 }
 
-# web_command 的公共流程在 lib/shell-shared/web-command.sh，这里只给参数。
+# web_command 的公共流程在 lib/shell-shared/services/web-command.sh，这里只给参数。
 WEB_TOOL='nodex'
 WEB_ROOT="$nodex_dir/nodex/web"
 WEB_SERVER_PY="$WEB_ROOT/server.py"

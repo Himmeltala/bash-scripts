@@ -1,4 +1,9 @@
-# 网页模式的公共启动流程：选 python、校验端口与页面、起转发进程、等 READY、打印地址或 JSON。
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:33:29
+# @FilePath: \lib\shell-shared\services\web-command.sh
+# @Description: 网页模式的公共启动流程：选 python、校验端口与页面、起转发进程、等 READY、打印地址或 JSON。
 # 调用方设好 WEB_TOOL、WEB_ROOT、WEB_SERVER_PY、WEB_STATIC_DIR、WEB_READY_MARKER、
 # WEB_PYTHON_ENV、WEB_JSON_FLAG、WEB_JSON_WAIT、WEB_SERVER_ARGS、WEB_WARN_TEXT、
 # WEB_EXIT_TEXT，并在项目模块里定义 web_fail 与 web_python。

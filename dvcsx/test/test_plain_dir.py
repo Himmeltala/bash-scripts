@@ -11,7 +11,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SERVER = HERE.parent / "lib" / "dvcsx" / "web" / "server.py"
 
-sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared"))
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 web = load_module("dvcsx_web_server_plain", SERVER)

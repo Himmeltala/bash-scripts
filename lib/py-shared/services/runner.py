@@ -1,7 +1,9 @@
-"""长命子进程与执行端管路：会话管理、逐行请求、状态文件缓存。
-
-只收 nodex 与 mvnx 共有的部分；状态行各列的含义与业务动作仍留在各自的 server.py。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 00:32:22
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\runner.py
+# @Description: 长命子进程与执行端管路：会话管理、逐行请求、状态文件缓存。
 
 import errno
 import os

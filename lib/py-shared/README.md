@@ -5,17 +5,23 @@ nodex、jvmx、dvcsx、llmx 四个网页进程共用的 Python 骨架。不是�
 ## 目录
 
 ```
-web.py / toolweb.py / runtime.py          路由、接口骨架、启动流程
-sse.py / metrics.py / tomlout.py          SSE、指标、TOML 输出
-stores.py / kvstore.py / runner.py        状态行、行式存储、执行端
-fileio.py / pathutil.py / netutil.py      文件、路径、监听地址
-browse.py / toolchain.py                  目录浏览、Node/JDK 运行时
-testkit.py / test/                        测试脚手架与共享用例
+commons/                                  与工具无关的通用小件
+  fileio.py / pathutil.py / netutil.py    文件、路径、监听地址
+  tomlout.py / kvstore.py                 TOML 输出、行式键值存储
+  testkit.py                              测试脚手架
+services/                                 这几个工具共用的业务骨架
+  web.py / toolweb.py / runtime.py        路由、接口骨架、启动流程
+  sse.py / metrics.py                     SSE、指标
+  stores.py / runner.py                   状态行、执行端
+  browse.py / toolchain.py                目录浏览、Node/JDK 运行时
+test/                                     共享层自身的用例
 ```
+
+依赖只允许 `services` 引用 `commons`，反过来不行。两目录都按名字平铺导入，模块名在两层之间不能重名。
 
 ## 怎么接
 
-`server.py` 顶部按 `__file__` 找到 `lib/py-shared` 并加进 `sys.path`；源码与安装目录层级一致。每个 `Handler` 继承 `WebHandler`（需要日志推送再加 `SSEMixin`），实现自己的 `_dispatch`；流式接口覆写 `_stream_routes`。nodex 再继承 `toolweb.ToolHandler`，只补 `build_state`、`_tool_get`、`_tool_post`、`_tool_update_args`。启动走 `runtime.py`：`check_static`、`start_streams`、`serve`。
+`server.py` 顶部按 `__file__` 找到 `lib/py-shared`，把 `commons` 与 `services` 两个目录分别加进 `sys.path`；源码与安装目录层级一致。每个 `Handler` 继承 `WebHandler`（需要日志推送再加 `SSEMixin`），实现自己的 `_dispatch`；流式接口覆写 `_stream_routes`。nodex 再继承 `toolweb.ToolHandler`，只补 `build_state`、`_tool_get`、`_tool_post`、`_tool_update_args`。启动走 `runtime.py`：`check_static`、`start_streams`、`serve`。
 
 `testkit.py` 提供 `load_module`、`serve`、`read_sse_event`、`json_call`、`poll_until`；它不 import 其他共享模块。自身用例：`python3 -I lib/py-shared/test/test_shared.py`。
 

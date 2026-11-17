@@ -6,9 +6,11 @@
 import sys
 from pathlib import Path
 
-# 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
+# 共用骨架在仓库根的 lib/py-shared 下，通用件与服务件各占一层，源码与安装后的相对层级一致。
 _SHARED = Path(__file__).resolve().parents[3] / "lib" / "py-shared"
-if str(_SHARED) not in sys.path:
-    sys.path.insert(0, str(_SHARED))
+for _part in ("commons", "services"):
+    _path = str(_SHARED / _part)
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 VERSION = "0.1.0"

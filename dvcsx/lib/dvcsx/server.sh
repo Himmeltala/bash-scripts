@@ -1,5 +1,5 @@
 # 网页模式：起 python3 转发进程，静态页面与 SVN / Git 查询、操作接口都由它出。
-# 公共启动流程在 lib/shell-shared/web-command.sh，这里给参数与两项 dvcsx 专属校验/提示。
+# 公共启动流程在 lib/shell-shared/services/web-command.sh，这里给参数与两项 dvcsx 专属校验/提示。
 
 # 缺省值在这里定，parse_args 里覆盖，dvcsx -p 9999 web 与 dvcsx web -p 9999 等价。
 RV_PORT=8100
@@ -31,7 +31,7 @@ web_python() {
   printf '%s\n' "$runner"
 }
 
-# web_command 的公共流程在 lib/shell-shared/web-command.sh，这里只给参数。
+# web_command 的公共流程在 lib/shell-shared/services/web-command.sh，这里只给参数。
 WEB_TOOL='dvcsx'
 WEB_ROOT="$dvcsx_dir/dvcsx/web"
 WEB_SERVER_PY="$WEB_ROOT/server.py"

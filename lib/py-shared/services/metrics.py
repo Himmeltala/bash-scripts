@@ -1,7 +1,9 @@
-"""CPU、内存、磁盘占用与网速，页面头部那几张小图用。
-
-只用 /proc 与 statvfs，不引第三方库。
-"""
+# @Author: Himmeltala
+# @Date: 2026-11-13 23:20:04
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\metrics.py
+# @Description: CPU、内存、磁盘占用与网速，页面头部那几张小图用。
 
 import os
 import threading

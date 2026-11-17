@@ -1,4 +1,9 @@
-"""状态行与别名存储：bash 写状态文件，这里只读行、另存别名与左侧分组。"""
+# @Author: Himmeltala
+# @Date: 2026-11-13 23:20:04
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\stores.py
+# @Description: 状态行与别名存储：bash 写状态文件，这里只读行、另存别名与左侧分组。
 
 import os
 import threading

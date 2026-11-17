@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""共享层第一批小件的回归：fileio、pathutil、netutil、kvstore 与 testkit。"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\test\test_shared.py
+# @Description: 共享层第一批小件的回归：fileio、pathutil、netutil、kvstore 与 testkit。
 
 import http.client
 import json
@@ -17,7 +22,8 @@ except ImportError:  # 3.11 之前没有；这一组用例跟着跳过
     tomllib = None
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE.parent / "commons"))
+sys.path.insert(0, str(HERE.parent / "services"))
 
 import fileio
 import kvstore

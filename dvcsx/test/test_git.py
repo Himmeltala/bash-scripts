@@ -15,7 +15,8 @@ HERE = Path(__file__).resolve().parent
 SERVER_PY = HERE.parent / "lib" / "dvcsx" / "web" / "server.py"
 
 # 测试按 python3 -I 跑，共享层不在 sys.path 上，显式加进去。
-sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared"))
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 gitmod = load_module("dvcsx_server", SERVER_PY)

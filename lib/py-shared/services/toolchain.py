@@ -1,4 +1,9 @@
-"""工具链目录的公共小件：扫安装目录、判断存着的目录还能不能用、拼 PATH。"""
+# @Author: Himmeltala
+# @Date: 2026-11-14 20:30:17
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-17 23:35:13
+# @FilePath: \lib\py-shared\services\toolchain.py
+# @Description: 工具链目录的公共小件：扫安装目录、判断存着的目录还能不能用、拼 PATH。
 
 import os
 from pathlib import Path
