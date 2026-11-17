@@ -68,6 +68,45 @@ class CliTest(unittest.TestCase):
         self.assertEqual(payload["state"], "running")
         self.assertEqual(payload["pid"], 123)
         self.assertEqual(payload["flows"], 1)
+        self.assertGreater(payload["db_bytes"], 0)
+        self.assertEqual(payload["details"], 0)
+
+    def test_parse_duration(self):
+        self.assertEqual(cli.parse_duration("7d"), 7 * 86400)
+        self.assertEqual(cli.parse_duration("12h"), 12 * 3600)
+        self.assertEqual(cli.parse_duration("30m"), 30 * 60)
+        self.assertEqual(cli.parse_duration("45s"), 45)
+        self.assertEqual(cli.parse_duration("3"), 3 * 86400)
+        for bad in ("abc", "0d", "-1d", "5w", ""):
+            with self.assertRaises(ValueError):
+                cli.parse_duration(bad)
+
+    def _end_current_flow(self):
+        rows = self.db.flows(minutes=None)
+        self.assertEqual(len(rows), 1)
+        self.db.end_flow(rows[0]["id"], time.time())
+        return rows[0]["id"]
+
+    def test_clean_all_with_yes_removes_ended(self):
+        self._end_current_flow()
+        code, text = self._run(["clean", "--all", "--yes"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.db.count_flows(), 0)
+        self.assertIn("已删除", text)
+
+    def test_clean_dry_run_keeps_rows(self):
+        self._end_current_flow()
+        code, text = self._run(["clean", "--all", "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.db.count_flows(), 1)
+        self.assertIn("预览", text)
+
+    def test_clean_without_yes_in_non_interactive_fails(self):
+        self._end_current_flow()
+        with mock.patch.object(sys.stdin, "isatty", return_value=False):
+            code, _text = self._run(["clean", "--all"])
+        self.assertEqual(code, 2)
+        self.assertEqual(self.db.count_flows(), 1)
 
 
 if __name__ == "__main__":
