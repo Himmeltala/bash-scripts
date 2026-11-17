@@ -14,17 +14,20 @@ const props = defineProps({
 })
 
 const headers = [
-  { title: '开始', key: 'started', width: 156, nowrap: true },
-  { title: '进程', key: 'comm', width: 150, nowrap: true },
-  { title: 'PID', key: 'pid', align: 'end', width: 90, nowrap: true },
-  { title: '目标', key: 'dst_ip', width: 210, nowrap: true },
-  { title: '类型', key: 'detail_kind', width: 80, nowrap: true },
-  { title: '主机/URL', key: 'detail_url', width: 240, nowrap: true },
-  { title: '发送', key: 'bytes_out', align: 'end', width: 100, nowrap: true },
-  { title: '时长', key: 'duration', align: 'end', width: 96, nowrap: true },
-  { title: '状态', key: 'ended', width: 92, sortable: false, nowrap: true },
-  { title: '', key: 'actions', width: 56, sortable: false, nowrap: true },
+  { title: '开始', key: 'started', width: 150, nowrap: true },
+  { title: '进程', key: 'comm', width: 140, nowrap: true },
+  { title: 'PID', key: 'pid', align: 'end', width: 88, nowrap: true },
+  { title: '目标', key: 'dst_ip', width: 190, nowrap: true },
+  { title: '类型', key: 'detail_kind', width: 76, nowrap: true },
+  { title: '主机/URL', key: 'detail_url', width: 230, nowrap: true },
+  { title: '发送', key: 'bytes_out', align: 'end', width: 96, nowrap: true },
+  { title: '时长', key: 'duration', align: 'end', width: 90, nowrap: true },
+  { title: '状态', key: 'ended', width: 88, sortable: false, nowrap: true },
 ]
+
+function rowProps({ item }) {
+  return { onClick: () => emit('open', item), style: 'cursor: pointer', title: '点击查看内容' }
+}
 
 const sortBy = ref([{ key: 'started', order: 'desc' }])
 
@@ -58,6 +61,7 @@ const bytes = (value) =>
       :items-per-page="-1"
       hide-default-footer
       height="100%"
+      :row-props="rowProps"
       class="table"
     >
       <template #[`item.started`]="{ item }">{{ formatTime(item.started) }}</template>
@@ -75,15 +79,6 @@ const bytes = (value) =>
         <span class="host" :title="item.detail_url || item.detail_host || ''">
           {{ item.detail_url || item.detail_host || '—' }}
         </span>
-      </template>
-      <template #[`item.actions`]="{ item }">
-        <v-btn
-          icon="mdi-information-outline"
-          size="x-small"
-          variant="text"
-          title="查看内容"
-          @click.stop="emit('open', item)"
-        />
       </template>
       <template #[`item.bytes_out`]="{ item }">{{ bytes(item.bytes_out) }}</template>
       <template #[`item.duration`]="{ item }">{{ formatDuration(item.duration) }}</template>
