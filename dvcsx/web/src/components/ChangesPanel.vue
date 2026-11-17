@@ -87,6 +87,14 @@
                   {{ dirName(row.path) }}
                 </div>
               </div>
+              <v-icon
+                v-if="isDeferred(row.path)"
+                size="14"
+                class="held"
+                title="默认不渲染，点开才加载差异"
+              >
+                mdi-eye-off-outline
+              </v-icon>
               <span class="state">{{ statusOf(row.file.item).text }}</span>
             </template>
           </li>
@@ -97,7 +105,14 @@
 
       <section class="view">
         <p v-if="saveError" class="hint bad">{{ saveError }}</p>
+        <div v-if="awaitingLoad" class="deferred">
+          <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
+          <div class="deferred-path mono" :title="selected.path">{{ selected.path }}</div>
+          <p class="deferred-hint">这是锁文件或构建产物，文件可能很大，默认不加载差异。</p>
+          <v-btn color="primary" variant="flat" size="small" @click="showDeferred">加载差异</v-btn>
+        </div>
         <DiffView
+          v-else
           ref="diffRef"
           :title="diffTitle"
           :path="selected ? selected.path : ''"
@@ -153,6 +168,7 @@ import DiffView from '@bash-scripts/web-shared/diff'
 import { api } from '../composables/useApi'
 import { FloatingDialog, SplitHandle, fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../composables/format'
+import { isDeferred } from '../composables/deferred'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree } from '@bash-scripts/web-shared'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -199,6 +215,14 @@ const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useS
 
 const isGit = computed(() => props.ws.vcs === 'git')
 const diffTitle = computed(() => (selected.value ? selected.value.path : ''))
+// 锁文件与构建产物不自动取差异；用户点过“加载差异”的文件记在这里，换回来不再拦。
+const revealed = ref(new Set())
+const awaitingLoad = computed(
+  () =>
+    !!selected.value &&
+    isDeferred(selected.value.path) &&
+    !revealed.value.has(selected.value.path),
+)
 // SVN 的版本号前面带 r，Git 给的是短 sha，原样显示。
 const revText = computed(() => {
   const rev = info.value.revision
@@ -284,10 +308,16 @@ async function pick(file, { skipGuard = false } = {}) {
   if (!skipGuard && !(await confirmLeave())) return
   const mine = ++pickSeq
   selected.value = file
-  diffLoading.value = true
   diffError.value = ''
   saveError.value = ''
   editState.value = { editable: false, baseText: '', reason: '' }
+  if (isDeferred(file.path) && !revealed.value.has(file.path)) {
+    // 连工作副本快照都不取：大文件只在用户点了“加载差异”之后才读。
+    content.value = { text: '', kind: 'diff', truncated: false }
+    diffLoading.value = false
+    return
+  }
+  diffLoading.value = true
   try {
     const [data, snap] = await Promise.all([
       api.diff(props.ws.id, file.path, file.item, diffScope.value === 'file'),
@@ -305,6 +335,13 @@ async function pick(file, { skipGuard = false } = {}) {
   } finally {
     if (mine === pickSeq) diffLoading.value = false
   }
+}
+
+// 用户在右侧点了“加载差异”：记住这个文件，再走正常的取差异流程。
+function showDeferred() {
+  if (!selected.value) return
+  revealed.value.add(selected.value.path)
+  pick(selected.value, { skipGuard: true })
 }
 
 function onDirty(value) {
@@ -566,6 +603,34 @@ defineExpose({ load })
 .state {
   flex: 0 0 auto;
   font-size: 0.7rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.held {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.deferred {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+.deferred-icon {
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.deferred-path {
+  max-width: 40rem;
+  font-size: 0.84rem;
+  word-break: break-all;
+}
+.deferred-hint {
+  max-width: 34rem;
+  margin: 0;
+  font-size: 0.82rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .view {
