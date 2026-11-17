@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -31,6 +32,19 @@ CREATE INDEX IF NOT EXISTS flows_started ON flows(started DESC);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS flow_detail (
+  flow_id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL DEFAULT '',
+  host TEXT NOT NULL DEFAULT '',
+  url TEXT NOT NULL DEFAULT '',
+  sni TEXT NOT NULL DEFAULT '',
+  dns_name TEXT NOT NULL DEFAULT '',
+  dns_type TEXT NOT NULL DEFAULT '',
+  raw BLOB NOT NULL DEFAULT x'',
+  parsed TEXT NOT NULL DEFAULT '{}',
+  truncated INTEGER NOT NULL DEFAULT 0,
+  updated REAL NOT NULL
 );
 """
 
@@ -114,16 +128,102 @@ class Database:
             return cur.rowcount
 
     def flows(self, minutes: float | None = None, limit: int = 500) -> list[dict]:
-        sql = "SELECT * FROM flows"
+        sql = (
+            "SELECT f.*, d.kind AS detail_kind, d.host AS detail_host,"
+            " d.url AS detail_url, d.sni AS detail_sni, d.dns_name AS detail_dns_name,"
+            " CASE WHEN d.flow_id IS NULL THEN 0 ELSE 1 END AS has_detail"
+            " FROM flows f LEFT JOIN flow_detail d ON d.flow_id = f.id"
+        )
         args: list[float | int] = []
         if minutes is not None:
             # 开得久但还在发的连接不该被时间窗藏掉。
-            sql += " WHERE (started >= ? OR ended IS NULL)"
+            sql += " WHERE (f.started >= ? OR f.ended IS NULL)"
             args.append(time.time() - minutes * 60)
-        sql += " ORDER BY started DESC LIMIT ?"
+        sql += " ORDER BY f.started DESC LIMIT ?"
         args.append(limit)
         with self._conn() as conn:
             return [dict(row) for row in conn.execute(sql, args)]
+
+    def set_detail(self, flow_id: int, raw: bytes, parsed: dict, *, truncated: bool = False) -> None:
+        """写入或覆盖一条连接的详情；同一连接只留一份。"""
+        parsed = parsed if isinstance(parsed, dict) else {}
+        fields = (
+            str(parsed.get("kind") or ""),
+            str(parsed.get("host") or ""),
+            str(parsed.get("url") or ""),
+            str(parsed.get("sni") or ""),
+            str(parsed.get("dns_name") or ""),
+            str(parsed.get("dns_type") or ""),
+            bytes(raw or b""),
+            json.dumps(parsed, ensure_ascii=False),
+            1 if truncated else 0,
+            time.time(),
+            int(flow_id),
+        )
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO flow_detail"
+                " (kind, host, url, sni, dns_name, dns_type, raw, parsed, truncated, updated, flow_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(flow_id) DO UPDATE SET"
+                " kind = excluded.kind, host = excluded.host, url = excluded.url,"
+                " sni = excluded.sni, dns_name = excluded.dns_name, dns_type = excluded.dns_type,"
+                " raw = excluded.raw, parsed = excluded.parsed,"
+                " truncated = excluded.truncated, updated = excluded.updated",
+                fields,
+            )
+
+    def detail(self, flow_id: int) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM flow_detail WHERE flow_id = ?", (int(flow_id),)
+            ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        try:
+            parsed = json.loads(data.get("parsed") or "{}")
+        except (TypeError, ValueError):
+            parsed = {}
+        return {
+            "id": int(data["flow_id"]),
+            "kind": data.get("kind") or "",
+            "host": data.get("host") or "",
+            "url": data.get("url") or "",
+            "sni": data.get("sni") or "",
+            "dns_name": data.get("dns_name") or "",
+            "dns_type": data.get("dns_type") or "",
+            "raw": data.get("raw") or b"",
+            "parsed": parsed if isinstance(parsed, dict) else {},
+            "truncated": bool(data.get("truncated")),
+            "updated": float(data.get("updated") or 0),
+        }
+
+    def _db_bytes(self) -> int:
+        total = 0
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                total += os.path.getsize(str(self.path) + suffix)
+            except OSError:
+                pass
+        return total
+
+    def summary(self) -> dict:
+        with self._conn() as conn:
+            flow_count = int(conn.execute("SELECT COUNT(*) FROM flows").fetchone()[0])
+            detail_count = int(conn.execute("SELECT COUNT(*) FROM flow_detail").fetchone()[0])
+            active_count = int(
+                conn.execute("SELECT COUNT(*) FROM flows WHERE ended IS NULL").fetchone()[0]
+            )
+            span = conn.execute("SELECT MIN(started), MAX(started) FROM flows").fetchone()
+        return {
+            "db_bytes": self._db_bytes(),
+            "flow_count": flow_count,
+            "detail_count": detail_count,
+            "active_count": active_count,
+            "oldest": float(span[0] or 0),
+            "newest": float(span[1] or 0),
+        }
 
     def count_flows(self) -> int:
         with self._conn() as conn:

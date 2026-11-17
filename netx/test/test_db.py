@@ -73,6 +73,49 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(self.db.get_meta("missing", "x"), "x")
         self.assertEqual(self.db.meta()["collector_state"], "stopped")
 
+    def test_detail_roundtrip_and_flow_summary(self):
+        flow_id = self._flow()
+        parsed = {
+            "kind": "http",
+            "host": "example.com",
+            "url": "http://example.com/a",
+            "sni": "",
+            "dns_name": "",
+            "dns_type": "",
+            "method": "GET",
+        }
+        self.db.set_detail(flow_id, b"GET /a HTTP/1.1\r\n", parsed, truncated=True)
+        detail = self.db.detail(flow_id)
+        self.assertEqual(detail["parsed"]["host"], "example.com")
+        self.assertEqual(detail["raw"], b"GET /a HTTP/1.1\r\n")
+        self.assertTrue(detail["truncated"])
+        row = next(r for r in self.db.flows() if r["id"] == flow_id)
+        self.assertEqual(row["detail_host"], "example.com")
+        self.assertEqual(row["detail_kind"], "http")
+        self.assertEqual(row["has_detail"], 1)
+
+    def test_detail_update_replaces_same_flow(self):
+        flow_id = self._flow()
+        self.db.set_detail(flow_id, b"a", {"kind": "text"}, truncated=False)
+        self.db.set_detail(flow_id, b"ab", {"kind": "text"}, truncated=False)
+        detail = self.db.detail(flow_id)
+        self.assertEqual(detail["raw"], b"ab")
+        self.assertEqual(detail["kind"], "text")
+
+    def test_detail_missing_returns_none(self):
+        self.assertIsNone(self.db.detail(999))
+
+    def test_summary_counts(self):
+        flow_id = self._flow()
+        self.db.set_detail(flow_id, b"x", {"kind": "binary"})
+        info = self.db.summary()
+        self.assertEqual(
+            (info["flow_count"], info["detail_count"], info["active_count"]), (1, 1, 1)
+        )
+        self.assertGreater(info["db_bytes"], 0)
+        self.assertIn("oldest", info)
+        self.assertIn("newest", info)
+
 
 if __name__ == "__main__":
     unittest.main()
