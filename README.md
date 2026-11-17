@@ -13,7 +13,6 @@
 | `gradlex` | 发现 Gradle 构建并执行 `bootRun`、`run`、`bootJar` 或 `assemble` |
 | `zipx` | 压缩、解压、校验、包内增删，只管 zip |
 | `portx` | 按端口查占用或浏览监听端口，`-k` 才结束进程 |
-| `cleanx` | 清理缓存、回收站、系统日志与构建产物，默认只预览 |
 
 各工具的详细用法见对应目录下的 README。五个网页工具的默认端口：`llmx` 8000、`dvcsx` 8100、`nodex` 8200、`jvmx` 8300、`netx` 8400。
 
@@ -56,4 +55,4 @@ clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-p
 
 ## 环境要求
 
-`mvnx` 需要 Maven 或 `./mvnw`，`jvmx` 的网页依赖 mvnx 与 gradlex；`dvcsx` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`netx` 采集需要 `bpftrace` 与 root，查看与清理不需要；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`；`cleanx` 需要 GNU `du`、`find`、`realpath`。终端界面探不到终端时自动退回编号输入。
+`mvnx` 需要 Maven 或 `./mvnw`，`jvmx` 的网页依赖 mvnx 与 gradlex；`dvcsx` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`netx` 采集需要 `bpftrace` 与 root，查看与清理不需要；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。终端界面探不到终端时自动退回编号输入。
