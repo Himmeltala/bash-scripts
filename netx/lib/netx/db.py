@@ -144,6 +144,18 @@ class Database:
         with self._conn() as conn:
             return [dict(row) for row in conn.execute(sql, args)]
 
+    def flow(self, flow_id: int) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT f.*, d.kind AS detail_kind, d.host AS detail_host,"
+                " d.url AS detail_url, d.sni AS detail_sni, d.dns_name AS detail_dns_name,"
+                " CASE WHEN d.flow_id IS NULL THEN 0 ELSE 1 END AS has_detail"
+                " FROM flows f LEFT JOIN flow_detail d ON d.flow_id = f.id"
+                " WHERE f.id = ?",
+                (int(flow_id),),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def set_detail(self, flow_id: int, raw: bytes, parsed: dict, *, truncated: bool = False) -> None:
         """写入或覆盖一条连接的详情；同一连接只留一份。"""
         parsed = parsed if isinstance(parsed, dict) else {}

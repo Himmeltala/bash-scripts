@@ -243,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=8400)
     web.add_argument("--host", default="0.0.0.0")
     web.add_argument("--open", action="store_true", help="打开浏览器")
+    web.add_argument("--allow-write", action="store_true", help="允许其他机器发起清理")
     web.set_defaults(func=_web)
     return parser
 

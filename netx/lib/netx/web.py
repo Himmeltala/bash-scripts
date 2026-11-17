@@ -13,6 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "lib" / "py-shared"))
 
+from netutil import is_loopback_address, is_loopback_host  # noqa: E402
 from sse import SSEMixin, sse_data  # noqa: E402
 from web import ApiError, WebHandler, WebServer  # noqa: E402
 
@@ -49,11 +50,17 @@ def _limit(query: dict, default: int = 300) -> int:
     return max(1, min(value, 2000))
 
 
+def can_write(allow_write: bool, address: str) -> bool:
+    """写操作默认只认本机；显式放开后别的机器也能清理。"""
+    return bool(allow_write) or is_loopback_address(address)
+
+
 class Handler(SSEMixin, WebHandler):
     static = STATIC
     api_prefix = "/__netx/api"
     db: Database = None  # type: ignore[assignment]
     collector: Collector | None = None
+    allow_write = False
 
     def _status(self) -> dict:
         if self.collector is not None:
@@ -77,13 +84,60 @@ class Handler(SSEMixin, WebHandler):
             row["duration"] = (row["ended"] or now) - row["started"]
         return {"flows": rows, "server_time": now}
 
+    def _is_local(self) -> bool:
+        return can_write(self.allow_write, self.client_address[0])
+
+    def _flow(self, query: dict) -> dict:
+        raw_id = (query.get("id") or [""])[0]
+        try:
+            flow_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise ApiError(400, "id 要是整数")
+        flow = self.db.flow(flow_id)
+        detail = self.db.detail(flow_id)
+        if flow is None or detail is None:
+            raise ApiError(404, "没有这条记录")
+        data = detail["raw"]
+        return {
+            "flow": flow,
+            "kind": detail["kind"],
+            "parsed": detail["parsed"],
+            "raw_text": data.decode("utf-8", "replace"),
+            "raw_hex": data.hex(),
+            "truncated": detail["truncated"],
+            "updated": detail["updated"],
+        }
+
+    def _clean(self, body: dict) -> dict:
+        if not self._is_local():
+            raise ApiError(403, "清理只允许本机操作，其他机器要显式放开写操作")
+        if body.get("all"):
+            return self.db.clean(all_ended=True)
+        if body.get("before_days") is not None:
+            try:
+                days = float(body["before_days"])
+            except (TypeError, ValueError):
+                raise ApiError(400, "before_days 要是数字")
+            if days <= 0:
+                raise ApiError(400, "before_days 要大于 0")
+            return self.db.clean(before_ts=time.time() - days * 86400)
+        raise ApiError(400, "要给 all 或 before_days")
+
     def _dispatch(self, method, route, query, body):
+        if route == "clean":
+            if method != "POST":
+                raise ApiError(405, "这个接口只接受 POST")
+            return self._clean(body)
         if method != "GET":
             raise ApiError(405, "这个接口只接受 GET")
         if route == "flows":
             return self._flows(query)
         if route == "status":
             return self._status()
+        if route == "flow":
+            return self._flow(query)
+        if route == "summary":
+            return self.db.summary()
         raise ApiError(404, "没有这个接口：%s" % route)
 
     def _stream_routes(self, route, query):
@@ -105,12 +159,13 @@ class Handler(SSEMixin, WebHandler):
         return True
 
 
-def make_handler(db: Database, collector: Collector | None = None):
+def make_handler(db: Database, collector: Collector | None = None, allow_write: bool = False):
     class _Handler(Handler):
         pass
 
     _Handler.db = db
     _Handler.collector = collector
+    _Handler.allow_write = allow_write
     return _Handler
 
 
@@ -131,7 +186,7 @@ def run(args) -> int:
     tracker = FlowTracker(db)
     collector = Collector(db, tracker)
     collector.start()
-    handler = make_handler(db, collector)
+    handler = make_handler(db, collector, allow_write=getattr(args, "allow_write", False))
     try:
         server = WebServer((args.host, args.port), handler)
     except OSError as exc:
@@ -141,6 +196,11 @@ def run(args) -> int:
 
     url = "http://%s:%d/" % ("127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host, args.port)
     print("netx: %s" % url)
+    if not is_loopback_host(args.host):
+        print(
+            "netx: 页面没有登录，抓到的请求内容含密码与 Token；同网段能连上的人都能看。",
+            file=sys.stderr,
+        )
     if args.open:
         webbrowser.open(url)
 

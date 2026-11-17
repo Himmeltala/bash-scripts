@@ -105,6 +105,14 @@ class DatabaseTest(unittest.TestCase):
     def test_detail_missing_returns_none(self):
         self.assertIsNone(self.db.detail(999))
 
+    def test_flow_by_id(self):
+        flow_id = self._flow()
+        self.db.set_detail(flow_id, b"x", {"kind": "text"})
+        row = self.db.flow(flow_id)
+        self.assertEqual(row["id"], flow_id)
+        self.assertEqual(row["detail_kind"], "text")
+        self.assertIsNone(self.db.flow(999))
+
     def test_clean_only_ended_and_old(self):
         now = time.time()
         old = self._flow(started=now - 10 * 86400)
