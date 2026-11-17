@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-17 00:15:49
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:30:14
+ * @FilePath: \lib\web-shared\src\feedbacks\commons\FloatingDialog.vue
+ * @Description: 通用浮层对话框，负责拖动、缩放与关闭。
+-->
 <template>
   <v-dialog
     :model-value="modelValue"

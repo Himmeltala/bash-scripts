@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-17 00:15:49
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:30:14
+ * @FilePath: \lib\web-shared\src\layouts\commons\SplitHandle.vue
+ * @Description: 可拖动分隔条，双击还原区域尺寸。
+-->
 <template>
   <div
     class="handle"
