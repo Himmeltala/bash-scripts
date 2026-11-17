@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { FloatingDialog } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { data } from '../composables/useUsage'
 import { fmtMoney, fmtNum, fmtTokens } from '../composables/format'
 import CostBreakdown from './CostBreakdown.vue'

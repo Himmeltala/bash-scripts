@@ -260,7 +260,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
-import { FloatingDialog, LogView } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { LogView } from '@bash-scripts/web-shared'
 import { api, jobEventsUrl } from '../composables/useApi'
 import { statusOf } from '../composables/format'
 

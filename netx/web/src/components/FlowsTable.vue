@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { EmptyState } from '@bash-scripts/web-shared/ui'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { formatDuration, formatTarget, formatTime, kindLabel } from '../utils/format'
 

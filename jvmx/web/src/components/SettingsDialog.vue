@@ -89,7 +89,8 @@
 import { computed, ref, watch } from 'vue'
 import { GRADLE_MODE_ITEMS, KIND_TEXT, MODE_ITEMS, TYPE_TEXT } from '../composables/format'
 import { colorize } from '../composables/logColor'
-import { FloatingDialog, RunLogPanel } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { RunLogPanel } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

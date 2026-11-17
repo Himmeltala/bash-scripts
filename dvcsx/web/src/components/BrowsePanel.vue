@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-12 18:48:07
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:14:15
+ * @FilePath: \dvcsx\web\src\components\BrowsePanel.vue
+ * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
+-->
 <template>
   <div class="panel" @keydown.ctrl.s.prevent="save">
     <div class="bar">
@@ -113,14 +121,16 @@
 
       <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
-      <div v-if="held" class="deferred">
-        <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
-        <div class="deferred-path mono" :title="held.path">{{ held.path }}</div>
-        <p class="deferred-hint">
-          这个文件有 {{ formatBytes(held.size) }}，超过 {{ formatBytes(PREVIEW_MAX) }} 的预览上限，默认不加载。
-        </p>
-        <v-btn color="primary" variant="flat" size="small" @click="downloadHeld">下载文件</v-btn>
-      </div>
+      <EmptyState
+        v-if="held"
+        icon="mdi-file-hidden"
+        :icon-size="28"
+        :path="held.path"
+        :hint="`这个文件有 ${formatBytes(held.size)}，超过 ${formatBytes(PREVIEW_MAX)} 的预览上限，默认不加载。`"
+        action="下载文件"
+        action-icon="mdi-download"
+        @action="downloadHeld"
+      />
       <FileEditor
         v-else
         ref="editorRef"
@@ -190,13 +200,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { api } from '../composables/useApi'
-import {
-  FileEditor,
-  FileTree,
-  FloatingDialog,
-  SplitHandle,
-  fileIcon,
-} from '@bash-scripts/web-shared'
+import { FileEditor, FileTree, fileIcon } from '@bash-scripts/web-shared'
+import { EmptyState, SplitHandle } from '@bash-scripts/web-shared/layouts'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../composables/browseOps'
 import { dirName } from '../composables/format'
@@ -634,31 +640,6 @@ onBeforeUnmount(() => {
 }
 .hint.bad {
   color: rgb(var(--v-theme-error));
-}
-.deferred {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 16px;
-  text-align: center;
-}
-.deferred-icon {
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.deferred-path {
-  max-width: 40rem;
-  font-size: 0.84rem;
-  word-break: break-all;
-}
-.deferred-hint {
-  max-width: 34rem;
-  margin: 0;
-  font-size: 0.82rem;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 .ask-path {
   margin: 0 0 8px;

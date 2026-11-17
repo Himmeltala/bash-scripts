@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-17 00:15:49
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:14:15
+ * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.vue
+ * @Description: 文件内容编辑器，按扩展名切换源码与渲染视图并负责保存。
+-->
 <template>
   <section class="file-editor">
     <FileHead
@@ -40,7 +48,13 @@
     </FileHead>
 
     <p v-if="state.loading" class="hint">正在读取文件…</p>
-    <p v-else-if="state.error" class="hint bad">{{ state.error }}</p>
+    <EmptyState
+      v-else-if="state.error"
+      icon="mdi-file-question-outline"
+      :icon-size="28"
+      :title="state.error"
+      hint="换一个文件试试，或者从左侧目录里下载它。"
+    />
     <div v-else-if="path" class="edit-wrap">
       <p v-if="modeError" class="hint bad edit-error">{{ modeError }}</p>
       <p v-if="state.saveError" class="hint bad edit-error">{{ state.saveError }}</p>
@@ -53,7 +67,7 @@
       />
       <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
-    <div v-else class="none">从左边选一个文件，右边显示它的内容。</div>
+    <EmptyState v-else icon="mdi-file-outline" hint="从左边选一个文件，右边显示它的内容。" />
 
     <SaveLeaveDialog :model-value="leaveAsk" :path="path" @answer="answerLeave" />
   </section>
@@ -63,6 +77,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import FileHead from './widgets/FileHead.vue'
 import SaveLeaveDialog from './widgets/SaveLeaveDialog.vue'
+import EmptyState from '../../../layouts/commons/EmptyState.vue'
 import { useFileEditor } from './useFileEditor'
 import {
   modesOf,

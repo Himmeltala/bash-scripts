@@ -128,7 +128,8 @@ import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingsDialog from './SettingsDialog.vue'
 import { usePreferencesStore } from '../stores/preferences'
-import { FloatingDialog, ServiceTable, useRunLog } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import {
   KIND_TEXT,

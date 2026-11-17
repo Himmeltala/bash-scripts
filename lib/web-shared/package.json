@@ -19,7 +19,8 @@
     "./format": "./dist/format.js",
     "./http": "./dist/http.js",
     "./logs": "./dist/logs.js",
-    "./ui": "./dist/ui.js",
+    "./layouts": "./dist/layouts.js",
+    "./feedbacks": "./dist/feedbacks.js",
     "./vite-preset": "./vite-preset.js",
     "./style.css": "./dist/web-shared.css"
   },

@@ -242,7 +242,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import DirectoryPicker from '../commons/DirectoryPicker/index.js'
-import FloatingDialog from '../commons/FloatingDialog.vue'
+import FloatingDialog from '../../feedbacks/commons/FloatingDialog.vue'
 import { copyText } from '../../utils/commons/clipboard.js'
 import {
   flattenRows,

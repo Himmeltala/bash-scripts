@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-12 15:44:39
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:14:15
+ * @FilePath: \dvcsx\web\src\components\LogPanel.vue
+ * @Description: 按时间线列出提交历史，查看提交说明与逐文件差异。
+-->
 <template>
   <div class="panel">
     <div class="bar">
@@ -275,14 +283,16 @@
             />
 
             <div class="pane diffpane" :class="{ collapsed: diffCollapsed }">
-              <div v-if="!diffCollapsed && awaitingLoad" class="deferred">
-                <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
-                <div class="deferred-path mono" :title="activePath">{{ activePath }}</div>
-                <p class="deferred-hint">这是锁文件、构建产物，或单行超过 2000 字符的文件，默认不加载差异。</p>
-                <v-btn color="primary" variant="flat" size="small" @click="showDeferred">
-                  加载差异
-                </v-btn>
-              </div>
+              <EmptyState
+                v-if="!diffCollapsed && awaitingLoad"
+                icon="mdi-file-hidden"
+                :icon-size="28"
+                :path="activePath"
+                hint="这是锁文件、构建产物，或单行超过 2000 字符的文件，默认不加载差异。"
+                action="加载差异"
+                action-icon="mdi-eye-outline"
+                @action="showDeferred"
+              />
               <DiffView
                 v-else-if="!diffCollapsed"
                 :title="diffTitle"
@@ -324,9 +334,10 @@ import { storeToRefs } from 'pinia'
 import { useStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
 import DiffView from '@bash-scripts/web-shared/diff'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { api } from '../composables/useApi'
 import { buildGraph, DOT_Y } from '../composables/gitGraph'
-import { SplitHandle } from '@bash-scripts/web-shared'
+import { SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'
 import { isDeferred } from '../composables/deferred'
 import { usePreferencesStore } from '../stores/preferences'
@@ -1075,30 +1086,6 @@ defineExpose({ load })
 }
 .held {
   flex: 0 0 auto;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.deferred {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 16px;
-  text-align: center;
-}
-.deferred-icon {
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.deferred-path {
-  max-width: 40rem;
-  font-size: 0.84rem;
-  word-break: break-all;
-}
-.deferred-hint {
-  max-width: 34rem;
-  margin: 0;
-  font-size: 0.82rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .none {

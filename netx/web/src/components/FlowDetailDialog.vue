@@ -91,7 +91,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { FloatingDialog } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { flowDetail } from '../composables/useApi'
 import { formatTime, kindLabel } from '../utils/format'

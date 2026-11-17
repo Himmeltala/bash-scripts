@@ -52,8 +52,9 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallo
 import { PAGES, page, writePageUrl } from './composables/usePage'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
-import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
-import { ToastHost } from '@bash-scripts/web-shared/ui'
+import { SplitHandle } from '@bash-scripts/web-shared/layouts'
+import { useSplitPane } from '@bash-scripts/web-shared'
+import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
 import { snack } from './composables/notice'
 import { rememberTheme } from './plugins/vuetify'
 

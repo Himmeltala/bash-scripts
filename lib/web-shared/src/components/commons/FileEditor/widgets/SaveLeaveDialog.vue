@@ -19,7 +19,7 @@
 </template>
 
 <script setup>
-import FloatingDialog from '../../FloatingDialog.vue'
+import FloatingDialog from '../../../../feedbacks/commons/FloatingDialog.vue'
 
 defineProps({
   modelValue: { type: Boolean, default: false },

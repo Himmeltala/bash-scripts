@@ -54,7 +54,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { FloatingDialog } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { clean as cleanRecords, summary } from '../composables/useApi'
 

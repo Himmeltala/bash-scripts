@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-17 00:15:49
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:14:15
+ * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.css
+ * @Description: 文件编辑器的布局与提示样式。
+ */
 .file-editor {
   flex: 1 1 auto;
   min-width: 0;
@@ -30,9 +38,4 @@
 }
 .hint.bad {
   color: rgb(var(--v-theme-error));
-}
-.none {
-  padding: 16px;
-  font-size: 0.84rem;
-  color: rgb(var(--v-theme-on-surface-variant));
 }

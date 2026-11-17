@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-12 15:44:39
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-17 23:14:15
+ * @FilePath: \dvcsx\web\src\components\ChangesPanel.vue
+ * @Description: 列出工作副本的未提交变更，按文件查看差异并直接编辑保存。
+-->
 <template>
   <div class="panel">
     <div class="bar">
@@ -105,12 +113,16 @@
 
       <section class="view">
         <p v-if="saveError" class="hint bad">{{ saveError }}</p>
-        <div v-if="awaitingLoad" class="deferred">
-          <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
-          <div class="deferred-path mono" :title="selected.path">{{ selected.path }}</div>
-          <p class="deferred-hint">这是锁文件、构建产物，或单行超过 2000 字符的文件，默认不加载差异。</p>
-          <v-btn color="primary" variant="flat" size="small" @click="showDeferred">加载差异</v-btn>
-        </div>
+        <EmptyState
+          v-if="awaitingLoad"
+          icon="mdi-file-hidden"
+          :icon-size="28"
+          :path="selected.path"
+          hint="这是锁文件、构建产物，或单行超过 2000 字符的文件，默认不加载差异。"
+          action="加载差异"
+          action-icon="mdi-eye-outline"
+          @action="showDeferred"
+        />
         <DiffView
           v-else
           ref="diffRef"
@@ -165,8 +177,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from '@bash-scripts/web-shared/diff'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { api } from '../composables/useApi'
-import { FloatingDialog, SplitHandle, fileIcon } from '@bash-scripts/web-shared'
+import { SplitHandle } from '@bash-scripts/web-shared/layouts'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../composables/format'
 import { isDeferred } from '../composables/deferred'
 import { usePreferencesStore } from '../stores/preferences'
@@ -613,30 +628,6 @@ defineExpose({ load })
 }
 .held {
   flex: 0 0 auto;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.deferred {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 16px;
-  text-align: center;
-}
-.deferred-icon {
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.deferred-path {
-  max-width: 40rem;
-  font-size: 0.84rem;
-  word-break: break-all;
-}
-.deferred-hint {
-  max-width: 34rem;
-  margin: 0;
-  font-size: 0.82rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .view {

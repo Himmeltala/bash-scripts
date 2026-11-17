@@ -51,7 +51,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { toast } from '../../../../composables/notice'
-import { FloatingDialog } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

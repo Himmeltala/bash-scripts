@@ -34,7 +34,7 @@
 <script setup>
 import { watch, computed, ref } from 'vue'
 import { toast } from '../../../../composables/notice'
-import { FloatingDialog } from '@bash-scripts/web-shared'
+import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 
 const props = defineProps({
