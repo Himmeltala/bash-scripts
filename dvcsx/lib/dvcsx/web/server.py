@@ -976,13 +976,23 @@ def browse_search(root, rel, query, mode):
                 continue
             relpath = os.path.relpath(path, root).replace(os.sep, "/")
             scanned += 1
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                size = 0
             if mode == "name":
                 if low in relpath.lower():
-                    matches.append({"path": relpath, "name": name})
+                    matches.append({"path": relpath, "name": name, "size": size})
             else:
                 for number, line in search_lines(path, low):
                     matches.append(
-                        {"path": relpath, "name": name, "line": number, "text": line}
+                        {
+                            "path": relpath,
+                            "name": name,
+                            "size": size,
+                            "line": number,
+                            "text": line,
+                        }
                     )
                     if len(matches) > SEARCH_MAX:
                         break
@@ -1055,6 +1065,148 @@ def save_file(root, rel, text):
     except OSError as exc:
         raise ApiError(403, "写不了这个文件：%s" % exc)
     return {"path": rel, "size": size}
+
+
+# 浏览目录的增删改：新建、改名、删除。已纳管的交给 svn 与 git，保住历史；
+# 未纳管的直接动磁盘。新建只落盘，要不要纳入版本控制留给提交页决定。
+
+def entry_name(name):
+    """新建与改名只认单个名字：不能带路径分隔符，不能是 . 或 ..。"""
+    name = (name or "").strip()
+    if not name:
+        raise ApiError(400, "没给名字")
+    if name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
+        raise ApiError(400, "名字里不能带路径分隔符：%s" % name)
+    return name
+
+
+def join_rel(parent, name):
+    return "%s/%s" % (parent, name) if parent else name
+
+
+def browse_parent(root, rel):
+    """取一个要在里面新建东西的目录，空串表示登记的目录本身。"""
+    rel = browse_rel(rel).rstrip("/")
+    target = os.path.join(root, rel) if rel else root
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if not os.path.isdir(target):
+        raise ApiError(404, "目录不存在：%s" % (rel or "根目录"))
+    return rel, target
+
+
+def browse_target(root, rel):
+    """取一个要改名或删除的条目；不允许动登记的目录本身。"""
+    rel = browse_rel(rel)
+    if not rel:
+        raise ApiError(400, "不能对工作副本的根目录做这个操作")
+    target = os.path.join(root, rel)
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if not os.path.lexists(target):
+        raise ApiError(404, "文件或目录不存在：%s" % rel)
+    return rel, target
+
+
+def entry_kind(target):
+    return "dir" if os.path.isdir(target) else "file"
+
+
+def git_tracks(root, rel):
+    """Git 认得这个路径下的文件就算纳管；目录只要里面有已跟踪的文件也算。"""
+    rc, out, _ = git(["ls-files", "-z", "--", ":(literal)" + rel], cwd=root)
+    return rc == 0 and bool(out.strip(b"\0"))
+
+
+def svn_tracks(root, rel):
+    rc, _, _ = svn(["info", "--", rel], cwd=root)
+    return rc == 0
+
+
+def make_entry(root, rel, name, kind):
+    """在指定目录下新建目录或空文件；同名已存在时拒绝，不覆盖。"""
+    parent_rel, parent = browse_parent(root, rel)
+    name = entry_name(name)
+    target = os.path.join(parent, name)
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % join_rel(parent_rel, name))
+    if os.path.lexists(target):
+        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
+    try:
+        if kind == "dir":
+            os.mkdir(target)
+        else:
+            # x 模式带排他性：检查与创建之间被别人抢建也只会报错，不会覆盖。
+            with open(target, "x", encoding="utf-8"):
+                pass
+    except FileExistsError:
+        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
+    except OSError as exc:
+        raise ApiError(403, "建不了：%s" % exc)
+    return {"path": join_rel(parent_rel, name), "name": name, "type": kind}
+
+
+def rename_entry(root, vcs, rel, name):
+    """同目录改名：已纳管的走 git mv / svn mv，未纳管的直接改名。"""
+    rel, src = browse_target(root, rel)
+    name = entry_name(name)
+    dest_rel = join_rel(os.path.dirname(rel), name)
+    dest = os.path.join(root, dest_rel)
+    if not inside(root, dest):
+        raise ApiError(400, "路径要在工作副本里：%s" % dest_rel)
+    if src == dest:
+        return {"path": rel, "name": os.path.basename(rel), "type": entry_kind(src)}
+    if os.path.lexists(dest):
+        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
+    try:
+        if vcs == "git" and git_tracks(root, rel):
+            rc, _, err = git(["mv", "--", rel, dest_rel], cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "git mv 失败")
+        elif vcs == "svn" and svn_tracks(root, rel):
+            rc, _, err = svn(["mv", "--", rel, dest_rel], cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "svn mv 失败")
+        else:
+            os.rename(src, dest)
+    except OSError as exc:
+        raise ApiError(403, "改名失败：%s" % exc)
+    return {"path": dest_rel, "name": name, "type": entry_kind(dest)}
+
+
+def delete_entry(root, vcs, rel):
+    """删除文件或整个目录：已纳管的走 git rm / svn rm，未纳管的直接删磁盘。"""
+    rel, target = browse_target(root, rel)
+    tracked = False
+    if vcs == "git" and git_tracks(root, rel):
+        tracked = True
+        rc, _, err = git(["rm", "-r", "-f", "--", rel], cwd=root)
+        if rc != 0:
+            raise ApiError(400, err or "git rm 失败")
+    elif vcs == "svn" and svn_tracks(root, rel):
+        tracked = True
+        rc, _, err = svn(["rm", "--force", "--", rel], cwd=root)
+        if rc != 0:
+            raise ApiError(400, err or "svn rm 失败")
+    else:
+        try:
+            if os.path.islink(target) or not os.path.isdir(target):
+                os.remove(target)
+            else:
+                shutil.rmtree(target)
+        except OSError as exc:
+            raise ApiError(403, "删不了：%s" % exc)
+        return {"path": rel, "removed": True, "tracked": False}
+    # git 只删已跟踪的文件，目录里剩下的未纳管内容按整目录删除一并清掉。
+    if os.path.lexists(target):
+        try:
+            if os.path.islink(target) or not os.path.isdir(target):
+                os.remove(target)
+            else:
+                shutil.rmtree(target)
+        except OSError as exc:
+            raise ApiError(403, "删不了剩下的内容：%s" % exc)
+    return {"path": rel, "removed": True, "tracked": tracked}
 
 
 def diff_of(root, args):
@@ -1940,6 +2092,14 @@ class Handler(WebHandler):
             return {"ok": True, "groups": self.groups.set(body.get("nodes") or [])}
         if route == "save":
             return self._save(body)
+        if route == "mkdir":
+            return self._browse_create(body, "dir")
+        if route == "newfile":
+            return self._browse_create(body, "file")
+        if route == "rename":
+            return self._browse_rename(body)
+        if route == "delete":
+            return self._browse_delete(body)
         if route == "operations":
             return self._start_operation(body)
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/cancel", route)
@@ -2057,6 +2217,30 @@ class Handler(WebHandler):
         if not isinstance(text, str):
             raise ApiError(400, "文件内容要是文本")
         return {"workspace": ws, **save_file(ws["root"], rel, text)}
+
+    def _browse_write_ws(self, body):
+        self._check_write()
+        ws = self.store.find(str(body.get("ws", "")))
+        if ws is None:
+            raise ApiError(404, "没有这个工作区")
+        return ws
+
+    def _browse_create(self, body, kind):
+        ws = self._browse_write_ws(body)
+        rel = str(body.get("dir", ""))
+        name = str(body.get("name", ""))
+        return {"workspace": ws, **make_entry(ws["root"], rel, name, kind)}
+
+    def _browse_rename(self, body):
+        ws = self._browse_write_ws(body)
+        rel = str(body.get("path", ""))
+        name = str(body.get("name", ""))
+        return {"workspace": ws, **rename_entry(ws["root"], ws.get("vcs", "none"), rel, name)}
+
+    def _browse_delete(self, body):
+        ws = self._browse_write_ws(body)
+        rel = str(body.get("path", ""))
+        return {"workspace": ws, **delete_entry(ws["root"], ws.get("vcs", "none"), rel)}
 
     def _search(self, query):
         ws = self._ws(query)

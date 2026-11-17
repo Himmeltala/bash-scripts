@@ -55,6 +55,10 @@ export const api = {
   // 直接交给浏览器下；目录由后端现场压成 zip。
   downloadUrl: (ws, path) => `${PREFIX}/download?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,
   save: (ws, path, text) => call('POST', '/save', { ws, path, text }),
+  mkdir: (ws, dir, name) => call('POST', '/mkdir', { ws, dir, name }),
+  newFile: (ws, dir, name) => call('POST', '/newfile', { ws, dir, name }),
+  renameEntry: (ws, path, name) => call('POST', '/rename', { ws, path, name }),
+  deleteEntry: (ws, path) => call('POST', '/delete', { ws, path }),
   search: (ws, text, mode = 'name', path = '') =>
     call(
       'GET',

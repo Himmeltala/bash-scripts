@@ -68,6 +68,45 @@
         :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
         @contextmenu.prevent
       >
+        <template v-if="editable">
+          <button
+            v-if="isDirNode"
+            class="ft-item"
+            type="button"
+            @click="run('create-file')"
+          >
+            <v-icon size="16">mdi-file-plus-outline</v-icon>
+            <span>{{ text.newFile }}</span>
+          </button>
+          <button
+            v-if="isDirNode"
+            class="ft-item"
+            type="button"
+            @click="run('create-dir')"
+          >
+            <v-icon size="16">mdi-folder-plus-outline</v-icon>
+            <span>{{ text.newDir }}</span>
+          </button>
+          <button
+            class="ft-item"
+            type="button"
+            :disabled="!relativePath"
+            @click="run('rename')"
+          >
+            <v-icon size="16">mdi-form-textbox</v-icon>
+            <span>{{ text.rename }}</span>
+          </button>
+          <button
+            class="ft-item danger"
+            type="button"
+            :disabled="!relativePath"
+            @click="run('delete')"
+          >
+            <v-icon size="16">mdi-trash-can-outline</v-icon>
+            <span>{{ text.delete }}</span>
+          </button>
+          <div class="ft-sep" />
+        </template>
         <button
           class="ft-item"
           type="button"
@@ -116,10 +155,12 @@ const props = defineProps({
   rootPath: { type: String, default: '' },
   // 节点的下载地址，返回空串表示这一侧不支持下载。
   downloadOf: { type: Function, default: null },
+  // 打开右键菜单里的新建、改名、删除；具体怎么做由调用方接 action 事件处理。
+  editable: { type: Boolean, default: false },
   texts: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['pick'])
+const emit = defineEmits(['pick', 'action'])
 
 const DEFAULTS = {
   loading: '正在读取…',
@@ -132,6 +173,10 @@ const DEFAULTS = {
   downloadFile: '下载文件',
   downloadDir: '下载目录（zip）',
   copied: '已复制',
+  newFile: '新建文件',
+  newDir: '新建目录',
+  rename: '重命名',
+  delete: '删除',
 }
 const text = computed(() => ({ ...DEFAULTS, ...props.texts }))
 const EMPTY = { loading: false, error: '', entries: [], truncated: false }
@@ -258,6 +303,14 @@ async function copyPath(kind) {
   copyTimer = setTimeout(closeMenu, 700)
 }
 
+// 增删改交给调用方：菜单只报动作与节点，弹窗与接口都在各自面板里。
+function run(action) {
+  if (!menu.node) return
+  const node = menu.node
+  closeMenu()
+  emit('action', { action, node })
+}
+
 function download() {
   if (!menu.node || !props.downloadOf) return
   const node = menu.node
@@ -356,5 +409,16 @@ defineExpose({ reveal, reload, reloadDir, refreshAll, toggle })
 }
 .ft-item .v-icon {
   color: rgb(var(--v-theme-on-surface-variant));
+}
+.ft-item.danger {
+  color: rgb(var(--v-theme-error));
+}
+.ft-item.danger .v-icon {
+  color: inherit;
+}
+.ft-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(var(--v-theme-on-surface), 0.12);
 }
 </style>

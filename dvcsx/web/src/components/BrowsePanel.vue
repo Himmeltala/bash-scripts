@@ -105,13 +105,24 @@
           :row-class="rowClass"
           pick-on-row-click
           :texts="treeTexts"
+          editable
           @pick="pick"
+          @action="onTreeAction"
         />
       </aside>
 
       <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
+      <div v-if="held" class="deferred">
+        <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
+        <div class="deferred-path mono" :title="held.path">{{ held.path }}</div>
+        <p class="deferred-hint">
+          这个文件有 {{ formatBytes(held.size) }}，超过 {{ formatBytes(PREVIEW_MAX) }} 的预览上限，默认不加载。
+        </p>
+        <v-btn color="primary" variant="flat" size="small" @click="downloadHeld">下载文件</v-btn>
+      </div>
       <FileEditor
+        v-else
         ref="editorRef"
         :root-name="rootName"
         :size="activeNode ? activeNode.size : undefined"
@@ -121,14 +132,73 @@
         @saved="onSaved"
       />
     </div>
+
+    <FloatingDialog
+      v-model="nameAsk.on"
+      :initial-width="420"
+      :initial-height="280"
+      :min-width="340"
+      :min-height="220"
+      persistent
+    >
+      <template #title>{{ nameTitle }}</template>
+      <v-text-field
+        v-model="nameAsk.value"
+        density="compact"
+        variant="outlined"
+        autofocus
+        hide-details
+        :label="nameLabel"
+        :error-messages="nameAsk.error ? [nameAsk.error] : []"
+        @keyup.enter="submitName"
+      />
+      <template #actions>
+        <v-btn variant="text" @click="nameAsk.on = false">取消</v-btn>
+        <v-spacer />
+        <v-btn color="primary" variant="flat" :loading="nameAsk.busy" @click="submitName">
+          确定
+        </v-btn>
+      </template>
+    </FloatingDialog>
+
+    <FloatingDialog
+      v-model="delAsk.on"
+      :initial-width="460"
+      :initial-height="280"
+      :min-width="360"
+      :min-height="220"
+      persistent
+    >
+      <template #title>删除{{ delAsk.node && delAsk.node.type === 'dir' ? '目录' : '文件' }}</template>
+      <p class="ask-path mono">{{ delAsk.node ? delAsk.node.path : '' }}</p>
+      <p class="ask-hint">
+        目录会连同里面的文件一起删除。已纳入版本控制的能从版本库里找回，未纳管的删了就没了。
+      </p>
+      <p v-if="delAsk.error" class="ask-error">{{ delAsk.error }}</p>
+      <template #actions>
+        <v-btn variant="text" @click="delAsk.on = false">取消</v-btn>
+        <v-spacer />
+        <v-btn color="error" variant="flat" :loading="delAsk.busy" @click="submitDelete">
+          删除
+        </v-btn>
+      </template>
+    </FloatingDialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { api } from '../composables/useApi'
-import { FileEditor, FileTree, SplitHandle, fileIcon } from '@bash-scripts/web-shared'
+import {
+  FileEditor,
+  FileTree,
+  FloatingDialog,
+  SplitHandle,
+  fileIcon,
+} from '@bash-scripts/web-shared'
+import { formatBytes } from '@bash-scripts/web-shared/format'
+import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../composables/browseOps'
 import { dirName } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -179,16 +249,168 @@ async function reveal(dirPath) {
 const loadFile = (path) => api.file(props.ws.id, path)
 const saveFile = (path, text) => api.save(props.ws.id, path, text)
 
-async function pick(node) {
-  if (!(await editorRef.value?.confirmLeave())) return
-  activeNode.value = node
-  await editorRef.value?.open(node.path)
+const held = computed(() => (isHeldNode(activeNode.value) ? activeNode.value : null))
+
+// 过大文件的占位把编辑器整个换掉了，这时没有草稿可问，直接放行。
+async function leaveEditor() {
+  if (!editorRef.value) return true
+  return editorRef.value.confirmLeave()
 }
 
-async function openHit(hit) {
-  if (!(await editorRef.value?.confirmLeave())) return
-  activeNode.value = { name: hit.name, path: hit.path, type: 'file' }
-  await editorRef.value?.open(hit.path, hit.line || 0)
+async function show(node, line = 0) {
+  if (!(await leaveEditor())) return
+  activeNode.value = node
+  if (isHeldNode(node)) {
+    editorRef.value?.close()
+    return
+  }
+  // 从过大文件的占位切回来时编辑器是刚挂上的，等它出现再打开。
+  await nextTick()
+  await editorRef.value?.open(node.path, line)
+}
+
+function pick(node) {
+  return show(node)
+}
+
+function openHit(hit) {
+  return show({ name: hit.name, path: hit.path, type: 'file', size: hit.size }, hit.line || 0)
+}
+
+function downloadHeld() {
+  if (!held.value) return
+  const link = document.createElement('a')
+  link.href = downloadOf(held.value)
+  link.download = held.value.name
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+// 右键菜单的新建、改名、删除：弹窗在这里，接口也在这里，目录树只报动作。
+const nameAsk = reactive({ on: false, mode: '', node: null, dir: '', value: '', error: '', busy: false })
+const delAsk = reactive({ on: false, node: null, error: '', busy: false })
+
+const nameTitle = computed(
+  () => ({ file: '新建文件', dir: '新建目录', rename: '重命名' })[nameAsk.mode] || '',
+)
+
+const nameLabel = computed(() => {
+  if (nameAsk.mode === 'dir') return '目录名'
+  if (nameAsk.node && nameAsk.node.type === 'dir') return '目录名'
+  return '文件名'
+})
+
+function onTreeAction({ action, node }) {
+  if (action === 'create-file' || action === 'create-dir') {
+    Object.assign(nameAsk, {
+      on: true,
+      mode: action === 'create-file' ? 'file' : 'dir',
+      node,
+      dir: node.path,
+      value: '',
+      error: '',
+      busy: false,
+    })
+    return
+  }
+  if (action === 'rename') {
+    Object.assign(nameAsk, {
+      on: true,
+      mode: 'rename',
+      node,
+      dir: dirName(node.path),
+      value: node.name,
+      error: '',
+      busy: false,
+    })
+    return
+  }
+  if (action === 'delete') {
+    Object.assign(delAsk, { on: true, node, error: '', busy: false })
+  }
+}
+
+// 当前打开的文件是不是就是它，或者在它底下。
+function affectedBy(path) {
+  const active = activePath.value
+  return !!active && (active === path || active.startsWith(`${path}/`))
+}
+
+async function submitName() {
+  if (nameAsk.busy) return
+  const name = nameAsk.value.trim()
+  const problem = entryNameProblem(name)
+  if (problem) {
+    nameAsk.error = problem
+    return
+  }
+  nameAsk.busy = true
+  nameAsk.error = ''
+  try {
+    if (nameAsk.mode === 'rename') {
+      if (!(await doRename(nameAsk.node, name))) return
+    } else {
+      await doCreate(nameAsk.mode, nameAsk.dir, name)
+    }
+    nameAsk.on = false
+  } catch (err) {
+    nameAsk.error = err.message
+  } finally {
+    nameAsk.busy = false
+  }
+}
+
+async function doCreate(kind, dir, name) {
+  const data =
+    kind === 'dir'
+      ? await api.mkdir(props.ws.id, dir, name)
+      : await api.newFile(props.ws.id, dir, name)
+  await treeRef.value?.reveal(dir)
+  await treeRef.value?.reloadDir(dir)
+  // 新建的文件直接打开；正开着别的文件就不抢，免得把没保存的草稿挤掉。
+  if (kind === 'file' && !editorRef.value?.dirty) {
+    await show({ name: data.name, path: data.path, type: 'file', size: 0 })
+  }
+}
+
+async function doRename(node, name) {
+  if (name === node.name) return true
+  if (affectedBy(node.path) && !(await leaveEditor())) return false
+  const active = activePath.value
+  const data = await api.renameEntry(props.ws.id, node.path, name)
+  await treeRef.value?.reloadDir(dirName(node.path))
+  if (active === node.path) {
+    activeNode.value = { ...activeNode.value, name: data.name, path: data.path }
+    if (!isHeldNode(activeNode.value)) await editorRef.value?.open(data.path)
+  } else if (active.startsWith(`${node.path}/`)) {
+    const moved = data.path + active.slice(node.path.length)
+    activeNode.value = { ...activeNode.value, path: moved }
+    if (!isHeldNode(activeNode.value)) await editorRef.value?.open(moved)
+  }
+  return true
+}
+
+async function submitDelete() {
+  if (delAsk.busy) return
+  const node = delAsk.node
+  delAsk.busy = true
+  delAsk.error = ''
+  try {
+    if (affectedBy(node.path) && !(await leaveEditor())) return
+    await api.deleteEntry(props.ws.id, node.path)
+    if (affectedBy(node.path)) {
+      activeNode.value = null
+      editorRef.value?.close()
+    }
+    await treeRef.value?.reloadDir(dirName(node.path))
+    delAsk.on = false
+  } catch (err) {
+    delAsk.error = err.message
+  } finally {
+    delAsk.busy = false
+  }
 }
 
 function save() {
@@ -411,6 +633,46 @@ onBeforeUnmount(() => {
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .hint.bad {
+  color: rgb(var(--v-theme-error));
+}
+.deferred {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+.deferred-icon {
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.deferred-path {
+  max-width: 40rem;
+  font-size: 0.84rem;
+  word-break: break-all;
+}
+.deferred-hint {
+  max-width: 34rem;
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.ask-path {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+.ask-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.ask-error {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
   color: rgb(var(--v-theme-error));
 }
 </style>
