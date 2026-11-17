@@ -67,8 +67,19 @@ class CollectorTest(unittest.TestCase):
             os.environ.pop("BPFTRACE_MAX_STRLEN", None)
             os.environ.pop("BPFTRACE_MAX_MAP_KEYS", None)
             env = collector._bpftrace_env()
-        self.assertEqual(env["BPFTRACE_MAX_STRLEN"], "2048")
+        self.assertEqual(env["BPFTRACE_MAX_STRLEN"], "200")
         self.assertEqual(env["BPFTRACE_MAX_MAP_KEYS"], "262144")
+
+    def test_script_nonce_is_literal(self):
+        collector = self._collector()
+        path = Path(collector.command[-1])
+        text = path.read_text(encoding="utf-8")
+        code = "\n".join(
+            line for line in text.splitlines() if not line.lstrip().startswith("//")
+        )
+        self.assertIn('"T\\tC\\t', code)
+        self.assertNotIn("str($1)", code)
+        self.assertNotIn("__NETX_NONCE__", text)
 
     def test_process_lifecycle(self):
         code = (

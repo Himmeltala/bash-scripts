@@ -12,6 +12,8 @@ from pathlib import Path
 from . import events, paths
 
 SCRIPT = Path(__file__).resolve().parent / "bpf" / "collect.bt"
+# 脚本里的占位符，启动前换成这一轮的随机前缀。
+NONCE_PLACEHOLDER = "__NETX_NONCE__"
 
 
 class Collector:
@@ -34,8 +36,8 @@ class Collector:
         self.tracker = tracker
         # 每轮采集带一个随机前缀：进程名里夹换行也伪造不出别的行。
         self.nonce = nonce or secrets.token_hex(8)
-        self.command = command or [bpftrace, "-q", str(script), self.nonce]
         self.log_file = Path(log_file) if log_file else paths.log_path()
+        self.command = command or [bpftrace, "-q", str(self._render_script(script))]
         self.restart_delay = restart_delay
         self.clock = clock
 
@@ -99,11 +101,23 @@ class Collector:
         except Exception:
             pass
 
+    def _render_script(self, template: Path) -> Path:
+        """把随机前缀写死进脚本：str($1) 要占满 BPF 栈，字符串上限就提不上去。"""
+        text = Path(template).read_text(encoding="utf-8")
+        if NONCE_PLACEHOLDER not in text:
+            raise ValueError("%s 里没有 %s 占位符" % (template, NONCE_PLACEHOLDER))
+        target = paths.ensure_dir(self.log_file.parent) / "collect.bt"
+        target.write_text(text.replace(NONCE_PLACEHOLDER, self.nonce), encoding="utf-8")
+        os.chmod(target, 0o600)
+        paths._chown(target)
+        return target
+
     def _bpftrace_env(self) -> dict:
-        """map 默认只放 4096 个键，连接一多就会悄悄停止计数；字符串上限要给到单次读取的长度。"""
+        """map 默认只放 4096 个键，连接一多就会悄悄停止计数。"""
         env = dict(os.environ)
         env.setdefault("BPFTRACE_MAX_MAP_KEYS", "262144")
-        env.setdefault("BPFTRACE_MAX_STRLEN", "2048")
+        # 0.20 的上限就是 200（字符串放在 512 字节的 BPF 栈里），写大了直接拒绝启动。
+        env.setdefault("BPFTRACE_MAX_STRLEN", "200")
         return env
 
     def _run(self) -> None:

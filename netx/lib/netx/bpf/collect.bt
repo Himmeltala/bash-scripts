@@ -2,6 +2,7 @@
 // 只用 kprobe + argN + uptr：WSL 的内核头文件缺生成文件，访问 tracepoint 的 args-> 会编译失败。
 // 字节数在 kretprobe 里取返回值，短写与非阻塞写才不会多算。
 // 内容只读每条连接的前 8192 字节，单次最多 2048；超过后只计数，不再读缓冲区。
+// __NETX_NONCE__ 由 collector 启动前换成随机前缀，直接写进 printf 的格式串：str($1) 要多占一份栈。
 
 kprobe:__sys_connect
 {
@@ -14,7 +15,7 @@ kprobe:__sys_connect
     @bytes[pid, arg0] = 0;
     @cap[pid, arg0] = 0;
     delete(@udp_conn[pid, arg0]);
-    printf("%s\tC\t%d\t%d\t%d\t4\t%x\t%d\t%s\n", str($1), pid, uid, arg0, $addr, $port, comm);
+    printf("__NETX_NONCE__\tC\t%d\t%d\t%d\t4\t%x\t%d\t%s\n", pid, uid, arg0, $addr, $port, comm);
   } else if ($fam == 10) {
     $port = bswap(*(uint16 *)uptr($p + 2));
     $a = *(uint32 *)uptr($p + 8);
@@ -25,7 +26,7 @@ kprobe:__sys_connect
     @bytes[pid, arg0] = 0;
     @cap[pid, arg0] = 0;
     delete(@udp_conn[pid, arg0]);
-    printf("%s\tC\t%d\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%s\n", str($1), pid, uid, arg0, $a, $b, $c, $d, $port, comm);
+    printf("__NETX_NONCE__\tC\t%d\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%s\n", pid, uid, arg0, $a, $b, $c, $d, $port, comm);
   }
 }
 
@@ -46,7 +47,7 @@ kprobe:__sys_sendto
         @cap[pid, arg0] = 0;
       }
       @udp_conn[pid, arg0] = 1;
-      printf("%s\tU\t%d\t%d\t4\t%x\t%d\t%d\t%s\n", str($1), pid, arg0, $addr, $port, arg2, comm);
+      printf("__NETX_NONCE__\tU\t%d\t%d\t4\t%x\t%d\t%d\t%s\n", pid, arg0, $addr, $port, arg2, comm);
     } else if ($fam == 10) {
       $port = bswap(*(uint16 *)uptr($p + 2));
       $a = *(uint32 *)uptr($p + 8);
@@ -59,7 +60,7 @@ kprobe:__sys_sendto
         @cap[pid, arg0] = 0;
       }
       @udp_conn[pid, arg0] = 1;
-      printf("%s\tU\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%d\t%s\n", str($1), pid, arg0, $a, $b, $c, $d, $port, arg2, comm);
+      printf("__NETX_NONCE__\tU\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%d\t%s\n", pid, arg0, $a, $b, $c, $d, $port, arg2, comm);
     }
   }
   if ((@conn[pid, arg0] != 0 || @udp_conn[pid, arg0] != 0) && @cap[pid, arg0] < 8192) {
@@ -72,7 +73,7 @@ kprobe:__sys_sendto
       $take = $room;
     }
     if ($take > 0) {
-      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
+      printf("__NETX_NONCE__\tP\t%d\t%d\t%llu\t%llu\t%rh\n", pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
       @cap[pid, arg0] = @cap[pid, arg0] + $take;
     }
   }
@@ -103,7 +104,7 @@ kprobe:ksys_write
       $take = $room;
     }
     if ($take > 0) {
-      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
+      printf("__NETX_NONCE__\tP\t%d\t%d\t%llu\t%llu\t%rh\n", pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
       @cap[pid, arg0] = @cap[pid, arg0] + $take;
     }
   }
@@ -140,7 +141,7 @@ kprobe:__x64_sys_writev
         $take = $room;
       }
       if ($take > 0) {
-        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, $fd, nsecs, $len, buf(uptr($base), $take));
+        printf("__NETX_NONCE__\tP\t%d\t%d\t%llu\t%llu\t%rh\n", pid, $fd, nsecs, $len, buf(uptr($base), $take));
         @cap[pid, $fd] = @cap[pid, $fd] + $take;
       }
     }
@@ -177,7 +178,7 @@ kprobe:__sys_sendmsg
         $take = $room;
       }
       if ($take > 0) {
-        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rh\n", str($1), pid, arg0, nsecs, $len, buf(uptr($base), $take));
+        printf("__NETX_NONCE__\tP\t%d\t%d\t%llu\t%llu\t%rh\n", pid, arg0, nsecs, $len, buf(uptr($base), $take));
         @cap[pid, arg0] = @cap[pid, arg0] + $take;
       }
     }
@@ -202,7 +203,7 @@ kprobe:__x64_sys_close
   $fd = *(uint64 *)(arg0 + 112);
   $b = @bytes[pid, $fd];
   if ($b > 0) {
-    printf("%s\tB\t%d\t%d\t%d\n", str($1), pid, $fd, $b);
+    printf("__NETX_NONCE__\tB\t%d\t%d\t%d\n", pid, $fd, $b);
   }
   if (@conn[pid, $fd] != 0 || @udp_conn[pid, $fd] != 0) {
     delete(@conn[pid, $fd]);
@@ -210,14 +211,14 @@ kprobe:__x64_sys_close
     delete(@udp_conn[pid, $fd]);
     delete(@udp_dst[pid, $fd]);
     delete(@cap[pid, $fd]);
-    printf("%s\tK\t%d\t%d\n", str($1), pid, $fd);
+    printf("__NETX_NONCE__\tK\t%d\t%d\n", pid, $fd);
   }
 }
 
 // 进程直接退出不走 close 系统调用；带上 tid，由 Python 判断是线程退出还是整个进程没了。
 tracepoint:sched:sched_process_exit
 {
-  printf("%s\tE\t%d\t%d\n", str($1), pid, tid);
+  printf("__NETX_NONCE__\tE\t%d\t%d\n", pid, tid);
 }
 
 interval:s:2
