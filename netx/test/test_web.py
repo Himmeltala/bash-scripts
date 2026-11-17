@@ -101,6 +101,16 @@ class WebTest(unittest.TestCase):
         self.assertIn("Host: d.test", payload["raw_text"])
         self.assertEqual(payload["flow"]["id"], self.flow_id)
 
+    def test_flow_without_detail_returns_empty(self):
+        status, _, body = self._get("/__netx/api/flow?id=%d" % self.flow_id)
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["flow"]["id"], self.flow_id)
+        self.assertEqual(payload["kind"], "")
+        self.assertEqual(payload["parsed"], {})
+        self.assertEqual(payload["raw_hex"], "")
+        self.assertFalse(payload["truncated"])
+
     def test_flow_detail_missing(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self._get("/__netx/api/flow?id=999")

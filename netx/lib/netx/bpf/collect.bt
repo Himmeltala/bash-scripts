@@ -40,8 +40,12 @@ kprobe:__sys_sendto
     if ($fam == 2) {
       $port = bswap(*(uint16 *)uptr($p + 2));
       $addr = *(uint32 *)uptr($p + 4);
+      $key = $addr * 65536 + $port;
+      if (@udp_dst[pid, arg0] != $key) {
+        @udp_dst[pid, arg0] = $key;
+        @cap[pid, arg0] = 0;
+      }
       @udp_conn[pid, arg0] = 1;
-      @cap[pid, arg0] = 0;
       printf("%s\tU\t%d\t%d\t4\t%x\t%d\t%d\t%s\n", str($1), pid, arg0, $addr, $port, arg2, comm);
     } else if ($fam == 10) {
       $port = bswap(*(uint16 *)uptr($p + 2));
@@ -49,8 +53,12 @@ kprobe:__sys_sendto
       $b = *(uint32 *)uptr($p + 12);
       $c = *(uint32 *)uptr($p + 16);
       $d = *(uint32 *)uptr($p + 20);
+      $key = $a ^ ($b << 16) ^ ($c << 32) ^ ($d << 48) ^ ($port << 8);
+      if (@udp_dst[pid, arg0] != $key) {
+        @udp_dst[pid, arg0] = $key;
+        @cap[pid, arg0] = 0;
+      }
       @udp_conn[pid, arg0] = 1;
-      @cap[pid, arg0] = 0;
       printf("%s\tU\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%d\t%s\n", str($1), pid, arg0, $a, $b, $c, $d, $port, arg2, comm);
     }
   }
@@ -200,6 +208,7 @@ kprobe:__x64_sys_close
     delete(@conn[pid, $fd]);
     delete(@bytes[pid, $fd]);
     delete(@udp_conn[pid, $fd]);
+    delete(@udp_dst[pid, $fd]);
     delete(@cap[pid, $fd]);
     printf("%s\tK\t%d\t%d\n", str($1), pid, $fd);
   }

@@ -260,10 +260,13 @@ class Database:
                 )
                 conn.execute("DELETE FROM flows WHERE " + where, args)
 
-        if not dry_run:
-            with self._conn() as conn:
-                conn.isolation_level = None
-                conn.execute("VACUUM")
+        vacuum_error = ""
+        if not dry_run and flows:
+            try:
+                self._vacuum()
+            except Exception as exc:
+                # 删除已经提交；压缩失败只报告，不让用户以为数据没删。
+                vacuum_error = str(exc) or exc.__class__.__name__
 
         return {
             "flows": flows,
@@ -271,7 +274,13 @@ class Database:
             "active_kept": active,
             "db_bytes_before": before,
             "db_bytes_after": self._db_bytes(),
+            "vacuum_error": vacuum_error,
         }
+
+    def _vacuum(self) -> None:
+        with self._conn() as conn:
+            conn.isolation_level = None
+            conn.execute("VACUUM")
 
     def summary(self) -> dict:
         with self._conn() as conn:

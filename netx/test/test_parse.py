@@ -75,6 +75,14 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(parsed["alpn"], ["h2", "http/1.1"])
         self.assertEqual(parsed["url"], "https://example.org")
 
+    def test_tls_truncated_after_random(self):
+        body = b"\x03\x03" + b"\x11" * 32
+        handshake = b"\x01" + len(body).to_bytes(3, "big") + body
+        data = b"\x16\x03\x01" + len(handshake).to_bytes(2, "big") + handshake
+        parsed = parse_payload(data)
+        self.assertEqual(parsed["kind"], "tls")
+        self.assertEqual(parsed["sni"], "")
+
     def test_tls_application_data_stays_binary(self):
         parsed = parse_payload(b"\x17\x03\x03\x00\x05hello")
         self.assertEqual(parsed["kind"], "binary")

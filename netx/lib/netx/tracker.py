@@ -65,6 +65,7 @@ class FlowTracker:
             "family": event["family"],
             "ip": event["ip"],
             "port": event["port"],
+            "bytes_out": 0,
             "payload": bytearray(),
             "payload_truncated": False,
             "payload_dirty": False,
@@ -111,11 +112,15 @@ class FlowTracker:
         ):
             self.db.add_bytes(entry["id"], event["delta"], now)
             entry["last"] = now
+            entry["bytes_out"] = entry.get("bytes_out", 0) + int(event["delta"])
+            self._mark_truncated(entry)
             return
         self._finish(key, now)
         flow_id = self._new_flow(pid, event)
-        self._active[key] = self._entry(flow_id, now, event)
+        entry = self._entry(flow_id, now, event)
+        self._active[key] = entry
         self.db.add_bytes(flow_id, event["delta"], now)
+        entry["bytes_out"] = int(event["delta"])
 
     def _new_flow(self, pid: int, event: dict) -> int:
         info = self.proc_info(pid)
@@ -141,6 +146,18 @@ class FlowTracker:
         now = self.clock()
         self.db.add_bytes(entry["id"], event["delta"], now)
         entry["last"] = now
+        entry["bytes_out"] = entry.get("bytes_out", 0) + int(event["delta"])
+        self._mark_truncated(entry)
+
+    def _mark_truncated(self, entry: dict) -> None:
+        """实际发出的字节比抓到的多，说明内容已经被截断（eBPF 到顶后不再发事件）。"""
+        if (
+            entry.get("payload")
+            and not entry.get("payload_truncated")
+            and entry.get("bytes_out", 0) > len(entry["payload"])
+        ):
+            entry["payload_truncated"] = True
+            entry["payload_dirty"] = True
 
     def _payload(self, event: dict) -> None:
         entry = self._active.get((event["pid"], event["fd"]))
@@ -150,8 +167,9 @@ class FlowTracker:
         data = event.get("data") or b""
         remaining = self.capture_bytes - len(entry["payload"])
         if remaining <= 0:
-            entry["payload_truncated"] = True
-            entry["payload_dirty"] = True
+            if not entry["payload_truncated"]:
+                entry["payload_truncated"] = True
+                entry["payload_dirty"] = True
             entry["last"] = now
             return
         taken = data[:remaining]
@@ -167,11 +185,15 @@ class FlowTracker:
             entry["payload"].extend(taken)
             entry["payload_dirty"] = True
         entry["last"] = now
+        self._mark_truncated(entry)
 
     def _flush_entry(self, entry: dict, now: float) -> None:
         data = bytes(entry["payload"])
         parsed = parse_payload(data, dst_port=entry.get("port", 0))
-        self.db.set_detail(entry["id"], data, parsed, truncated=entry["payload_truncated"])
+        truncated = entry["payload_truncated"] or (
+            bool(data) and entry.get("bytes_out", 0) > len(data)
+        )
+        self.db.set_detail(entry["id"], data, parsed, truncated=truncated)
         entry["payload_dirty"] = False
         entry["payload_flushed_at"] = now
 
@@ -179,12 +201,16 @@ class FlowTracker:
         """把活动连接已抓到的头部内容落库；默认按间隔节流，连接结束时强制刷新。"""
         with self._lock:
             now = self.clock()
-            for entry in self._active.values():
+            for entry in list(self._active.values()):
                 if not entry.get("payload_dirty"):
                     continue
                 if not force and now - entry.get("payload_flushed_at", 0.0) < self.FLUSH_SECONDS:
                     continue
-                self._flush_entry(entry, now)
+                try:
+                    self._flush_entry(entry, now)
+                except Exception:
+                    # 单条内容坏了不能拖住后面所有连接，也不能每轮重试刷屏。
+                    entry["payload_dirty"] = False
 
     def _exit(self, pid: int) -> None:
         if any(key[0] == pid for key in self._active):
@@ -192,9 +218,15 @@ class FlowTracker:
 
     def _finish(self, key: tuple[int, int], now: float) -> None:
         entry = self._active.pop(key, None)
-        if entry is not None:
+        if entry is None:
+            return
+        try:
             if entry.get("payload_dirty"):
                 self._flush_entry(entry, now)
+        except Exception:
+            pass
+        finally:
+            # 内容写失败也要把连接结束掉，不能留下一直“进行中”的行。
             self.db.end_flow(entry["id"], now)
 
     def tick(self) -> None:

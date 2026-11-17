@@ -162,7 +162,7 @@ def _parse_tls(data):
 
     body = handshake[4:]
     pos = 2 + 32
-    if len(body) < pos:
+    if len(body) <= pos:
         return _blank(kind="tls")
     pos += 1 + body[pos]
     if pos + 2 > len(body):

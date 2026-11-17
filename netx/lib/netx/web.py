@@ -94,9 +94,20 @@ class Handler(SSEMixin, WebHandler):
         except (TypeError, ValueError):
             raise ApiError(400, "id 要是整数")
         flow = self.db.flow(flow_id)
-        detail = self.db.detail(flow_id)
-        if flow is None or detail is None:
+        if flow is None:
             raise ApiError(404, "没有这条记录")
+        detail = self.db.detail(flow_id)
+        if detail is None:
+            # 连接还在，只是没抓到内容：给空详情，别让用户以为记录被删了。
+            return {
+                "flow": flow,
+                "kind": "",
+                "parsed": {},
+                "raw_text": "",
+                "raw_hex": "",
+                "truncated": False,
+                "updated": 0,
+            }
         data = detail["raw"]
         return {
             "flow": flow,

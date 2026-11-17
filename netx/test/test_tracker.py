@@ -65,6 +65,21 @@ class EventsTest(unittest.TestCase):
         self.assertIsNone(events.parse_map_line("@bytes[100, 5]: 0"))
 
 
+class CountingDB:
+    """包一层，只数详情写入次数；其余方法原样转给真库。"""
+
+    def __init__(self, db):
+        self._db = db
+        self.set_detail_calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+    def set_detail(self, *args, **kwargs):
+        self.set_detail_calls += 1
+        return self._db.set_detail(*args, **kwargs)
+
+
 class TrackerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -260,6 +275,86 @@ class TrackerTest(unittest.TestCase):
     def test_payload_without_active_flow_is_ignored(self):
         self._payload(b"hello")
         self.assertEqual(self.db.count_flows(), 0)
+
+    def test_flush_failure_does_not_block_others_or_leave_flow_open(self):
+        self._connect(fd=5)
+        self._payload(b"GET /bad HTTP/1.1\r\nHost: bad.test\r\n\r\n", fd=5)
+        self._connect(fd=6, port=80)
+        self._payload(b"GET /good HTTP/1.1\r\nHost: good.test\r\n\r\n", fd=6)
+
+        ids = {row["dst_port"]: row["id"] for row in self.db.flows(minutes=None)}
+        original = self.db.set_detail
+
+        def flaky(flow_id, *args, **kwargs):
+            if flow_id == ids[443]:
+                raise RuntimeError("boom")
+            return original(flow_id, *args, **kwargs)
+
+        self.db.set_detail = flaky
+        self.tracker.on_event({"type": "close", "pid": 100, "fd": 5})
+        self.tracker.on_event({"type": "close", "pid": 100, "fd": 6})
+
+        rows = {row["dst_port"]: row for row in self.db.flows(minutes=None)}
+        self.assertIsNotNone(rows[443]["ended"])
+        self.assertIsNotNone(rows[80]["ended"])
+        self.assertIsNotNone(self.db.detail(rows[80]["id"]))
+        self.assertIsNone(self.db.detail(rows[443]["id"]))
+
+    def test_truncated_when_bytes_exceed_captured(self):
+        self._connect()
+        for _ in range(FlowTracker.CAPTURE_BYTES // 2048):
+            self._payload(b"X" * 2048)
+        self._bytes(FlowTracker.CAPTURE_BYTES + 100)
+        self.tracker.on_event({"type": "close", "pid": 100, "fd": 5})
+
+        detail = self.db.detail(self.db.flows(minutes=None)[0]["id"])
+        self.assertEqual(len(detail["raw"]), FlowTracker.CAPTURE_BYTES)
+        self.assertTrue(detail["truncated"])
+
+    def test_over_cap_does_not_reflush_every_tick(self):
+        counting = CountingDB(self.db)
+        tracker = FlowTracker(
+            counting,
+            clock=lambda: self.now,
+            idle=300,
+            proc_info=lambda pid: {"comm": "curl", "exe": "/usr/bin/curl", "uid": 1000},
+            pid_alive=lambda pid: False,
+        )
+        tracker.on_event(
+            {
+                "type": "connect",
+                "pid": 100,
+                "uid": 1000,
+                "fd": 5,
+                "family": 4,
+                "ip": "93.184.216.34",
+                "port": 443,
+                "comm": "curl",
+            }
+        )
+
+        def payload(data):
+            tracker.on_event(
+                {
+                    "type": "payload",
+                    "pid": 100,
+                    "fd": 5,
+                    "nsecs": 1,
+                    "length": len(data),
+                    "data": data,
+                }
+            )
+
+        payload(b"X" * FlowTracker.CAPTURE_BYTES)
+        self.now += tracker.FLUSH_SECONDS + 0.1
+        tracker.tick()
+        self.now += tracker.FLUSH_SECONDS + 0.1
+        payload(b"a")
+        tracker.tick()
+        self.now += tracker.FLUSH_SECONDS + 0.1
+        payload(b"b")
+        tracker.tick()
+        self.assertEqual(counting.set_detail_calls, 2)
 
 
 if __name__ == "__main__":

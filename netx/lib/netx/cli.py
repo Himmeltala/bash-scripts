@@ -168,6 +168,11 @@ def _clean(args) -> int:
         "数据库占用: %s → %s"
         % (_human_bytes(result["db_bytes_before"]), _human_bytes(result["db_bytes_after"]))
     )
+    if result.get("vacuum_error"):
+        print(
+            "压缩失败：%s；删除已生效，可稍后再试。" % result["vacuum_error"],
+            file=sys.stderr,
+        )
     return 0
 
 

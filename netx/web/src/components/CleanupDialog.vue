@@ -128,9 +128,10 @@ async function remove() {
   error.value = ''
   try {
     const result = await cleanRecords(body(false))
+    const warning = result.vacuum_error ? '；压缩失败：' + result.vacuum_error : ''
     emit('notice', {
-      text: '已删除 ' + result.flows + ' 条连接、' + result.details + ' 条详情',
-      color: 'success',
+      text: '已删除 ' + result.flows + ' 条连接、' + result.details + ' 条详情' + warning,
+      color: result.vacuum_error ? 'warning' : 'success',
     })
     emit('done')
     close()

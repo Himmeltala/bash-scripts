@@ -1,5 +1,6 @@
 """sqlite 存储：插入、累加字节、结束、过期与 meta。"""
 
+import sqlite3
 import sys
 import tempfile
 import time
@@ -151,6 +152,27 @@ class DatabaseTest(unittest.TestCase):
     def test_clean_requires_a_scope(self):
         with self.assertRaises(ValueError):
             self.db.clean()
+
+    def test_clean_reports_vacuum_failure_after_delete(self):
+        ended = self._flow()
+        self.db.end_flow(ended, time.time())
+
+        def broken():
+            raise sqlite3.OperationalError("disk full")
+
+        self.db._vacuum = broken
+        info = self.db.clean(all_ended=True)
+        self.assertEqual(info["flows"], 1)
+        self.assertEqual(self.db.count_flows(), 0)
+        self.assertIn("disk full", info["vacuum_error"])
+
+    def test_clean_skips_vacuum_when_nothing_deleted(self):
+        calls = []
+        self.db._vacuum = lambda: calls.append(1)
+        info = self.db.clean(all_ended=True)
+        self.assertEqual(info["flows"], 0)
+        self.assertEqual(calls, [])
+        self.assertEqual(info["vacuum_error"], "")
 
     def test_summary_counts(self):
         flow_id = self._flow()
