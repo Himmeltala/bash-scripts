@@ -1,6 +1,6 @@
 # pom 扫描与解析：一次调用取出全部 pom 的 id、打包方式、启动插件与子模块，填入各数组，再据此判定可启动模块与聚合根。
 # 数组只在主 shell 里填一次，其余文件只读。
-readonly SKIP_DIRS=(target .svn .git node_modules .idea .settings)
+readonly SKIP_DIRS=(build .gradle .git .svn node_modules .idea .settings out target dist)
 # 一次取出一个 pom 的信息，输出带前缀行：ID（自身 artifactId，不含 parent）、PKG pom、SB、JETTY、TOMCAT、MOD（子模块）。
 readonly POM_AWK='
 BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }

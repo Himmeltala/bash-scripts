@@ -1,6 +1,6 @@
 # Gradle 构建扫描：找构建根，解析 settings 与模块，判定可运行模块与执行任务。
 # 数组只在主 shell 里填一次，其余文件只读。
-readonly SCAN_SKIP_DIRS=(build .gradle .git .svn node_modules .idea .settings out target)
+readonly SCAN_SKIP_DIRS=(build .gradle .git .svn node_modules .idea .settings out target dist)
 
 readonly BOOT_MARKER_RE="org\.springframework\.boot|spring-boot-gradle-plugin|apply[[:space:]]+plugin[[:space:]]*:[[:space:]]*[\"']spring-boot[\"']"
 readonly APP_MARKER_RE="id[[:space:]]*\(?[[:space:]]*[\"']application[\"']|apply[[:space:]]+plugin[[:space:]]*:[[:space:]]*[\"']application[\"']|(^|[[:space:]{])application[[:space:]]*[}]?[[:space:]]*$"
