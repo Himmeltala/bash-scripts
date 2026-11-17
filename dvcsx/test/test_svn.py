@@ -143,6 +143,19 @@ class SvnWorkspace(unittest.TestCase):
             self.assertIn(" line 1\n", rev_full["text"])
             self.assertIn("+line 30 changed", rev_full["text"])
 
+    def test_diff_marks_long_line_as_wide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            wc = Path(tmp) / "wc"
+            run(["svnadmin", "create", str(repo)])
+            run(["svn", "checkout", "-q", "file://" + str(repo), str(wc)])
+            path = wc / "wide.txt"
+            path.write_text("y" * 3000 + "\n", "utf-8")
+            run(["svn", "add", "-q", "wide.txt"], cwd=wc)
+            self.assertTrue(svnmod.change_diff(str(wc), "wide.txt")["wide"])
+            path.write_text("short\n", "utf-8")
+            self.assertFalse(svnmod.change_diff(str(wc), "wide.txt")["wide"])
+
     def test_unversioned_file_reads_as_content(self):
         self.assertEqual(svnmod.read_unversioned(str(self.wc), "b.txt"), "new\n")
 

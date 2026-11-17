@@ -38,6 +38,8 @@ from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, z
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
 MAX_TEXT = 2 * 1024 * 1024
+# 单行超过这个宽度按大文件处理：压缩过的 JS/CSS 一行几十万字符，页面渲染不动。
+WIDE_LINE = 2000
 # 未纳入版本控制的文件没有差异可算，直接读内容预览，超过这个大小就不给。
 MAX_FILE = 512 * 1024
 SVN_TIMEOUT = 30
@@ -885,6 +887,15 @@ def clip(text):
     return text[:MAX_TEXT] + "\n…（差异太长，后面的没有显示）\n", True
 
 
+def is_wide(text):
+    """有没有一行超过 WIDE_LINE：压缩产物就是这样，按大文件对待。差异行前的 +/- 标记不算宽度。"""
+    for line in text.splitlines():
+        width = len(line) - 1 if line[:1] in "+- " else len(line)
+        if width > WIDE_LINE:
+            return True
+    return False
+
+
 def browse_rel(rel):
     """浏览接口的路径：空串表示登记的目录本身，其余按工作副本内相对路径校验。"""
     rel = (rel or "").strip()
@@ -1215,7 +1226,7 @@ def diff_of(root, args):
     if rc != 0 and not text:
         raise ApiError(400, err or "svn diff 失败")
     text, truncated = clip(text)
-    return {"text": text, "truncated": truncated, "error": err if rc != 0 else ""}
+    return {"text": text, "truncated": truncated, "wide": is_wide(text), "error": err if rc != 0 else ""}
 
 
 def change_diff(root, rel, rev=None, full=False):
@@ -1380,7 +1391,7 @@ def git_diff_of(root, args):
     if rc != 0 and not text:
         raise ApiError(400, err or "git diff 失败")
     text, truncated = clip(text)
-    return {"text": text, "truncated": truncated, "error": err if rc != 0 else ""}
+    return {"text": text, "truncated": truncated, "wide": is_wide(text), "error": err if rc != 0 else ""}
 
 
 def git_change_diff(root, rel, full=False):

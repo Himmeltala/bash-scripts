@@ -251,6 +251,14 @@
                       {{ row.item.action }}
                     </span>
                     <span class="mono name">{{ row.label }}</span>
+                    <v-icon
+                      v-if="marked(row.path)"
+                      size="14"
+                      class="held"
+                      title="默认不渲染，点开才加载差异"
+                    >
+                      mdi-eye-off-outline
+                    </v-icon>
                   </div>
                 </template>
                 <p v-if="!current.paths.length" class="none">这次提交没有列出变更路径。</p>
@@ -267,8 +275,16 @@
             />
 
             <div class="pane diffpane" :class="{ collapsed: diffCollapsed }">
+              <div v-if="!diffCollapsed && awaitingLoad" class="deferred">
+                <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
+                <div class="deferred-path mono" :title="activePath">{{ activePath }}</div>
+                <p class="deferred-hint">这是锁文件、构建产物，或单行超过 2000 字符的文件，默认不加载差异。</p>
+                <v-btn color="primary" variant="flat" size="small" @click="showDeferred">
+                  加载差异
+                </v-btn>
+              </div>
               <DiffView
-                v-if="!diffCollapsed"
+                v-else-if="!diffCollapsed"
                 :title="diffTitle"
                 :path="activePath"
                 :text="content.text"
@@ -312,6 +328,7 @@ import { api } from '../composables/useApi'
 import { buildGraph, DOT_Y } from '../composables/gitGraph'
 import { SplitHandle } from '@bash-scripts/web-shared'
 import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'
+import { isDeferred } from '../composables/deferred'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree } from '@bash-scripts/web-shared'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -337,6 +354,16 @@ const detail = ref(null)
 const remote = ref(null)
 const activePath = ref('')
 const content = ref({ text: '', truncated: false })
+// 锁文件与构建产物不自动取差异。同一提交里点过“加载差异”的路径记下来，换回来不再拦；
+// 换提交要重新拦一次，同一个路径在不同提交里的差异是另一份。
+const revealed = ref(new Set())
+// 单行过长要等第一次取到差异才知道，按“提交 + 路径”记住，换回来不必再请求。
+const widePaths = ref(new Set())
+const deferredKey = (path) =>
+  `${current.value ? current.value.revision : ''}\n${path}`
+const marked = (path) => isDeferred(path) || widePaths.value.has(deferredKey(path))
+const held = (path) => !!path && marked(path) && !revealed.value.has(deferredKey(path))
+const awaitingLoad = computed(() => held(activePath.value))
 const loading = ref(false)
 const syncing = ref(false)
 const moreLoading = ref(false)
@@ -651,7 +678,22 @@ async function wholeCommit() {
   await loadDiff('')
 }
 
+// 用户在右侧点了“加载差异”：记住这一份，再走正常的取差异流程。
+function showDeferred() {
+  if (!activePath.value) return
+  revealed.value.add(deferredKey(activePath.value))
+  loadDiff(activePath.value)
+}
+
 async function loadDiff(path) {
+  if (path && held(path)) {
+    // 大文件连差异接口都不请求：记下序号让在途的旧结果作废，页面只显示占位。
+    diffSeq += 1
+    diffLoading.value = false
+    diffError.value = ''
+    content.value = { text: '', truncated: false }
+    return
+  }
   const mine = ++diffSeq
   diffLoading.value = true
   diffError.value = ''
@@ -663,7 +705,14 @@ async function loadDiff(path) {
       logDiffScope.value === 'file'
     )
     // 连点提交或来回切口径时，晚到的旧结果不能盖住当前这一份。
-    if (mine === diffSeq) content.value = data
+    if (mine !== diffSeq) return
+    if (path && data.wide && !revealed.value.has(deferredKey(path))) {
+      // 单行太长：差异取到也不渲染，记下这一份，换回来直接走占位。
+      widePaths.value.add(deferredKey(path))
+      content.value = { text: '', truncated: false }
+      return
+    }
+    content.value = data
   } catch (err) {
     if (mine !== diffSeq) return
     content.value = { text: '', truncated: false }
@@ -1023,6 +1072,34 @@ defineExpose({ load })
   font-size: 0.66rem;
   color: rgb(var(--v-theme-on-surface-variant));
   background: rgba(var(--v-theme-on-surface), 0.08);
+}
+.held {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.deferred {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+.deferred-icon {
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.deferred-path {
+  max-width: 40rem;
+  font-size: 0.84rem;
+  word-break: break-all;
+}
+.deferred-hint {
+  max-width: 34rem;
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
 .none {
   padding: 12px 16px;

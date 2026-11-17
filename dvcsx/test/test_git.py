@@ -126,6 +126,21 @@ class GitWorkspace(unittest.TestCase):
         result = gitmod.git_change_diff(str(self.repo), "sub/a.txt")
         self.assertIn("+world", result["text"])
 
+    def test_diff_marks_long_line_as_wide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run(["git", "init", "-q", tmp])
+            path = Path(tmp) / "wide.txt"
+            path.write_text("y" * 3000 + "\n", "utf-8")
+            run(["git", "add", "-A"], cwd=tmp)
+            self.assertTrue(gitmod.git_change_diff(tmp, "wide.txt")["wide"])
+            # 差异行前的 + 标记不算进宽度：正好 2000 不算长，2001 才算。
+            path.write_text("y" * 2000 + "\n", "utf-8")
+            run(["git", "add", "-A"], cwd=tmp)
+            self.assertFalse(gitmod.git_change_diff(tmp, "wide.txt")["wide"])
+            path.write_text("y" * 2001 + "\n", "utf-8")
+            run(["git", "add", "-A"], cwd=tmp)
+            self.assertTrue(gitmod.git_change_diff(tmp, "wide.txt")["wide"])
+
     def test_unversioned_file_reads_as_content(self):
         top = gitmod.workspace_paths({"root": str(self.repo), "vcs": "git"})
         self.assertEqual(gitmod.read_unversioned(top, "sub/untracked.txt"), "new\n")

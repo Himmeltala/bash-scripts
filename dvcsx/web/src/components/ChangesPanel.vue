@@ -88,7 +88,7 @@
                 </div>
               </div>
               <v-icon
-                v-if="isDeferred(row.path)"
+                v-if="marked(row.path)"
                 size="14"
                 class="held"
                 title="默认不渲染，点开才加载差异"
@@ -108,7 +108,7 @@
         <div v-if="awaitingLoad" class="deferred">
           <v-icon size="28" class="deferred-icon">mdi-file-hidden</v-icon>
           <div class="deferred-path mono" :title="selected.path">{{ selected.path }}</div>
-          <p class="deferred-hint">这是锁文件或构建产物，文件可能很大，默认不加载差异。</p>
+          <p class="deferred-hint">这是锁文件、构建产物，或单行超过 2000 字符的文件，默认不加载差异。</p>
           <v-btn color="primary" variant="flat" size="small" @click="showDeferred">加载差异</v-btn>
         </div>
         <DiffView
@@ -215,13 +215,13 @@ const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useS
 
 const isGit = computed(() => props.ws.vcs === 'git')
 const diffTitle = computed(() => (selected.value ? selected.value.path : ''))
-// 锁文件与构建产物不自动取差异；用户点过“加载差异”的文件记在这里，换回来不再拦。
+// 锁文件、构建产物与单行过长的文件不自动取差异；点过“加载差异”的文件记在这里，换回来不再拦。
+// 单行过长要等第一次取到差异才知道，记住路径，换回来就不用再请求一遍。
 const revealed = ref(new Set())
+const widePaths = ref(new Set())
+const marked = (path) => isDeferred(path) || widePaths.value.has(path)
 const awaitingLoad = computed(
-  () =>
-    !!selected.value &&
-    isDeferred(selected.value.path) &&
-    !revealed.value.has(selected.value.path),
+  () => !!selected.value && marked(selected.value.path) && !revealed.value.has(selected.value.path),
 )
 // SVN 的版本号前面带 r，Git 给的是短 sha，原样显示。
 const revText = computed(() => {
@@ -311,7 +311,7 @@ async function pick(file, { skipGuard = false } = {}) {
   diffError.value = ''
   saveError.value = ''
   editState.value = { editable: false, baseText: '', reason: '' }
-  if (isDeferred(file.path) && !revealed.value.has(file.path)) {
+  if (marked(file.path) && !revealed.value.has(file.path)) {
     // 连工作副本快照都不取：大文件只在用户点了“加载差异”之后才读。
     content.value = { text: '', kind: 'diff', truncated: false }
     diffLoading.value = false
@@ -324,6 +324,12 @@ async function pick(file, { skipGuard = false } = {}) {
       snapshotOf(file),
     ])
     if (mine !== pickSeq) return
+    if (data.wide && !revealed.value.has(file.path)) {
+      // 单行太长：差异已经取到也不渲染，先记下路径，换回来直接走占位。
+      widePaths.value.add(file.path)
+      content.value = { text: '', kind: 'diff', truncated: false }
+      return
+    }
     content.value = data
     editState.value = data.truncated
       ? { editable: false, baseText: snap.baseText, reason: '差异已截断，不能直接在差异里编辑' }
