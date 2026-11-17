@@ -16,7 +16,7 @@
       </template>
     </v-app-bar>
 
-    <v-navigation-drawer v-model="drawer" :rail="rail" :width="navWidth">
+    <v-navigation-drawer v-model="drawer" :width="navWidth">
       <div class="nav">
         <div class="nav-body">
           <v-list nav density="compact">
@@ -29,17 +29,8 @@
               @click="go(item.key)"
             />
           </v-list>
-          <v-divider class="my-2" />
-          <v-list nav density="compact">
-            <v-list-item
-              :prepend-icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-              :title="rail ? '' : '收起菜单'"
-              @click="rail = !rail"
-            />
-          </v-list>
         </div>
         <SplitHandle
-          v-if="!rail"
           axis="x"
           :active="resizing"
           @start="startSplit"
@@ -74,7 +65,6 @@ const VIEWS = {
 
 const current = computed(() => VIEWS[page.key] || VIEWS.usage)
 const drawer = ref(true)
-const rail = ref(false)
 
 // 左侧菜单的宽度随分隔条拖动改变，双击还原；上限按整个窗口算，右侧至少留出正文的宽度。
 const viewport = shallowRef(document.documentElement)

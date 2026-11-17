@@ -487,6 +487,7 @@ defineExpose({ load })
   width: var(--list-width, 320px);
   flex: 0 0 var(--list-width, 320px);
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 .files ul {
   list-style: none;

@@ -522,6 +522,8 @@ defineExpose({ collect, resetEdits })
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* 侧栏收放时宽度一直在变，滚动条出现/消失会让整块 diff 反复换行换高。 */
+  scrollbar-gutter: stable;
   font-size: 0.78rem;
   line-height: 1.55;
   padding-bottom: 24px;
