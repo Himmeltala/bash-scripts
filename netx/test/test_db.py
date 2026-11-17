@@ -105,6 +105,45 @@ class DatabaseTest(unittest.TestCase):
     def test_detail_missing_returns_none(self):
         self.assertIsNone(self.db.detail(999))
 
+    def test_clean_only_ended_and_old(self):
+        now = time.time()
+        old = self._flow(started=now - 10 * 86400)
+        self.db.end_flow(old, now - 10 * 86400 + 1)
+        active = self._flow(started=now - 10 * 86400)
+        for flow_id in (old, active):
+            self.db.set_detail(flow_id, b"x", {"kind": "binary"})
+
+        info = self.db.clean(before_ts=now - 7 * 86400)
+        self.assertEqual(info["flows"], 1)
+        self.assertEqual(info["details"], 1)
+        self.assertEqual(info["active_kept"], 1)
+        self.assertIsNotNone(self.db.detail(active))
+        self.assertIsNone(self.db.detail(old))
+        self.assertEqual(len(self.db.flows(minutes=None)), 1)
+
+    def test_clean_all_keeps_active(self):
+        active = self._flow()
+        ended = self._flow()
+        self.db.end_flow(ended, time.time())
+
+        info = self.db.clean(all_ended=True)
+        self.assertEqual(info["flows"], 1)
+        self.assertEqual(info["active_kept"], 1)
+        rows = self.db.flows(minutes=None)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], active)
+
+    def test_clean_dry_run_deletes_nothing(self):
+        ended = self._flow()
+        self.db.end_flow(ended, time.time())
+        info = self.db.clean(all_ended=True, dry_run=True)
+        self.assertEqual(info["flows"], 1)
+        self.assertEqual(len(self.db.flows(minutes=None)), 1)
+
+    def test_clean_requires_a_scope(self):
+        with self.assertRaises(ValueError):
+            self.db.clean()
+
     def test_summary_counts(self):
         flow_id = self._flow()
         self.db.set_detail(flow_id, b"x", {"kind": "binary"})

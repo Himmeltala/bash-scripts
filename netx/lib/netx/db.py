@@ -208,6 +208,59 @@ class Database:
                 pass
         return total
 
+    def clean(
+        self,
+        *,
+        before_ts: float | None = None,
+        all_ended: bool = False,
+        dry_run: bool = False,
+    ) -> dict:
+        """删已结束的连接与详情；进行中的一律保留。时间按最后活跃时间算。"""
+        if before_ts is None and not all_ended:
+            raise ValueError("clean 需要 before_ts 或 all_ended")
+
+        where = "ended IS NOT NULL"
+        args: list[float] = []
+        if before_ts is not None:
+            where += " AND last_seen < ?"
+            args.append(float(before_ts))
+
+        before = self._db_bytes()
+        with self._conn() as conn:
+            flows = int(
+                conn.execute("SELECT COUNT(*) FROM flows WHERE " + where, args).fetchone()[0]
+            )
+            details = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM flow_detail WHERE flow_id IN"
+                    " (SELECT id FROM flows WHERE " + where + ")",
+                    args,
+                ).fetchone()[0]
+            )
+            active = int(
+                conn.execute("SELECT COUNT(*) FROM flows WHERE ended IS NULL").fetchone()[0]
+            )
+            if not dry_run:
+                conn.execute(
+                    "DELETE FROM flow_detail WHERE flow_id IN"
+                    " (SELECT id FROM flows WHERE " + where + ")",
+                    args,
+                )
+                conn.execute("DELETE FROM flows WHERE " + where, args)
+
+        if not dry_run:
+            with self._conn() as conn:
+                conn.isolation_level = None
+                conn.execute("VACUUM")
+
+        return {
+            "flows": flows,
+            "details": details,
+            "active_kept": active,
+            "db_bytes_before": before,
+            "db_bytes_after": self._db_bytes(),
+        }
+
     def summary(self) -> dict:
         with self._conn() as conn:
             flow_count = int(conn.execute("SELECT COUNT(*) FROM flows").fetchone()[0])
