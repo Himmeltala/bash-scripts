@@ -161,12 +161,12 @@ class SvnWorkspace(unittest.TestCase):
         types = {e["name"]: e["type"] for e in data["entries"]}
         self.assertEqual(types.get("src"), "dir")
         self.assertEqual(types.get("b.txt"), "file")
-        # 工作副本内部目录不列出来。
-        self.assertNotIn(".svn", types)
+        # 目录不过滤，工作副本内部目录与依赖目录都列出来。
+        self.assertEqual(types.get(".svn"), "dir")
         data = svnmod.browse_list(str(self.wc), "extra")
         names = [e["name"] for e in data["entries"]]
         self.assertIn("one.txt", names)
-        self.assertNotIn("node_modules", names)
+        self.assertIn("node_modules", names)
         self.assertEqual(svnmod.browse_file(str(self.wc), "b.txt"), "new\n")
 
     def test_browse_save_file(self):

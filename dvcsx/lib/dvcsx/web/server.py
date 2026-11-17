@@ -885,10 +885,6 @@ def clip(text):
     return text[:MAX_TEXT] + "\n…（差异太长，后面的没有显示）\n", True
 
 
-# 浏览目录时跳过的东西：版本库内部目录、依赖与产物目录、IDE 配置。
-BROWSE_SKIP = UNVERSIONED_SKIP | {"target", ".idea"}
-
-
 def browse_rel(rel):
     """浏览接口的路径：空串表示登记的目录本身，其余按工作副本内相对路径校验。"""
     rel = (rel or "").strip()
@@ -909,8 +905,6 @@ def browse_list(root, rel):
     try:
         with os.scandir(target) as it:
             for entry in it:
-                if entry.name in BROWSE_SKIP:
-                    continue
                 try:
                     is_dir = entry.is_dir(follow_symlinks=True)
                 except OSError:
@@ -974,7 +968,7 @@ def browse_search(root, rel, query, mode):
     scanned = 0
     truncated = False
     for dirpath, dirnames, filenames in os.walk(target):
-        dirnames[:] = sorted(d for d in dirnames if d not in BROWSE_SKIP)
+        dirnames[:] = sorted(dirnames)
         for name in sorted(filenames):
             path = os.path.join(dirpath, name)
             # 链接指到工作副本外的不看，免得搜到别人的文件。
@@ -1296,20 +1290,29 @@ def parse_git_log(text):
 
 
 def parse_name_status(text):
-    """--name-status 的动作行：每行“动作 路径”，改名与复制是“动作 原路径 新路径”。"""
+    """--name-status -z 的输出：动作与路径都用 \\0 分隔，改名与复制是“动作 原路径 新路径”。
+
+    不加 -z 时 git 会把非 ASCII 路径加 C 风格引号，取出来的路径再拿去查差异就成了非法 pathspec。
+    """
+    fields = text.split("\0")
     paths = []
-    for line in text.split("\n"):
-        if not line.strip():
+    i = 0
+    while i < len(fields):
+        action_field = fields[i]
+        i += 1
+        # 末尾 NUL 后面是空串；动作列不是单个已知字母的跳过。
+        if not action_field:
             continue
-        parts = line.split("\t")
-        action = parts[0][:1]
+        action = action_field[:1]
         if action not in ("A", "C", "D", "M", "R", "T", "U", "X"):
             continue
-        if action in ("R", "C") and len(parts) >= 3:
+        path = fields[i] if i < len(fields) else ""
+        i += 1
+        old_path = ""
+        if action in ("R", "C"):
             # 页面点到的是改名后的路径，原路径留着显示“由…改名”。
-            old_path, path = parts[1], parts[2]
-        else:
-            old_path, path = "", parts[1] if len(parts) > 1 else ""
+            old_path, path = path, fields[i] if i < len(fields) else ""
+            i += 1
         if path:
             paths.append({"action": action, "kind": "", "path": path, "copyfrom": old_path})
     return paths
@@ -1709,7 +1712,7 @@ def git_commit_detail(root, sha):
     full, short, author, email, date, parents, refs, body = parts
     # 路径只在这一条上算，列表里不带 --name-status，省掉每条提交的树比对与改名配对。
     names_rc, names, _ = git(
-        ["show", "--no-color", "--name-status", "--format=", sha], cwd=root
+        ["show", "--no-color", "--name-status", "-z", "--format=", sha], cwd=root
     )
     return {
         "revision": full.strip(),
@@ -2032,7 +2035,7 @@ class Handler(WebHandler):
         if not inside(root, target):
             raise ApiError(400, "路径要在工作副本里：%s" % rel)
         if os.path.isdir(target):
-            path, _ = zip_dir(target, BROWSE_SKIP)
+            path, _ = zip_dir(target)
             name = (os.path.basename(target.rstrip("/")) or "download") + ".zip"
             try:
                 self._send_download(path, name, head=head)

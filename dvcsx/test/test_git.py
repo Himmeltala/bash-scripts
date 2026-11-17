@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -197,10 +198,25 @@ class GitWorkspace(unittest.TestCase):
         types = {e["name"]: e["type"] for e in data["entries"]}
         self.assertEqual(types.get("sub"), "dir")
         self.assertEqual(types.get("notes.txt"), "file")
-        # 版本库内部目录不列出来，目录排在文件前面。
-        self.assertNotIn(".git", types)
-        self.assertEqual(data["entries"][0]["name"], "sub")
+        # 目录不过滤，版本库内部目录也照实列出，目录仍排在文件前面。
+        self.assertEqual(types.get(".git"), "dir")
+        kinds = [e["type"] for e in data["entries"]]
+        self.assertEqual(kinds, sorted(kinds, key=lambda kind: kind != "dir"))
         self.assertEqual(gitmod.browse_file(str(self.repo), "notes.txt"), "note\n")
+
+    def test_browse_shows_build_and_dependency_dirs(self):
+        made = ["dist", "build", "target", "node_modules"]
+        try:
+            for name in made:
+                (self.repo / name).mkdir()
+                (self.repo / name / "x.txt").write_text("x\n", "utf-8")
+            names = [e["name"] for e in gitmod.browse_list(str(self.repo), "")["entries"]]
+            self.assertEqual([name for name in names if name in made], sorted(made))
+            hits = gitmod.browse_search(str(self.repo), "", "x.txt", "name")["matches"]
+            self.assertIn("dist/x.txt", [m["path"] for m in hits])
+        finally:
+            for name in made:
+                shutil.rmtree(self.repo / name)
 
     def test_browse_rejects_path_outside(self):
         with self.assertRaises(gitmod.ApiError):
@@ -628,6 +644,30 @@ class GitOperations(unittest.TestCase):
         self.assertFalse(result["ok"], result)
         self.assertIn("a.txt", result["output"])
         self.assertEqual(git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=self.work), "main")
+
+    def test_commit_detail_keeps_chinese_paths(self):
+        # git show --name-status 默认把非 ASCII 路径加 C 风格引号，取出的路径要能直接看差异。
+        target = self.work / "AKSK组件" / "README.md"
+        target.parent.mkdir()
+        target.write_text("组件说明\n", "utf-8")
+        run(["git", "add", "AKSK组件/README.md"], cwd=self.work)
+        run(["git", "commit", "-qm", "中文路径"], cwd=self.work)
+        sha = git_out("rev-parse", "HEAD", cwd=self.work)
+        detail = gitmod.git_commit_detail(str(self.work), sha)
+        self.assertEqual([p["path"] for p in detail["paths"]], ["AKSK组件/README.md"])
+        result = gitmod.git_revision_diff(str(self.work), sha, detail["paths"][0]["path"])
+        self.assertIn("组件说明", result["text"])
+
+    def test_commit_detail_parses_chinese_rename(self):
+        (self.work / "AKSK组件").mkdir()
+        run(["git", "mv", "a.txt", "AKSK组件/说明.md"], cwd=self.work)
+        run(["git", "commit", "-qm", "中文改名"], cwd=self.work)
+        sha = git_out("rev-parse", "HEAD", cwd=self.work)
+        paths = gitmod.git_commit_detail(str(self.work), sha)["paths"]
+        self.assertEqual(
+            [(p["action"], p["path"], p["copyfrom"]) for p in paths],
+            [("R", "AKSK组件/说明.md", "a.txt")],
+        )
 
     def test_commit_detail_keeps_full_message(self):
         run(["git", "commit", "--allow-empty", "-qm", "标题\n\n正文第一行\n正文第二行"], cwd=self.work)
