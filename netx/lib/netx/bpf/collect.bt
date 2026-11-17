@@ -1,6 +1,7 @@
-// netx 的出网采集：连接、发送字节、关闭。
+// netx 的出网采集：连接、发送字节、内容开头、关闭。
 // 只用 kprobe + argN + uptr：WSL 的内核头文件缺生成文件，访问 tracepoint 的 args-> 会编译失败。
 // 字节数在 kretprobe 里取返回值，短写与非阻塞写才不会多算。
+// 内容只读每条连接的前 8192 字节，单次最多 2048；超过后只计数，不再读缓冲区。
 
 kprobe:__sys_connect
 {
@@ -11,6 +12,7 @@ kprobe:__sys_connect
     $addr = *(uint32 *)uptr($p + 4);
     @conn[pid, arg0] = 1;
     @bytes[pid, arg0] = 0;
+    @cap[pid, arg0] = 0;
     delete(@udp_conn[pid, arg0]);
     printf("%s\tC\t%d\t%d\t%d\t4\t%x\t%d\t%s\n", str($1), pid, uid, arg0, $addr, $port, comm);
   } else if ($fam == 10) {
@@ -21,6 +23,7 @@ kprobe:__sys_connect
     $d = *(uint32 *)uptr($p + 20);
     @conn[pid, arg0] = 1;
     @bytes[pid, arg0] = 0;
+    @cap[pid, arg0] = 0;
     delete(@udp_conn[pid, arg0]);
     printf("%s\tC\t%d\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%s\n", str($1), pid, uid, arg0, $a, $b, $c, $d, $port, comm);
   }
@@ -38,6 +41,7 @@ kprobe:__sys_sendto
       $port = bswap(*(uint16 *)uptr($p + 2));
       $addr = *(uint32 *)uptr($p + 4);
       @udp_conn[pid, arg0] = 1;
+      @cap[pid, arg0] = 0;
       printf("%s\tU\t%d\t%d\t4\t%x\t%d\t%d\t%s\n", str($1), pid, arg0, $addr, $port, arg2, comm);
     } else if ($fam == 10) {
       $port = bswap(*(uint16 *)uptr($p + 2));
@@ -46,7 +50,22 @@ kprobe:__sys_sendto
       $c = *(uint32 *)uptr($p + 16);
       $d = *(uint32 *)uptr($p + 20);
       @udp_conn[pid, arg0] = 1;
+      @cap[pid, arg0] = 0;
       printf("%s\tU\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%d\t%s\n", str($1), pid, arg0, $a, $b, $c, $d, $port, arg2, comm);
+    }
+  }
+  if ((@conn[pid, arg0] != 0 || @udp_conn[pid, arg0] != 0) && @cap[pid, arg0] < 8192) {
+    $room = (uint64)(8192 - @cap[pid, arg0]);
+    $take = arg2;
+    if ($take > 2048) {
+      $take = 2048;
+    }
+    if ($take > $room) {
+      $take = $room;
+    }
+    if ($take > 0) {
+      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
+      @cap[pid, arg0] = @cap[pid, arg0] + $take;
     }
   }
 }
@@ -66,6 +85,20 @@ kretprobe:__sys_sendto
 kprobe:ksys_write
 {
   @pending[pid, tid] = arg0 + 1;
+  if (@conn[pid, arg0] != 0 && @cap[pid, arg0] < 8192) {
+    $room = (uint64)(8192 - @cap[pid, arg0]);
+    $take = arg2;
+    if ($take > 2048) {
+      $take = 2048;
+    }
+    if ($take > $room) {
+      $take = $room;
+    }
+    if ($take > 0) {
+      printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, arg0, nsecs, arg2, buf(uptr(arg1), $take));
+      @cap[pid, arg0] = @cap[pid, arg0] + $take;
+    }
+  }
 }
 
 kretprobe:ksys_write
@@ -80,10 +113,30 @@ kretprobe:ksys_write
   delete(@pending[pid, tid]);
 }
 
-// __x64_sys_* 只有 pt_regs 一个参数；第一个参数在 regs->di（偏移 112）。
+// __x64_sys_* 只有 pt_regs 一个参数；第一个参数在 regs->di（偏移 112），第二个在 si（偏移 120）。
 kprobe:__x64_sys_writev
 {
-  @pending[pid, tid] = *(uint64 *)(arg0 + 112) + 1;
+  $fd = *(uint64 *)(arg0 + 112);
+  @pending[pid, tid] = $fd + 1;
+  if (@conn[pid, $fd] != 0 && @cap[pid, $fd] < 8192) {
+    $iov = *(uint64 *)(arg0 + 120);
+    if ($iov != 0) {
+      $len = (uint64)(*(uint64 *)uptr($iov + 8));
+      $base = (uint64)(*(uint64 *)uptr($iov));
+      $room = (uint64)(8192 - @cap[pid, $fd]);
+      $take = $len;
+      if ($take > 2048) {
+        $take = 2048;
+      }
+      if ($take > $room) {
+        $take = $room;
+      }
+      if ($take > 0) {
+        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, $fd, nsecs, $len, buf(uptr($base), $take));
+        @cap[pid, $fd] = @cap[pid, $fd] + $take;
+      }
+    }
+  }
 }
 
 kretprobe:__x64_sys_writev
@@ -101,6 +154,26 @@ kretprobe:__x64_sys_writev
 kprobe:__sys_sendmsg
 {
   @pending[pid, tid] = arg0 + 1;
+  if (@conn[pid, arg0] != 0 && @cap[pid, arg0] < 8192) {
+    // struct msghdr：msg_iov 在偏移 16，msg_iovlen 在 24；只取第一个 iovec。
+    $iov = *(uint64 *)uptr(arg1 + 16);
+    if ($iov != 0) {
+      $len = (uint64)(*(uint64 *)uptr($iov + 8));
+      $base = (uint64)(*(uint64 *)uptr($iov));
+      $room = (uint64)(8192 - @cap[pid, arg0]);
+      $take = $len;
+      if ($take > 2048) {
+        $take = 2048;
+      }
+      if ($take > $room) {
+        $take = $room;
+      }
+      if ($take > 0) {
+        printf("%s\tP\t%d\t%d\t%llu\t%llu\t%rx\n", str($1), pid, arg0, nsecs, $len, buf(uptr($base), $take));
+        @cap[pid, arg0] = @cap[pid, arg0] + $take;
+      }
+    }
+  }
 }
 
 kretprobe:__sys_sendmsg
@@ -127,6 +200,7 @@ kprobe:__x64_sys_close
     delete(@conn[pid, $fd]);
     delete(@bytes[pid, $fd]);
     delete(@udp_conn[pid, $fd]);
+    delete(@cap[pid, $fd]);
     printf("%s\tK\t%d\t%d\n", str($1), pid, $fd);
   }
 }

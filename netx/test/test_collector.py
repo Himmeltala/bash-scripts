@@ -1,10 +1,12 @@
 """采集器：行事件入库、map 快照、进程退出后的状态。"""
 
+import os
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "netx" / "lib"))
@@ -46,6 +48,27 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(row["bytes_out"], 200)
         self.assertIsNotNone(row["ended"])
         self.assertGreater(collector.status()["last_event_at"], 0)
+
+    def test_feed_payload_line(self):
+        collector = self._collector()
+        raw = b"GET /x HTTP/1.1\r\nHost: c.test\r\n\r\n"
+        self.assertTrue(collector.feed_line("T\tC\t100\t1000\t5\t4\tf39342ac\t443\tcurl"))
+        self.assertTrue(
+            collector.feed_line("T\tP\t100\t5\t1\t%d\t%s" % (len(raw), raw.hex()))
+        )
+        self.assertTrue(collector.feed_line("T\tK\t100\t5"))
+        detail = self.db.detail(self.db.flows(minutes=None)[0]["id"])
+        self.assertEqual(detail["host"], "c.test")
+        self.assertFalse(collector.feed_line("T\tP\t100\t5\t3\tzz"))
+
+    def test_bpftrace_env_limits(self):
+        collector = self._collector()
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BPFTRACE_MAX_STRLEN", None)
+            os.environ.pop("BPFTRACE_MAX_MAP_KEYS", None)
+            env = collector._bpftrace_env()
+        self.assertEqual(env["BPFTRACE_MAX_STRLEN"], "2048")
+        self.assertEqual(env["BPFTRACE_MAX_MAP_KEYS"], "262144")
 
     def test_process_lifecycle(self):
         code = (

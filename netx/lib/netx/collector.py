@@ -99,6 +99,13 @@ class Collector:
         except Exception:
             pass
 
+    def _bpftrace_env(self) -> dict:
+        """map 默认只放 4096 个键，连接一多就会悄悄停止计数；字符串上限要给到单次读取的长度。"""
+        env = dict(os.environ)
+        env.setdefault("BPFTRACE_MAX_MAP_KEYS", "262144")
+        env.setdefault("BPFTRACE_MAX_STRLEN", "2048")
+        return env
+
     def _run(self) -> None:
         self._set_state("starting")
         paths.ensure_dir(self.log_file.parent)
@@ -108,9 +115,7 @@ class Collector:
                 paths._chown(self.log_file)
             except OSError:
                 log = subprocess.DEVNULL
-            # bpftrace 的 map 默认只放 4096 个键，连接一多就会悄悄停止计数。
-            env = dict(os.environ)
-            env.setdefault("BPFTRACE_MAX_MAP_KEYS", "262144")
+            env = self._bpftrace_env()
             try:
                 proc = subprocess.Popen(
                     self.command,
