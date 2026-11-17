@@ -2,7 +2,9 @@
 import { computed, ref } from 'vue'
 import { EmptyState } from '@bash-scripts/web-shared/ui'
 import { formatBytes } from '@bash-scripts/web-shared/format'
-import { formatDuration, formatTarget, formatTime } from '../utils/format'
+import { formatDuration, formatTarget, formatTime, kindLabel } from '../utils/format'
+
+const emit = defineEmits(['open'])
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -12,13 +14,16 @@ const props = defineProps({
 })
 
 const headers = [
-  { title: '开始', key: 'started', width: 156 },
-  { title: '进程', key: 'comm', width: 160 },
-  { title: 'PID', key: 'pid', align: 'end', width: 96 },
-  { title: '目标', key: 'dst_ip', width: 240 },
-  { title: '发送', key: 'bytes_out', align: 'end', width: 110 },
-  { title: '时长', key: 'duration', align: 'end', width: 100 },
-  { title: '状态', key: 'ended', width: 96, sortable: false },
+  { title: '开始', key: 'started', width: 156, nowrap: true },
+  { title: '进程', key: 'comm', width: 150, nowrap: true },
+  { title: 'PID', key: 'pid', align: 'end', width: 90, nowrap: true },
+  { title: '目标', key: 'dst_ip', width: 210, nowrap: true },
+  { title: '类型', key: 'detail_kind', width: 80, nowrap: true },
+  { title: '主机/URL', key: 'detail_url', width: 240, nowrap: true },
+  { title: '发送', key: 'bytes_out', align: 'end', width: 100, nowrap: true },
+  { title: '时长', key: 'duration', align: 'end', width: 96, nowrap: true },
+  { title: '状态', key: 'ended', width: 92, sortable: false, nowrap: true },
+  { title: '', key: 'actions', width: 56, sortable: false, nowrap: true },
 ]
 
 const sortBy = ref([{ key: 'started', order: 'desc' }])
@@ -62,6 +67,23 @@ const bytes = (value) =>
       <template #[`item.pid`]="{ item }">{{ item.pid }}</template>
       <template #[`item.dst_ip`]="{ item }">
         <span class="mono">{{ formatTarget(item) }}</span>
+      </template>
+      <template #[`item.detail_kind`]="{ item }">
+        <span class="kind">{{ kindLabel(item.detail_kind) }}</span>
+      </template>
+      <template #[`item.detail_url`]="{ item }">
+        <span class="host" :title="item.detail_url || item.detail_host || ''">
+          {{ item.detail_url || item.detail_host || '—' }}
+        </span>
+      </template>
+      <template #[`item.actions`]="{ item }">
+        <v-btn
+          icon="mdi-information-outline"
+          size="x-small"
+          variant="text"
+          title="查看内容"
+          @click.stop="emit('open', item)"
+        />
       </template>
       <template #[`item.bytes_out`]="{ item }">{{ bytes(item.bytes_out) }}</template>
       <template #[`item.duration`]="{ item }">{{ formatDuration(item.duration) }}</template>
@@ -123,5 +145,17 @@ const bytes = (value) =>
 .mono {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.86em;
+}
+.kind {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.8rem;
+}
+.host {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 </style>

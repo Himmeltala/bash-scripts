@@ -93,15 +93,19 @@
           :total="rows.length"
           :loading="loading"
           :range-label="rangeLabel"
+          @open="openDetail"
         />
       </div>
     </v-main>
+
+    <FlowDetailDialog v-model="detailOpen" :flow-id="detailId" />
   </v-app>
 </template>
 
 <script setup>
 import { computed, ref, shallowRef } from 'vue'
 import FlowsTable from './components/FlowsTable.vue'
+import FlowDetailDialog from './components/FlowDetailDialog.vue'
 import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { useFlows } from './composables/useFlows'
@@ -125,6 +129,13 @@ const STATES = {
 const drawer = ref(true)
 const minutes = ref(60)
 const search = ref('')
+const detailOpen = ref(false)
+const detailId = ref(null)
+
+function openDetail(item) {
+  detailId.value = item.id
+  detailOpen.value = true
+}
 
 // 左侧栏宽度随分隔条拖动改变，双击还原；按工具名下记着，下次打开接着用。
 const viewport = shallowRef(document.documentElement)
@@ -168,9 +179,17 @@ const filtered = computed(() => {
   if (!query) return rows.value
   return rows.value.filter((row) => {
     const target = row.dst_ip ? row.dst_ip + ':' + row.dst_port : ''
-    return [row.comm, row.exe, row.pid, row.dst_ip, target].some((value) =>
-      String(value || '').toLowerCase().includes(query),
-    )
+    return [
+      row.comm,
+      row.exe,
+      row.pid,
+      row.dst_ip,
+      target,
+      row.detail_host,
+      row.detail_url,
+      row.detail_sni,
+      row.detail_dns_name,
+    ].some((value) => String(value || '').toLowerCase().includes(query))
   })
 })
 </script>

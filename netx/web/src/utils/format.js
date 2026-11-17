@@ -20,6 +20,18 @@ export function formatDuration(sec) {
   )
 }
 
+const KIND_LABELS = {
+  http: 'HTTP',
+  tls: 'TLS',
+  dns: 'DNS',
+  text: '文本',
+  binary: '二进制',
+}
+
+export function kindLabel(kind) {
+  return KIND_LABELS[kind] || '—'
+}
+
 export function formatTarget(row) {
   const host = String(row?.dst_ip || '')
   const port = row?.dst_port
