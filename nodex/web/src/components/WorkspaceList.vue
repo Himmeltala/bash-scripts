@@ -7,6 +7,7 @@
     :dirs="loadDirs"
     :save-alias="saveAlias"
     :texts="texts"
+    storage-key="nodex-ws-collapsed"
     @groups-change="$emit('groups-change', $event)"
   />
 </template>

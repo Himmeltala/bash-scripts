@@ -240,6 +240,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import DirectoryPicker from '../commons/DirectoryPicker/index.js'
 import FloatingDialog from '../commons/FloatingDialog.vue'
 import { copyText } from '../../utils/commons/clipboard.js'
@@ -260,6 +261,8 @@ const props = defineProps({
   texts: { type: Object, default: () => ({}) },
   // 左侧分组结构：一张平铺的节点表，同一父级下的先后按数组位置。
   groups: { type: Array, default: () => [] },
+  // 分组收起状态记在这个本地键下；不给就只在本次打开有效。
+  storageKey: { type: String, default: '' },
 })
 
 const DEFAULTS = {
@@ -290,7 +293,13 @@ const labels = computed(() => ({ ...DEFAULTS, ...props.texts }))
 const emit = defineEmits(['select', 'add', 'remove', 'changed', 'notice', 'groups-change'])
 
 // 分组结构只决定左侧怎么摆，服务端登记的工作区列表与默认选中都不动。
-const collapsedIds = ref(new Set())
+// 收起的那些记在本地，下次打开还是这个样子。
+const collapsedStore = props.storageKey
+  ? useLocalStorage(props.storageKey, [], { writeDefaults: false })
+  : ref([])
+const collapsedIds = computed(
+  () => new Set(Array.isArray(collapsedStore.value) ? collapsedStore.value : []),
+)
 const dragItem = ref(null)
 const dropTarget = ref(null)
 
@@ -322,6 +331,10 @@ function newGroupId() {
   return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 }
 
+function setCollapsed(ids) {
+  collapsedStore.value = [...ids]
+}
+
 function rowClick(row) {
   if (row.kind !== 'group') {
     emit('select', row.id)
@@ -330,14 +343,14 @@ function rowClick(row) {
   const next = new Set(collapsedIds.value)
   if (next.has(row.id)) next.delete(row.id)
   else next.add(row.id)
-  collapsedIds.value = next
+  setCollapsed(next)
 }
 
 function expandGroup(id) {
   if (!collapsedIds.value.has(id)) return
   const next = new Set(collapsedIds.value)
   next.delete(id)
-  collapsedIds.value = next
+  setCollapsed(next)
 }
 
 function rowClass(row) {

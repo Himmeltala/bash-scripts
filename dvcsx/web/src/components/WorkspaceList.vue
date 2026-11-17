@@ -7,6 +7,7 @@
     :dirs="loadDirs"
     :save-alias="saveAlias"
     :texts="texts"
+    storage-key="dvcsx-ws-collapsed"
     @groups-change="$emit('groups-change', $event)"
   >
     <template #title-extra="{ ws }">
