@@ -1,0 +1,240 @@
+<template>
+  <v-app>
+    <v-app-bar density="comfortable" flat border>
+      <v-app-bar-nav-icon
+        :title="drawer ? '收起筛选' : '展开筛选'"
+        @click="drawer = !drawer"
+      />
+      <v-app-bar-title>
+        <span class="brand">netx</span>
+      </v-app-bar-title>
+      <v-chip
+        size="small"
+        variant="tonal"
+        :color="state.color"
+        :prepend-icon="state.icon"
+        class="state-chip"
+      >
+        {{ state.text }}
+      </v-chip>
+      <v-chip size="small" variant="text" prepend-icon="mdi-swap-horizontal">
+        {{ status.flows || 0 }} 条记录
+      </v-chip>
+      <v-spacer />
+      <v-btn
+        :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+        :title="dark ? '切到浅色' : '切到深色'"
+        variant="text"
+        @click="toggleTheme"
+      />
+    </v-app-bar>
+
+    <v-navigation-drawer v-model="drawer" :width="navWidth">
+      <div class="nav">
+        <div class="nav-body">
+          <div class="section">
+            <div class="section-title">筛选</div>
+            <v-select
+              v-model="minutes"
+              :items="RANGES"
+              item-title="label"
+              item-value="value"
+              label="时间范围"
+              density="compact"
+              variant="outlined"
+              hide-details
+            />
+            <v-text-field
+              v-model="search"
+              label="进程、PID 或目标地址"
+              prepend-inner-icon="mdi-magnify"
+              density="compact"
+              variant="outlined"
+              clearable
+              hide-details
+              class="field"
+            />
+            <p class="hint">搜索只过滤当前这张表，不影响采集。</p>
+          </div>
+          <v-divider />
+          <div class="section">
+            <div class="section-title">采集</div>
+            <div class="meta"><span>最后事件</span><b>{{ lastEvent }}</b></div>
+            <div class="meta"><span>推送</span><b :class="{ bad: !!streamError }">{{ streamText }}</b></div>
+            <div class="meta"><span>记录窗口</span><b>{{ rangeLabel }}</b></div>
+          </div>
+        </div>
+        <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
+      </div>
+    </v-navigation-drawer>
+
+    <v-main>
+      <div class="page">
+        <v-alert
+          v-if="status.error"
+          type="error"
+          variant="tonal"
+          density="compact"
+          class="notice"
+        >
+          {{ status.error }}
+        </v-alert>
+        <v-alert
+          v-else-if="streamError"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="notice"
+        >
+          {{ streamError }}
+        </v-alert>
+        <FlowsTable
+          :rows="filtered"
+          :total="rows.length"
+          :loading="loading"
+          :range-label="rangeLabel"
+        />
+      </div>
+    </v-main>
+  </v-app>
+</template>
+
+<script setup>
+import { computed, ref, shallowRef } from 'vue'
+import FlowsTable from './components/FlowsTable.vue'
+import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
+import { useThemeToggle } from '@bash-scripts/web-shared/theme'
+import { useFlows } from './composables/useFlows'
+import { rememberTheme } from './plugins/vuetify'
+import { formatTime } from './utils/format'
+
+const RANGES = [
+  { label: '最近 15 分钟', value: 15 },
+  { label: '最近 1 小时', value: 60 },
+  { label: '最近 6 小时', value: 360 },
+  { label: '最近 24 小时', value: 1440 },
+]
+
+const STATES = {
+  running: { text: '采集运行中', color: 'success', icon: 'mdi-record-circle-outline' },
+  starting: { text: '采集启动中', color: 'warning', icon: 'mdi-progress-clock' },
+  stopped: { text: '采集未运行', color: 'warning', icon: 'mdi-stop-circle-outline' },
+  error: { text: '采集异常', color: 'error', icon: 'mdi-alert-circle-outline' },
+}
+
+const drawer = ref(true)
+const minutes = ref(60)
+const search = ref('')
+
+// 左侧栏宽度随分隔条拖动改变，双击还原；按工具名下记着，下次打开接着用。
+const viewport = shallowRef(document.documentElement)
+const { size: navWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
+  area: viewport,
+  initial: 248,
+  min: 200,
+  rightMin: 520,
+  persist: 'netx.nav-width',
+})
+
+const { dark, toggle: toggleTheme } = useThemeToggle({
+  storageKey: 'netx-theme',
+  rememberTheme,
+  followSystem: true,
+})
+
+const { rows, status, loading, connected, error: streamError } = useFlows(minutes)
+
+const state = computed(() => {
+  const item = STATES[status.value.state]
+  if (item) return item
+  return {
+    text: '采集' + (status.value.state || '未知'),
+    color: 'warning',
+    icon: 'mdi-help-circle-outline',
+  }
+})
+
+const lastEvent = computed(() => formatTime(status.value.last_event_at))
+const streamText = computed(() => {
+  if (streamError.value) return '已断开'
+  return connected.value ? '已连接' : '连接中'
+})
+const rangeLabel = computed(
+  () => (RANGES.find((item) => item.value === minutes.value) || RANGES[1]).label,
+)
+
+const filtered = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  if (!query) return rows.value
+  return rows.value.filter((row) => {
+    const target = row.dst_ip ? row.dst_ip + ':' + row.dst_port : ''
+    return [row.comm, row.exe, row.pid, row.dst_ip, target].some((value) =>
+      String(value || '').toLowerCase().includes(query),
+    )
+  })
+})
+</script>
+
+<style scoped>
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.state-chip {
+  margin-inline-end: 8px;
+}
+.nav {
+  display: flex;
+  height: 100%;
+}
+.nav-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+.section {
+  padding: 16px;
+}
+.section-title {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.field {
+  margin-top: 12px;
+}
+.hint {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.78rem;
+  margin: 8px 0 0;
+}
+.meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.82rem;
+  padding: 4px 0;
+}
+.meta b {
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 500;
+  text-align: right;
+}
+.meta b.bad {
+  color: rgb(var(--v-theme-error));
+}
+.page {
+  height: calc(100dvh - 64px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.notice {
+  flex: 0 0 auto;
+}
+</style>

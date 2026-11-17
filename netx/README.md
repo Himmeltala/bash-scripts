@@ -26,11 +26,22 @@ netx status                   采集器状态
 sudo apt install bpftrace
 ```
 
+## 网页界面
+
+页面源码在 `netx/web`，与 nodex、jvmx、dvcsx、llmx 共用 `lib/web-shared` 的主题、提示与构建配置，Vite 打包到 `netx/lib/netx/static`。仓库里带着构建产物，改页面后重新构建：
+
+```bash
+npm --prefix netx/web ci
+npm --prefix netx/web run build
+```
+
+看板通过 `/__netx/api/flows/stream` 收 SSE 推送，左侧可选时间范围，表格可按进程、PID 或目标地址搜索；`/__netx/api/flows` 与 `/__netx/api/status` 仍可给脚本用。构建前端需要 `node` 与 `npm`。
+
 ## 记录什么
 
 - 连接：时间、PID、UID、进程名、可执行文件、地址族、目标 IP 与端口、发送字节、持续时长。TCP 与 UDP 都记，没 connect 的 `sendto` 也能按目的地址归并。
 - 进程退出前最后一批字节在 bpftrace 的 map 里，等下一次快照（2 秒）补上后再结束这条 flow。
-- 网页每 3 秒拉一次，接口是 `/__netx/api/flows`、`/__netx/api/status`，另有 `/__netx/api/flows/stream` 的 SSE。
+- 网页通过 `/__netx/api/flows/stream` 每 3 秒收一次 SSE 推送，断线由浏览器自己重连。
 
 数据在 `~/.cache/netx/netx.db`（权限 0600）。用 sudo 跑时按 `SUDO_UID` 落到调用者家目录，普通用户仍能读。
 
