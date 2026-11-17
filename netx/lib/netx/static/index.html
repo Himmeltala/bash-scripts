@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>netx 出网记录</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1f2328; --muted: #6b7280; --line: #e5e7eb; --bg: #fff; --head: #f6f7f9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e6e6e6; --muted: #9aa4b2; --line: #333a45; --bg: #14181f; --head: #1c222b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px 20px; font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--fg); background: var(--bg); }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: baseline; margin-bottom: 12px; }
+  h1 { font-size: 18px; margin: 0; }
+  .status { color: var(--muted); font-size: 13px; }
+  .status b { color: var(--fg); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { background: var(--head); font-weight: 600; position: sticky; top: 0; }
+  td.target { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  td.num { text-align: right; }
+  .empty { color: var(--muted); padding: 24px 0; }
+  .error { color: #c62828; }
+</style>
+</head>
+<body>
+<header>
+  <h1>netx 出网记录</h1>
+  <div class="status" id="status">连接中…</div>
+</header>
+<table>
+  <thead>
+    <tr>
+      <th>开始</th><th>进程</th><th>PID</th><th>目标</th><th class="num">发送</th><th class="num">时长</th><th>状态</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="empty" id="empty" hidden>最近一小时没有出网记录。</div>
+
+<script>
+const API = '/__netx/api'
+const rowsEl = document.getElementById('rows')
+const statusEl = document.getElementById('status')
+const emptyEl = document.getElementById('empty')
+
+function bytes(n) {
+  if (n < 1024) return n + ' B'
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB'
+  return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB'
+}
+function duration(sec) {
+  sec = Math.max(0, Math.round(sec))
+  if (sec < 60) return sec + 's'
+  if (sec < 3600) return Math.floor(sec / 60) + 'm' + String(sec % 60).padStart(2, '0') + 's'
+  return Math.floor(sec / 3600) + 'h' + String(Math.floor(sec % 3600 / 60)).padStart(2, '0') + 'm'
+}
+function time(ts) {
+  return new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false })
+}
+function cell(text, cls) {
+  const td = document.createElement('td')
+  td.textContent = text
+  if (cls) td.className = cls
+  return td
+}
+
+async function refresh() {
+  try {
+    const [flowsRes, statusRes] = await Promise.all([
+      fetch(API + '/flows?minutes=60&limit=500'),
+      fetch(API + '/status'),
+    ])
+    if (!flowsRes.ok || !statusRes.ok) throw new Error('接口返回 ' + flowsRes.status)
+    const data = await flowsRes.json()
+    const status = await statusRes.json()
+    const rows = data.flows || []
+
+    rowsEl.textContent = ''
+    for (const row of rows) {
+      const tr = document.createElement('tr')
+      tr.append(
+        cell(time(row.started)),
+        cell(row.comm || '-'),
+        cell(String(row.pid), 'num'),
+        cell(row.dst_ip + ':' + row.dst_port, 'target'),
+        cell(bytes(row.bytes_out), 'num'),
+        cell(duration(row.duration), 'num'),
+        cell(row.ended ? '已结束' : '进行中'),
+      )
+      rowsEl.append(tr)
+    }
+    emptyEl.hidden = rows.length > 0
+
+    const state = status.state === 'running' ? '采集运行中' : status.state === 'error' ? '采集异常' : '采集未运行'
+    const last = status.last_event_at ? time(status.last_event_at) : '—'
+    statusEl.innerHTML = '<b>' + state + '</b> · 记录 ' + status.flows + ' 条 · 最后事件 ' + last
+    statusEl.className = 'status' + (status.error ? ' error' : '')
+    if (status.error) statusEl.textContent += ' · ' + status.error
+  } catch (err) {
+    statusEl.textContent = '刷新失败：' + err.message
+    statusEl.className = 'status error'
+  }
+}
+
+refresh()
+setInterval(refresh, 3000)
+</script>
+</body>
+</html>

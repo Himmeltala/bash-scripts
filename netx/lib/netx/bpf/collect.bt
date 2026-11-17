@@ -1,0 +1,144 @@
+// netx 的出网采集：连接、发送字节、关闭。
+// 只用 kprobe + argN + uptr：WSL 的内核头文件缺生成文件，访问 tracepoint 的 args-> 会编译失败。
+// 字节数在 kretprobe 里取返回值，短写与非阻塞写才不会多算。
+
+kprobe:__sys_connect
+{
+  $p = arg1;
+  $fam = *(uint16 *)uptr($p);
+  if ($fam == 2) {
+    $port = bswap(*(uint16 *)uptr($p + 2));
+    $addr = *(uint32 *)uptr($p + 4);
+    @conn[pid, arg0] = 1;
+    @bytes[pid, arg0] = 0;
+    delete(@udp_conn[pid, arg0]);
+    printf("%s\tC\t%d\t%d\t%d\t4\t%x\t%d\t%s\n", str($1), pid, uid, arg0, $addr, $port, comm);
+  } else if ($fam == 10) {
+    $port = bswap(*(uint16 *)uptr($p + 2));
+    $a = *(uint32 *)uptr($p + 8);
+    $b = *(uint32 *)uptr($p + 12);
+    $c = *(uint32 *)uptr($p + 16);
+    $d = *(uint32 *)uptr($p + 20);
+    @conn[pid, arg0] = 1;
+    @bytes[pid, arg0] = 0;
+    delete(@udp_conn[pid, arg0]);
+    printf("%s\tC\t%d\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%s\n", str($1), pid, uid, arg0, $a, $b, $c, $d, $port, comm);
+  }
+}
+
+kprobe:__sys_sendto
+{
+  if (@conn[pid, arg0] != 0) {
+    @pending[pid, tid] = arg0 + 1;
+  } else if (arg4 != 0) {
+    // 没 connect 的 UDP：目的地址就在 sendto 的参数里，数据报要么整段发出要么失败，按请求长度记。
+    $p = arg4;
+    $fam = *(uint16 *)uptr($p);
+    if ($fam == 2) {
+      $port = bswap(*(uint16 *)uptr($p + 2));
+      $addr = *(uint32 *)uptr($p + 4);
+      @udp_conn[pid, arg0] = 1;
+      printf("%s\tU\t%d\t%d\t4\t%x\t%d\t%d\t%s\n", str($1), pid, arg0, $addr, $port, arg2, comm);
+    } else if ($fam == 10) {
+      $port = bswap(*(uint16 *)uptr($p + 2));
+      $a = *(uint32 *)uptr($p + 8);
+      $b = *(uint32 *)uptr($p + 12);
+      $c = *(uint32 *)uptr($p + 16);
+      $d = *(uint32 *)uptr($p + 20);
+      @udp_conn[pid, arg0] = 1;
+      printf("%s\tU\t%d\t%d\t6\t%x:%x:%x:%x\t%d\t%d\t%s\n", str($1), pid, arg0, $a, $b, $c, $d, $port, arg2, comm);
+    }
+  }
+}
+
+kretprobe:__sys_sendto
+{
+  $v = @pending[pid, tid];
+  if ($v > 0 && retval > 0) {
+    $fd = $v - 1;
+    if (@conn[pid, $fd] != 0) {
+      @bytes[pid, $fd] = @bytes[pid, $fd] + retval;
+    }
+  }
+  delete(@pending[pid, tid]);
+}
+
+kprobe:ksys_write
+{
+  @pending[pid, tid] = arg0 + 1;
+}
+
+kretprobe:ksys_write
+{
+  $v = @pending[pid, tid];
+  if ($v > 0 && retval > 0) {
+    $fd = $v - 1;
+    if (@conn[pid, $fd] != 0) {
+      @bytes[pid, $fd] = @bytes[pid, $fd] + retval;
+    }
+  }
+  delete(@pending[pid, tid]);
+}
+
+// __x64_sys_* 只有 pt_regs 一个参数；第一个参数在 regs->di（偏移 112）。
+kprobe:__x64_sys_writev
+{
+  @pending[pid, tid] = *(uint64 *)(arg0 + 112) + 1;
+}
+
+kretprobe:__x64_sys_writev
+{
+  $v = @pending[pid, tid];
+  if ($v > 0 && retval > 0) {
+    $fd = $v - 1;
+    if (@conn[pid, $fd] != 0) {
+      @bytes[pid, $fd] = @bytes[pid, $fd] + retval;
+    }
+  }
+  delete(@pending[pid, tid]);
+}
+
+kprobe:__sys_sendmsg
+{
+  @pending[pid, tid] = arg0 + 1;
+}
+
+kretprobe:__sys_sendmsg
+{
+  $v = @pending[pid, tid];
+  if ($v > 0 && retval > 0) {
+    $fd = $v - 1;
+    if (@conn[pid, $fd] != 0) {
+      @bytes[pid, $fd] = @bytes[pid, $fd] + retval;
+    }
+  }
+  delete(@pending[pid, tid]);
+}
+
+// __x64_sys_close 的函数参数只有 pt_regs；fd 在 regs->di（x86_64 偏移 112）。
+kprobe:__x64_sys_close
+{
+  $fd = *(uint64 *)(arg0 + 112);
+  $b = @bytes[pid, $fd];
+  if ($b > 0) {
+    printf("%s\tB\t%d\t%d\t%d\n", str($1), pid, $fd, $b);
+  }
+  if (@conn[pid, $fd] != 0 || @udp_conn[pid, $fd] != 0) {
+    delete(@conn[pid, $fd]);
+    delete(@bytes[pid, $fd]);
+    delete(@udp_conn[pid, $fd]);
+    printf("%s\tK\t%d\t%d\n", str($1), pid, $fd);
+  }
+}
+
+// 进程直接退出不走 close 系统调用；带上 tid，由 Python 判断是线程退出还是整个进程没了。
+tracepoint:sched:sched_process_exit
+{
+  printf("%s\tE\t%d\t%d\n", str($1), pid, tid);
+}
+
+interval:s:2
+{
+  print(@bytes);
+  clear(@bytes);
+}
