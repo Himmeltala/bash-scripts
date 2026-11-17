@@ -78,6 +78,15 @@ def parse(line: str) -> dict | None:
             return {"type": "close", "pid": int(parts[1]), "fd": int(parts[2])}
         if kind == "E" and len(parts) == 3:
             return {"type": "exit", "pid": int(parts[1]), "tid": int(parts[2])}
+        if kind == "P" and len(parts) == 6:
+            return {
+                "type": "payload",
+                "pid": int(parts[1]),
+                "fd": int(parts[2]),
+                "nsecs": int(parts[3]),
+                "length": int(parts[4]),
+                "data": bytes.fromhex("".join(parts[5].split())),
+            }
     except (ValueError, OSError):
         return None
     return None
