@@ -126,6 +126,13 @@ class WebTest(unittest.TestCase):
         status, _ = self._post("/__netx/api/clean", {})
         self.assertEqual(status, 400)
 
+    def test_clean_dry_run_keeps_rows(self):
+        self.db.end_flow(self.flow_id, time.time())
+        status, body = self._post("/__netx/api/clean", {"all": True, "dry_run": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["flows"], 1)
+        self.assertEqual(self.db.count_flows(), 1)
+
     def test_post_other_route_still_rejected(self):
         status, _ = self._post("/__netx/api/status", {})
         self.assertEqual(status, 405)

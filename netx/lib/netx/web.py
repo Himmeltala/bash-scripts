@@ -111,8 +111,9 @@ class Handler(SSEMixin, WebHandler):
     def _clean(self, body: dict) -> dict:
         if not self._is_local():
             raise ApiError(403, "清理只允许本机操作，其他机器要显式放开写操作")
+        dry_run = bool(body.get("dry_run"))
         if body.get("all"):
-            return self.db.clean(all_ended=True)
+            return self.db.clean(all_ended=True, dry_run=dry_run)
         if body.get("before_days") is not None:
             try:
                 days = float(body["before_days"])
@@ -120,7 +121,7 @@ class Handler(SSEMixin, WebHandler):
                 raise ApiError(400, "before_days 要是数字")
             if days <= 0:
                 raise ApiError(400, "before_days 要大于 0")
-            return self.db.clean(before_ts=time.time() - days * 86400)
+            return self.db.clean(before_ts=time.time() - days * 86400, dry_run=dry_run)
         raise ApiError(400, "要给 all 或 before_days")
 
     def _dispatch(self, method, route, query, body):

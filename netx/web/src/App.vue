@@ -63,6 +63,22 @@
             <div class="meta"><span>推送</span><b :class="{ bad: !!streamError }">{{ streamText }}</b></div>
             <div class="meta"><span>记录窗口</span><b>{{ rangeLabel }}</b></div>
           </div>
+          <v-divider />
+          <div class="section">
+            <div class="section-title">数据</div>
+            <div class="meta"><span>数据库占用</span><b>{{ dbSize }}</b></div>
+            <div class="meta"><span>连接 / 详情</span><b>{{ flowCount }}</b></div>
+            <v-btn
+              class="clean-btn"
+              size="small"
+              variant="tonal"
+              block
+              prepend-icon="mdi-delete-sweep-outline"
+              @click="cleanupOpen = true"
+            >
+              清理数据
+            </v-btn>
+          </div>
         </div>
         <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
       </div>
@@ -99,16 +115,26 @@
     </v-main>
 
     <FlowDetailDialog v-model="detailOpen" :flow-id="detailId" />
+    <CleanupDialog
+      v-model="cleanupOpen"
+      @done="refreshSummary"
+      @notice="(event) => toast(event.text, event.color)"
+    />
+    <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
   </v-app>
 </template>
 
 <script setup>
-import { computed, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref, shallowRef } from 'vue'
 import FlowsTable from './components/FlowsTable.vue'
 import FlowDetailDialog from './components/FlowDetailDialog.vue'
+import CleanupDialog from './components/CleanupDialog.vue'
 import { SplitHandle, useSplitPane } from '@bash-scripts/web-shared'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
+import { formatBytes } from '@bash-scripts/web-shared/format'
+import { ToastHost, useToast } from '@bash-scripts/web-shared/ui'
 import { useFlows } from './composables/useFlows'
+import { summary as fetchSummary } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
 import { formatTime } from './utils/format'
 
@@ -131,11 +157,38 @@ const minutes = ref(60)
 const search = ref('')
 const detailOpen = ref(false)
 const detailId = ref(null)
+const cleanupOpen = ref(false)
+const summaryInfo = ref(null)
+const { snack, toast } = useToast()
 
 function openDetail(item) {
   detailId.value = item.id
   detailOpen.value = true
 }
+
+async function refreshSummary() {
+  try {
+    summaryInfo.value = await fetchSummary()
+  } catch (err) {
+    // 侧栏摘要拿不到不影响主列表，留空即可。
+  }
+}
+
+onMounted(refreshSummary)
+
+const dbSize = computed(() =>
+  summaryInfo.value
+    ? formatBytes(summaryInfo.value.db_bytes, {
+        units: ['B', 'KB', 'MB', 'GB'],
+        precision: [0, 1, 2, 2],
+      })
+    : '—',
+)
+const flowCount = computed(() =>
+  summaryInfo.value
+    ? summaryInfo.value.flow_count + ' / ' + summaryInfo.value.detail_count
+    : '—',
+)
 
 // 左侧栏宽度随分隔条拖动改变，双击还原；按工具名下记着，下次打开接着用。
 const viewport = shallowRef(document.documentElement)
@@ -255,5 +308,8 @@ const filtered = computed(() => {
 }
 .notice {
   flex: 0 0 auto;
+}
+.clean-btn {
+  margin-top: 10px;
 }
 </style>
