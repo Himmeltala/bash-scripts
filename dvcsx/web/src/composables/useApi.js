@@ -32,8 +32,11 @@ export const api = {
   setAlias: (ws, alias) => call('POST', '/alias', { ws, alias }),
   saveGroups: (nodes) => call('POST', '/groups', { nodes }),
   changes: (ws) => call('GET', `/changes?ws=${encodeParam(ws)}`),
-  diff: (ws, path, item = '', full = false) =>
-    call('GET', `/diff?ws=${encodeParam(ws)}&path=${encodeParam(path)}&item=${encodeParam(item)}&full=${full ? 1 : 0}`),
+  diff: (ws, path, item = '', full = false, scope = 'worktree') =>
+    call(
+      'GET',
+      `/diff?ws=${encodeParam(ws)}&path=${encodeParam(path)}&item=${encodeParam(item)}&full=${full ? 1 : 0}&scope=${encodeParam(scope)}`
+    ),
   log: (ws, limit = 50, skip = 0, sync = true, allRefs = true) =>
     call(
       'GET',
@@ -55,6 +58,9 @@ export const api = {
   // 直接交给浏览器下；目录由后端现场压成 zip。
   downloadUrl: (ws, path) => `${PREFIX}/download?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,
   save: (ws, path, text) => call('POST', '/save', { ws, path, text }),
+  stage: (ws, paths) => call('POST', '/stage', { ws, paths }),
+  unstage: (ws, paths) => call('POST', '/unstage', { ws, paths }),
+  svnAdd: (ws, paths) => call('POST', '/svn-add', { ws, paths }),
   mkdir: (ws, dir, name) => call('POST', '/mkdir', { ws, dir, name }),
   newFile: (ws, dir, name) => call('POST', '/newfile', { ws, dir, name }),
   renameEntry: (ws, path, name) => call('POST', '/rename', { ws, path, name }),

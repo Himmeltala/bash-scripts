@@ -58,55 +58,92 @@
     <div ref="splitRef" class="split" :class="{ resizing }">
       <aside class="files" :style="{ '--list-width': `${listWidth}px` }">
         <p v-if="!loading && !files.length" class="none">工作副本是干净的，没有未提交的变更。</p>
-        <ul>
-          <li
-            v-for="row in rows"
-            :key="row.kind + ':' + row.path"
-            class="item"
-            :class="{ active: row.kind === 'file' && selected && selected.path === row.path }"
-            :style="{ paddingLeft: 8 + row.depth * 16 + 'px' }"
-            :title="row.kind === 'dir' ? row.path : null"
-            @click="row.kind === 'dir' ? toggleDir(row.path) : pick(row.file)"
-          >
-            <template v-if="row.kind === 'dir'">
-              <v-icon size="16" class="chev">
-                {{ collapsedDirs[row.path] ? 'mdi-chevron-right' : 'mdi-chevron-down' }}
-              </v-icon>
-              <v-icon size="16" class="dir-icon">
-                {{ collapsedDirs[row.path] ? 'mdi-folder-outline' : 'mdi-folder-open-outline' }}
-              </v-icon>
-              <span class="dir-name" :title="row.path">{{ row.name }}</span>
-              <span class="dir-count">{{ row.count }}</span>
-            </template>
-            <template v-else>
-              <span class="letter" :style="{ color: tone(row.file) }">
-                {{ statusOf(row.file.item).letter }}
-              </span>
-              <v-icon
-                size="16"
-                class="ficon"
-                :style="iconOf(row.file).color ? { color: iconOf(row.file).color } : null"
-              >
-                {{ iconOf(row.file).icon }}
-              </v-icon>
-              <div class="names">
-                <div class="name mono" :title="row.path">{{ row.name }}</div>
-                <div v-if="mode === 'flat' && dirName(row.path)" class="dir mono" :title="row.path">
-                  {{ dirName(row.path) }}
+        <div v-for="group in shownGroups" :key="group.key" class="group">
+          <div class="group-head">
+            <span class="group-title">{{ group.title }}</span>
+            <span class="count">{{ groupList(group.key).length }}</span>
+            <v-spacer />
+            <v-btn
+              v-if="group.action"
+              size="x-small"
+              variant="text"
+              :prepend-icon="group.icon"
+              :loading="acting === groupKey(group.key)"
+              :disabled="!groupList(group.key).length"
+              @click="actGroup(group)"
+            >
+              {{ group.action }}
+            </v-btn>
+          </div>
+          <ul>
+            <li
+              v-for="row in rowsOf(group.key)"
+              :key="row.kind + ':' + row.path"
+              class="item"
+              :class="{
+                active:
+                  row.kind === 'file' &&
+                  selected &&
+                  selected.group === group.key &&
+                  selected.path === row.path,
+              }"
+              :style="{ paddingLeft: 8 + row.depth * 16 + 'px' }"
+              :title="row.kind === 'dir' ? row.path : null"
+              @click="
+                row.kind === 'dir' ? toggleDir(group.key, row.path) : pick(row.file, group.key)
+              "
+            >
+              <template v-if="row.kind === 'dir'">
+                <v-icon size="16" class="chev">
+                  {{ collapsedOf(group.key, row.path) ? 'mdi-chevron-right' : 'mdi-chevron-down' }}
+                </v-icon>
+                <v-icon size="16" class="dir-icon">
+                  {{ collapsedOf(group.key, row.path) ? 'mdi-folder-outline' : 'mdi-folder-open-outline' }}
+                </v-icon>
+                <span class="dir-name" :title="row.path">{{ row.name }}</span>
+                <span class="dir-count">{{ row.count }}</span>
+              </template>
+              <template v-else>
+                <span class="letter" :style="{ color: tone(row.file) }">
+                  {{ statusOf(row.file.item).letter }}
+                </span>
+                <v-icon
+                  size="16"
+                  class="ficon"
+                  :style="iconOf(row.file).color ? { color: iconOf(row.file).color } : null"
+                >
+                  {{ iconOf(row.file).icon }}
+                </v-icon>
+                <div class="names">
+                  <div class="name mono" :title="row.path">{{ row.name }}</div>
+                  <div v-if="mode === 'flat' && dirName(row.path)" class="dir mono" :title="row.path">
+                    {{ dirName(row.path) }}
+                  </div>
                 </div>
-              </div>
-              <v-icon
-                v-if="marked(row.path)"
-                size="14"
-                class="held"
-                title="默认不渲染，点开才加载差异"
-              >
-                mdi-eye-off-outline
-              </v-icon>
-              <span class="state">{{ statusOf(row.file.item).text }}</span>
-            </template>
-          </li>
-        </ul>
+                <v-icon
+                  v-if="marked(group.key, row.path)"
+                  size="14"
+                  class="held"
+                  title="默认不渲染，点开才加载差异"
+                >
+                  mdi-eye-off-outline
+                </v-icon>
+                <span class="state">{{ statusOf(row.file.item).text }}</span>
+                <v-btn
+                  v-if="rowAction(group.key, row.file)"
+                  size="x-small"
+                  variant="text"
+                  class="row-action"
+                  :title="rowAction(group.key, row.file).title"
+                  :loading="acting === rowKey(group.key, row.file)"
+                  @click.stop="actRow(group.key, row.file)"
+                >
+                  {{ rowAction(group.key, row.file).label }}
+                </v-btn>
+              </template>
+            </li>
+          </ul>
+        </div>
       </aside>
 
       <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
@@ -196,8 +233,11 @@ const emit = defineEmits(['loaded'])
 
 const info = ref({})
 const files = ref([])
+// Git 的索引、工作区与冲突三组；SVN 没有索引，只有 files 一份。
+const status = ref(null)
 const truncated = ref(false)
 const selected = ref(null)
+const acting = ref('')
 const content = ref({ text: '', kind: 'diff', truncated: false })
 const loading = ref(false)
 const diffLoading = ref(false)
@@ -231,13 +271,15 @@ const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useS
 const isGit = computed(() => props.ws.vcs === 'git')
 const diffTitle = computed(() => (selected.value ? selected.value.path : ''))
 // 锁文件、构建产物与单行过长的文件不自动取差异；点过“加载差异”的文件记在这里，换回来不再拦。
-// 单行过长要等第一次取到差异才知道，记住路径，换回来就不用再请求一遍。
+// 键带上差异口径：同一个文件在已暂存与更改里是两份内容。
 const revealed = ref(new Set())
 const widePaths = ref(new Set())
-const marked = (path) => isDeferred(path) || widePaths.value.has(path)
-const awaitingLoad = computed(
-  () => !!selected.value && marked(selected.value.path) && !revealed.value.has(selected.value.path),
-)
+const marked = (group, path) => isDeferred(path) || widePaths.value.has(keyOf(group, path))
+const awaitingLoad = computed(() => {
+  if (!selected.value) return false
+  const { group, path } = selected.value
+  return marked(group, path) && !revealed.value.has(keyOf(group, path))
+})
 // SVN 的版本号前面带 r，Git 给的是短 sha，原样显示。
 const revText = computed(() => {
   const rev = info.value.revision
@@ -251,6 +293,7 @@ const diffEditable = computed(
 
 const readOnlyReason = computed(() => {
   if (!selected.value || diffLoading.value || diffError.value || !content.value.text) return ''
+  if (selected.value.group === 'staged') return '已暂存的内容只看不改；要改改工作区那份'
   if (content.value.truncated) return '差异已截断，不能直接在差异里编辑'
   return editState.value.reason
 })
@@ -264,12 +307,35 @@ function iconOf(file) {
   return fileIcon(file.path)
 }
 
-// 树形视图的收起状态与摊平交给公共的文件树，平铺视图自己拼。
-const { rows: treeRows, collapsed: collapsedDirs, toggle: toggleDir } = useFileTree(files)
+const GROUP_DEFS = [
+  { key: 'staged', title: '已暂存', action: '全部取消', icon: 'mdi-minus-circle-outline' },
+  { key: 'unstaged', title: '更改', action: '全部暂存', icon: 'mdi-plus-circle-outline' },
+  { key: 'conflicts', title: '冲突', action: '' },
+]
 
-const rows = computed(() => {
+// SVN 没有索引，只有一份“更改”；未纳管的行单独给纳入版本控制的动作。
+const groups = computed(() =>
+  isGit.value ? GROUP_DEFS : [{ key: 'unstaged', title: '更改', action: '' }],
+)
+
+function groupList(key) {
+  if (!isGit.value) return files.value
+  return (status.value && status.value[key]) || []
+}
+
+const shownGroups = computed(() => groups.value.filter((group) => groupList(group.key).length))
+
+// 每组一棵树，收起状态互不影响；SVN 只有“更改”组，复用这棵。
+const trees = {
+  staged: useFileTree(() => groupList('staged')),
+  unstaged: useFileTree(() => groupList('unstaged')),
+  conflicts: useFileTree(() => groupList('conflicts')),
+}
+
+function rowsOf(key) {
+  const list = groupList(key)
   if (mode.value !== 'tree') {
-    return files.value.map((file) => ({
+    return list.map((file) => ({
       kind: 'file',
       name: baseName(file.path),
       path: file.path,
@@ -277,33 +343,118 @@ const rows = computed(() => {
       file,
     }))
   }
-  return treeRows.value
-})
+  return trees[key].rows.value
+}
+
+function collapsedOf(key, path) {
+  return !!trees[key].collapsed[path]
+}
+
+function toggleDir(key, path) {
+  trees[key].toggle(path)
+}
+
+// 差异口径：已暂存取索引对 HEAD，冲突取对 HEAD，其余取工作区对索引。
+function scopeOf(group) {
+  if (group === 'staged') return 'staged'
+  if (group === 'conflicts') return 'head'
+  return 'worktree'
+}
+
+function keyOf(group, path) {
+  return `${scopeOf(group)}:${path}`
+}
+
+function rowAction(key, file) {
+  if (!isGit.value) {
+    return file.item === 'unversioned' ? { label: '纳入版本控制', title: '纳入版本控制' } : null
+  }
+  if (key === 'staged') return { label: '−', title: '取消暂存' }
+  if (key === 'conflicts') return { label: '+', title: '标记已解决' }
+  return { label: '+', title: '暂存' }
+}
+
+const groupKey = (key) => `group:${key}`
+const rowKey = (key, file) => `${key}:${file.path}`
+
+async function actGroup(group) {
+  const paths = groupList(group.key).map((file) => file.path)
+  if (!paths.length) return
+  const call = group.key === 'staged' ? api.unstage : api.stage
+  await runAction(groupKey(group.key), () => call(props.ws.id, paths))
+}
+
+async function actRow(key, file) {
+  const call = isGit.value ? (key === 'staged' ? api.unstage : api.stage) : api.svnAdd
+  await runAction(rowKey(key, file), () => call(props.ws.id, [file.path]))
+}
+
+// 写接口返回的就是变更清单，直接换掉页面上的这份，不再多取一遍。
+async function runAction(key, task) {
+  if (acting.value) return
+  acting.value = key
+  error.value = ''
+  try {
+    await apply(await task())
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    acting.value = ''
+  }
+}
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api.changes(props.ws.id)
-    info.value = data.info || {}
-    files.value = data.files || []
-    truncated.value = !!data.truncated
-    emit('loaded', files.value.length)
-    // 选中的文件还在列表里就留着，不在就退回第一项，右侧不至于空着。
-    const hit = files.value.find((f) => selected.value && f.path === selected.value.path)
-    if (hit) {
-      selected.value = hit
-    } else {
-      selected.value = null
-      content.value = { text: '', kind: 'diff', truncated: false }
-      if (files.value.length) await pick(files.value[0])
-    }
+    await apply(await api.changes(props.ws.id))
   } catch (err) {
     error.value = err.message
     emit('loaded', 0)
   } finally {
     loading.value = false
   }
+}
+
+function findIn(group, path) {
+  const file = groupList(group).find((item) => item.path === path)
+  return file ? { group, file } : null
+}
+
+function findAnywhere(path) {
+  for (const group of groups.value) {
+    const hit = findIn(group.key, path)
+    if (hit) return hit
+  }
+  return null
+}
+
+function firstEntry() {
+  for (const group of groups.value) {
+    const file = groupList(group.key)[0]
+    if (file) return { group: group.key, file }
+  }
+  return null
+}
+
+async function apply(data) {
+  info.value = data.info || {}
+  files.value = data.files || []
+  status.value = data.status || null
+  truncated.value = !!data.truncated
+  emit('loaded', files.value.length)
+  // 选中的文件还在原组就留着；换组了（暂存、取消暂存）按路径跟过去，都没有就退回第一项。
+  const prev = selected.value
+  const keep = prev && findIn(prev.group, prev.path)
+  if (keep) {
+    selected.value = { group: keep.group, path: keep.file.path, file: keep.file }
+    return
+  }
+  const moved = prev && findAnywhere(prev.path)
+  selected.value = null
+  content.value = { text: '', kind: 'diff', truncated: false }
+  const next = moved || firstEntry()
+  if (next) await pick(next.file, next.group)
 }
 
 // 读一份工作副本快照：改的是这份内容，写回也按它的行号定位。
@@ -319,14 +470,15 @@ async function snapshotOf(file) {
   }
 }
 
-async function pick(file, { skipGuard = false } = {}) {
+async function pick(file, group, { skipGuard = false } = {}) {
   if (!skipGuard && !(await confirmLeave())) return
   const mine = ++pickSeq
-  selected.value = file
+  const key = keyOf(group, file.path)
+  selected.value = { group, path: file.path, file }
   diffError.value = ''
   saveError.value = ''
   editState.value = { editable: false, baseText: '', reason: '' }
-  if (marked(file.path) && !revealed.value.has(file.path)) {
+  if (marked(group, file.path) && !revealed.value.has(key)) {
     // 连工作副本快照都不取：大文件只在用户点了“加载差异”之后才读。
     content.value = { text: '', kind: 'diff', truncated: false }
     diffLoading.value = false
@@ -334,21 +486,26 @@ async function pick(file, { skipGuard = false } = {}) {
   }
   diffLoading.value = true
   try {
+    // 已暂存的内容只读，不用为编辑读工作副本快照。
     const [data, snap] = await Promise.all([
-      api.diff(props.ws.id, file.path, file.item, diffScope.value === 'file'),
-      snapshotOf(file),
+      api.diff(props.ws.id, file.path, file.item, diffScope.value === 'file', scopeOf(group)),
+      group === 'staged' ? null : snapshotOf(file),
     ])
     if (mine !== pickSeq) return
-    if (data.wide && !revealed.value.has(file.path)) {
+    if (data.wide && !revealed.value.has(key)) {
       // 单行太长：差异已经取到也不渲染，先记下路径，换回来直接走占位。
-      widePaths.value.add(file.path)
+      widePaths.value.add(key)
       content.value = { text: '', kind: 'diff', truncated: false }
       return
     }
     content.value = data
-    editState.value = data.truncated
-      ? { editable: false, baseText: snap.baseText, reason: '差异已截断，不能直接在差异里编辑' }
-      : snap
+    if (group === 'staged') {
+      editState.value = { editable: false, baseText: '', reason: '' }
+    } else {
+      editState.value = data.truncated
+        ? { editable: false, baseText: snap.baseText, reason: '差异已截断，不能直接在差异里编辑' }
+        : snap
+    }
   } catch (err) {
     if (mine !== pickSeq) return
     content.value = { text: '', kind: 'diff', truncated: false }
@@ -361,8 +518,8 @@ async function pick(file, { skipGuard = false } = {}) {
 // 用户在右侧点了“加载差异”：记住这个文件，再走正常的取差异流程。
 function showDeferred() {
   if (!selected.value) return
-  revealed.value.add(selected.value.path)
-  pick(selected.value, { skipGuard: true })
+  revealed.value.add(keyOf(selected.value.group, selected.value.path))
+  pick(selected.value.file, selected.value.group, { skipGuard: true })
 }
 
 function onDirty(value) {
@@ -406,7 +563,9 @@ async function persist() {
 async function saveNow() {
   if (!(await persist())) return false
   await load()
-  if (selected.value) await pick(selected.value, { skipGuard: true })
+  if (selected.value) {
+    await pick(selected.value.file, selected.value.group, { skipGuard: true })
+  }
   return true
 }
 
@@ -466,7 +625,9 @@ watch(diffScope, async (now, before) => {
     diffScope.value = before
     return
   }
-  if (selected.value) await pick(selected.value, { skipGuard: true })
+  if (selected.value) {
+    await pick(selected.value.file, selected.value.group, { skipGuard: true })
+  }
 })
 watch(() => props.ws.id, load)
 // 外部变化（含刚保存的那次）不打断正在改的内容，等改完再刷新。
@@ -552,6 +713,20 @@ defineExpose({ load })
   margin: 0;
   padding: 4px;
 }
+.group + .group {
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 2px;
+}
+.group-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+}
 .item {
   display: flex;
   align-items: center;
@@ -566,6 +741,17 @@ defineExpose({ load })
 }
 .item.active {
   background: rgba(var(--v-theme-primary), 0.14);
+}
+.row-action {
+  flex: 0 0 auto;
+  min-width: 26px;
+  padding: 0 4px;
+  opacity: 0;
+}
+.item:hover .row-action,
+.item.active .row-action,
+.row-action:focus-visible {
+  opacity: 1;
 }
 .chev {
   flex: 0 0 16px;
