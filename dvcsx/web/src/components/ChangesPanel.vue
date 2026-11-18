@@ -390,8 +390,10 @@ async function actRow(key, file) {
 }
 
 // 写接口返回的就是变更清单，直接换掉页面上的这份，不再多取一遍。
+// 动作会改索引、还可能换掉选中项，先处理完没保存的改动再动。
 async function runAction(key, task) {
   if (acting.value) return
+  if (!(await confirmLeave())) return
   acting.value = key
   error.value = ''
   try {
@@ -450,11 +452,14 @@ async function apply(data) {
     selected.value = { group: keep.group, path: keep.file.path, file: keep.file }
     return
   }
-  const moved = prev && findAnywhere(prev.path)
+  const next = (prev && findAnywhere(prev.path)) || firstEntry()
+  if (next) {
+    // 交给 pick 换选中项；它问完未保存的改动之前，不能先清掉正在编辑的内容。
+    await pick(next.file, next.group)
+    return
+  }
   selected.value = null
   content.value = { text: '', kind: 'diff', truncated: false }
-  const next = moved || firstEntry()
-  if (next) await pick(next.file, next.group)
 }
 
 // 读一份工作副本快照：改的是这份内容，写回也按它的行号定位。
