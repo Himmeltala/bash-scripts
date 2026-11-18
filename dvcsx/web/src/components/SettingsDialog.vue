@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-18 23:19:43
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-18 23:30:00
+ * @LastEditTime: 2026-11-18 23:43:35
  * @FilePath: \dvcsx\web\src\components\SettingsDialog.vue
  * @Description: 全局设置：左侧分类、右侧设置项，现在只有搜索一项。
 -->
@@ -59,6 +59,34 @@
             <p v-if="defaults.length" class="hint">默认：{{ defaults.join('、') }}</p>
           </div>
         </template>
+        <template v-else-if="section === 'lsp'">
+          <div class="field-head">
+            <h3 class="pane-title">语言服务器</h3>
+            <v-btn size="x-small" variant="text" :loading="lspBusy" @click="loadServers">
+              刷新
+            </v-btn>
+          </div>
+          <p class="hint">
+            浏览页里 Ctrl+点击标识符跳定义靠这些服务器；没装的语言点了会提示安装命令。
+          </p>
+          <div v-for="item in servers" :key="item.id" class="lsp-row">
+            <div class="lsp-main">
+              <div class="lsp-title">
+                {{ item.title }}
+                <v-chip
+                  size="x-small"
+                  variant="flat"
+                  :color="item.supported === false ? 'warning' : item.available ? 'success' : 'error'"
+                >
+                  {{ item.supported === false ? '暂不支持' : item.available ? '可用' : '没装' }}
+                </v-chip>
+              </div>
+              <div class="mono lsp-cmd">{{ item.command }}</div>
+              <div v-if="!item.available" class="hint">{{ item.hint }}</div>
+            </div>
+          </div>
+          <p v-if="lspError" class="err">{{ lspError }}</p>
+        </template>
         <p v-if="error" class="err">{{ error }}</p>
       </section>
     </div>
@@ -80,7 +108,10 @@ const props = defineProps({ modelValue: { type: Boolean, default: false } })
 const emit = defineEmits(['update:modelValue', 'saved'])
 
 // 设置分类：以后加项就加一条，右边按 id 出对应的块。
-const sections = [{ id: 'search', title: '搜索', icon: 'mdi-magnify' }]
+const sections = [
+  { id: 'search', title: '搜索', icon: 'mdi-magnify' },
+  { id: 'lsp', title: '语言服务器', icon: 'mdi-server-network' },
+]
 const section = ref('search')
 
 const open = computed({
@@ -92,6 +123,23 @@ const text = ref('')
 const defaults = ref([])
 const error = ref('')
 const busy = ref(false)
+// 语言服务器：各语言可用性与缺的时候的安装命令。
+const servers = ref([])
+const lspError = ref('')
+const lspBusy = ref(false)
+
+async function loadServers() {
+  lspBusy.value = true
+  lspError.value = ''
+  try {
+    const data = await api.lspStatus()
+    servers.value = data.servers || []
+  } catch (err) {
+    lspError.value = err.message
+  } finally {
+    lspBusy.value = false
+  }
+}
 
 // 每次打开都从服务端读一份：名单是全局的，别的浏览器改过这里也能看到。
 watch(
@@ -107,6 +155,7 @@ watch(
     } catch (err) {
       error.value = err.message
     }
+    loadServers()
   }
 )
 
@@ -202,5 +251,25 @@ async function save() {
   margin: 8px 0 0;
   font-size: 0.8rem;
   color: rgb(var(--v-theme-error));
+}
+.lsp-row {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+.lsp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lsp-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+.lsp-cmd {
+  font-size: 0.72rem;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
 </style>

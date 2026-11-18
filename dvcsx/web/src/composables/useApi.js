@@ -73,4 +73,11 @@ export const api = {
     ),
   settings: () => call('GET', '/settings'),
   saveSettings: (searchIgnore) => call('POST', '/settings', { search_ignore: searchIgnore }),
+  // 代码索引：把编辑框里这份文本和词的位置交给服务端的语言服务器。
+  definition: (ws, path, text, line, character) =>
+    call('POST', '/lsp/definition', { ws, path, text, line, character }),
+  // 右键菜单里的通用查询：definition / typeDefinition / implementation / references。
+  query: (ws, path, text, line, character, action) =>
+    call('POST', '/lsp/query', { ws, path, text, line, character, action }),
+  lspStatus: () => call('GET', '/lsp/status'),
 }

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-17 00:15:49
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-18 23:00:12
+ * @LastEditTime: 2026-11-19 00:00:15
  * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.vue
  * @Description: 文件内容编辑器，按扩展名切换源码与渲染视图并负责保存。
 -->
@@ -64,6 +64,8 @@
         ref="paneRef"
         v-model="state.draft"
         :path="path"
+        @symbol="onSymbol"
+        @menu="onMenu"
       />
       <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
@@ -94,7 +96,7 @@ const props = defineProps({
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'saved', 'dirty'])
+const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu'])
 
 const {
   path,
@@ -179,6 +181,16 @@ async function save() {
 
 function discard() {
   discardDraft()
+}
+
+// Ctrl+点击取到的词：补上这个编辑器正在看的文件，交给调用方去查定义。
+function onSymbol(symbol) {
+  emit('definition', { path: path.value, ...symbol })
+}
+
+// 右键菜单：同样带上文件路径，鼠标位置也一起给出去。
+function onMenu(payload) {
+  emit('menu', { path: path.value, ...payload })
 }
 
 const leaveAsk = ref(false)

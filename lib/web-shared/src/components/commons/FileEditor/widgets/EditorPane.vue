@@ -24,6 +24,8 @@
         @mouseup="syncCaret"
         @focus="onFocus"
         @blur="focused = false"
+        @click="onClick"
+        @contextmenu="onContextMenu"
       />
     </div>
   </div>
@@ -31,6 +33,7 @@
 
 <script setup>
 import { computed, nextTick, ref } from 'vue'
+import { symbolAt } from '../../../../utils/commons/codeSymbol.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -38,7 +41,7 @@ const props = defineProps({
   lineCount: { type: Number, default: 1 },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'symbol', 'menu'])
 
 const gutterRef = ref(null)
 const codeRef = ref(null)
@@ -87,6 +90,27 @@ function onFocus() {
 function onInput(event) {
   emit('update:modelValue', event.target.value)
   syncCaret()
+}
+
+// Ctrl（Mac 上是 Command）+ 左键点在一个词上：把词与 LSP 行列抛给调用方去查定义。
+function onClick(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.button !== 0) return
+  const el = editorRef.value
+  if (!el) return
+  const symbol = symbolAt(el.value, el.selectionStart)
+  if (!symbol) return
+  event.preventDefault()
+  emit('symbol', symbol)
+}
+
+// 右键点在标识符上：不弹浏览器菜单，把词与鼠标位置交给调用方出代码菜单。
+function onContextMenu(event) {
+  const el = editorRef.value
+  if (!el) return
+  const symbol = symbolAt(el.value, el.selectionStart)
+  if (!symbol) return
+  event.preventDefault()
+  emit('menu', { ...symbol, x: event.clientX, y: event.clientY })
 }
 
 // 高亮层与行号列跟着编辑框一起滚，三层始终对在同一位置。

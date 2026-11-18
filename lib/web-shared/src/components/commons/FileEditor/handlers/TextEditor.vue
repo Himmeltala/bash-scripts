@@ -5,6 +5,8 @@
     :highlighted="highlighted"
     :line-count="lineCount"
     @update:model-value="$emit('update:modelValue', $event)"
+    @symbol="$emit('symbol', $event)"
+    @menu="$emit('menu', $event)"
   />
 </template>
 
@@ -19,7 +21,7 @@ const props = defineProps({
   language: { type: String, default: '' },
 })
 
-defineEmits(['update:modelValue'])
+defineEmits(['update:modelValue', 'symbol', 'menu'])
 
 const paneRef = ref(null)
 

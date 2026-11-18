@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-18 23:19:43
+ * @LastEditTime: 2026-11-19 00:00:15
  * @FilePath: \dvcsx\web\src\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -45,6 +45,7 @@
       >
         返回目录
       </v-btn>
+      <v-progress-circular v-if="defining" indeterminate size="16" class="busy" />
       <v-btn
         size="small"
         variant="text"
@@ -55,6 +56,13 @@
       >
         刷新
       </v-btn>
+    </div>
+
+    <div v-if="notice" class="notice">
+      <span class="notice-text">{{ notice }}</span>
+      <button type="button" class="notice-close" title="关掉" @click="notice = ''">
+        <v-icon size="14">mdi-close</v-icon>
+      </button>
     </div>
 
     <div ref="splitRef" class="body" :class="{ resizing }">
@@ -198,6 +206,8 @@
                 @navigate="reveal"
                 @saved="onSaved"
                 @dirty="(on) => setDirty(tab.path, on)"
+                @definition="onDefinition"
+                @menu="openSymbolMenu"
               />
             </div>
           </template>
@@ -260,6 +270,51 @@
         </v-btn>
       </template>
     </FloatingDialog>
+
+    <FloatingDialog
+      v-model="defAsk.on"
+      :initial-width="560"
+      :initial-height="400"
+      :min-width="380"
+      :min-height="240"
+    >
+      <template #title>「{{ defAsk.word }}」的{{ defAsk.title }}</template>
+      <p class="ask-hint">找到 {{ defAsk.list.length }} 处，选一个跳过去。</p>
+      <div class="def-list">
+        <button
+          v-for="loc in defAsk.list"
+          :key="`${loc.path}:${loc.line}:${loc.character}`"
+          type="button"
+          class="def-item"
+          @click="openLocation(loc)"
+        >
+          <v-icon size="16">mdi-file-outline</v-icon>
+          <span class="mono def-path">{{ loc.path }}</span>
+          <span class="mono def-line">{{ loc.line + 1 }}</span>
+        </button>
+      </div>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="defAsk.on = false">取消</v-btn>
+      </template>
+    </FloatingDialog>
+
+    <div
+      v-if="symMenu.on"
+      class="sym-menu"
+      :style="{ left: `${symMenu.x}px`, top: `${symMenu.y}px` }"
+    >
+      <button type="button" class="sym-item" @click="runSymbol('definition')">转到定义</button>
+      <button type="button" class="sym-item" @click="runSymbol('typeDefinition')">
+        转到类型定义
+      </button>
+      <button type="button" class="sym-item" @click="runSymbol('implementation')">
+        转到实现
+      </button>
+      <button type="button" class="sym-item" @click="runSymbol('references')">查找引用</button>
+      <div class="sym-sep" />
+      <button type="button" class="sym-item" @click="runSymbol('copy')">复制标识符</button>
+    </div>
   </div>
 </template>
 
@@ -267,7 +322,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { api } from '../composables/useApi'
-import { FileEditor, FileTree, fileIcon } from '@bash-scripts/web-shared'
+import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
@@ -303,6 +358,19 @@ const keptExpanded = kept && kept.expanded ? kept.expanded : []
 const editors = new Map()
 const activeTab = computed(() => tabOf(tabs.value, activePath.value))
 const refreshing = ref(false)
+// 代码索引：查定义时的转圈、顶栏提示条，以及多个候选时的那张列表。
+const defining = ref(false)
+const notice = ref('')
+let noticeTimer = 0
+const defAsk = reactive({ on: false, word: '', title: '定义', list: [] })
+// 右键标识符弹出的代码菜单：位置、词，以及来源文件与行列。
+const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 0, word: '' })
+const SYMBOL_TITLES = {
+  definition: '定义',
+  typeDefinition: '类型定义',
+  implementation: '实现',
+  references: '引用',
+}
 // 左侧目录树的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
 const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
@@ -452,6 +520,135 @@ async function closeTab(tab) {
 
 function pick(node) {
   return show(node)
+}
+
+// Ctrl+点击取到的词去问语言服务器：一条直接跳，多条列出来选，零条或出错在顶栏说明。
+async function onDefinition({ path, line, character, word }) {
+  if (!path) return
+  const editor = editorOf(path)
+  if (!editor) return
+  defining.value = true
+  try {
+    const data = await api.definition(props.ws.id, path, editor.text, line, character)
+    const list = (data && data.locations) || []
+    if (!list.length) {
+      flash(`没找到「${word}」的定义`)
+      return
+    }
+    if (list.length === 1) {
+      await openLocation(list[0])
+      return
+    }
+    defAsk.word = word
+    defAsk.title = '定义'
+    defAsk.list = list
+    defAsk.on = true
+  } catch (err) {
+    flash(err.message)
+  } finally {
+    defining.value = false
+  }
+}
+
+// 右键标识符：在鼠标位置摆出代码菜单，点别处或按 Esc 收起。
+function openSymbolMenu(payload) {
+  symMenu.x = Math.max(0, Math.min(payload.x, window.innerWidth - 208))
+  symMenu.y = Math.max(0, Math.min(payload.y, window.innerHeight - 220))
+  symMenu.path = payload.path
+  symMenu.line = payload.line
+  symMenu.character = payload.character
+  symMenu.word = payload.word
+  symMenu.on = true
+}
+
+function closeSymbolMenu() {
+  symMenu.on = false
+}
+
+function onMenuOutside(event) {
+  const target = event.target
+  if (target && target.closest && target.closest('.sym-menu')) return
+  closeSymbolMenu()
+}
+
+function onMenuKey(event) {
+  if (event.key === 'Escape') closeSymbolMenu()
+}
+
+watch(
+  () => symMenu.on,
+  (on) => {
+    if (on) {
+      window.addEventListener('mousedown', onMenuOutside, true)
+      window.addEventListener('keydown', onMenuKey, true)
+    } else {
+      window.removeEventListener('mousedown', onMenuOutside, true)
+      window.removeEventListener('keydown', onMenuKey, true)
+    }
+  }
+)
+
+// 菜单里的动作：复制本地做，其余交给服务端问语言服务器。
+async function runSymbol(action) {
+  const item = {
+    path: symMenu.path,
+    line: symMenu.line,
+    character: symMenu.character,
+    word: symMenu.word,
+  }
+  closeSymbolMenu()
+  if (action === 'copy') {
+    try {
+      await copyText(item.word)
+      flash(`已复制「${item.word}」`)
+    } catch (err) {
+      flash(err.message || '复制失败')
+    }
+    return
+  }
+  const editor = editorOf(item.path)
+  if (!editor) return
+  const title = SYMBOL_TITLES[action] || '定义'
+  defining.value = true
+  try {
+    const data = await api.query(
+      props.ws.id, item.path, editor.text, item.line, item.character, action
+    )
+    const list = (data && data.locations) || []
+    if (!list.length) {
+      flash(`没有找到「${item.word}」的${title}`)
+      return
+    }
+    if (list.length === 1) {
+      await openLocation(list[0])
+      return
+    }
+    defAsk.word = item.word
+    defAsk.title = title
+    defAsk.list = list
+    defAsk.on = true
+  } catch (err) {
+    flash(err.message)
+  } finally {
+    defining.value = false
+  }
+}
+
+// 跳到定义处：可能是别的文件，新开一个页签并按行定位。
+async function openLocation(loc) {
+  defAsk.on = false
+  await show(
+    { path: loc.path, name: loc.path.split('/').pop(), type: 'file' },
+    (loc.line || 0) + 1
+  )
+}
+
+function flash(text) {
+  notice.value = text
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => {
+    notice.value = ''
+  }, 8000)
 }
 
 // 点目录行收起或展开，点文件行开到第一处命中，点命中行开到那一行。
@@ -734,6 +931,9 @@ onBeforeUnmount(() => {
     expanded: treeRef.value ? treeRef.value.expandedKeys() : keptExpanded,
   })
   clearTimeout(searchTimer)
+  clearTimeout(noticeTimer)
+  window.removeEventListener('mousedown', onMenuOutside, true)
+  window.removeEventListener('keydown', onMenuKey, true)
   searchSeq += 1
 })
 </script>
@@ -759,6 +959,104 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.busy {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  background: rgba(var(--v-theme-warning), 0.14);
+  font-size: 0.78rem;
+}
+.notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+.notice-close {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.notice-close:hover {
+  opacity: 1;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+}
+.def-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+}
+.def-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+.def-item:hover {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+.def-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.def-line {
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.sym-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 196px;
+  padding: 4px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.24);
+}
+.sym-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+.sym-item:hover {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.sym-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(var(--v-theme-on-surface), 0.1);
 }
 .search {
   flex: 0 1 460px;

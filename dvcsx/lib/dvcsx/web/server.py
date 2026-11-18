@@ -29,6 +29,9 @@ from urllib.parse import unquote, urlparse
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "services"))
+# 同目录下的 LSP 桥接；按文件加载本模块时也能找到。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lsp_client import LspError, LspManager, LspUnavailable
 from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
 from metrics import Metrics
 from netutil import is_loopback_address as is_loopback
@@ -2205,6 +2208,8 @@ class Handler(WebHandler):
     groups = None
     # 全局设置（搜索跳过的目录等），同样存在 state.json 旁边。
     settings = None
+    # 代码索引的语言服务器管理器；没起来时这两个接口都说不支持。
+    lsp = None
     state_stream = None
     metrics_stream = None
     api_prefix = "/__dvcsx/api"
@@ -2268,6 +2273,8 @@ class Handler(WebHandler):
             return self._search(query)
         if route == "settings" and method == "GET":
             return self._settings_payload()
+        if route == "lsp/status":
+            return self._lsp_status()
         if route == "download":
             return self._download(query, head=(method == "HEAD"))
         if route == "operations" and method == "GET":
@@ -2284,7 +2291,10 @@ class Handler(WebHandler):
             item = self.store.add(root)
             return {"ok": True, "workspace": item}
         if route == "forget":
-            self.store.remove(str(body.get("ws", "")))
+            wid = str(body.get("ws", ""))
+            self.store.remove(wid)
+            if self.lsp is not None:
+                self.lsp.stop_workspace(wid)
             return {"ok": True}
         if route == "alias":
             ws = self.store.find(str(body.get("ws", "")))
@@ -2292,6 +2302,10 @@ class Handler(WebHandler):
                 raise ApiError(404, "没有这个工作区")
             self.store.set_alias(ws["id"], str(body.get("alias", "")))
             return {"ok": True}
+        if route == "lsp/definition":
+            return self._lsp_definition(body)
+        if route == "lsp/query":
+            return self._lsp_query(body, str(body.get("action") or "definition"))
         if route == "settings":
             if self.settings is None:
                 raise ApiError(404, "设置没有起来")
@@ -2551,6 +2565,46 @@ class Handler(WebHandler):
         )
         return {"workspace": ws, **browse_search(ws["root"], rel, text, mode, ignore)}
 
+    def _lsp_status(self):
+        # 不拉进程，只报各语言服务器装没装；同样只认本机，免得把本机有什么暴露出去。
+        self._check_write()
+        if self.lsp is None:
+            raise ApiError(404, "代码索引没有起来")
+        return {"servers": self.lsp.status()}
+
+    def _lsp_definition(self, body):
+        return self._lsp_query(body, "definition")
+
+    def _lsp_query(self, body, action="definition"):
+        self._check_write()
+        if self.lsp is None:
+            raise ApiError(404, "代码索引没有起来")
+        ws = self.store.find(str(body.get("ws", "")))
+        if ws is None:
+            raise ApiError(404, "没有这个工作区：%s" % body.get("ws", ""))
+        rel = safe_rel(str(body.get("path", "")))
+        full = os.path.join(ws["root"], rel)
+        if not inside(ws["root"], full) or not os.path.isfile(full):
+            raise ApiError(400, "文件不存在：%s" % rel)
+        text = body.get("text")
+        if not isinstance(text, str):
+            raise ApiError(400, "要把文件内容一起带上")
+        if len(text.encode("utf-8")) > MAX_FILE:
+            raise ApiError(400, "文件太大，超过 %d KB 不做索引" % (MAX_FILE // 1024))
+        try:
+            line = int(body.get("line"))
+            character = int(body.get("character"))
+        except (TypeError, ValueError):
+            raise ApiError(400, "行与列要是整数")
+        if line < 0 or character < 0:
+            raise ApiError(400, "行与列不能是负数")
+        try:
+            return self.lsp.query(ws["id"], ws["root"], rel, text, line, character, action)
+        except LspUnavailable as exc:
+            raise ApiError(400, str(exc))
+        except LspError as exc:
+            raise ApiError(504, str(exc))
+
     def _commit_detail(self, query):
         ws = self._ws(query)
         rev = (query.get("rev") or [""])[0]
@@ -2758,6 +2812,7 @@ def serve(args):
     Handler.store = Workspaces(args.state)
     Handler.groups = LayoutStore(Path(args.state).parent / "groups.json")
     Handler.settings = Settings(Path(args.state).parent / "settings.json")
+    Handler.lsp = LspManager()
     Handler.api_prefix = args.api
     Handler.allow_write = args.allow_write
     Handler.state_stream = StateStream(
@@ -2796,6 +2851,9 @@ def serve(args):
         httpd.serve_forever()
     finally:
         httpd.server_close()
+        # 语言服务器是页面按需拉起的子进程，退出时一并收掉。
+        if Handler.lsp is not None:
+            Handler.lsp.stop_all()
     return 0
 
 
