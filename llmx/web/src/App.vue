@@ -16,7 +16,7 @@
       </template>
     </v-app-bar>
 
-    <v-navigation-drawer v-model="drawer" :width="navWidth">
+    <v-navigation-drawer v-model="drawer" :width="navWidth" class="nav-drawer">
       <div class="nav">
         <div class="nav-body">
           <v-list nav density="compact">
@@ -112,6 +112,26 @@ const { dark, toggle: flipTheme } = useThemeToggle({
 </script>
 
 <style scoped>
+/* 收起展开的节奏跟 nodex 一致：侧栏滑出 0.18s、淡出 0.14s，正文宽度直接让位不跟着动。 */
+.nav-drawer {
+  transition: transform 0.18s ease, opacity 0.14s ease;
+}
+
+.nav-drawer:not(.v-navigation-drawer--active) {
+  opacity: 0;
+}
+
+.v-main {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-drawer,
+  .v-main {
+    transition: none;
+  }
+}
+
 .title {
   font-weight: 700;
 }
