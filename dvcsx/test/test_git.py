@@ -772,6 +772,61 @@ class GitOperations(unittest.TestCase):
         self.assertTrue(any(b["current"] and b["name"] == "main" for b in info["branches"]))
 
 
+class GitIndexOps(unittest.TestCase):
+    """暂存、取消暂存走网页接口；每个用例单独建仓库，互不影响。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-index-")
+        base = Path(self.tmp.name)
+        self.repo = base / "repo"
+        self.static = base / "static"
+        self.static.mkdir()
+        (self.static / "index.html").write_text("<html></html>", "utf-8")
+        run(["git", "init", "-q", "-b", "main", str(self.repo)])
+        (self.repo / "tracked.txt").write_text("base\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.repo)
+        run(["git", "commit", "-qm", "first"], cwd=self.repo)
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub" / "new.txt").write_text("new\n", "utf-8")
+        self.server = serve(gitmod.Handler, static=self.static.resolve(),
+                            api_prefix="/__dvcsx/api",
+                            store=gitmod.Workspaces(str(base / "state.json")))
+        code, data = json_call(self.server.base, "/workspaces", {"root": str(self.repo)})
+        self.assertEqual(code, 200, data)
+        self.ws = data["workspace"]["id"]
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.tmp.cleanup()
+
+    def call(self, path, body=None):
+        return json_call(self.server.base, path, body)
+
+    def test_stage_untracked_moves_it_to_staged_group(self):
+        code, data = self.call("/stage", {"ws": self.ws, "paths": ["sub/new.txt"]})
+        self.assertEqual(code, 200)
+        self.assertEqual([i["path"] for i in data["status"]["staged"]], ["sub/new.txt"])
+        self.assertEqual(data["status"]["unstaged"], [])
+
+    def test_unstage_rename_restores_both_ends(self):
+        run(["git", "mv", "tracked.txt", "moved.txt"], cwd=self.repo)
+        code, _ = self.call("/unstage", {"ws": self.ws, "paths": ["moved.txt"]})
+        self.assertEqual(code, 200)
+        status = git_out("status", "--porcelain", cwd=self.repo)
+        self.assertNotIn("D  tracked.txt", status)
+        self.assertIn("?? moved.txt", status)
+
+    def test_unstage_without_head_removes_from_index(self):
+        fresh = Path(self.tmp.name) / "fresh"
+        run(["git", "init", "-q", "-b", "main", str(fresh)])
+        (fresh / "only.txt").write_text("x\n", "utf-8")
+        run(["git", "add", "only.txt"], cwd=fresh)
+        args = gitmod.git_unstage_args(str(fresh), ["only.txt"])
+        self.assertEqual(args[0], "rm")
+        run(["git", *args], cwd=fresh)
+        self.assertEqual(git_out("status", "--porcelain", cwd=fresh), "?? only.txt")
+
+
 class GitStatusParse(unittest.TestCase):
     def test_fields_keep_both_columns_and_rename_source(self):
         raw = b"M  a.txt\0 M b.txt\0MM c.txt\0?? d.txt\0R  new.txt\0old.txt\0"

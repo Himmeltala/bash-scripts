@@ -436,6 +436,16 @@ class SvnOperations(unittest.TestCase):
         self.assertNotIn("new.txt", items)
 
 
+class SvnAddPaths(unittest.TestCase):
+    """纳入版本控制只接受未纳管的路径，纯函数不跑 svn。"""
+
+    def test_svn_add_only_accepts_unversioned(self):
+        state = {"a.txt": "unversioned", "b.txt": "modified"}
+        self.assertEqual(svnmod.svn_add_paths(state, ["a.txt"]), ["a.txt"])
+        with self.assertRaises(svnmod.ApiError):
+            svnmod.svn_add_paths(state, ["b.txt"])
+
+
 class ApiOperation(unittest.TestCase):
     """网页接口上的写操作：本机请求可执行，结果带回输出。"""
 

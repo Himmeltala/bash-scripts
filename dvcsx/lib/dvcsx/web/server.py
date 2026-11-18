@@ -829,6 +829,24 @@ def svn_commit(root, message, paths):
     return svn_op(root, svn_commit_args(root, message, paths), "commit")
 
 
+def svn_add_paths(state, paths):
+    """纳入版本控制只接受未纳管的路径；已纳管或本地缺失的先让用户看清楚。"""
+    if not paths:
+        raise ApiError(400, "没有选中要纳入版本控制的路径")
+    clean = []
+    for rel in paths:
+        if state.get(rel) != "unversioned":
+            raise ApiError(400, "只能纳入未纳入版本控制的路径：%s" % rel)
+        if rel not in clean:
+            clean.append(rel)
+    return clean
+
+
+def svn_add_args(root, paths):
+    # --parents 让新加的目录连同上级一起纳管，省得页面逐层选。
+    return ["add", "--parents", "--", *clean_paths(root, paths)]
+
+
 def svn_sync_info(root):
     info = svn_info(root)
     rc, out, err = svn(["status", "--xml"], cwd=root)
@@ -880,6 +898,24 @@ def safe_rel(rel):
 
 def inside(root, target):
     return within(target, root)
+
+
+def clean_paths(root, paths):
+    """接口收到的一批工作副本内相对路径：逐个校验，重复的只留一次。"""
+    if not isinstance(paths, (list, tuple)):
+        raise ApiError(400, "路径要是一个列表")
+    clean = []
+    for raw in paths:
+        if not isinstance(raw, str):
+            raise ApiError(400, "路径要是文本：%s" % raw)
+        rel = safe_rel(raw)
+        if not inside(root, os.path.join(root, rel)):
+            raise ApiError(400, "路径要在工作副本里：%s" % rel)
+        if rel not in clean:
+            clean.append(rel)
+    if not clean:
+        raise ApiError(400, "没有选中要处理的路径")
+    return clean
 
 
 def clip(text):
@@ -1416,6 +1452,47 @@ def git_changes(root):
         raise ApiError(500, err or "git status 失败")
     files, truncated = parse_git_status(out)
     return {"info": info, "files": files, "truncated": truncated}
+
+
+def changes_payload(ws):
+    """工作副本的变更清单：Git 附带索引与工作区分组，SVN 按原样给。"""
+    if ws.get("vcs") == "git":
+        # 分组直接用这次 git status 的结果，不再跑第二遍。
+        data = git_changes(ws["root"])
+        data["status"] = split_status(data["files"])
+        return data
+    info = svn_info(ws["root"])
+    rc, out, err = svn(["status", "--xml"], cwd=ws["root"])
+    if rc != 0:
+        raise ApiError(500, err or "svn status 失败")
+    files, truncated = expand_unversioned(ws["root"], parse_status(out))
+    return {"info": info, "files": files, "truncated": truncated}
+
+
+def git_stage_args(root, paths):
+    # -A 连删除与重命名一起收进索引，与页面看到的整条改动一致。
+    return ["add", "-A", "--", *clean_paths(root, paths)]
+
+
+def git_unstage_args(root, paths):
+    """取消暂存；重命名的原路径也要带上，否则索引里会留下一条删除。"""
+    clean = clean_paths(root, paths)
+    rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
+    if rc != 0:
+        raise ApiError(500, err or "git status 失败")
+    files, _ = parse_git_status(out)
+    origins = {item["path"]: item["orig"] for item in files if item.get("orig")}
+    wanted = []
+    for rel in clean:
+        wanted.append(rel)
+        if origins.get(rel):
+            wanted.append(origins[rel])
+    all_paths = clean_paths(root, wanted)
+    has_head, _ = git_head(root)
+    # 空仓库没有 HEAD，restore 无从取源，只能把条目从索引里删掉。
+    if has_head:
+        return ["restore", "--staged", "--", *all_paths]
+    return ["rm", "-r", "--cached", "--", *all_paths]
 
 
 def git_diff_of(root, args):
@@ -2153,6 +2230,12 @@ class Handler(WebHandler):
             return self._browse_rename(body)
         if route == "delete":
             return self._browse_delete(body)
+        if route == "stage":
+            return self._stage(body)
+        if route == "unstage":
+            return self._unstage(body)
+        if route == "svn-add":
+            return self._svn_add(body)
         if route == "operations":
             return self._start_operation(body)
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/cancel", route)
@@ -2169,18 +2252,7 @@ class Handler(WebHandler):
 
     def _changes(self, query):
         ws = self._ws(query)
-        if ws.get("vcs") == "git":
-            # 分组直接用这次 git status 的结果，不再跑第二遍。
-            data = git_changes(ws["root"])
-            data["status"] = split_status(data["files"])
-            data["workspace"] = ws
-            return data
-        info = svn_info(ws["root"])
-        rc, out, err = svn(["status", "--xml"], cwd=ws["root"])
-        if rc != 0:
-            raise ApiError(500, err or "svn status 失败")
-        files, truncated = expand_unversioned(ws["root"], parse_status(out))
-        return {"workspace": ws, "info": info, "files": files, "truncated": truncated}
+        return {"workspace": ws, **changes_payload(ws)}
 
     def _diff(self, query):
         ws = self._ws(query)
@@ -2302,6 +2374,73 @@ class Handler(WebHandler):
         ws = self._browse_write_ws(body)
         rel = str(body.get("path", ""))
         return {"workspace": ws, **delete_entry(ws["root"], ws.get("vcs", "none"), rel)}
+
+    def _index_ws(self, body):
+        """暂存类接口的公共前置：先挡住别处来的写请求，再找登记的工作区。"""
+        self._check_write()
+        ws = self.store.find(str(body.get("ws", "")))
+        if ws is None:
+            raise ApiError(404, "没有这个工作区")
+        return ws
+
+    def _index_lock(self, ws):
+        lock = workspace_lock(ws["id"])
+        # 同一个工作副本同时只跑一个写操作，撞上了让用户等前一个跑完。
+        if not lock.acquire(blocking=False):
+            raise ApiError(409, "这个工作副本正有一个操作在执行")
+        return lock
+
+    def _stage(self, body):
+        ws = self._index_ws(body)
+        if ws.get("vcs") != "git":
+            raise ApiError(400, "这个工作区不是 Git 仓库")
+        root = ws["root"]
+        paths = body.get("paths") or []
+        lock = self._index_lock(ws)
+        try:
+            rc, _, err = git(git_stage_args(root, paths), cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "git add 失败")
+            return {"workspace": ws, **changes_payload(ws)}
+        finally:
+            lock.release()
+
+    def _unstage(self, body):
+        ws = self._index_ws(body)
+        if ws.get("vcs") != "git":
+            raise ApiError(400, "这个工作区不是 Git 仓库")
+        root = ws["root"]
+        paths = body.get("paths") or []
+        lock = self._index_lock(ws)
+        try:
+            # 先读 status 把重命名的原路径展开，再连原路径一起取消暂存。
+            rc, _, err = git(git_unstage_args(root, paths), cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "git restore 失败")
+            return {"workspace": ws, **changes_payload(ws)}
+        finally:
+            lock.release()
+
+    def _svn_add(self, body):
+        ws = self._index_ws(body)
+        if ws.get("vcs") != "svn":
+            raise ApiError(400, "这个工作区不是 SVN 工作副本")
+        root = ws["root"]
+        paths = body.get("paths") or []
+        lock = self._index_lock(ws)
+        try:
+            clean = clean_paths(root, paths)
+            rc, out, err = svn(["status", "--xml"], cwd=root)
+            if rc != 0:
+                raise ApiError(500, err or "svn status 失败")
+            files, _ = expand_unversioned(root, parse_status(out))
+            state = {item["path"]: item["item"] for item in files}
+            rc, _, err = svn(svn_add_args(root, svn_add_paths(state, clean)), cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "svn add 失败")
+            return {"workspace": ws, **changes_payload(ws)}
+        finally:
+            lock.release()
 
     def _search(self, query):
         ws = self._ws(query)
