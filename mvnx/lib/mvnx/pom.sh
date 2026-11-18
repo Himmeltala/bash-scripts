@@ -1,7 +1,7 @@
 # pom 扫描与解析：一次调用取出全部 pom 的 id、打包方式、启动插件与子模块，填入各数组，再据此判定可启动模块与聚合根。
 # 数组只在主 shell 里填一次，其余文件只读。
 readonly SKIP_DIRS=(build .gradle .git .svn node_modules .idea .settings out target dist)
-# 一次取出一个 pom 的信息，输出带前缀行：ID（自身 artifactId，不含 parent）、PKG pom、SB、JETTY、TOMCAT、MOD（子模块）。
+# 一次取出一个 pom 的信息，输出带前缀行：ID（自身 artifactId，不含 parent）、PKG pom、SB、JETTY、TOMCAT、TOMCAT7、CARGO、WEBDIR、MOD（子模块）。
 readonly POM_AWK='
 BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
 {
@@ -45,8 +45,12 @@ BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
   }
   if (line ~ /<packaging>[ \t]*pom[ \t]*<\/packaging>/) print "PKG pom"
   if (line ~ /spring-boot-maven-plugin/) print "SB 1"
-  if (line ~ /jetty-maven-plugin/) print "JETTY 1"
+  if (line ~ /jetty-maven-plugin/ || line ~ /jetty-ee[0-9]+-maven-plugin/) print "JETTY 1"
   if (line ~ /tomcat-maven-plugin/) print "TOMCAT 1"
+  if (line ~ /tomcat7-maven-plugin/) print "TOMCAT7 1"
+  if (line ~ /cargo-maven[0-9]+-plugin/) print "CARGO 1"
+  # 自定义 web 根目录：jetty 插件的 webAppSourceDirectory 与 war 插件的 warSourceDirectory。
+  if (line ~ /<(webAppSourceDirectory|warSourceDirectory)>/) print "WEBDIR 1"
 
   if (line ~ /<modules>/) inmodules = 1
   if (inmodules) {
@@ -80,9 +84,12 @@ declare -A POM_PKG_VAL=()
 declare -A POM_SB_VAL=()
 declare -A POM_JETTY_VAL=()
 declare -A POM_TOMCAT_VAL=()
+declare -A POM_TOMCAT7_VAL=()
+declare -A POM_CARGO_VAL=()
+declare -A POM_WEBDIR_VAL=()
 declare -A HAS_MAIN_CLASS=()
 declare -A HAS_WEBAPP=()
-# war 项目实际执行的目标，两个插件都声明时取 jetty，只声明 tomcat 时取 tomcat。
+# war 项目实际执行的目标：jetty 优先，其次 tomcat、tomcat7、cargo。
 declare -A WEBRUN_GOAL=()
 
 prepare_scan() {
@@ -95,6 +102,9 @@ prepare_scan() {
   POM_SB_VAL=()
   POM_JETTY_VAL=()
   POM_TOMCAT_VAL=()
+  POM_TOMCAT7_VAL=()
+  POM_CARGO_VAL=()
+  POM_WEBDIR_VAL=()
   HAS_MAIN_CLASS=()
   HAS_WEBAPP=()
   WEBRUN_GOAL=()
@@ -110,6 +120,9 @@ prepare_scan() {
         'SB '*) POM_SB_VAL[$pom]=1 ;;
         'JETTY '*) POM_JETTY_VAL[$pom]=1 ;;
         'TOMCAT '*) POM_TOMCAT_VAL[$pom]=1 ;;
+        'TOMCAT7 '*) POM_TOMCAT7_VAL[$pom]=1 ;;
+        'CARGO '*) POM_CARGO_VAL[$pom]=1 ;;
+        'WEBDIR '*) POM_WEBDIR_VAL[$pom]=1 ;;
       esac
     done <<< "$dump"
     POM_MODULES_VAL[$pom]="${mods%$'\n'}"
@@ -128,15 +141,24 @@ prepare_scan() {
   done
 
   for pom in "${POM_LIST[@]}"; do
-    [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}" ]] || continue
+    [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}${POM_TOMCAT7_VAL[$pom]:-}${POM_CARGO_VAL[$pom]:-}" ]] || continue
     [[ -n "${POM_PKG_VAL[$pom]:-}" ]] && continue
     dir=$(parent_dir "$pom")
-    [[ -d "$dir/src/main/webapp" ]] || continue
-    HAS_WEBAPP[$dir]=1
+    # 标准 webapp 目录，或插件配置里改过 web 根（webAppSourceDirectory、warSourceDirectory）都算；
+    # 两者都没有就不列，插件跑起来也只会报找不到目录。
+    if [[ -d "$dir/src/main/webapp" || -n "${POM_WEBDIR_VAL[$pom]:-}" ]]; then
+      HAS_WEBAPP[$dir]=1
+    else
+      continue
+    fi
     if [[ -n "${POM_JETTY_VAL[$pom]:-}" ]]; then
       WEBRUN_GOAL[$dir]='jetty:run'
-    else
+    elif [[ -n "${POM_TOMCAT_VAL[$pom]:-}" ]]; then
       WEBRUN_GOAL[$dir]='tomcat:run'
+    elif [[ -n "${POM_TOMCAT7_VAL[$pom]:-}" ]]; then
+      WEBRUN_GOAL[$dir]='tomcat7:run'
+    else
+      WEBRUN_GOAL[$dir]='cargo:run'
     fi
   done
   return 0
@@ -192,10 +214,11 @@ is_boot_module() {
   [[ -n "${POM_SB_VAL[$pom]:-}" && -n "${HAS_MAIN_CLASS[$dir]:-}" ]]
 }
 
-# war 模块：引了 jetty 或 tomcat 插件，且模块目录下有 webapp。
+# war 模块：引了 jetty、tomcat、tomcat7 或 cargo 插件，且模块里有 webapp（标准目录或被插件配置改过）。
 is_war_module() {
   local pom=$1 dir=$2
-  [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}" && -n "${HAS_WEBAPP[$dir]:-}" ]]
+  [[ -n "${POM_JETTY_VAL[$pom]:-}${POM_TOMCAT_VAL[$pom]:-}${POM_TOMCAT7_VAL[$pom]:-}${POM_CARGO_VAL[$pom]:-}" &&
+     -n "${HAS_WEBAPP[$dir]:-}" ]]
 }
 
 # 遍历全部 pom，命中判定就调用回调 $2，参数依次是模块目录、id、聚合根、-pl 的值。

@@ -1,4 +1,4 @@
-# war 命令的收集函数：把引了 jetty 或 tomcat 插件的 war 项目拼成对应的 run 记录，目标读 WEBRUN_GOAL。
+# war 命令的收集函数：把引了 jetty、tomcat、tomcat7 或 cargo 插件的 war 项目拼成对应的 run 记录，目标读 WEBRUN_GOAL。
 emit_war_record() {
   local dir=$1 id=$2 agg=$3 rel=$4
   local goal=${WEBRUN_GOAL[$dir]:-}

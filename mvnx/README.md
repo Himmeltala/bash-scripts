@@ -7,7 +7,7 @@
 ```
 mvnx                  先选命令，再勾目标
 mvnx run              显式写命令
-mvnx war              找引了 jetty 或 tomcat 插件的 war 项目
+mvnx war              找引了 jetty、tomcat、tomcat7 或 cargo 插件的 war 项目
 mvnx install          列出所有可装模块，顶部「全部」一键全选
 mvnx package          打包可运行模块
 mvnx --no-compile     跳过编译，直接跑已有 class
@@ -22,7 +22,7 @@ mvnx --refresh        清掉当前命令的勾选记录
 | 命令 | 目标 | 执行 |
 | --- | --- | --- |
 | `run` | Spring Boot 可运行模块 | `mvn -pl <模块> spring-boot:run` |
-| `war` | 引了 jetty 或 tomcat 插件的 war 项目 | `jetty:run`，只有 tomcat 时用 `tomcat:run` |
+| `war` | 引了 jetty、tomcat、tomcat7 或 cargo 插件的 war 项目 | `jetty:run`；没有 jetty 时依次取 `tomcat:run`、`tomcat7:run`、`cargo:run` |
 | `install` | 顶层项目或子模块 | `mvn clean install -Dmaven.test.skip=true -U -e -Dmaven.resources.skip=true`；按模块安装带 `-am` |
 | `package` | Spring Boot 可运行模块 | `mvn -pl <模块> clean package -Dmaven.test.skip=true -am` |
 
@@ -38,7 +38,7 @@ mvnx --refresh        清掉当前命令的勾选记录
 
 判定只看时间戳：源码、`target/generated-sources`、模块与各级父 pom 有文件比最新 class 新就编译；没有 `target/classes`、里面没有 class 或路径不存在，一律按需要编译处理。资源文件不参与判定。删掉源文件后旧 class 会留在 `target/classes`，需要 `--rebuild`。
 
-`run` 的目标要同时满足：pom 引了 `spring-boot-maven-plugin`、不是 `pom` 打包、`src/main/java` 下有 `@SpringBootApplication`。`war` 要引 jetty 或 tomcat 插件、不是 `pom` 打包、存在 `src/main/webapp`。
+`run` 的目标要同时满足：pom 引了 `spring-boot-maven-plugin`、不是 `pom` 打包、`src/main/java` 下有 `@SpringBootApplication`。`war` 要引 jetty（含 `jetty-ee8/9/10/11-maven-plugin`）、tomcat、tomcat7 或 cargo 插件，不是 `pom` 打包，并且存在 `src/main/webapp`，或插件配置里用 `webAppSourceDirectory`、`warSourceDirectory` 改过 web 根。
 
 模块能被上层聚合 pom 寻址时，从最外层聚合根执行 `mvn -pl <相对路径> <目标>`；否则进模块目录执行。重名模块补上最短的唯一路径尾巴：`admin-service@shop/admin/admin-service`。
 

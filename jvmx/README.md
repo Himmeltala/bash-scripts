@@ -1,6 +1,6 @@
 # jvmx
 
-一个网页同时管 Maven 与 Gradle 工作区：登记目录后列出可启动、构建、打包、安装的目标，点按钮启停，看日志、端口与指标。
+一个网页同时管 Maven 与 Gradle 工作区：登记目录后列出可启动、构建、打包、安装的目标，点按钮启停，看日志、端口与指标。能起的目标跟着 mvnx 与 gradlex 走：Spring Boot 服务、war 项目（jetty、tomcat、tomcat7、cargo）与 Gradle 的 Boot、application、gretty/tomcat/jetty web 模块都列在「启动」里。
 
 jvmx 只做网页壳。工程目标由 `mvnx` / `gradlex` 的机器接口算出来，执行也交给它们的 `exec`，所以 pom、`settings.gradle`、`-pl` 聚合与 Spring Boot 插件判定这些规则不会在两边各写一份。
 

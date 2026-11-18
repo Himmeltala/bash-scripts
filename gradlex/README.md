@@ -17,14 +17,14 @@ gradlex --reset         清掉当前命令的勾选记录
 
 | 命令 | 目标 | 任务 |
 | --- | --- | --- |
-| `run` | Spring Boot 或 application 模块 | `bootRun` / `run` |
+| `run` | Spring Boot、application 或 web 模块 | `bootRun` / `run` / `appRun` / `tomcatRun` / `jettyRun` |
 | `build` | 同一批模块 | `bootJar` / `assemble` |
 
 纯库模块不进入清单。
 
 ## 目标判定
 
-模块自己的 `build.gradle(.kts)`、构建根的 `project(":名字") { apply plugin }` 或 `subprojects` / `allprojects` 块里应用了 Spring Boot 插件，且 `src/main/java` 或 `src/main/kotlin` 下有 `@SpringBootApplication`；或者应用了 `application` 插件并声明了 `mainClass` / `mainClassName`，或存在 `main` 方法。构建根顶部的 `plugins` 只作用于根项目。
+模块自己的 `build.gradle(.kts)`、构建根的 `project(":名字") { apply plugin }` 或 `subprojects` / `allprojects` 块里应用了 Spring Boot 插件，且 `src/main/java` 或 `src/main/kotlin` 下有 `@SpringBootApplication`；或者应用了 `application` 插件并声明了 `mainClass` / `mainClassName`，或存在 `main` 方法。war 项目按 `appRun`（gretty）、`tomcatRun`（`com.bmuschko.tomcat`）、`jettyRun`（旧版内置 `jetty` 插件）的顺序认，都要求 `src/main/webapp` 存在，或在构建文件里用 `webAppDir` 改过 web 根。构建根顶部的 `plugins` 只作用于根项目。
 
 ## 构建根与入口
 

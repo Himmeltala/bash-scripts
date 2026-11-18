@@ -181,6 +181,39 @@ out=$( printf '1\n' | ( cd "$tmp/groovy" && PATH="$tmp/fakebin:$PATH" "$bin" run
   printf 'ok   exec: rebuild 与 refresh\n' ||
   { printf 'FAIL exec: 得到 %s\n' "$out" >&2; fail=1; }
 
+# 9. war 项目：gretty、bmuschko tomcat、旧版内置 jetty 各认各的任务，且要有 web 目录。
+mkdir -p "$tmp/gretty/src/main/webapp"
+printf "rootProject.name = 'gretty-demo'\n" > "$tmp/gretty/settings.gradle"
+printf "plugins {\n    id 'org.gretty' version '4.1.0'\n}\n" > "$tmp/gretty/build.gradle"
+( cd "$tmp/gretty" && "$bin" --list ) > "$tmp/gretty.out"
+check_has 'gretty: appRun' "$tmp/gretty.out" 'appRun'
+
+mkdir -p "$tmp/gretty-custom/web"
+printf "rootProject.name = 'gretty-custom'\n" > "$tmp/gretty-custom/settings.gradle"
+printf "plugins {\n    id 'org.gretty' version '4.1.0'\n}\ngretty {\n    webAppDir = 'web'\n}\n" \
+  > "$tmp/gretty-custom/build.gradle"
+( cd "$tmp/gretty-custom" && "$bin" --list ) > "$tmp/gretty-custom.out"
+check_has 'gretty: webAppDir 改过的 web 根' "$tmp/gretty-custom.out" 'appRun'
+
+mkdir -p "$tmp/gretty-noweb"
+printf "rootProject.name = 'gretty-noweb'\n" > "$tmp/gretty-noweb/settings.gradle"
+printf "plugins {\n    id 'org.gretty' version '4.1.0'\n}\n" > "$tmp/gretty-noweb/build.gradle"
+# 没有可运行模块时 --list 以 1 退出，这里只看输出内容。
+( cd "$tmp/gretty-noweb" && "$bin" --list ) > "$tmp/gretty-noweb.out" || true
+check_not 'gretty: 没有 web 目录不列' "$tmp/gretty-noweb.out" 'appRun'
+
+mkdir -p "$tmp/tomcat/src/main/webapp"
+printf "rootProject.name = 'tomcat-demo'\n" > "$tmp/tomcat/settings.gradle"
+printf "plugins {\n    id 'com.bmuschko.tomcat' version '2.9.0'\n}\n" > "$tmp/tomcat/build.gradle"
+( cd "$tmp/tomcat" && "$bin" --list ) > "$tmp/tomcat.out"
+check_has 'tomcat: tomcatRun' "$tmp/tomcat.out" 'tomcatRun'
+
+mkdir -p "$tmp/jetty/web/src/main/webapp"
+printf "rootProject.name = 'jetty-demo'\n" > "$tmp/jetty/web/settings.gradle"
+printf "apply plugin: 'jetty'\n" > "$tmp/jetty/web/build.gradle"
+( cd "$tmp/jetty/web" && "$bin" --list ) > "$tmp/jetty.out"
+check_has 'jetty: jettyRun' "$tmp/jetty.out" 'jettyRun'
+
 
 ok() { printf 'ok - %s\n' "$*"; }
 bad() { printf 'FAIL - %s\n' "$*" >&2; fail=1; }

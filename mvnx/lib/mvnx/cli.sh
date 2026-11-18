@@ -2,7 +2,7 @@
 # 注册表每行六列以竖线分隔且内容不能含竖线：命令名|说明|收集函数|名词|参与编译判定|选择函数（空则统一复选）。
 readonly COMMANDS=(
   'run|启动 Spring Boot 模块|collect_runnable|可运行模块|1|'
-  'war|启动 war 项目（jetty/tomcat）|collect_war|war 项目|1|'
+  'war|启动 war 项目（jetty/tomcat/cargo）|collect_war|war 项目|1|'
   'install|装顶层项目到本地仓库|collect_toplevel|顶层项目|0|select_install'
   'package|打可部署的 jar|collect_packable|可运行模块|0|'
 )

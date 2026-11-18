@@ -1,7 +1,7 @@
 # 命令行层：命令注册表、帮助生成、参数解析、动作分发与主菜单，加载顺序放最后。
 # 注册表每行六列以竖线分隔且内容不能含竖线：命令名|说明|收集函数|名词|参与构建参数|选择函数（空则统一复选）。
 readonly COMMANDS=(
-  'run|启动可运行模块（Boot/application）|collect_runnable|可运行模块|1|'
+  'run|启动可运行模块（Boot/application/web）|collect_runnable|可运行模块|1|'
   'build|构建可运行模块（bootJar/assemble）|collect_buildable|可构建模块|1|'
 )
 readonly DEFAULT_COMMAND='run'

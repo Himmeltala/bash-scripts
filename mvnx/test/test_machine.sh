@@ -52,4 +52,75 @@ out=$(bash "$repo/mvnx/bin/mvnx" exec --id run:demo-app --args '-Dfoo=bar') || f
 bash "$repo/mvnx/bin/mvnx" exec --id run:nope >/dev/null 2>&1
 [[ $? -eq 2 ]] || fail '未知 id 应以用法错误退出'
 
+# war 目标：jetty 的各种版本、tomcat7 与 cargo 插件，以及被配置改过的 web 根。
+write_war_pom() {
+  local dir=$1 artifact=$2 extra=$3
+  mkdir -p "$dir"
+  cat > "$dir/pom.xml" <<EOF
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>demo</groupId>
+  <artifactId>$(basename "$dir")</artifactId>
+  <version>1.0</version>
+  <packaging>war</packaging>
+  <build><plugins><plugin>
+    <artifactId>$artifact</artifactId>
+    $extra
+  </plugin></plugins></build>
+</project>
+EOF
+}
+
+expect_war() {
+  local dir=$1 want=$2 name=$3 out
+  out=$(cd "$dir" && bash "$repo/mvnx/bin/mvnx" --list --json war) || fail "$name：列出 war 目标失败"
+  python3 - "$out" "$want" "$name" <<'PY' || fail "$name：JSON 不对"
+import json, sys
+data = json.loads(sys.argv[1])
+targets = data["targets"]
+assert len(targets) == 1, targets
+assert targets[0]["display"] == sys.argv[2], targets
+PY
+}
+
+write_war_pom "$tmp/war/tomcat7" 'tomcat7-maven-plugin' ''
+mkdir -p "$tmp/war/tomcat7/src/main/webapp"
+expect_war "$tmp/war/tomcat7" 'mvn tomcat7:run' 'tomcat7'
+
+write_war_pom "$tmp/war/jetty-ee10" 'jetty-ee10-maven-plugin' ''
+mkdir -p "$tmp/war/jetty-ee10/src/main/webapp"
+expect_war "$tmp/war/jetty-ee10" 'mvn jetty:run' 'jetty-ee10'
+
+write_war_pom "$tmp/war/cargo" 'cargo-maven3-plugin' ''
+mkdir -p "$tmp/war/cargo/src/main/webapp"
+expect_war "$tmp/war/cargo" 'mvn cargo:run' 'cargo'
+
+# web 根改到 web/，没有 src/main/webapp 也认。
+write_war_pom "$tmp/war/custom" 'jetty-maven-plugin' \
+  '<configuration><webAppSourceDirectory>web</webAppSourceDirectory></configuration>'
+mkdir -p "$tmp/war/custom/web"
+expect_war "$tmp/war/custom" 'mvn jetty:run' '自定义 web 根'
+
+# 插件声明了却既没有 webapp 也没有配置，不列目标。
+write_war_pom "$tmp/war/noweb" 'jetty-maven-plugin' ''
+out=$(cd "$tmp/war/noweb" && bash "$repo/mvnx/bin/mvnx" --list --json war) || fail '无 webapp 时列出失败'
+[[ "$out" == *'"targets":[]'* ]] || fail "没有 webapp 不该列目标：$out"
+
+# 同时声明 jetty 与 tomcat7 时仍按 jetty 执行，且只出现一条。
+mkdir -p "$tmp/war/both/src/main/webapp"
+cat > "$tmp/war/both/pom.xml" <<'EOF'
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>demo</groupId>
+  <artifactId>both</artifactId>
+  <version>1.0</version>
+  <packaging>war</packaging>
+  <build><plugins>
+    <plugin><artifactId>jetty-maven-plugin</artifactId></plugin>
+    <plugin><artifactId>tomcat7-maven-plugin</artifactId></plugin>
+  </plugins></build>
+</project>
+EOF
+expect_war "$tmp/war/both" 'mvn jetty:run' 'jetty 优先'
+
 printf 'ok - mvnx 机器接口\n'

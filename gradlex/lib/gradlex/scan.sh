@@ -4,6 +4,10 @@ readonly SCAN_SKIP_DIRS=(build .gradle .git .svn node_modules .idea .settings ou
 
 readonly BOOT_MARKER_RE="org\.springframework\.boot|spring-boot-gradle-plugin|apply[[:space:]]+plugin[[:space:]]*:[[:space:]]*[\"']spring-boot[\"']"
 readonly APP_MARKER_RE="id[[:space:]]*\(?[[:space:]]*[\"']application[\"']|apply[[:space:]]+plugin[[:space:]]*:[[:space:]]*[\"']application[\"']|(^|[[:space:]{])application[[:space:]]*[}]?[[:space:]]*$"
+# 跑 war 的插件：gretty 的 appRun、bmuschko tomcat 的 tomcatRun、旧版内置 jetty 的 jettyRun。
+readonly GRETTY_MARKER_RE="[\"']org\.gretty[\"']|[\"']org\.akhikhl\.gretty[\"']"
+readonly TOMCAT_MARKER_RE="[\"']com\.bmuschko\.tomcat[\"']"
+readonly JETTY_MARKER_RE="id[[:space:]]*\(?[[:space:]]*[\"']jetty[\"']|apply[[:space:]]+plugin[[:space:]]*:[[:space:]]*[\"']jetty[\"']"
 
 # 从 Groovy 与 Kotlin settings 里取 include 的项目路径，去掉前导冒号。
 # 支持单行 include 'a', ':b'、include(':a') 与多行 include(...)。
@@ -245,7 +249,18 @@ has_declared_main() {
   return 1
 }
 
-# 判定每个模块的任务。Boot 模块优先于 application 模块。
+# web 模块要有 web 目录：默认 src/main/webapp，gretty 等插件可在构建文件里用 webAppDir 改掉。
+has_webapp_dir() {
+  local dir=$1 bf
+  [[ -d "$dir/src/main/webapp" ]] && return 0
+  for bf in "$dir/build.gradle" "$dir/build.gradle.kts"; do
+    [[ -f "$bf" ]] || continue
+    grep -Eq 'webAppDir[[:space:]]*[=:]' "$bf" && return 0
+  done
+  return 1
+}
+
+# 判定每个模块的任务。Boot 模块优先于 application 模块，再往后是 gretty、tomcat、旧版 jetty 的 web 模块。
 prepare_modules() {
   local root settings name dir override path id
   local -A overrides=()
@@ -288,7 +303,7 @@ prepare_modules() {
     fi
   done
 
-  local boot app
+  local boot app gretty tomcat jettyweb
   for dir in "${MODULE_DIRS[@]}"; do
     root=${MODULE_ROOT[$dir]}
     path=${MODULE_PATH[$dir]}
@@ -296,8 +311,14 @@ prepare_modules() {
 
     boot=0
     app=0
+    gretty=0
+    tomcat=0
+    jettyweb=0
     module_applies_plugin "$dir" "$root" "$name" "$BOOT_MARKER_RE" && boot=1
     module_applies_plugin "$dir" "$root" "$name" "$APP_MARKER_RE" && app=1
+    module_applies_plugin "$dir" "$root" "$name" "$GRETTY_MARKER_RE" && gretty=1
+    module_applies_plugin "$dir" "$root" "$name" "$TOMCAT_MARKER_RE" && tomcat=1
+    module_applies_plugin "$dir" "$root" "$name" "$JETTY_MARKER_RE" && jettyweb=1
 
     if ((boot)) && has_boot_main "$dir"; then
       MODULE_KIND[$dir]='boot'
@@ -307,6 +328,15 @@ prepare_modules() {
       MODULE_KIND[$dir]='app'
       MODULE_RUN_TASK[$dir]='run'
       MODULE_BUILD_TASK[$dir]='assemble'
+    elif ((gretty)) && has_webapp_dir "$dir"; then
+      MODULE_KIND[$dir]='gretty'
+      MODULE_RUN_TASK[$dir]='appRun'
+    elif ((tomcat)) && has_webapp_dir "$dir"; then
+      MODULE_KIND[$dir]='tomcat'
+      MODULE_RUN_TASK[$dir]='tomcatRun'
+    elif ((jettyweb)) && has_webapp_dir "$dir"; then
+      MODULE_KIND[$dir]='jetty'
+      MODULE_RUN_TASK[$dir]='jettyRun'
     fi
   done
   return 0
