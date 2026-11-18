@@ -1348,6 +1348,30 @@ def git_item(code):
     return "modified"
 
 
+def column_item(code):
+    """单列状态字母换成页面展示项；未跟踪在索引列记作 ?，这里单独认。"""
+    if code == "?":
+        return "unversioned"
+    return git_item(code + " ")
+
+
+def split_status(files):
+    """按索引列与工作区列把改动分三组，条目复制一份，item 换成本列展示项。"""
+    groups = {"staged": [], "unstaged": [], "conflicts": []}
+    for entry in files:
+        index = entry.get("index", " ")
+        worktree = entry.get("worktree", " ")
+        if entry.get("item") == "conflicted":
+            # 冲突跨两列，展示项仍按整个状态码算，不能只看一列。
+            groups["conflicts"].append(dict(entry, item=git_item(index + worktree)))
+            continue
+        if index in "AMDRCT":
+            groups["staged"].append(dict(entry, item=column_item(index)))
+        if worktree in "MDT" or index == "?":
+            groups["unstaged"].append(dict(entry, item=column_item(worktree)))
+    return groups
+
+
 def parse_git_status(out):
     """git status --porcelain -z 的条目：XY<空格>路径\\0，重命名后面再跟一个原路径字段。"""
     fields = out.decode("utf-8", "replace").split("\0")
@@ -2137,7 +2161,11 @@ class Handler(WebHandler):
     def _changes(self, query):
         ws = self._ws(query)
         if ws.get("vcs") == "git":
-            return {"workspace": ws, **git_changes(ws["root"])}
+            # 分组直接用这次 git status 的结果，不再跑第二遍。
+            data = git_changes(ws["root"])
+            data["status"] = split_status(data["files"])
+            data["workspace"] = ws
+            return data
         info = svn_info(ws["root"])
         rc, out, err = svn(["status", "--xml"], cwd=ws["root"])
         if rc != 0:

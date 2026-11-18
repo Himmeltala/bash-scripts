@@ -360,6 +360,17 @@ class GitWorkspace(unittest.TestCase):
         self.assertEqual(status, 400)
         self.call("/forget", {"ws": wid})
 
+    def test_api_changes_status_groups(self):
+        wid = self.add()
+        status, data = self.call("/changes?ws=" + wid)
+        self.assertEqual(status, 200, data)
+        staged = [f["path"] for f in data["status"]["staged"]]
+        unstaged = [f["path"] for f in data["status"]["unstaged"]]
+        self.assertIn("sub/a.txt", staged)
+        self.assertIn("new.txt", staged)
+        self.assertIn("sub/untracked.txt", unstaged)
+        self.call("/forget", {"ws": wid})
+
     def test_api_log_and_revision(self):
         wid = self.add()
         status, data = self.call("/log?ws=%s&limit=5" % wid)
@@ -757,6 +768,22 @@ class GitStatusParse(unittest.TestCase):
         self.assertEqual((by_path["d.txt"]["index"], by_path["d.txt"]["worktree"]), ("?", "?"))
         self.assertEqual(by_path["new.txt"]["orig"], "old.txt")
         self.assertEqual(by_path["a.txt"]["item"], "modified")
+
+    def test_split_status_groups_both_columns(self):
+        files = [
+            {"path": "a", "item": "modified", "index": "M", "worktree": " "},
+            {"path": "b", "item": "modified", "index": "M", "worktree": "M"},
+            {"path": "c", "item": "unversioned", "index": "?", "worktree": "?"},
+            {"path": "d", "item": "conflicted", "index": "U", "worktree": "U"},
+            {"path": "e", "item": "renamed", "index": "R", "worktree": " ", "orig": "z"},
+        ]
+        groups = gitmod.split_status(files)
+        self.assertEqual([i["path"] for i in groups["staged"]], ["a", "b", "e"])
+        self.assertEqual([i["path"] for i in groups["unstaged"]], ["b", "c"])
+        self.assertEqual([i["path"] for i in groups["conflicts"]], ["d"])
+        self.assertEqual(groups["staged"][2]["item"], "renamed")
+        self.assertEqual(groups["unstaged"][0]["item"], "modified")
+        self.assertEqual(groups["unstaged"][1]["item"], "unversioned")
 
 
 if __name__ == "__main__":
