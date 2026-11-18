@@ -61,6 +61,7 @@
       v-else-if="tab !== 'zip'"
       :rows="rows"
       name-title="脚本"
+      :show-path="false"
       @start="start"
       @stop="stop"
       @settings="openSettings"

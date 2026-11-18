@@ -16,7 +16,7 @@
             <!-- 同一张表里混着启动、构建、安装时靠它区分；不分栏的调用方不用给。 -->
             <v-chip v-if="row.typeText" size="x-small" variant="tonal" class="type-chip">{{ row.typeText }}</v-chip>
           </div>
-          <div class="svc-path" :title="row.path">{{ row.path }}</div>
+          <div v-if="showPath && row.path" class="svc-path" :title="row.path">{{ row.path }}</div>
         </td>
         <td>
           <div class="cmd" :title="row.cmd">{{ row.cmd }}</div>
@@ -86,6 +86,8 @@ defineProps({
   rows: { type: Array, required: true },
   // 第一列的表头，nodex 叫脚本，mvnx 叫模块，由调用方给。
   nameTitle: { type: String, required: true },
+  // 名字下那行路径：nodex 的服务都跑在工作区根上，只有一个点，调用方可以关掉。
+  showPath: { type: Boolean, default: true },
 })
 
 defineEmits(['start', 'stop', 'settings', 'log'])
