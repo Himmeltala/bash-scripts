@@ -847,6 +847,34 @@ def svn_add_args(root, paths):
     return ["add", "--parents", "--", *clean_paths(root, paths)]
 
 
+def svn_unadd_paths(state, paths):
+    """取消纳入只认刚纳入、还没提交的路径；改过或已提交的不在这里撤。"""
+    if not paths:
+        raise ApiError(400, "没有选中要取消纳入版本控制的路径")
+    clean = []
+    for rel in paths:
+        if state.get(rel) != "added":
+            raise ApiError(400, "只能取消还没提交的纳入：%s" % rel)
+        if rel not in clean:
+            clean.append(rel)
+    return clean
+
+
+def svn_unadd_args(root, paths):
+    # 撤回纳入用 svn revert：文件留着，只把待提交的新增标记去掉。
+    # 目录必须连子项一起撤，只撤目录本身 svn 会报 E155038。
+    return ["revert", "--depth", "infinity", "--", *clean_paths(root, paths)]
+
+
+def svn_status_state(root):
+    """路径到状态的对照表；未纳管目录按文件展开，与页面列的一致。"""
+    rc, out, err = svn(["status", "--xml"], cwd=root)
+    if rc != 0:
+        raise ApiError(500, err or "svn status 失败")
+    files, _ = expand_unversioned(root, parse_status(out))
+    return {item["path"]: item["item"] for item in files}
+
+
 def svn_sync_info(root):
     info = svn_info(root)
     rc, out, err = svn(["status", "--xml"], cwd=root)
@@ -2226,6 +2254,8 @@ class Handler(WebHandler):
             return self._unstage(body)
         if route == "svn-add":
             return self._svn_add(body)
+        if route == "svn-unadd":
+            return self._svn_unadd(body)
         if route == "operations":
             return self._start_operation(body)
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/cancel", route)
@@ -2420,14 +2450,27 @@ class Handler(WebHandler):
         lock = self._index_lock(ws)
         try:
             clean = clean_paths(root, paths)
-            rc, out, err = svn(["status", "--xml"], cwd=root)
-            if rc != 0:
-                raise ApiError(500, err or "svn status 失败")
-            files, _ = expand_unversioned(root, parse_status(out))
-            state = {item["path"]: item["item"] for item in files}
+            state = svn_status_state(root)
             rc, _, err = svn(svn_add_args(root, svn_add_paths(state, clean)), cwd=root)
             if rc != 0:
                 raise ApiError(400, err or "svn add 失败")
+            return {"workspace": ws, **changes_payload(ws)}
+        finally:
+            lock.release()
+
+    def _svn_unadd(self, body):
+        ws = self._index_ws(body)
+        if ws.get("vcs") != "svn":
+            raise ApiError(400, "这个工作区不是 SVN 工作副本")
+        root = ws["root"]
+        paths = body.get("paths") or []
+        lock = self._index_lock(ws)
+        try:
+            clean = clean_paths(root, paths)
+            state = svn_status_state(root)
+            rc, _, err = svn(svn_unadd_args(root, svn_unadd_paths(state, clean)), cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "svn revert 失败")
             return {"workspace": ws, **changes_payload(ws)}
         finally:
             lock.release()

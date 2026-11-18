@@ -61,6 +61,7 @@ export const api = {
   stage: (ws, paths) => call('POST', '/stage', { ws, paths }),
   unstage: (ws, paths) => call('POST', '/unstage', { ws, paths }),
   svnAdd: (ws, paths) => call('POST', '/svn-add', { ws, paths }),
+  svnUnadd: (ws, paths) => call('POST', '/svn-unadd', { ws, paths }),
   mkdir: (ws, dir, name) => call('POST', '/mkdir', { ws, dir, name }),
   newFile: (ws, dir, name) => call('POST', '/newfile', { ws, dir, name }),
   renameEntry: (ws, path, name) => call('POST', '/rename', { ws, path, name }),

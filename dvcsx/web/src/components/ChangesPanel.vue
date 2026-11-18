@@ -138,7 +138,7 @@
                   :loading="acting === rowKey(group.key, row.file)"
                   @click.stop="actRow(group.key, row.file)"
                 >
-                  {{ rowAction(group.key, row.file).label }}
+                  <v-icon size="16">{{ rowAction(group.key, row.file).icon }}</v-icon>
                 </v-btn>
               </template>
             </li>
@@ -313,7 +313,7 @@ const GROUP_DEFS = [
   { key: 'conflicts', title: '冲突', action: '' },
 ]
 
-// SVN 没有索引，只有一份“更改”；未纳管的行单独给纳入版本控制的动作。
+// SVN 没有索引，只有一份“更改”；未纳管与刚纳入的行各自给纳入、撤回纳入的动作。
 const groups = computed(() =>
   isGit.value ? GROUP_DEFS : [{ key: 'unstaged', title: '更改', action: '' }],
 )
@@ -367,11 +367,15 @@ function keyOf(group, path) {
 
 function rowAction(key, file) {
   if (!isGit.value) {
-    return file.item === 'unversioned' ? { label: '纳入版本控制', title: '纳入版本控制' } : null
+    if (file.item === 'unversioned') return { icon: 'mdi-plus-circle-outline', title: '纳入版本控制' }
+    if (file.item === 'added') {
+      return { icon: 'mdi-minus-circle-outline', title: '取消纳入版本控制，文件留在工作副本里' }
+    }
+    return null
   }
-  if (key === 'staged') return { label: '−', title: '取消暂存' }
-  if (key === 'conflicts') return { label: '+', title: '标记已解决' }
-  return { label: '+', title: '暂存' }
+  if (key === 'staged') return { icon: 'mdi-minus-circle-outline', title: '取消暂存' }
+  if (key === 'conflicts') return { icon: 'mdi-check-circle-outline', title: '标记已解决' }
+  return { icon: 'mdi-plus-circle-outline', title: '暂存' }
 }
 
 const groupKey = (key) => `group:${key}`
@@ -384,8 +388,14 @@ async function actGroup(group) {
   await runAction(groupKey(group.key), () => call(props.ws.id, paths))
 }
 
+// 行上的按钮各走各的接口：Git 分暂存与取消，SVN 分纳入与撤回纳入。
+function rowCall(key, file) {
+  if (!isGit.value) return file.item === 'added' ? api.svnUnadd : api.svnAdd
+  return key === 'staged' ? api.unstage : api.stage
+}
+
 async function actRow(key, file) {
-  const call = isGit.value ? (key === 'staged' ? api.unstage : api.stage) : api.svnAdd
+  const call = rowCall(key, file)
   await runAction(rowKey(key, file), () => call(props.ws.id, [file.path]))
 }
 
@@ -450,6 +460,10 @@ async function apply(data) {
   const keep = prev && findIn(prev.group, prev.path)
   if (keep) {
     selected.value = { group: keep.group, path: keep.file.path, file: keep.file }
+    // SVN 纳入或撤回纳入不换组，但状态变了，差异口径跟着变，得重新取一次。
+    if (keep.file.item !== prev.file.item) {
+      await pick(keep.file, keep.group, { skipGuard: true })
+    }
     return
   }
   const next = (prev && findAnywhere(prev.path)) || firstEntry()

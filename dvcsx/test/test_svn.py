@@ -283,6 +283,49 @@ class SvnWorkspace(unittest.TestCase):
             target.unlink()
         self.call("/forget", {"ws": wid})
 
+    def test_api_svn_add_then_unadd(self):
+        # 单独一份工作副本：纳入再撤回，状态回到未纳管，文件内容不动。
+        with tempfile.TemporaryDirectory(prefix="dvcsx-svn-unadd-") as tmp:
+            base = Path(tmp)
+            repo = base / "repo"
+            wc = base / "wc"
+            run(["svnadmin", "create", str(repo)])
+            run(["svn", "checkout", "-q", "file://" + str(repo), str(wc)])
+            (wc / "new.txt").write_text("new\n", "utf-8")
+            (wc / "d" / "sub").mkdir(parents=True)
+            (wc / "d" / "sub" / "a.txt").write_text("a\n", "utf-8")
+            status, data = self.call("/workspaces", {"root": str(wc)})
+            self.assertEqual(status, 200, data)
+            wid = data["workspace"]["id"]
+            try:
+                status, data = self.call("/svn-add", {"ws": wid, "paths": ["new.txt"]})
+                self.assertEqual(status, 200, data)
+                items = {f["path"]: f["item"] for f in data["files"]}
+                self.assertEqual(items.get("new.txt"), "added")
+
+                status, data = self.call("/svn-unadd", {"ws": wid, "paths": ["new.txt"]})
+                self.assertEqual(status, 200, data)
+                items = {f["path"]: f["item"] for f in data["files"]}
+                self.assertEqual(items.get("new.txt"), "unversioned")
+                self.assertEqual((wc / "new.txt").read_text("utf-8"), "new\n")
+
+                # 已经不是新增状态了，再撤一次要被挡住。
+                status, data = self.call("/svn-unadd", {"ws": wid, "paths": ["new.txt"]})
+                self.assertEqual(status, 400, data)
+
+                # --parents 带上去的上级目录也能整棵撤回，子项跟着变回未纳管。
+                status, data = self.call("/svn-add", {"ws": wid, "paths": ["d/sub/a.txt"]})
+                self.assertEqual(status, 200, data)
+                items = {f["path"]: f["item"] for f in data["files"]}
+                self.assertEqual(items.get("d/sub"), "added")
+                status, data = self.call("/svn-unadd", {"ws": wid, "paths": ["d"]})
+                self.assertEqual(status, 200, data)
+                items = {f["path"]: f["item"] for f in data["files"]}
+                self.assertEqual(items.get("d/sub/a.txt"), "unversioned")
+                self.assertEqual((wc / "d" / "sub" / "a.txt").read_text("utf-8"), "a\n")
+            finally:
+                self.call("/forget", {"ws": wid})
+
     def test_api_accepts_plain_dir(self):
         # 仓库之外的临时目录既不在 SVN 里，也不在 Git 里，按普通目录收下，只给浏览目录。
         with tempfile.TemporaryDirectory() as tmp:
@@ -444,6 +487,21 @@ class SvnAddPaths(unittest.TestCase):
         self.assertEqual(svnmod.svn_add_paths(state, ["a.txt"]), ["a.txt"])
         with self.assertRaises(svnmod.ApiError):
             svnmod.svn_add_paths(state, ["b.txt"])
+
+
+class SvnUnaddPaths(unittest.TestCase):
+    """取消纳入只认刚纳入、还没提交的路径，纯函数不跑 svn。"""
+
+    def test_svn_unadd_only_accepts_added(self):
+        state = {"a.txt": "added", "b.txt": "modified", "c.txt": "unversioned"}
+        self.assertEqual(svnmod.svn_unadd_paths(state, ["a.txt"]), ["a.txt"])
+        for rel in ("b.txt", "c.txt"):
+            with self.assertRaises(svnmod.ApiError):
+                svnmod.svn_unadd_paths(state, [rel])
+
+    def test_svn_unadd_needs_paths(self):
+        with self.assertRaises(svnmod.ApiError):
+            svnmod.svn_unadd_paths({"a.txt": "added"}, [])
 
 
 class ApiOperation(unittest.TestCase):
