@@ -1362,8 +1362,13 @@ def parse_git_status(out):
         if len(raw) < 4:
             continue
         code = raw[:2]
+        index, worktree = code[0], code[1]
         path = raw[3:]
+        orig = ""
         if code[0] in "RC":
+            # 重命名、复制的原路径紧跟在路径字段后面。
+            if i < len(fields):
+                orig = fields[i]
             i += 1
         item = git_item(code)
         if item == "unversioned":
@@ -1372,7 +1377,10 @@ def parse_git_status(out):
             if untracked > UNVERSIONED_MAX:
                 truncated = True
                 continue
-        files.append({"path": path, "item": item})
+        entry = {"path": path, "item": item, "index": index, "worktree": worktree}
+        if orig:
+            entry["orig"] = orig
+        files.append(entry)
     files.sort(key=lambda f: (STATUS_ORDER.get(f["item"], 99), f["path"]))
     return files, truncated
 

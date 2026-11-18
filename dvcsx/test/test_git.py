@@ -746,5 +746,18 @@ class GitOperations(unittest.TestCase):
         self.assertTrue(any(b["current"] and b["name"] == "main" for b in info["branches"]))
 
 
+class GitStatusParse(unittest.TestCase):
+    def test_fields_keep_both_columns_and_rename_source(self):
+        raw = b"M  a.txt\0 M b.txt\0MM c.txt\0?? d.txt\0R  new.txt\0old.txt\0"
+        files, _ = gitmod.parse_git_status(raw)
+        by_path = {item["path"]: item for item in files}
+        self.assertEqual((by_path["a.txt"]["index"], by_path["a.txt"]["worktree"]), ("M", " "))
+        self.assertEqual((by_path["b.txt"]["index"], by_path["b.txt"]["worktree"]), (" ", "M"))
+        self.assertEqual((by_path["c.txt"]["index"], by_path["c.txt"]["worktree"]), ("M", "M"))
+        self.assertEqual((by_path["d.txt"]["index"], by_path["d.txt"]["worktree"]), ("?", "?"))
+        self.assertEqual(by_path["new.txt"]["orig"], "old.txt")
+        self.assertEqual(by_path["a.txt"]["item"], "modified")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
