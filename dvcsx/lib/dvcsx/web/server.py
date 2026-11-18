@@ -1427,14 +1427,23 @@ def git_diff_of(root, args):
     return {"text": text, "truncated": truncated, "wide": is_wide(text), "error": err if rc != 0 else ""}
 
 
-def git_change_diff(root, rel, full=False):
-    """未提交的改动：工作区加暂存区对 HEAD，口径跟 SVN 对 BASE 一致。"""
-    has_head, _ = git_head(root)
-    if has_head:
-        args = ["diff", "HEAD", "--", ":/" + rel]
-    else:
-        # 空仓库还没有 HEAD，暂存区里的算新增。
+def git_change_diff(root, rel, full=False, scope="head"):
+    """未提交的改动，scope 决定取哪一段。
+
+    staged 取暂存区对 HEAD，worktree 取工作区对暂存区；head 取工作区加暂存区
+    对 HEAD，口径跟 SVN 对 BASE 一致，也是缺省值。
+    """
+    if scope == "staged":
         args = ["diff", "--cached", "--", ":/" + rel]
+    elif scope == "worktree":
+        args = ["diff", "--", ":/" + rel]
+    else:
+        has_head, _ = git_head(root)
+        if has_head:
+            args = ["diff", "HEAD", "--", ":/" + rel]
+        else:
+            # 空仓库还没有 HEAD，暂存区里的算新增。
+            args = ["diff", "--cached", "--", ":/" + rel]
     if full:
         # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
         args.insert(1, "--unified=1000000")
@@ -2178,13 +2187,17 @@ class Handler(WebHandler):
         rel = safe_rel((query.get("path") or [""])[0])
         rev = (query.get("rev") or [""])[0] or None
         item = (query.get("item") or [""])[0]
+        scope = (query.get("scope") or [""])[0]
         full = (query.get("full") or ["0"])[0] == "1"
-        # 未纳入版本控制的文件没有差异，读整份内容按新增显示。
-        if not rev and item == "unversioned":
+        # 未纳入版本控制的文件没有差异，读整份内容按新增显示；暂存区那段没有它。
+        if not rev and item == "unversioned" and scope != "staged":
             text, truncated = clip(read_unversioned(workspace_paths(ws), rel))
             return {"kind": "file", "path": rel, "text": text, "truncated": truncated}
         if ws.get("vcs") == "git":
-            result = git_change_diff(ws["root"], rel, full)
+            # 冲突文件只有对 HEAD 的差异能看，合并在工作区里的 --cc 格式不好读。
+            if item == "conflicted":
+                scope = "head"
+            result = git_change_diff(ws["root"], rel, full, scope)
         else:
             result = change_diff(ws["root"], rel, rev, full)
         result.update({"kind": "diff", "path": rel})

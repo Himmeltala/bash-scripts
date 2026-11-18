@@ -42,6 +42,21 @@ def git_out(*args, cwd):
     return run(["git", *args], cwd=cwd).strip()
 
 
+def make_conflict(repo):
+    """a.txt 在 main 与 side 各改一行，合并留下 UU 冲突；仓库里还没有 a.txt 时先建一个。"""
+    if not (repo / "a.txt").exists():
+        (repo / "a.txt").write_text("base\n", "utf-8")
+    run(["git", "add", "a.txt"], cwd=repo)
+    subprocess.run(["git", "commit", "-qm", "pre"], cwd=repo, capture_output=True, env=ENV)
+    run(["git", "checkout", "-q", "-b", "side"], cwd=repo)
+    (repo / "a.txt").write_text("base\nside\n", "utf-8")
+    run(["git", "commit", "-qam", "side"], cwd=repo)
+    run(["git", "checkout", "-q", "main"], cwd=repo)
+    (repo / "a.txt").write_text("base\nmain\n", "utf-8")
+    run(["git", "commit", "-qam", "main"], cwd=repo)
+    subprocess.run(["git", "merge", "side"], cwd=repo, capture_output=True, env=ENV)
+
+
 class GitWorkspace(unittest.TestCase):
     """两次提交的仓库：sub/a.txt 改动过、old.txt 重命名成 new.txt、还有一个未跟踪文件。"""
 
@@ -784,6 +799,65 @@ class GitStatusParse(unittest.TestCase):
         self.assertEqual(groups["staged"][2]["item"], "renamed")
         self.assertEqual(groups["unstaged"][0]["item"], "modified")
         self.assertEqual(groups["unstaged"][1]["item"], "unversioned")
+
+
+class GitDiffScope(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-scope-")
+        self.repo = Path(self.tmp.name) / "repo"
+        run(["git", "init", "-q", "-b", "main", str(self.repo)])
+        (self.repo / "a.txt").write_text("base\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.repo)
+        run(["git", "commit", "-qm", "first"], cwd=self.repo)
+        (self.repo / "a.txt").write_text("base\nstaged\n", "utf-8")
+        run(["git", "add", "a.txt"], cwd=self.repo)
+        (self.repo / "a.txt").write_text("base\nstaged\nworktree\n", "utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_staged_scope_shows_index_only(self):
+        data = gitmod.git_change_diff(self.repo, "a.txt", scope="staged")
+        self.assertIn("+staged", data["text"])
+        self.assertNotIn("+worktree", data["text"])
+
+    def test_worktree_scope_shows_unstaged_only(self):
+        data = gitmod.git_change_diff(self.repo, "a.txt", scope="worktree")
+        self.assertIn("+worktree", data["text"])
+        self.assertNotIn("+staged", data["text"])
+
+    def test_unborn_head_staged_scope_reads_index(self):
+        fresh = Path(self.tmp.name) / "fresh"
+        run(["git", "init", "-q", "-b", "main", str(fresh)])
+        (fresh / "only.txt").write_text("x\n", "utf-8")
+        run(["git", "add", "only.txt"], cwd=fresh)
+        data = gitmod.git_change_diff(fresh, "only.txt", scope="staged")
+        self.assertIn("+x", data["text"])
+
+
+class GitDiffConflict(unittest.TestCase):
+    """单独建仓库造冲突，免得把 GitDiffScope 的仓库留在合并中。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-conflict-")
+        self.repo = Path(self.tmp.name) / "repo"
+        run(["git", "init", "-q", "-b", "main", str(self.repo)])
+        (self.repo / "a.txt").write_text("base\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.repo)
+        run(["git", "commit", "-qm", "first"], cwd=self.repo)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_conflict_uses_head_diff_not_combined(self):
+        make_conflict(self.repo)
+        files, _ = gitmod.parse_git_status(
+            gitmod.git(["status", "--porcelain", "-z", "-uall"], cwd=self.repo)[1]
+        )
+        self.assertIn("conflicted", {item["item"] for item in files})
+        data = gitmod.git_change_diff(self.repo, "a.txt", scope="head")
+        self.assertTrue(data["text"].startswith("diff --git"))
+        self.assertNotIn("diff --cc", data["text"])
 
 
 if __name__ == "__main__":
