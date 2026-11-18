@@ -722,11 +722,12 @@ class GitOperations(unittest.TestCase):
     def test_commit_covers_modified_and_untracked(self):
         (self.work / "a.txt").write_text("a\nchanged\n", "utf-8")
         (self.work / "b.txt").write_text("b\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.work)
         plan = gitmod.operation_plan(
             {"id": "x", "root": str(self.work), "vcs": "git"},
-            {"action": "commit", "message": "两处改动", "paths": ["a.txt", "b.txt"]},
+            {"action": "commit", "message": "两处改动"},
         )
-        self.assertEqual(len(plan["commands"]), 2)
+        self.assertEqual(len(plan["commands"]), 1)
         for argv in plan["commands"]:
             run(argv, cwd=plan["cwd"])
         self.assertEqual(git_out("log", "-1", "--format=%s", cwd=self.work), "两处改动")
@@ -736,7 +737,7 @@ class GitOperations(unittest.TestCase):
         run(["git", "mv", "a.txt", "c.txt"], cwd=self.work)
         plan = gitmod.operation_plan(
             {"id": "x", "root": str(self.work), "vcs": "git"},
-            {"action": "commit", "message": "改名", "paths": ["c.txt"]},
+            {"action": "commit", "message": "改名"},
         )
         for argv in plan["commands"]:
             run(argv, cwd=plan["cwd"])
@@ -745,15 +746,20 @@ class GitOperations(unittest.TestCase):
         self.assertIn("c.txt", shown)
         self.assertIn("a.txt", shown)
 
-    def test_commit_refuses_unselected_staged_path(self):
+    def test_commit_includes_all_staged_paths(self):
+        """索引里有什么就提交什么，不再按勾选过滤。"""
         (self.work / "a.txt").write_text("a\nchanged\n", "utf-8")
         (self.work / "b.txt").write_text("b\n", "utf-8")
-        run(["git", "add", "b.txt"], cwd=self.work)
-        with self.assertRaises(gitmod.ApiError):
-            gitmod.operation_plan(
-                {"id": "x", "root": str(self.work), "vcs": "git"},
-                {"action": "commit", "message": "只提交 a", "paths": ["a.txt"]},
-            )
+        run(["git", "add", "-A"], cwd=self.work)
+        plan = gitmod.operation_plan(
+            {"id": "x", "root": str(self.work), "vcs": "git"},
+            {"action": "commit", "message": "两条都提交"},
+        )
+        for argv in plan["commands"]:
+            run(argv, cwd=plan["cwd"])
+        shown = git_out("show", "--name-only", "--format=", "HEAD", cwd=self.work)
+        self.assertIn("a.txt", shown)
+        self.assertIn("b.txt", shown)
 
     def test_sync_info_lists_changes(self):
         (self.work / "a.txt").write_text("a\nchanged\n", "utf-8")
@@ -825,6 +831,43 @@ class GitIndexOps(unittest.TestCase):
         self.assertEqual(args[0], "rm")
         run(["git", *args], cwd=fresh)
         self.assertEqual(git_out("status", "--porcelain", cwd=fresh), "?? only.txt")
+
+    def test_commit_rejects_empty_index(self):
+        with self.assertRaises(gitmod.ApiError) as ctx:
+            gitmod.git_commit_commands(self.repo, "msg")
+        self.assertIn("索引里没有暂存内容", str(ctx.exception))
+
+    def test_commit_builds_index_only_command(self):
+        run(["git", "add", "sub/new.txt"], cwd=self.repo)
+        commands = gitmod.git_commit_commands(self.repo, "msg")
+        self.assertEqual(commands, [["git", "--no-pager", "commit", "-m", "msg"]])
+
+    def test_commit_stage_all_prepends_add(self):
+        commands = gitmod.git_commit_commands(self.repo, "msg", stage_all=True)
+        self.assertEqual(commands[0], ["git", "--no-pager", "add", "-A", "--", "."])
+        self.assertEqual(commands[1], ["git", "--no-pager", "commit", "-m", "msg"])
+
+    def test_commit_rejects_conflicts_even_with_stage_all(self):
+        make_conflict(self.repo)
+        for stage_all in (False, True):
+            with self.assertRaises(gitmod.ApiError) as ctx:
+                gitmod.git_commit_commands(self.repo, "msg", stage_all=stage_all)
+            self.assertIn("a.txt", str(ctx.exception))
+
+    def test_commit_operation_has_no_paths(self):
+        run(["git", "add", "-A"], cwd=self.repo)
+        plan = gitmod.operation_plan(
+            {"id": "x", "root": str(self.repo), "vcs": "git"},
+            {"action": "commit", "message": "m"},
+        )
+        self.assertEqual(plan["command"], "git --no-pager commit -m m")
+
+    def test_commit_without_staged_or_changes_returns_400(self):
+        fresh = Path(self.tmp.name) / "clean"
+        run(["git", "init", "-q", "-b", "main", str(fresh)])
+        with self.assertRaises(gitmod.ApiError) as ctx:
+            gitmod.git_commit_commands(str(fresh), "m")
+        self.assertIn("索引里没有暂存内容", str(ctx.exception))
 
 
 class GitStatusParse(unittest.TestCase):

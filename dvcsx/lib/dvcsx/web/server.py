@@ -1862,50 +1862,37 @@ def git_checkout_args(root, body):
     return ["switch", branch]
 
 
-def git_commit_commands(root, message, paths):
-    """把选中的路径暂存后提交。
+def git_commit_commands(root, message, stage_all=False):
+    """只提交索引里的暂存内容。
 
-    先 git add 再 git commit，不带路径限制：重命名与删除只有提交整个索引
-    才会一起进提交。为避免把别处暂存的东西带进来，先看索引里有没有未选中的
-    暂存改动，有就拒绝，让用户先处理。
+    页面勾选即暂存，提交不再接受路径；未暂存的文件留在工作区不提交。
+    stage_all 时先整目录 git add -A。有冲突时一律拒绝，免得把冲突标记
+    当成解决结果提交。
     """
     message = (message or "").strip()
     if not message:
         raise ApiError(400, "提交说明不能为空")
     if len(message) > COMMIT_MESSAGE_MAX:
         raise ApiError(400, "提交说明太长，最多 %d 字" % COMMIT_MESSAGE_MAX)
-    if not isinstance(paths, list) or not paths:
-        raise ApiError(400, "没有选中要提交的路径")
-    clean = []
-    for rel in paths:
-        rel = safe_rel(str(rel))
-        if not inside(root, os.path.join(root, rel)):
-            raise ApiError(400, "路径要在工作副本里：%s" % rel)
-        clean.append(rel)
-    # 冲突路径不提交，免得把冲突标记当成解决结果。
     rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
     if rc != 0:
         raise ApiError(500, err or "git status 失败")
     files, _ = parse_git_status(out)
-    conflicts = {item["path"] for item in files if item["item"] == "conflicted"}
-    hit = [rel for rel in clean if rel in conflicts]
-    if hit:
-        raise ApiError(400, "这些路径还有冲突，先解决再提交：%s" % "、".join(hit))
-    # 索引里已有的暂存改动必须在勾选范围内，否则提交整个索引会带上它们。
-    rc, out, err = git(["diff", "--cached", "--name-only", "-z"], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "git diff --cached 失败")
-    staged = [item for item in out.decode("utf-8", "replace").split("\0") if item]
-    extra = [item for item in staged if item not in set(clean)]
-    if extra:
-        raise ApiError(
-            400,
-            "索引里还有未选中的暂存改动：%s；先提交或取消暂存再试" % "、".join(extra[:10]),
-        )
-    return [
-        ["git", "--no-pager", "add", "-A", "--", *clean],
-        ["git", "--no-pager", "commit", "-m", message],
-    ]
+    conflicts = [item["path"] for item in files if item["item"] == "conflicted"]
+    if conflicts:
+        raise ApiError(400, "这些路径还有冲突，先解决再提交：%s" % "、".join(conflicts[:10]))
+    commands = []
+    if stage_all:
+        commands.append(["git", "--no-pager", "add", "-A", "--", "."])
+    else:
+        rc, out, err = git(["diff", "--cached", "--name-only", "-z"], cwd=root)
+        if rc != 0:
+            raise ApiError(500, err or "git diff --cached 失败")
+        staged = [item for item in out.decode("utf-8", "replace").split("\0") if item]
+        if not staged:
+            raise ApiError(400, "索引里没有暂存内容")
+    commands.append(["git", "--no-pager", "commit", "-m", message])
+    return commands
 
 
 def operation_plan(ws, body):
@@ -1926,7 +1913,7 @@ def operation_plan(ws, body):
             commands = git_commit_commands(
                 ws["root"],
                 str(body.get("message", "")),
-                body.get("paths") or [],
+                bool(body.get("stage_all")),
             )
         else:
             raise ApiError(400, "Git 工作区不支持这个操作：%s" % action)
