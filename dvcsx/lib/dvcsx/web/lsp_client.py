@@ -43,18 +43,18 @@ SERVERS = {
     "vue": {
         "title": "Vue",
         "language": "vue",
-        # 首次查到定义要等它扫完项目，给宽一点。
-        "timeout": 30.0,
-        "command": ("vue-language-server", "--stdio"),
-        "hint": "npm i -g @vue/language-server",
-        # 这个服务器要 VSCode 那边的 tsserver 插件桥才会回定义，通用 LSP 客户端接到会一直等。
-        "unsupported": "Vue 单文件组件要 VSCode 的 tsserver 插件桥，这一版没接；先用搜索找定义",
+        # 不用单独的服务器：带 @vue/typescript-plugin 的 tsserver 直接认得 .vue，
+        # 脚本与模板里的定义、引用、重命名都从它那里拿。
+        "command": (),
+        "hint": "Vue 要 Node、TypeScript 5 与 @vue/typescript-plugin",
+        "bridge_only": True,
         "suffixes": (".vue",),
     },
     "java": {
         "title": "Java",
         "language": "java",
         "timeout": 60.0,
+        "init_timeout": 90.0,
         "command": ("jdtls",),
         "hint": "装 Eclipse JDT LS，把 jdtls 放进 PATH",
         "suffixes": (".java",),
@@ -102,6 +102,161 @@ def typescript_lib():
             _TS_CACHE["path"] = path
             return path
     return ""
+
+
+def which_node():
+    path = os.environ.get("PATH", "")
+    extra = [item for item in STABLE_BIN if os.path.isdir(item)]
+    if extra:
+        path = os.pathsep.join(extra + [path])
+    return shutil.which("node", path=path)
+
+
+class TsserverBridge:
+    """给 @vue/language-server 用的 tsserver：它反向问的 _vue:* 命令由带 Vue 插件的 tsserver 回答。
+
+    输入一行一条 JSON；tsserver 的输出是 Content-Length 帧，读法同 LSP。
+    """
+
+    def __init__(self, command, root, name="tsserver"):
+        self.name = name
+        self.command = list(command)
+        self.root = os.path.abspath(root)
+        self.pending = {}
+        self.next_id = 0
+        self.opened = set()
+        self.lock = threading.Lock()
+        self.write_lock = threading.Lock()
+        env = os.environ.copy()
+        extra = [path for path in STABLE_BIN if os.path.isdir(path)]
+        env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
+        try:
+            self.proc = subprocess.Popen(
+                self.command,
+                cwd=self.root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                env=env,
+            )
+        except OSError as exc:
+            raise LspUnavailable("起不了 tsserver：%s" % exc)
+        threading.Thread(target=self._read_loop, daemon=True).start()
+        threading.Thread(target=self._read_err, daemon=True).start()
+        try:
+            self.request("configure", {})
+        except LspError:
+            self.stop()
+            raise
+
+    def _read_loop(self):
+        while True:
+            message = read_message(self.proc.stdout)
+            if message is None:
+                break
+            if message.get("type") != "response":
+                continue
+            with self.lock:
+                slot = self.pending.pop(message.get("request_seq"), None)
+            if slot is not None:
+                slot.put(message)
+        with self.lock:
+            slots = list(self.pending.values())
+            self.pending.clear()
+        for slot in slots:
+            slot.put({"success": False, "message": "tsserver 退出了"})
+
+    def _read_err(self):
+        for _ in iter(self.proc.stderr.readline, b""):
+            pass
+
+    def _send(self, payload):
+        try:
+            with self.write_lock:
+                line = json.dumps(payload, ensure_ascii=False) + "\n"
+                self.proc.stdin.write(line.encode("utf-8"))
+                self.proc.stdin.flush()
+        except (BrokenPipeError, ValueError, OSError) as exc:
+            raise LspError("tsserver 已经退出：%s" % exc)
+
+    def request(self, command, arguments, timeout=15.0):
+        with self.lock:
+            self.next_id += 1
+            seq = self.next_id
+            slot = queue.Queue()
+            self.pending[seq] = slot
+        self._send({"seq": seq, "type": "request", "command": command, "arguments": arguments})
+        try:
+            message = slot.get(timeout=timeout)
+        except queue.Empty:
+            with self.lock:
+                self.pending.pop(seq, None)
+            raise LspError("tsserver 超过 %d 秒没回话" % timeout)
+        if not message.get("success", False):
+            raise LspError(str(message.get("message") or "tsserver 报错"))
+        return message.get("body")
+
+    def _paths(self, value):
+        if isinstance(value, str):
+            if value.startswith("file://"):
+                path = uri_to_path(value)
+                if path and os.path.isfile(path):
+                    yield path
+            elif os.path.isabs(value) and os.path.isfile(value):
+                yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from self._paths(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                yield from self._paths(item)
+
+    def _open_paths(self, arguments):
+        # tsserver 要先 open 过文件，_vue:* 这些自定义命令才认得那个项目。
+        for path in self._paths(arguments):
+            if path in self.opened:
+                continue
+            self.opened.add(path)
+            try:
+                self.request("open", {"file": path})
+            except LspError:
+                self.opened.discard(path)
+
+    def forward(self, name, arguments):
+        if self.proc.poll() is not None:
+            raise LspError("tsserver 已经退出")
+        self._open_paths(arguments)
+        return self.request(name, arguments)
+
+    def stop(self):
+        try:
+            self._send({"seq": 0, "type": "request", "command": "exit", "arguments": {}})
+        except LspError:
+            pass
+        try:
+            self.proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+        try:
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+            except OSError:
+                pass
+            try:
+                self.proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+                except OSError:
+                    pass
+        for stream in (self.proc.stdout, self.proc.stderr):
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
 
 
 class LspError(Exception):
@@ -215,6 +370,83 @@ def normalize_locations(result, root):
         if len(out) >= MAX_LOCATIONS:
             break
     return out
+
+
+def tsserver_locations(raw, root, action="definition"):
+    """tsserver 的结果换成工作副本相对路径；行列从 1 起换成从 0 起。"""
+    if action == "references":
+        items = (raw or {}).get("refs") if isinstance(raw, dict) else None
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        items = None
+    out = []
+    seen = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("file")
+        if not path or not inside(root, path):
+            continue
+        start = item.get("start") or {}
+        try:
+            line = int(start.get("line", 1)) - 1
+            character = int(start.get("offset", 1)) - 1
+        except (TypeError, ValueError):
+            continue
+        if line < 0 or character < 0:
+            continue
+        rel = os.path.relpath(path, root).replace(os.sep, "/")
+        mark = (rel, line, character)
+        if mark in seen:
+            continue
+        seen.add(mark)
+        out.append({"path": rel, "line": line, "character": character})
+        if len(out) >= MAX_LOCATIONS:
+            break
+    return out
+
+
+def tsserver_rename_plan(raw, root, new_name):
+    """tsserver rename 的 locs 换成 [{path, edits}]，后续与 LSP 的落盘流程共用。"""
+    if not isinstance(raw, dict):
+        return []
+    info = raw.get("info") or {}
+    if info and not info.get("canRename", True):
+        raise LspError(str(info.get("localizedErrorMessage") or "这里不能重命名"))
+    plan = []
+    for item in raw.get("locs") or []:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("file")
+        if not path or not inside(root, path):
+            raise LspUnavailable("重命名的改动落在工作副本外，没处理")
+        edits = []
+        for loc in item.get("locs") or []:
+            start = (loc or {}).get("start") or {}
+            end = (loc or {}).get("end") or {}
+            try:
+                edits.append(
+                    {
+                        "range": {
+                            "start": {
+                                "line": int(start.get("line", 1)) - 1,
+                                "character": int(start.get("offset", 1)) - 1,
+                            },
+                            "end": {
+                                "line": int(end.get("line", 1)) - 1,
+                                "character": int(end.get("offset", 1)) - 1,
+                            },
+                        },
+                        "newText": new_name,
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        if edits:
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            plan.append({"path": rel, "edits": edits})
+    return plan
 
 
 MAX_EDIT_FILE = 512 * 1024
@@ -352,7 +584,15 @@ def apply_workspace_edit(root, plan):
 class LspServer:
     """一条 LSP 会话。请求串行由调用方保证，这里只管协议。"""
 
-    def __init__(self, command, root, name, init_timeout=30.0, request_timeout=10.0, options=None):
+    def __init__(
+        self,
+        command,
+        root,
+        name,
+        init_timeout=30.0,
+        request_timeout=10.0,
+        options=None,
+    ):
         self.name = name
         self.root = os.path.abspath(root)
         self.command = list(command)
@@ -573,11 +813,19 @@ class LspServer:
                 pass
 
 
+def stop_instance(item):
+    if item.server is not None:
+        item.server.stop()
+    if item.bridge is not None:
+        item.bridge.stop()
+
+
 class _Instance:
-    def __init__(self, ws, key, server):
+    def __init__(self, ws, key, server, bridge=None):
         self.ws = ws
         self.key = key
         self.server = server
+        self.bridge = bridge
         self.last_used = time.time()
         self.lock = threading.Lock()
 
@@ -585,7 +833,14 @@ class _Instance:
 class LspManager:
     """按（工作区, 语言）管理语言服务器进程。"""
 
-    def __init__(self, commands=None, idle=600.0, max_per_ws=2, rename_warm=1.0):
+    def __init__(
+        self,
+        commands=None,
+        idle=600.0,
+        max_per_ws=2,
+        rename_warm=1.0,
+        bridge_command=None,
+    ):
         override = commands or {}
         self.commands = {
             key: tuple(override.get(key) or entry["command"]) for key, entry in SERVERS.items()
@@ -594,6 +849,8 @@ class LspManager:
         self.max_per_ws = max_per_ws
         # pyright 这类服务器要问过一次才开始分析整个项目，重命名第一次问会漏掉没开过的文件。
         self.rename_warm = rename_warm
+        # 测试里可以关掉 Vue 的 tsserver 桥；None 表示按本机情况自己找。
+        self.bridge_command = bridge_command
         self.instances = {}
         self.starting = {}
         self.lock = threading.Lock()
@@ -604,7 +861,22 @@ class LspManager:
         rows = []
         for key, entry in SERVERS.items():
             command = self.commands[key]
-            supported = not entry.get("unsupported")
+            if entry.get("bridge_only"):
+                # Vue 没有单独的服务进程，靠带插件的那份 tsserver。
+                available = bool(self._bridge_command())
+                rows.append(
+                    {
+                        "id": key,
+                        "title": entry["title"],
+                        "command": "tsserver + @vue/typescript-plugin",
+                        "supported": True,
+                        "available": available,
+                        "hint": entry["hint"],
+                    }
+                )
+                continue
+            supported = True
+            hint = entry["hint"]
             rows.append(
                 {
                     "id": key,
@@ -612,10 +884,40 @@ class LspManager:
                     "command": " ".join(command),
                     "supported": supported,
                     "available": supported and bool(shutil.which(command[0])),
-                    "hint": entry.get("unsupported") or entry["hint"],
+                    "hint": hint,
                 }
             )
         return rows
+
+    def _bridge_command(self):
+        """带 Vue 插件的 tsserver 的启动命令；缺 node、TypeScript 5 或插件时返回空。"""
+        if self.bridge_command is not None:
+            return self.bridge_command or None
+        lib = typescript_lib()
+        node = which_node()
+        if not lib or not node:
+            return None
+        tsserver = os.path.join(lib, "tsserver.js")
+        probe = os.path.dirname(os.path.dirname(lib))
+        plugin = os.path.join(probe, "@vue", "typescript-plugin")
+        if not os.path.isfile(tsserver) or not os.path.isdir(plugin):
+            return None
+        return [
+            node,
+            tsserver,
+            "--globalPlugins",
+            "@vue/typescript-plugin",
+            "--pluginProbeLocations",
+            probe,
+        ]
+
+    # Vue 走 tsserver 时，动作对应的 tsserver 命令名。
+    TSSERVER_COMMANDS = {
+        "definition": "definition",
+        "typeDefinition": "typeDefinition",
+        "implementation": "implementation",
+        "references": "references",
+    }
 
     # 右键菜单里的动作与 LSP 方法的对应关系。
     ACTIONS = {
@@ -635,6 +937,15 @@ class LspManager:
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
+        if SERVERS[key].get("bridge_only"):
+            with instance.lock:
+                instance.last_used = time.time()
+                raw = instance.bridge.forward(
+                    self.TSSERVER_COMMANDS[action],
+                    {"file": full, "line": line + 1, "offset": character + 1},
+                )
+                instance.last_used = time.time()
+            return {"server": key, "locations": tsserver_locations(raw, root, action)}
         extra = {"context": {"includeDeclaration": True}} if action == "references" else None
         with instance.lock:
             instance.last_used = time.time()
@@ -652,6 +963,14 @@ class LspManager:
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
+        if SERVERS[key].get("bridge_only"):
+            with instance.lock:
+                instance.last_used = time.time()
+                raw = instance.bridge.forward(
+                    "rename", {"file": full, "line": line + 1, "offset": character + 1}
+                )
+                instance.last_used = time.time()
+            return {"server": key, "plan": tsserver_rename_plan(raw, root, name)}
         language = language_id(key, path)
         with instance.lock:
             instance.last_used = time.time()
@@ -671,8 +990,10 @@ class LspManager:
         key = server_key(path)
         if not key:
             raise LspUnavailable("这种文件没有语言服务器：%s" % path)
-        if SERVERS[key].get("unsupported"):
-            raise LspUnavailable(SERVERS[key]["unsupported"])
+        if SERVERS[key].get("bridge_only"):
+            if not self._bridge_command():
+                raise LspUnavailable(SERVERS[key]["hint"])
+            return key
         command = self.commands[key]
         if not shutil.which(command[0]):
             entry = SERVERS[key]
@@ -696,11 +1017,25 @@ class LspManager:
                 if found is not None:
                     return found
                 self._evict(ws)
+            if SERVERS[key].get("bridge_only"):
+                bridge_command = self._bridge_command()
+                if not bridge_command:
+                    with self.lock:
+                        self.starting.pop(mark, None)
+                    raise LspUnavailable(SERVERS[key]["hint"])
+                bridge = TsserverBridge(bridge_command, root, "Vue tsserver")
+                instance = _Instance(ws, key, None, bridge)
+                with self.lock:
+                    self.instances[mark] = instance
+                    self.starting.pop(mark, None)
+                return instance
+            command = list(self.commands[key])
             try:
                 server = LspServer(
-                    self.commands[key],
+                    command,
                     root,
                     SERVERS[key]["title"],
+                    init_timeout=SERVERS[key].get("init_timeout", 30.0),
                     request_timeout=SERVERS[key].get("timeout", 10.0),
                     options=self._options(key),
                 )
@@ -715,15 +1050,11 @@ class LspManager:
             return instance
 
     def _options(self, key):
-        """JS 与 Vue 的服务器要指到一份 typescript：项目里没装时用全局那份。"""
-        if key not in ("typescript", "vue"):
+        """JS 服务器要指到一份 typescript：项目里没装时用全局那份。"""
+        if key != "typescript":
             return {}
         lib = typescript_lib()
-        if not lib:
-            return {}
-        if key == "typescript":
-            return {"tsserver": {"path": lib}}
-        return {"typescript": {"tsdk": lib}}
+        return {"tsserver": {"path": lib}} if lib else {}
 
     def _evict(self, ws):
         mine = [(mark, item) for mark, item in self.instances.items() if mark[0] == ws]
@@ -733,7 +1064,7 @@ class LspManager:
         while mine and len([m for m in self.instances if m[0] == ws]) >= self.max_per_ws:
             mark, item = mine.pop(0)
             self.instances.pop(mark, None)
-            threading.Thread(target=item.server.stop, daemon=True).start()
+            threading.Thread(target=stop_instance, args=(item,), daemon=True).start()
 
     def _reap(self):
         while not self.stopped:
@@ -746,7 +1077,7 @@ class LspManager:
                         self.instances.pop(mark, None)
                         dead.append(item)
             for item in dead:
-                item.server.stop()
+                stop_instance(item)
 
     def stop_workspace(self, ws):
         dead = []
@@ -756,7 +1087,7 @@ class LspManager:
                     self.instances.pop(mark, None)
                     dead.append(item)
         for item in dead:
-            item.server.stop()
+            stop_instance(item)
 
     def stop_all(self):
         self.stopped = True
@@ -764,4 +1095,4 @@ class LspManager:
             items = list(self.instances.values())
             self.instances.clear()
         for item in items:
-            item.server.stop()
+            stop_instance(item)

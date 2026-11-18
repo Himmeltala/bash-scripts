@@ -12,6 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "lib" / "dvcsx" / "web"
 FAKE = HERE / "fake_lsp.py"
+FAKE_TS = HERE / "fake_tsserver.py"
 
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
@@ -158,6 +159,109 @@ class LspSession(unittest.TestCase):
                 server.stop()
 
 
+class TsserverBridgeTests(unittest.TestCase):
+    def test_forwards_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = lspmod.TsserverBridge((sys.executable, str(FAKE_TS)), tmp, "Fake")
+            try:
+                self.assertEqual(bridge.forward("_vue:echo", ["hi"]), {"echo": ["hi"]})
+                with self.assertRaises(lspmod.LspError):
+                    bridge.forward("no:such", {})
+            finally:
+                bridge.stop()
+
+
+class TsserverResults(unittest.TestCase):
+    def test_locations_convert_and_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            raw = [{"file": str(root / "a.py"), "start": {"line": 3, "offset": 5}}]
+            self.assertEqual(
+                lspmod.tsserver_locations(raw, str(root)),
+                [{"path": "a.py", "line": 2, "character": 4}],
+            )
+            outside = [{"file": "/etc/passwd", "start": {"line": 1, "offset": 1}}]
+            self.assertEqual(lspmod.tsserver_locations(outside, str(root)), [])
+            refs = {"refs": [{"file": str(root / "a.py"), "start": {"line": 2, "offset": 3}}]}
+            self.assertEqual(
+                lspmod.tsserver_locations(refs, str(root), "references"),
+                [{"path": "a.py", "line": 1, "character": 2}],
+            )
+
+    def test_rename_plan_converts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = {
+                "info": {"canRename": True},
+                "locs": [
+                    {
+                        "file": str(root / "a.py"),
+                        "locs": [
+                            {
+                                "start": {"line": 1, "offset": 1},
+                                "end": {"line": 1, "offset": 4},
+                            }
+                        ],
+                    }
+                ],
+            }
+            self.assertEqual(
+                lspmod.tsserver_rename_plan(raw, str(root), "x"),
+                [
+                    {
+                        "path": "a.py",
+                        "edits": [
+                            {
+                                "range": {
+                                    "start": {"line": 0, "character": 0},
+                                    "end": {"line": 0, "character": 3},
+                                },
+                                "newText": "x",
+                            }
+                        ],
+                    }
+                ],
+            )
+            with self.assertRaises(lspmod.LspError):
+                lspmod.tsserver_rename_plan(
+                    {"info": {"canRename": False, "localizedErrorMessage": "不行"}, "locs": []},
+                    str(root),
+                    "x",
+                )
+
+
+class VueBridgeManager(unittest.TestCase):
+    """Vue 走 tsserver 桥：查询与重命名都换成相对路径。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-vue-")
+        self.root = Path(self.tmp.name)
+        self.vue = self.root / "Comp.vue"
+        self.vue.write_text("x\n", "utf-8")
+        self.env = FakeEnv(FAKE_TS_FILE=str(self.vue))
+        self.env.__enter__()
+
+    def tearDown(self):
+        self.env.__exit__(None, None, None)
+        self.tmp.cleanup()
+
+    def test_query_and_rename(self):
+        manager = lspmod.LspManager(bridge_command=(sys.executable, str(FAKE_TS)))
+        try:
+            data = manager.query("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "definition")
+            self.assertEqual(
+                data["locations"], [{"path": "Comp.vue", "line": 1, "character": 2}]
+            )
+            refs = manager.query("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "references")
+            self.assertEqual([item["line"] for item in refs["locations"]], [1, 4])
+            plan = manager.rename_plan("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "helper")
+            self.assertEqual([item["path"] for item in plan["plan"]], ["Comp.vue"])
+            self.assertEqual(len(plan["plan"][0]["edits"]), 1)
+        finally:
+            manager.stop_all()
+
+
 class RenameEdits(unittest.TestCase):
     def test_position_uses_utf16_units(self):
         text = "名字 = 1\n😀x = 2\n"
@@ -222,7 +326,7 @@ class LspManagers(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_definition_and_status(self):
-        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0)
+        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=())
         try:
             data = manager.definition("ws1", str(self.root), "target.py", "x\n", 0, 0)
             self.assertEqual(data["server"], "python")
@@ -235,16 +339,16 @@ class LspManagers(unittest.TestCase):
             rows = {row["id"]: row for row in manager.status()}
             self.assertTrue(rows["python"]["available"])
             self.assertTrue(rows["java"]["available"] in (True, False))
-            # Vue 服务器要 VSCode 那边的 tsserver 插件桥，这一版标成暂不支持。
-            self.assertFalse(rows["vue"]["supported"])
-            self.assertIn("tsserver", rows["vue"]["hint"])
+            # 测试里把 tsserver 桥关掉了，Vue 就报没装。
+            self.assertFalse(rows["vue"]["available"])
+            self.assertIn("@vue/typescript-plugin", rows["vue"]["hint"])
             manager.stop_workspace("ws1")
             self.assertEqual(manager.instances, {})
         finally:
             manager.stop_all()
 
     def test_rename_preview_and_apply(self):
-        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0)
+        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=())
         try:
             target = self.root / "target.py"
             text = target.read_text("utf-8")
@@ -262,7 +366,7 @@ class LspManagers(unittest.TestCase):
             manager.stop_all()
 
     def test_missing_and_unknown_servers(self):
-        manager = lspmod.LspManager(commands={"python": ("no-such-lsp-cmd",)})
+        manager = lspmod.LspManager(commands={"python": ("no-such-lsp-cmd",)}, bridge_command=())
         try:
             with self.assertRaises(lspmod.LspUnavailable) as caught:
                 manager.definition("ws1", str(self.root), "target.py", "x\n", 0, 0)
@@ -272,7 +376,7 @@ class LspManagers(unittest.TestCase):
             self.assertIn("没有语言服务器", str(caught.exception))
             with self.assertRaises(lspmod.LspUnavailable) as caught:
                 manager.definition("ws1", str(self.root), "App.vue", "x\n", 0, 0)
-            self.assertIn("tsserver", str(caught.exception))
+            self.assertIn("Vue 要", str(caught.exception))
             with self.assertRaises(lspmod.LspUnavailable) as caught:
                 manager.query("ws1", str(self.root), "target.py", "x\n", 0, 0, "rename")
             self.assertIn("不认识的动作", str(caught.exception))
@@ -290,7 +394,7 @@ class LspApi(unittest.TestCase):
         (self.static / "index.html").write_text("<html></html>", "utf-8")
         self.env = FakeEnv(FAKE_LSP_ROOT=str(self.root), FAKE_LSP_RECORD=None, FAKE_LSP_IGNORE=None)
         self.env.__enter__()
-        self.manager = servermod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0)
+        self.manager = servermod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=())
         self.server = serve(
             servermod.Handler,
             static=self.static.resolve(),
@@ -403,7 +507,7 @@ class LspApi(unittest.TestCase):
         self.assertIn("没有语言服务器", data.get("error", ""))
 
     def test_missing_server_reports_hint(self):
-        manager = servermod.LspManager(commands={"python": ("no-such-lsp-cmd",)})
+        manager = servermod.LspManager(commands={"python": ("no-such-lsp-cmd",)}, bridge_command=())
         self.server.handler.lsp = manager
         try:
             code, data = self.call(

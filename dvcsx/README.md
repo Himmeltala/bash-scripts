@@ -55,7 +55,9 @@ dvcsx web --host 127.0.0.1 -p 8771
 
 右上角齿轮打开设置页，改的是全局配置，存在服务端的 `settings.json` 里，所有浏览器共用一份。搜索时跳过的目录名在这里改：一行一个，默认 `.git`、`.svn`、`.hg`、`node_modules`、`__pycache__`、`dist`、`build`、`target`；只按目录名匹配，工作副本里任何一层的同名目录都不往里走，存一份空名单就是不跳过任何目录。
 
-另一页是语言服务器：列出 Shell、Python、JS/TS、Vue、Java 各自的命令与装没装，缺的给出安装命令。代码索引要本机先装好这些命令：`npm i -g bash-language-server`、`npm i -g pyright`、`npm i -g typescript typescript-language-server`；Java 要单独装 Eclipse JDT LS 并把 `jdtls` 放进 PATH。JS/TS 服务器要带 `tsserver.js` 的 TypeScript 5，全局装成 TypeScript 7 时 dvcsx 会用 `~/.local/share/dvcsx/ts` 里那份。Vue 单文件组件这一版标成暂不支持：它的服务器要 VSCode 的 tsserver 插件桥才会回定义，通用 LSP 客户端接上去会一直等。语言服务器按需拉起、空闲 10 分钟停掉，服务退出或移除工作区时一并回收。
+另一页是语言服务器：列出 Shell、Python、JS/TS、Vue、Java 各自的命令与装没装，缺的给出安装命令。代码索引要本机先装好这些命令：`npm i -g bash-language-server`、`npm i -g pyright`、`npm i -g typescript typescript-language-server`；Java 要单独装 Eclipse JDT LS 并把 `jdtls` 放进 PATH：从 `download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz` 取快照解压，`bin/jdtls` 是启动器，要求 Java 21 以上（这份 2026-08 的快照实际要 Java 25）。本机装在 `~/.local/share/dvcsx/jdtls`，`~/.local/bin/jdtls` 是按工作目录分 `-data` 的包装脚本，JDK 用 `usr/lib/jvm/java-25-openjdk-amd64`。JS/TS 服务器要带 `tsserver.js` 的 TypeScript 5，全局装成 TypeScript 7 时 dvcsx 会用 `~/.local/share/dvcsx/ts` 里那份。
+
+Vue 单文件组件不另起服务器：dvcsx 用同一份 TypeScript 5 的 tsserver 带上 `@vue/typescript-plugin`，脚本与模板里的定义、引用、重命名都从 tsserver 拿，行列换回 .vue 的真实位置。装它用 `npm i -g @vue/typescript-plugin`；原来那份 `@vue/language-server` 不用也留着。语言服务器按需拉起、空闲 10 分钟停掉，服务退出或移除工作区时一并回收。
 
 ## 支持范围
 
