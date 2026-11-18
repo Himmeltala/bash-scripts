@@ -88,6 +88,20 @@ def main():
                 )
             elif method == "shutdown":
                 send({"jsonrpc": "2.0", "id": message["id"], "result": None})
+            elif method == "textDocument/hover":
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": {
+                            "contents": {"kind": "markdown", "value": "`alpha()` 假悬停"},
+                            "range": {
+                                "start": {"line": 0, "character": 0},
+                                "end": {"line": 0, "character": 5},
+                            },
+                        },
+                    }
+                )
             elif method == "textDocument/documentSymbol":
                 send(
                     {

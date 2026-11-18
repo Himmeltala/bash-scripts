@@ -182,6 +182,7 @@
             :title="tab.path"
             @click="activate(tab)"
             @mousedown.middle.prevent="closeTab(tab)"
+            @contextmenu.prevent="openTabMenu(tab, $event)"
           >
             <v-icon
               size="14"
@@ -537,6 +538,33 @@
       </template>
     </FloatingDialog>
 
+    <FloatingDialog
+      v-model="hoverAsk.on"
+      :initial-width="520"
+      :initial-height="320"
+      :min-width="340"
+      :min-height="200"
+    >
+      <template #title>「{{ hoverAsk.word }}」</template>
+      <pre class="hover-text mono">{{ hoverAsk.text }}</pre>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="hoverAsk.on = false">关闭</v-btn>
+      </template>
+    </FloatingDialog>
+
+    <div
+      v-if="tabMenu.on"
+      class="sym-menu tab-menu"
+      :style="{ left: `${tabMenu.x}px`, top: `${tabMenu.y}px` }"
+    >
+      <button type="button" class="sym-item" @click="tabAction('close')">关闭</button>
+      <button type="button" class="sym-item" @click="tabAction('others')">关闭其他</button>
+      <button type="button" class="sym-item" @click="tabAction('all')">关闭全部</button>
+      <div class="sym-sep" />
+      <button type="button" class="sym-item" @click="tabAction('copy')">复制路径</button>
+    </div>
+
     <div
       v-if="symMenu.on"
       class="sym-menu"
@@ -549,6 +577,7 @@
       <button type="button" class="sym-item" @click="runSymbol('implementation')">
         转到实现
       </button>
+      <button type="button" class="sym-item" @click="runSymbol('hover')">查看悬停</button>
       <button type="button" class="sym-item" @click="runSymbol('references')">查找引用</button>
       <button type="button" class="sym-item" @click="runSymbol('rename')">重命名符号</button>
       <div class="sym-sep" />
@@ -561,7 +590,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { api } from '../composables/useApi'
-import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
+import { FileEditor, FileTree, copyText, fileIcon, symbolAt } from '@bash-scripts/web-shared'
 import { EmptyState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
@@ -704,6 +733,9 @@ const quickRows = computed(() => filterPaths(quickAsk.files, quickAsk.filter))
 
 // 右键标识符弹出的代码菜单：位置、词，以及来源文件与行列。
 const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 0, word: '' })
+// 标签页右键菜单与悬停框。
+const tabMenu = reactive({ on: false, x: 0, y: 0, path: '' })
+const hoverAsk = reactive({ on: false, word: '', text: '' })
 const SYMBOL_TITLES = {
   definition: '定义',
   typeDefinition: '类型定义',
@@ -906,18 +938,25 @@ function closeSymbolMenu() {
   symMenu.on = false
 }
 
+function closeMenus() {
+  symMenu.on = false
+  tabMenu.on = false
+}
+
 function onMenuOutside(event) {
   const target = event.target
-  if (target && target.closest && target.closest('.sym-menu')) return
-  closeSymbolMenu()
+  if (target && target.closest && (target.closest('.sym-menu') || target.closest('.tab-menu'))) {
+    return
+  }
+  closeMenus()
 }
 
 function onMenuKey(event) {
-  if (event.key === 'Escape') closeSymbolMenu()
+  if (event.key === 'Escape') closeMenus()
 }
 
 watch(
-  () => symMenu.on,
+  () => symMenu.on || tabMenu.on,
   (on) => {
     if (on) {
       window.addEventListener('mousedown', onMenuOutside, true)
@@ -949,6 +988,10 @@ async function runSymbol(action) {
   }
   if (action === 'rename') {
     openRename(item)
+    return
+  }
+  if (action === 'hover') {
+    await openHover(item.path, item.line, item.character, item.word)
     return
   }
   const editor = editorOf(item.path)
@@ -1043,6 +1086,9 @@ function onPanelKey(event) {
   } else if (key === 'o' && event.shiftKey) {
     event.preventDefault()
     openOutline()
+  } else if (key === 'i' && !event.shiftKey) {
+    event.preventDefault()
+    showHoverAtCaret()
   }
 }
 
@@ -1116,6 +1162,79 @@ async function submitGotoLine() {
   }
   lineAsk.on = false
   await show(tab, line)
+}
+
+// 标签页右键：关闭、关闭其他、关闭全部、复制路径。
+function openTabMenu(tab, event) {
+  symMenu.on = false
+  tabMenu.x = Math.max(0, Math.min(event.clientX, window.innerWidth - 208))
+  tabMenu.y = Math.max(0, Math.min(event.clientY, window.innerHeight - 180))
+  tabMenu.path = tab.path
+  tabMenu.on = true
+}
+
+async function tabAction(action) {
+  const path = tabMenu.path
+  closeMenus()
+  if (action === 'copy') {
+    await copyText(path)
+    flash(`已复制 ${path}`)
+    return
+  }
+  if (action === 'close') {
+    const tab = tabOf(tabs.value, path)
+    if (tab) await closeTab(tab)
+    return
+  }
+  const keep = action === 'others' ? path : ''
+  for (const tab of [...tabs.value]) {
+    if (tab.path === keep) continue
+    await closeTab(tab)
+    // 有未保存草稿时用户可能取消，剩下就停手。
+    if (tabOf(tabs.value, tab.path)) return
+  }
+}
+
+// 悬停：Ctrl+I 看光标处的词，右键菜单里也能看。
+function offsetOf(text, line, column) {
+  const lines = String(text || '').split('\n')
+  let offset = 0
+  for (let i = 0; i < line - 1 && i < lines.length; i += 1) offset += lines[i].length + 1
+  return offset + Math.max(0, column - 1)
+}
+
+async function showHoverAtCaret() {
+  const tab = activeTab.value
+  const editor = tab ? editorOf(tab.path) : null
+  if (!tab || !editor || !editor.path) {
+    flash('先打开一个文件')
+    return
+  }
+  const symbol = symbolAt(editor.text, offsetOf(editor.text, caret.line, caret.column))
+  if (!symbol) {
+    flash('光标不在标识符上')
+    return
+  }
+  await openHover(tab.path, symbol.line, symbol.character, symbol.word)
+}
+
+async function openHover(path, line, character, word) {
+  const editor = editorOf(path)
+  if (!editor) return
+  defining.value = true
+  try {
+    const data = await api.hover(props.ws.id, path, editor.text, line, character)
+    const text = (data && data.hover && data.hover.text) || ''
+    if (!text) {
+      flash(`「${word}」没有悬停信息`)
+      return
+    }
+    Object.assign(hoverAsk, { on: true, word, text })
+  } catch (err) {
+    flash(err.message)
+  } finally {
+    defining.value = false
+  }
 }
 
 // 重命名：先填新名字、看要改哪些文件，确认后才落盘；F2 与右键菜单都走这里。
@@ -1639,6 +1758,14 @@ onBeforeUnmount(() => {
 .problems-btn {
   min-width: 0;
   padding: 0 8px;
+}
+.hover-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+  overflow: auto;
+  min-height: 0;
 }
 .sym-menu {
   position: fixed;

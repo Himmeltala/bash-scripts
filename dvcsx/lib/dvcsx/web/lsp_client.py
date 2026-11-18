@@ -463,6 +463,64 @@ SYMBOL_KINDS = {
 }
 
 
+def lsp_hover_text(raw):
+    """LSP hover 的 contents（MarkedString / MarkupContent / 数组）换成一段纯文本。"""
+    if not isinstance(raw, dict):
+        return ""
+    contents = raw.get("contents")
+
+    def part(value):
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            return str(value.get("value") or "")
+        return ""
+
+    if isinstance(contents, list):
+        parts = [part(item) for item in contents]
+    else:
+        parts = [part(contents)]
+    return "\n\n".join(item for item in parts if item)[:4000]
+
+
+def tsserver_hover_text(raw):
+    if not isinstance(raw, dict):
+        return ""
+    parts = [str(raw.get("displayString") or ""), str(raw.get("documentation") or "")]
+    return "\n\n".join(item for item in parts if item)[:4000]
+
+
+def tsserver_diagnostics(items):
+    """tsserver 的 Diagnostic[] 换成与 LSP 相同形状。"""
+    out = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        start = item.get("start") or {}
+        try:
+            line = int(start.get("line", 1)) - 1
+            character = int(start.get("offset", 1)) - 1
+        except (TypeError, ValueError):
+            continue
+        category = str(item.get("category") or "error")
+        level = "error" if category == "error" else "warning" if category == "warning" else "info"
+        message = str(item.get("text") or "").strip()
+        if not message:
+            continue
+        out.append(
+            {
+                "severity": level,
+                "line": max(0, line),
+                "character": max(0, character),
+                "message": message[:500],
+                "source": "",
+            }
+        )
+        if len(out) >= 200:
+            break
+    return out
+
+
 def normalize_symbols(raw):
     """LSP 的 DocumentSymbol[] 或 SymbolInformation[] 摊平成带层级的列表。"""
     out = []
@@ -948,6 +1006,17 @@ class LspServer:
         with self.diag_lock:
             return list(self.diagnostics.get(uri) or [])
 
+    def hover(self, path, text, language, line, character):
+        self.sync(path, text, language)
+        return self.request(
+            "textDocument/hover",
+            {
+                "textDocument": {"uri": path_to_uri(path)},
+                "position": {"line": line, "character": character},
+            },
+            timeout=self.request_timeout,
+        )
+
     def documentsymbol(self, path, text, language):
         self.sync(path, text, language)
         return self.request(
@@ -1144,14 +1213,42 @@ class LspManager:
             instance.last_used = time.time()
         return {"server": key, "locations": normalize_locations(raw, root)}
 
+    def hover(self, ws, root, path, text, line, character):
+        key = self._ready(path)
+        instance = self._instance(ws, key, root)
+        full = os.path.join(root, path)
+        if SERVERS[key].get("bridge_only"):
+            with instance.lock:
+                instance.last_used = time.time()
+                raw = instance.bridge.forward(
+                    "quickinfo", {"file": full, "line": line + 1, "offset": character + 1}
+                )
+                instance.last_used = time.time()
+            return {"server": key, "hover": {"text": tsserver_hover_text(raw)}}
+        with instance.lock:
+            instance.last_used = time.time()
+            raw = instance.server.hover(full, text, language_id(key, path), line, character)
+            instance.last_used = time.time()
+        return {"server": key, "hover": {"text": lsp_hover_text(raw)}}
+
     def diagnostics(self, ws, root, path, text):
         """把文件交给服务器，返回当前攒下的诊断；服务器是异步推的，前端隔一会儿再取。"""
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
         if SERVERS[key].get("bridge_only"):
-            # tsserver 的 geterr 对 .vue 不回话，Vue 这一版先不给诊断。
-            return {"server": key, "diagnostics": []}
+            items = []
+            with instance.lock:
+                instance.last_used = time.time()
+                instance.bridge.open(full)
+                for command in ("syntacticDiagnosticsSync", "semanticDiagnosticsSync"):
+                    try:
+                        raw = instance.bridge.request(command, {"file": full}, timeout=15)
+                    except LspError:
+                        continue
+                    items.extend(tsserver_diagnostics(raw))
+                instance.last_used = time.time()
+            return {"server": key, "diagnostics": items[:200]}
         with instance.lock:
             instance.last_used = time.time()
             instance.server.sync(full, text, language_id(key, path))

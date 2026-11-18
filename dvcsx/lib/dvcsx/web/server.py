@@ -2330,6 +2330,8 @@ class Handler(WebHandler):
             return self._lsp_symbols(body)
         if route == "lsp/diagnostics":
             return self._lsp_diagnostics(body)
+        if route == "lsp/hover":
+            return self._lsp_hover(body)
         if route == "lsp/rename":
             return self._lsp_rename(body)
         if route == "lsp/rename-apply":
@@ -2655,6 +2657,15 @@ class Handler(WebHandler):
         ws, rel, text = self._lsp_file_args(body)
         try:
             return self.lsp.symbols(ws["id"], ws["root"], rel, text)
+        except LspUnavailable as exc:
+            raise ApiError(400, str(exc))
+        except LspError as exc:
+            raise ApiError(504, str(exc))
+
+    def _lsp_hover(self, body):
+        ws, rel, text, line, character = self._lsp_args(body)
+        try:
+            return self.lsp.hover(ws["id"], ws["root"], rel, text, line, character)
         except LspUnavailable as exc:
             raise ApiError(400, str(exc))
         except LspError as exc:

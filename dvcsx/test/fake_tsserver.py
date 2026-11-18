@@ -58,6 +58,28 @@ def main():
             reply(message, body={"echo": message.get("arguments")})
         elif command in ("definition", "typeDefinition", "implementation"):
             reply(message, body=[{"file": FILE, "start": {"line": 2, "offset": 3}}])
+        elif command == "syntacticDiagnosticsSync":
+            reply(message, body=[])
+        elif command == "semanticDiagnosticsSync":
+            reply(
+                message,
+                body=[
+                    {
+                        "start": {"line": 2, "offset": 7},
+                        "end": {"line": 2, "offset": 12},
+                        "text": "假错误",
+                        "category": "error",
+                    }
+                ],
+            )
+        elif command == "quickinfo":
+            reply(
+                message,
+                body={
+                    "displayString": "function local(value: string): string",
+                    "documentation": "假悬停",
+                },
+            )
         elif command == "navtree":
             reply(
                 message,

@@ -264,12 +264,36 @@ class VueBridgeManager(unittest.TestCase):
                 [(item["name"], item["depth"]) for item in outline["symbols"]],
                 [("App", 0), ("main", 1)],
             )
-            # Vue 这一版没有诊断。
+            hover = manager.hover("ws", str(self.root), "Comp.vue", "x\n", 0, 0)
+            self.assertEqual(hover["hover"]["text"], "function local(value: string): string\n\n假悬停")
+            items = manager.diagnostics("ws", str(self.root), "Comp.vue", "x\n")["diagnostics"]
             self.assertEqual(
-                manager.diagnostics("ws", str(self.root), "Comp.vue", "x\n")["diagnostics"], []
+                [(item["severity"], item["line"], item["message"]) for item in items],
+                [("error", 1, "假错误")],
             )
         finally:
             manager.stop_all()
+
+
+class HoverText(unittest.TestCase):
+    def test_lsp_hover_shapes(self):
+        self.assertEqual(lspmod.lsp_hover_text({"contents": "纯文本"}), "纯文本")
+        self.assertEqual(
+            lspmod.lsp_hover_text({"contents": {"kind": "markdown", "value": "`x()`"}}),
+            "`x()`",
+        )
+        self.assertEqual(
+            lspmod.lsp_hover_text({"contents": [{"language": "ts", "value": "a"}, "b"]}),
+            "a\n\nb",
+        )
+        self.assertEqual(lspmod.lsp_hover_text(None), "")
+
+    def test_tsserver_hover(self):
+        self.assertEqual(
+            lspmod.tsserver_hover_text({"displayString": "function f()", "documentation": "文档"}),
+            "function f()\n\n文档",
+        )
+        self.assertEqual(lspmod.tsserver_hover_text(None), "")
 
 
 class SymbolResults(unittest.TestCase):
@@ -406,6 +430,8 @@ class LspManagers(unittest.TestCase):
             self.assertIn({"path": "target.py", "line": 5, "character": 0}, refs["locations"])
             kind = manager.query("ws1", str(self.root), "target.py", "x\n", 0, 0, "typeDefinition")
             self.assertEqual(len(kind["locations"]), 2)
+            hover = manager.hover("ws1", str(self.root), "target.py", "x\n", 0, 0)
+            self.assertEqual(hover["hover"]["text"], "`alpha()` 假悬停")
             outline = manager.symbols("ws1", str(self.root), "target.py", "x\n")
             self.assertEqual(
                 [(item["name"], item["depth"]) for item in outline["symbols"]],
@@ -538,6 +564,13 @@ class LspApi(unittest.TestCase):
              "character": 0, "action": "rename"},
         )
         self.assertEqual(code, 400, data)
+
+        code, data = self.call(
+            "/lsp/hover",
+            {"ws": self.ws, "path": "target.py", "text": "x\n", "line": 0, "character": 0},
+        )
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["hover"]["text"], "`alpha()` 假悬停")
 
         code, data = self.call(
             "/lsp/symbols",
