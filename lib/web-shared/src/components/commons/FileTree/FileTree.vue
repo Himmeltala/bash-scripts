@@ -225,6 +225,27 @@ async function reveal(key) {
   }
 }
 
+// 展开到哪些目录可以整份取出、放回：调用方换走再回来时接着摊开原来的层次。
+function expandedKeys() {
+  return Object.keys(expanded).filter((key) => expanded[key])
+}
+
+async function restoreExpanded(keys) {
+  const list = Array.isArray(keys) ? keys : []
+  await Promise.all(
+    list.map(async (key) => {
+      expanded[key] = true
+      await load(key)
+    })
+  )
+}
+
+// 一键收起：除了根，展开过的目录都合上；读过的孩子还留在缓存里，再展开不用重读。
+function collapseAll() {
+  for (const key of Object.keys(expanded)) expanded[key] = false
+  expanded[rootKey.value] = true
+}
+
 // 全量重读：展开状态一并清掉，回到只看第一层。
 function reload() {
   for (const key of Object.keys(cache)) delete cache[key]
@@ -369,7 +390,17 @@ onBeforeUnmount(() => {
   bindMenu(false)
 })
 
-defineExpose({ reveal, reload, reloadDir, refreshAll, scrollTo, toggle })
+defineExpose({
+  reveal,
+  reload,
+  reloadDir,
+  refreshAll,
+  scrollTo,
+  toggle,
+  collapseAll,
+  expandedKeys,
+  restoreExpanded,
+})
 </script>
 
 <style scoped>

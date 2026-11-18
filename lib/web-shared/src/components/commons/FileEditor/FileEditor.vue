@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-17 00:15:49
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-17 23:14:15
+ * @LastEditTime: 2026-11-18 23:00:12
  * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.vue
  * @Description: 文件内容编辑器，按扩展名切换源码与渲染视图并负责保存。
 -->
@@ -235,9 +235,27 @@ function cancelLeave() {
   answerLeave(false)
 }
 
+// 草稿原文的取出与放回：调用方换走时拿走，回来读完同一个文件再放回去。
+const text = computed(() => state.draft)
+function restore(value) {
+  state.draft = value == null ? '' : String(value)
+}
+
 onBeforeUnmount(() => answerLeave(false))
 
-defineExpose({ open, reload, close, save, discard, confirmLeave, cancelLeave, path, dirty })
+defineExpose({
+  open,
+  reload,
+  close,
+  save,
+  discard,
+  confirmLeave,
+  cancelLeave,
+  path,
+  dirty,
+  text,
+  restore,
+})
 </script>
 
 <style scoped src="./FileEditor.css"></style>

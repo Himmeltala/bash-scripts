@@ -56,6 +56,10 @@ BROWSE_MAX = 500
 SEARCH_MAX = 300
 SEARCH_FILES_MAX = 20000
 SEARCH_LINE_MAX = 240
+# 搜索默认跳过的目录名，按名字在工作副本里任何一层匹配；设置页可以改。
+SEARCH_IGNORE_DEFAULTS = [".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target"]
+SEARCH_IGNORE_MAX = 50
+SEARCH_IGNORE_LEN = 80
 # 拉取、推送、更新与提交都要连远端，超时比查询宽松。
 OPERATION_TIMEOUT = 300
 COMMIT_MESSAGE_MAX = 8000
@@ -524,6 +528,47 @@ class Workspaces:
                 }
             )
         return out
+
+
+def clean_search_ignore(values):
+    """只收目录名：去空白、去重，带路径分隔符的条目丢掉，数量与长度都设上限。"""
+    names = []
+    for value in values if isinstance(values, (list, tuple)) else []:
+        name = str(value).strip()
+        if not name or name in (".", "..") or "/" in name or "\\" in name:
+            continue
+        if len(name) > SEARCH_IGNORE_LEN or name in names:
+            continue
+        names.append(name)
+        if len(names) >= SEARCH_IGNORE_MAX:
+            break
+    return names
+
+
+class Settings:
+    """全局设置，存在 settings.json 里；现在只管搜索要跳过哪些目录名。"""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.lock = threading.Lock()
+
+    def data(self):
+        value = read_json(self.path, default=None)
+        return value if isinstance(value, dict) else {}
+
+    def search_ignore(self):
+        values = self.data().get("search_ignore")
+        if not isinstance(values, list):
+            return list(SEARCH_IGNORE_DEFAULTS)
+        return clean_search_ignore(values)
+
+    def set_search_ignore(self, values):
+        with self.lock:
+            names = clean_search_ignore(values)
+            data = self.data()
+            data["search_ignore"] = names
+            write_json(self.path, data, indent=2, ensure_ascii=False)
+            return names
 
 
 # svn 查询
@@ -1022,11 +1067,12 @@ def search_lines(path, needle):
             yield number, line.strip()[:SEARCH_LINE_MAX]
 
 
-def browse_search(root, rel, query, mode):
+def browse_search(root, rel, query, mode, ignore=()):
     """在工作副本里按文件名或文件内容找。
 
-    文件名按工作副本内的相对路径做不区分大小写的包含匹配；内容逐行找，只读预览
-    得了的文本文件。命中或扫过的文件到上限就停，truncated 说明还有没扫完的。
+    文件名只看文件本身的名字，做不区分大小写的包含匹配，不看所在目录；内容逐行
+    找，只读预览得了的文本文件。ignore 里的目录名在任何一层出现都不往里走。
+    命中或扫过的文件到上限就停，truncated 说明还有没扫完的。
     """
     base = browse_rel(rel).rstrip("/")
     target = os.path.join(root, base) if base else root
@@ -1040,11 +1086,12 @@ def browse_search(root, rel, query, mode):
     if not needle:
         return {"query": "", "mode": mode, "matches": [], "truncated": False}
     low = needle.lower()
+    skip = {str(name) for name in ignore if name}
     matches = []
     scanned = 0
     truncated = False
     for dirpath, dirnames, filenames in os.walk(target):
-        dirnames[:] = sorted(dirnames)
+        dirnames[:] = sorted(name for name in dirnames if name not in skip)
         for name in sorted(filenames):
             path = os.path.join(dirpath, name)
             # 链接指到工作副本外的不看，免得搜到别人的文件。
@@ -1057,7 +1104,7 @@ def browse_search(root, rel, query, mode):
             except OSError:
                 size = 0
             if mode == "name":
-                if low in relpath.lower():
+                if low in name.lower():
                     matches.append({"path": relpath, "name": name, "size": size})
             else:
                 for number, line in search_lines(path, low):
@@ -2156,6 +2203,8 @@ class Handler(WebHandler):
     store = None
     # 左侧工作副本的分组结构，存在 state.json 旁边。
     groups = None
+    # 全局设置（搜索跳过的目录等），同样存在 state.json 旁边。
+    settings = None
     state_stream = None
     metrics_stream = None
     api_prefix = "/__dvcsx/api"
@@ -2168,6 +2217,14 @@ class Handler(WebHandler):
 
     def _group_nodes(self):
         return self.groups.nodes() if self.groups is not None else []
+
+    def _settings_payload(self):
+        ignore = (
+            self.settings.search_ignore()
+            if self.settings is not None
+            else list(SEARCH_IGNORE_DEFAULTS)
+        )
+        return {"search_ignore": ignore, "defaults": list(SEARCH_IGNORE_DEFAULTS)}
 
     def _stream_routes(self, route, query):
         # SSE 自己写响应头与数据流，不走一次性回 JSON 的路。
@@ -2209,6 +2266,8 @@ class Handler(WebHandler):
             return self._file(query)
         if route == "search":
             return self._search(query)
+        if route == "settings" and method == "GET":
+            return self._settings_payload()
         if route == "download":
             return self._download(query, head=(method == "HEAD"))
         if route == "operations" and method == "GET":
@@ -2233,6 +2292,11 @@ class Handler(WebHandler):
                 raise ApiError(404, "没有这个工作区")
             self.store.set_alias(ws["id"], str(body.get("alias", "")))
             return {"ok": True}
+        if route == "settings":
+            if self.settings is None:
+                raise ApiError(404, "设置没有起来")
+            self.settings.set_search_ignore(body.get("search_ignore") or [])
+            return self._settings_payload()
         if route == "groups":
             if self.groups is None:
                 raise ApiError(404, "分组结构没有起来")
@@ -2480,7 +2544,12 @@ class Handler(WebHandler):
         rel = (query.get("path") or [""])[0]
         text = (query.get("q") or [""])[0]
         mode = (query.get("mode") or ["name"])[0]
-        return {"workspace": ws, **browse_search(ws["root"], rel, text, mode)}
+        ignore = (
+            self.settings.search_ignore()
+            if self.settings is not None
+            else list(SEARCH_IGNORE_DEFAULTS)
+        )
+        return {"workspace": ws, **browse_search(ws["root"], rel, text, mode, ignore)}
 
     def _commit_detail(self, query):
         ws = self._ws(query)
@@ -2688,6 +2757,7 @@ def serve(args):
     Handler.static = static
     Handler.store = Workspaces(args.state)
     Handler.groups = LayoutStore(Path(args.state).parent / "groups.json")
+    Handler.settings = Settings(Path(args.state).parent / "settings.json")
     Handler.api_prefix = args.api
     Handler.allow_write = args.allow_write
     Handler.state_stream = StateStream(

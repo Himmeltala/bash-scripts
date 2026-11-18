@@ -16,9 +16,11 @@
         title="切换深浅色"
         @click="toggleTheme"
       />
+      <v-btn icon="mdi-cog-outline" variant="text" title="设置" @click="settingsOpen = true" />
     </v-app-bar>
 
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
+    <SettingsDialog v-model="settingsOpen" @saved="toast('设置已保存', 'success')" />
 
     <v-main class="fill-height">
       <div ref="shellRef" class="shell">
@@ -72,6 +74,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './components/WorkspaceList.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
+import SettingsDialog from './components/SettingsDialog.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { ToastHost, useToast } from '@bash-scripts/web-shared/feedbacks'
@@ -87,6 +90,7 @@ const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
 const state = reactive({ workspaces: [], groups: [] })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
+const settingsOpen = ref(false)
 const { snack, toast } = useToast()
 
 // 左侧工作副本列表的宽度随分隔条拖动改变，双击分隔条还原；记在本地下次打开接着用。

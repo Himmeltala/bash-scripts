@@ -71,4 +71,6 @@ export const api = {
       'GET',
       `/search?ws=${encodeParam(ws)}&q=${encodeParam(text)}&mode=${encodeParam(mode)}&path=${encodeParam(path)}`
     ),
+  settings: () => call('GET', '/settings'),
+  saveSettings: (searchIgnore) => call('POST', '/settings', { search_ignore: searchIgnore }),
 }

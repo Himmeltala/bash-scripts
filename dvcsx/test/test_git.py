@@ -93,6 +93,7 @@ class GitWorkspace(unittest.TestCase):
             static=cls.static.resolve(),
             api_prefix="/__dvcsx/api",
             store=gitmod.Workspaces(str(base / "state.json")),
+            settings=gitmod.Settings(str(base / "settings.json")),
         )
         cls.base = cls.server.base
 
@@ -272,11 +273,35 @@ class GitWorkspace(unittest.TestCase):
         finally:
             blob.unlink()
 
+    def test_browse_search_name_ignores_directories(self):
+        # 目录名不参与文件名搜索：sub 下面有文件，但没有哪个文件叫 sub。
+        hits = gitmod.browse_search(str(self.repo), "", "sub", "name")
+        self.assertEqual([m["path"] for m in hits["matches"]], [])
+        hits = gitmod.browse_search(str(self.repo), "", "a.txt", "name")
+        self.assertEqual([m["path"] for m in hits["matches"]], ["sub/a.txt"])
+
     def test_browse_search_scoped_and_rejects_outside(self):
         hit = gitmod.browse_search(str(self.repo), "sub", "a.txt", "name")
         self.assertEqual([m["path"] for m in hit["matches"]], ["sub/a.txt"])
         with self.assertRaises(gitmod.ApiError):
             gitmod.browse_search(str(self.repo), "..", "x", "name")
+
+    def test_browse_search_skips_ignored_dirs(self):
+        made = ["node_modules", "dist"]
+        try:
+            for name in made:
+                (self.repo / name).mkdir()
+                (self.repo / name / "hit.txt").write_text("x\n", "utf-8")
+            hits = gitmod.browse_search(str(self.repo), "", "hit.txt", "name")
+            self.assertEqual([m["path"] for m in hits["matches"]],
+                             ["dist/hit.txt", "node_modules/hit.txt"])
+            # 按名字在任何一层匹配；只跳过的目录不往里走。
+            hits = gitmod.browse_search(str(self.repo), "", "hit.txt", "name",
+                                        ["node_modules"])
+            self.assertEqual([m["path"] for m in hits["matches"]], ["dist/hit.txt"])
+        finally:
+            for name in made:
+                shutil.rmtree(self.repo / name)
 
     def test_browse_save_keeps_line_endings(self):
         target = self.repo / "save.txt"
@@ -963,6 +988,105 @@ class GitDiffConflict(unittest.TestCase):
         data = gitmod.git_change_diff(self.repo, "a.txt", scope="head")
         self.assertTrue(data["text"].startswith("diff --git"))
         self.assertNotIn("diff --cc", data["text"])
+
+
+class SearchSettings(unittest.TestCase):
+    """搜索跳过的目录与全局设置的保存。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-search-")
+        self.base = Path(self.tmp.name)
+        self.root = self.base / "repo"
+        self.root.mkdir()
+        (self.root / "notes.txt").write_text("hit\n", "utf-8")
+        for name in ("node_modules", "dist"):
+            (self.root / name).mkdir()
+            (self.root / name / "x.txt").write_text("hit\n", "utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_ignore_skips_dirs_at_any_level(self):
+        hits = gitmod.browse_search(str(self.root), "", "x.txt", "name")
+        self.assertEqual([m["path"] for m in hits["matches"]],
+                         ["dist/x.txt", "node_modules/x.txt"])
+        hits = gitmod.browse_search(str(self.root), "", "x.txt", "name", ["dist"])
+        self.assertEqual([m["path"] for m in hits["matches"]], ["node_modules/x.txt"])
+        hits = gitmod.browse_search(str(self.root), "", "x.txt", "name",
+                                    ("dist", "node_modules"))
+        self.assertEqual(hits["matches"], [])
+
+    def test_settings_store_defaults_sanitizes_and_persists(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        self.assertEqual(store.search_ignore(), list(gitmod.SEARCH_IGNORE_DEFAULTS))
+
+        names = store.set_search_ignore(
+            [" node_modules ", "node_modules", "/etc", "dist/", "", ".."]
+        )
+        self.assertEqual(names, ["node_modules"])
+        self.assertEqual(gitmod.Settings(str(path)).search_ignore(), ["node_modules"])
+
+        # 存一份空名单就是不跳过任何目录，不会退回默认。
+        gitmod.Settings(str(path)).set_search_ignore([])
+        self.assertEqual(gitmod.Settings(str(path)).search_ignore(), [])
+
+
+class SearchSettingsApi(unittest.TestCase):
+    """设置接口与搜索按设置跳过目录。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-settings-")
+        base = Path(self.tmp.name)
+        self.repo = base / "repo"
+        self.repo.mkdir()
+        (self.repo / "notes.txt").write_text("hit\n", "utf-8")
+        # vendor 不在默认名单里，改了设置之后才该被跳过。
+        (self.repo / "vendor").mkdir()
+        (self.repo / "vendor" / "x.txt").write_text("hit\n", "utf-8")
+        self.static = base / "static"
+        self.static.mkdir()
+        (self.static / "index.html").write_text("<html></html>", "utf-8")
+        self.server = serve(
+            gitmod.Handler,
+            static=self.static.resolve(),
+            api_prefix="/__dvcsx/api",
+            store=gitmod.Workspaces(str(base / "state.json")),
+            settings=gitmod.Settings(str(base / "settings.json")),
+        )
+        code, data = json_call(self.server.base, "/workspaces", {"root": str(self.repo)})
+        self.assertEqual(code, 200, data)
+        self.ws = data["workspace"]["id"]
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.tmp.cleanup()
+
+    def call(self, path, body=None):
+        return json_call(self.server.base, path, body)
+
+    def test_settings_roundtrip_and_search(self):
+        code, data = self.call("/settings")
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["search_ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
+
+        code, data = self.call("/search?ws=%s&q=x.txt&mode=name" % self.ws)
+        self.assertEqual(code, 200, data)
+        self.assertEqual([m["path"] for m in data["matches"]], ["vendor/x.txt"])
+
+        code, data = self.call("/settings", {"search_ignore": ["vendor"]})
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["search_ignore"], ["vendor"])
+
+        code, data = self.call("/search?ws=%s&q=x.txt&mode=name" % self.ws)
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["matches"], [])
+
+        # 带斜杠的、重复的都清掉。
+        code, data = self.call(
+            "/settings", {"search_ignore": [" /tmp ", "dist", "node_modules", "dist"]}
+        )
+        self.assertEqual(data["search_ignore"], ["dist", "node_modules"])
 
 
 if __name__ == "__main__":

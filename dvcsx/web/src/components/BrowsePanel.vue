@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-17 23:14:15
+ * @LastEditTime: 2026-11-18 23:19:43
  * @FilePath: \dvcsx\web\src\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -11,7 +11,7 @@
     <div class="bar">
       <div class="left">
         <v-text-field
-          v-model="query"
+          :model-value="query"
           density="compact"
           variant="outlined"
           hide-details
@@ -19,6 +19,7 @@
           placeholder="搜索文件名或文件内容"
           prepend-inner-icon="mdi-magnify"
           class="search"
+          @update:model-value="query = $event ?? ''"
           @keyup.enter="runSearch"
           @keydown.esc="clearSearch"
         />
@@ -30,7 +31,7 @@
           mandatory
           class="modes"
         >
-          <v-btn value="name" size="small" title="按工作副本内的相对路径匹配">文件名</v-btn>
+          <v-btn value="name" size="small" title="只看文件本身的名字，不看所在目录">文件名</v-btn>
           <v-btn value="content" size="small">内容</v-btn>
         </v-btn-toggle>
       </div>
@@ -58,6 +59,15 @@
 
     <div ref="splitRef" class="body" :class="{ resizing }">
       <aside class="tree" :style="{ '--tree-width': `${treeWidth}px` }">
+        <div v-if="!searching" class="tree-tools">
+          <v-btn
+            icon="mdi-collapse-all-outline"
+            size="x-small"
+            variant="text"
+            title="全部收起已展开的目录"
+            @click="collapseAll"
+          />
+        </div>
         <template v-if="searching">
           <div class="result-head">
             <span v-if="search.loading">正在搜索…</span>
@@ -70,36 +80,43 @@
           <p v-if="!search.loading && !search.error && !search.matches.length" class="hint">
             没有找到匹配的文件。
           </p>
-          <div
-            v-for="(hit, i) in search.matches"
-            :key="i"
-            class="hit"
-            :class="{
-              active: activePath === hit.path,
-              content: search.mode === 'content',
-            }"
-            :title="hit.path"
-            @click="openHit(hit)"
-          >
-            <template v-if="search.mode === 'content'">
-              <div class="hit-path mono">
-                {{ hit.path }}<span class="hit-line">:{{ hit.line }}</span>
-              </div>
-              <div class="hit-text mono">{{ hit.text }}</div>
-            </template>
-            <template v-else>
-              <v-icon
-                size="16"
-                class="ficon"
-                :style="iconOf(hit).color ? { color: iconOf(hit).color } : null"
-              >
-                {{ iconOf(hit).icon }}
+          <div v-for="row in resultRows" :key="`${row.type}:${row.path}`" class="snode">
+            <div
+              class="srow"
+              :class="{
+                dir: row.type === 'dir',
+                active: row.type === 'file' && activePath === row.path,
+              }"
+              :style="{ paddingLeft: `${10 + row.depth * 14}px` }"
+              :title="row.path"
+              @click="onResultRow(row)"
+            >
+              <v-icon v-if="row.type === 'dir'" size="16" class="sicon">
+                {{ collapsedDirs.has(row.path) ? 'mdi-chevron-right' : 'mdi-chevron-down' }}
               </v-icon>
-              <div class="hit-name">
-                <div class="name mono">{{ hit.name }}</div>
-                <div class="dir mono">{{ dirOf(hit.path) }}</div>
-              </div>
-            </template>
+              <v-icon
+                v-else
+                size="16"
+                class="sicon"
+                :style="iconOf(row).color ? { color: iconOf(row).color } : null"
+              >
+                {{ iconOf(row).icon }}
+              </v-icon>
+              <span class="sname mono">{{ row.name }}</span>
+              <span v-if="row.type === 'file' && row.hits.length > 1" class="scount">
+                {{ row.hits.length }}
+              </span>
+            </div>
+            <div
+              v-for="hit in row.hits || []"
+              :key="hit.line"
+              class="shit"
+              :style="{ paddingLeft: `${10 + (row.depth + 1) * 14}px` }"
+              @click="openResultHit(row, hit)"
+            >
+              <span class="shit-line mono">{{ hit.line }}</span>
+              <span class="shit-text mono">{{ hit.text }}</span>
+            </div>
           </div>
         </template>
         <FileTree
@@ -263,6 +280,8 @@ import {
   tabOf,
   updateTab,
 } from '../composables/browseTabs'
+import { saveSession, sessionOf } from '../composables/browseSessions'
+import { buildSearchTree, flattenSearchTree } from '../composables/browseSearchTree'
 import { dirName } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -274,8 +293,13 @@ const props = defineProps({
 const treeRef = ref(null)
 const tabbarRef = ref(null)
 // 打开过的文件各占一个页签，每个页签一个编辑器实例：草稿、视图与滚动都留在各自那份里。
-const tabs = ref([])
-const activePath = ref('')
+// 面板换走再回来（换工作区、切到别的页签）接上次的样子：页签、停的位置与没保存的草稿都按工作区留着。
+const kept = sessionOf(props.ws.id)
+const tabs = ref(kept ? kept.tabs : [])
+const activePath = ref(kept ? kept.active : '')
+const drafts = new Map(kept && kept.drafts ? kept.drafts : [])
+// 左侧树上次展开到哪些目录；换回这个工作区时原样摊开。
+const keptExpanded = kept && kept.expanded ? kept.expanded : []
 const editors = new Map()
 const activeTab = computed(() => tabOf(tabs.value, activePath.value))
 const refreshing = ref(false)
@@ -292,8 +316,13 @@ const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useS
 const preferences = usePreferencesStore()
 const { searchMode: mode } = storeToRefs(preferences)
 const query = ref('')
-const searching = computed(() => query.value.trim() !== '')
+const searching = computed(() => String(query.value ?? '').trim() !== '')
 const search = reactive({ loading: false, error: '', matches: [], truncated: false, mode: 'name' })
+// 结果按目录归成树；收起的目录记在这里，重新搜一次就从全展开开始。
+const collapsedDirs = ref(new Set())
+const resultRows = computed(() =>
+  flattenSearchTree(buildSearchTree(search.matches), collapsedDirs.value)
+)
 let searchSeq = 0
 let searchTimer = 0
 
@@ -312,6 +341,11 @@ async function reveal(dirPath) {
   await treeRef.value?.reveal(dirPath)
 }
 
+// 一键收起左树：只合上当前展开的目录，根那层留着，读过的目录还在缓存里。
+function collapseAll() {
+  treeRef.value?.collapseAll()
+}
+
 // 文件的取数与落盘留在这一侧，编辑器只认路径和文本。
 const loadFile = (path) => api.file(props.ws.id, path)
 const saveFile = (path, text) => api.save(props.ws.id, path, text)
@@ -326,6 +360,24 @@ function setEditor(path, el) {
 
 function editorOf(path) {
   return editors.get(path) || null
+}
+
+// 换走时把还活着的编辑器里的草稿取出来；还没读过内容的页签不动，草稿本来就还在。
+function takeDrafts() {
+  for (const tab of tabs.value) {
+    const editor = editorOf(tab.path)
+    if (!editor || !editor.path) continue
+    if (editor.dirty) drafts.set(tab.path, editor.text)
+    else drafts.delete(tab.path)
+  }
+}
+
+// 回到旧页签：文件读进来之后把草稿放回去，未保存标记跟着回来。
+// 磁盘上已经是这份草稿时不用放，标记也要落回干净，别留着一个假的未保存。
+function restoreDraft(path, editor) {
+  const text = drafts.get(path)
+  if (text !== undefined && editor.text !== text) editor.restore(text)
+  setDirty(path, editor.dirty)
 }
 
 function setDirty(path, on) {
@@ -367,9 +419,9 @@ async function show(node, line = 0) {
   const editor = editorOf(node.path)
   // 过大文件只有下载占位，没有编辑器可开。
   if (!editor) return
-  // 实例还没读过内容（新页签，或刚从过大文件的占位换回编辑器），读一遍。
+  // 实例还没读过内容（新页签、回到旧页签，或刚从过大文件的占位换回编辑器），读一遍。
   if (!editor.path) {
-    await editor.open(node.path, line)
+    if (await editor.open(node.path, line)) restoreDraft(node.path, editor)
     return
   }
   if (!line) return
@@ -378,8 +430,13 @@ async function show(node, line = 0) {
   await editor.open(node.path, line)
 }
 
-function activate(tab) {
+// 点开另一个页签：回到旧工作区时只读过停着的那一个，其余的等点到再读。
+async function activate(tab) {
   activePath.value = tab.path
+  await nextTick()
+  const editor = editorOf(tab.path)
+  if (!editor || editor.path) return
+  if (await editor.open(tab.path)) restoreDraft(tab.path, editor)
 }
 
 // 关页签：没保存的问一句再关，关的是当前就停到旁边那个。
@@ -389,11 +446,33 @@ async function closeTab(tab) {
   const before = activePath.value
   const result = closeTabIn(tabs.value, tab.path, before)
   tabs.value = result.tabs
+  drafts.delete(tab.path)
   if (result.active !== before) activePath.value = result.active
 }
 
 function pick(node) {
   return show(node)
+}
+
+// 点目录行收起或展开，点文件行开到第一处命中，点命中行开到那一行。
+function toggleResultDir(path) {
+  const next = new Set(collapsedDirs.value)
+  if (next.has(path)) next.delete(path)
+  else next.add(path)
+  collapsedDirs.value = next
+}
+
+function onResultRow(row) {
+  if (row.type === 'dir') {
+    toggleResultDir(row.path)
+    return
+  }
+  const hit = row.hits[0]
+  openHit({ name: row.name, path: row.path, size: row.size, line: hit ? hit.line : 0 })
+}
+
+function openResultHit(row, hit) {
+  openHit({ name: row.name, path: row.path, size: row.size, line: hit.line })
 }
 
 function openHit(hit) {
@@ -519,7 +598,8 @@ async function doRename(node, name) {
   const renamed = renameTabs(tabs.value, node.path, data.path, data.name)
   tabs.value = renamed.tabs
   activePath.value = followMoved(renamed.moved, before)
-  // 页签换了键，编辑器是重新挂上的，按新路径再读一次。
+  // 旧路径的草稿已经问过、跟着页签一起作废；页签换了键，编辑器重新挂上后按新路径读一次。
+  for (const item of renamed.moved) drafts.delete(item.from)
   await nextTick()
   for (const item of renamed.moved) {
     await editorOf(item.to)?.open(item.to)
@@ -541,6 +621,7 @@ async function submitDelete() {
     for (const tab of touched) {
       const result = closeTabIn(tabs.value, tab.path, next)
       tabs.value = result.tabs
+      drafts.delete(tab.path)
       next = result.active
     }
     if (next !== activePath.value) activePath.value = next
@@ -577,13 +658,9 @@ function iconOf(hit) {
   return fileIcon(hit.name)
 }
 
-function dirOf(path) {
-  return dirName(path)
-}
-
 async function runSearch() {
   clearTimeout(searchTimer)
-  const text = query.value.trim()
+  const text = String(query.value ?? '').trim()
   if (!text) return
   const mine = ++searchSeq
   search.loading = true
@@ -593,11 +670,13 @@ async function runSearch() {
     if (mine !== searchSeq) return
     search.matches = data.matches || []
     search.truncated = !!data.truncated
+    collapsedDirs.value = new Set()
   } catch (err) {
     if (mine !== searchSeq) return
     search.matches = []
     search.truncated = false
     search.error = err.message
+    collapsedDirs.value = new Set()
   } finally {
     if (mine === searchSeq) search.loading = false
   }
@@ -635,21 +714,25 @@ async function refresh() {
   }
 }
 
-function reset() {
-  // 树按 ws.id 重建一份，展开状态与缓存不在这里清。
-  tabs.value = []
-  activePath.value = ''
-  editors.clear()
-  query.value = ''
-  search.matches = []
-  search.error = ''
-  search.loading = false
-  search.truncated = false
-}
+// 回来时把树摊回原来的层次，读出停着的那一个页签，草稿跟着放回去；其余页签等点开再读。
+onMounted(async () => {
+  if (keptExpanded.length) treeRef.value?.restoreExpanded(keptExpanded)
+  const tab = tabOf(tabs.value, activePath.value) || tabs.value[0] || null
+  if (!tab) return
+  if (tab.path !== activePath.value) activePath.value = tab.path
+  await show(tab)
+  locate(activePath.value)
+})
 
-watch(() => props.ws.id, reset)
-onMounted(reset)
+// 换走之前把页签、草稿与树的展开层次收进这个工作区的 session，下次回来接着用。
 onBeforeUnmount(() => {
+  takeDrafts()
+  saveSession(props.ws.id, {
+    tabs: tabs.value.map((tab) => ({ ...tab, dirty: drafts.has(tab.path) })),
+    active: activePath.value,
+    drafts,
+    expanded: treeRef.value ? treeRef.value.expandedKeys() : keptExpanded,
+  })
   clearTimeout(searchTimer)
   searchSeq += 1
 })
@@ -697,57 +780,59 @@ onBeforeUnmount(() => {
 .result-head .bad {
   color: rgb(var(--v-theme-error));
 }
-.hit {
+.srow {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 10px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.07);
+  font-size: 0.78rem;
   cursor: pointer;
 }
-.hit:hover {
+.srow:hover {
   background: rgba(var(--v-theme-on-surface), 0.06);
 }
-.hit.active {
+.srow.active {
   background: rgba(var(--v-theme-primary), 0.14);
 }
-.hit.content {
-  display: block;
+.srow.dir {
+  font-weight: 500;
 }
-.ficon {
+.sicon {
   flex: 0 0 auto;
-  margin-top: 1px;
 }
-.hit-name {
+.sname {
   flex: 1 1 auto;
   min-width: 0;
-}
-.hit-name .name,
-.hit-name .dir {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hit-name .name {
-  font-size: 0.78rem;
-}
-.hit-name .dir {
-  font-size: 0.7rem;
+.scount {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
-.hit-path {
-  font-size: 0.74rem;
-  color: rgb(var(--v-theme-primary));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.shit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 10px 3px;
+  font-size: 0.72rem;
+  cursor: pointer;
 }
-.hit-line {
+.shit:hover {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+.shit-line {
+  flex: 0 0 auto;
+  min-width: 2.4em;
+  text-align: right;
   color: rgb(var(--v-theme-on-surface-variant));
 }
-.hit-text {
-  margin-top: 1px;
-  font-size: 0.76rem;
+.shit-text {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -851,6 +936,24 @@ onBeforeUnmount(() => {
   flex: 0 0 var(--tree-width, 300px);
   overflow: auto;
   padding: 6px 4px;
+}
+/* 树顶那排按钮平时藏起来，鼠标移进左树才露出来；停靠顶部，树往下滚也够得着。 */
+.tree-tools {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  height: 24px;
+  margin: -6px -4px 0;
+  padding: 0 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tree:hover .tree-tools {
+  opacity: 1;
+  pointer-events: auto;
 }
 .hint {
   margin: 16px;
