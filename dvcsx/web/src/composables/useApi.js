@@ -79,5 +79,10 @@ export const api = {
   // 右键菜单里的通用查询：definition / typeDefinition / implementation / references。
   query: (ws, path, text, line, character, action) =>
     call('POST', '/lsp/query', { ws, path, text, line, character, action }),
+  // 重命名：先预览要改哪些文件，确认后再落盘。
+  renamePreview: (ws, path, text, line, character, newName) =>
+    call('POST', '/lsp/rename', { ws, path, text, line, character, newName }),
+  renameApply: (ws, path, text, line, character, newName) =>
+    call('POST', '/lsp/rename-apply', { ws, path, text, line, character, newName }),
   lspStatus: () => call('GET', '/lsp/status'),
 }

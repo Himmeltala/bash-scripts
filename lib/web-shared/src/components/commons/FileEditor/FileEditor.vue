@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-17 00:15:49
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-19 00:00:15
+ * @LastEditTime: 2026-11-19 00:10:49
  * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.vue
  * @Description: 文件内容编辑器，按扩展名切换源码与渲染视图并负责保存。
 -->
@@ -66,6 +66,7 @@
         :path="path"
         @symbol="onSymbol"
         @menu="onMenu"
+        @rename="onRename"
       />
       <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
@@ -96,7 +97,7 @@ const props = defineProps({
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu'])
+const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename'])
 
 const {
   path,
@@ -191,6 +192,11 @@ function onSymbol(symbol) {
 // 右键菜单：同样带上文件路径，鼠标位置也一起给出去。
 function onMenu(payload) {
   emit('menu', { path: path.value, ...payload })
+}
+
+// F2 重命名：带上文件路径交给调用方。
+function onRename(symbol) {
+  emit('rename', { path: path.value, ...symbol })
 }
 
 const leaveAsk = ref(false)

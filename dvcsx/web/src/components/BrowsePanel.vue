@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-19 00:00:15
+ * @LastEditTime: 2026-11-19 00:10:49
  * @FilePath: \dvcsx\web\src\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -208,6 +208,7 @@
                 @dirty="(on) => setDirty(tab.path, on)"
                 @definition="onDefinition"
                 @menu="openSymbolMenu"
+                @rename="openRename"
               />
             </div>
           </template>
@@ -299,6 +300,66 @@
       </template>
     </FloatingDialog>
 
+    <FloatingDialog
+      v-model="renameAsk.on"
+      :initial-width="540"
+      :initial-height="420"
+      :min-width="380"
+      :min-height="260"
+      persistent
+    >
+      <template #title>重命名「{{ renameAsk.word }}」</template>
+      <template v-if="renameAsk.step === 'input'">
+        <v-text-field
+          v-model="renameAsk.value"
+          label="新名字"
+          density="compact"
+          variant="outlined"
+          hide-details
+          autofocus
+          @keyup.enter="previewRename"
+        />
+        <p class="ask-hint">改的是这个标识符在所有文件里的出现位置，先预览要改哪些文件。</p>
+      </template>
+      <template v-else>
+        <p class="ask-hint">
+          要改 {{ renameAsk.total }} 处，分布在 {{ renameAsk.files.length }} 个文件：
+        </p>
+        <div class="def-list">
+          <div v-for="item in renameAsk.files" :key="item.path" class="def-item">
+            <v-icon size="16">mdi-file-outline</v-icon>
+            <span class="mono def-path">{{ item.path }}</span>
+            <span class="mono def-line">{{ item.edits }} 处</span>
+          </div>
+        </div>
+      </template>
+      <p v-if="renameAsk.error" class="ask-error">{{ renameAsk.error }}</p>
+      <template #actions>
+        <v-btn variant="text" :disabled="renameAsk.busy" @click="renameAsk.on = false">取消</v-btn>
+        <v-spacer />
+        <v-btn
+          v-if="renameAsk.step === 'preview'"
+          variant="text"
+          :disabled="renameAsk.busy"
+          @click="renameAsk.step = 'input'"
+        >
+          返回
+        </v-btn>
+        <v-btn
+          v-if="renameAsk.step === 'input'"
+          color="primary"
+          variant="flat"
+          :loading="renameAsk.busy"
+          @click="previewRename"
+        >
+          预览
+        </v-btn>
+        <v-btn v-else color="primary" variant="flat" :loading="renameAsk.busy" @click="applyRename">
+          重命名
+        </v-btn>
+      </template>
+    </FloatingDialog>
+
     <div
       v-if="symMenu.on"
       class="sym-menu"
@@ -312,6 +373,7 @@
         转到实现
       </button>
       <button type="button" class="sym-item" @click="runSymbol('references')">查找引用</button>
+      <button type="button" class="sym-item" @click="runSymbol('rename')">重命名符号</button>
       <div class="sym-sep" />
       <button type="button" class="sym-item" @click="runSymbol('copy')">复制标识符</button>
     </div>
@@ -363,6 +425,20 @@ const defining = ref(false)
 const notice = ref('')
 let noticeTimer = 0
 const defAsk = reactive({ on: false, word: '', title: '定义', list: [] })
+// 重命名：先填新名字、看预览，确认后才动磁盘。
+const renameAsk = reactive({
+  on: false,
+  path: '',
+  line: 0,
+  character: 0,
+  word: '',
+  value: '',
+  step: 'input',
+  files: [],
+  total: 0,
+  error: '',
+  busy: false,
+})
 // 右键标识符弹出的代码菜单：位置、词，以及来源文件与行列。
 const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 0, word: '' })
 const SYMBOL_TITLES = {
@@ -606,6 +682,10 @@ async function runSymbol(action) {
     }
     return
   }
+  if (action === 'rename') {
+    openRename(item)
+    return
+  }
   const editor = editorOf(item.path)
   if (!editor) return
   const title = SYMBOL_TITLES[action] || '定义'
@@ -631,6 +711,88 @@ async function runSymbol(action) {
     flash(err.message)
   } finally {
     defining.value = false
+  }
+}
+
+// 重命名：先填新名字、看要改哪些文件，确认后才落盘；F2 与右键菜单都走这里。
+function openRename(payload) {
+  Object.assign(renameAsk, {
+    on: true,
+    path: payload.path,
+    line: payload.line,
+    character: payload.character,
+    word: payload.word,
+    value: payload.word,
+    step: 'input',
+    files: [],
+    total: 0,
+    error: '',
+    busy: false,
+  })
+}
+
+async function previewRename() {
+  const editor = editorOf(renameAsk.path)
+  if (!editor) return
+  const name = renameAsk.value.trim()
+  if (!name) {
+    renameAsk.error = '新名字不能为空'
+    return
+  }
+  renameAsk.busy = true
+  renameAsk.error = ''
+  try {
+    const data = await api.renamePreview(
+      props.ws.id, renameAsk.path, editor.text, renameAsk.line, renameAsk.character, name
+    )
+    renameAsk.files = data.files || []
+    renameAsk.total = data.total || 0
+    renameAsk.step = 'preview'
+    if (!renameAsk.total) renameAsk.error = '没有找到要改的位置'
+  } catch (err) {
+    renameAsk.error = err.message
+  } finally {
+    renameAsk.busy = false
+  }
+}
+
+async function applyRename() {
+  const editor = editorOf(renameAsk.path)
+  if (!editor) return
+  // 有草稿的文件不能直接改盘，先让用户保存。
+  const dirty = renameAsk.files
+    .map((item) => item.path)
+    .filter((path) => {
+      const other = editorOf(path)
+      return other && other.dirty
+    })
+  if (dirty.length) {
+    renameAsk.error = `先保存这些文件的改动：${dirty.join('、')}`
+    return
+  }
+  renameAsk.busy = true
+  renameAsk.error = ''
+  try {
+    const data = await api.renameApply(
+      props.ws.id,
+      renameAsk.path,
+      editor.text,
+      renameAsk.line,
+      renameAsk.character,
+      renameAsk.value.trim()
+    )
+    // 改到开着的文件就重新读一遍，目录树刷一下所在目录。
+    for (const item of data.files || []) {
+      const other = editorOf(item.path)
+      if (other && other.path) await other.reload()
+      await treeRef.value?.reloadDir(dirName(item.path))
+    }
+    renameAsk.on = false
+    flash(`已重命名「${renameAsk.word}」，改了 ${data.total || 0} 处`)
+  } catch (err) {
+    renameAsk.error = err.message
+  } finally {
+    renameAsk.busy = false
   }
 }
 

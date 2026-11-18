@@ -26,6 +26,7 @@
         @blur="focused = false"
         @click="onClick"
         @contextmenu="onContextMenu"
+        @keydown="onKeydown"
       />
     </div>
   </div>
@@ -41,7 +42,7 @@ const props = defineProps({
   lineCount: { type: Number, default: 1 },
 })
 
-const emit = defineEmits(['update:modelValue', 'symbol', 'menu'])
+const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename'])
 
 const gutterRef = ref(null)
 const codeRef = ref(null)
@@ -111,6 +112,17 @@ function onContextMenu(event) {
   if (!symbol) return
   event.preventDefault()
   emit('menu', { ...symbol, x: event.clientX, y: event.clientY })
+}
+
+// F2 是 VSCode 的重命名快捷键；浏览器没占它，光标在标识符上就交给调用方。
+function onKeydown(event) {
+  if (event.key !== 'F2') return
+  const el = editorRef.value
+  if (!el) return
+  const symbol = symbolAt(el.value, el.selectionStart)
+  if (!symbol) return
+  event.preventDefault()
+  emit('rename', symbol)
 }
 
 // 高亮层与行号列跟着编辑框一起滚，三层始终对在同一位置。

@@ -158,6 +158,58 @@ class LspSession(unittest.TestCase):
                 server.stop()
 
 
+class RenameEdits(unittest.TestCase):
+    def test_position_uses_utf16_units(self):
+        text = "名字 = 1\n😀x = 2\n"
+        self.assertEqual(lspmod.position_to_index(text, 0, 0), 0)
+        self.assertEqual(lspmod.position_to_index(text, 0, 2), 2)
+        # emoji 占两个 UTF-16 单元，x 从第 2 列开始。
+        self.assertEqual(lspmod.position_to_index(text, 1, 2), text.index("x"))
+        with self.assertRaises(ValueError):
+            lspmod.position_to_index(text, 5, 0)
+        with self.assertRaises(ValueError):
+            lspmod.position_to_index(text, 0, 99)
+
+    def test_apply_edits_and_overlap(self):
+        text = "abc def"
+        edits = [
+            {
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}},
+                "newText": "xyz",
+            },
+            {
+                "range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 7}},
+                "newText": "uvw",
+            },
+        ]
+        self.assertEqual(lspmod.apply_text_edits(text, edits), "xyz uvw")
+        overlap = [
+            {"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 4}},
+             "newText": "a"},
+            {"range": {"start": {"line": 0, "character": 2}, "end": {"line": 0, "character": 5}},
+             "newText": "b"},
+        ]
+        with self.assertRaises(ValueError):
+            lspmod.apply_text_edits(text, overlap)
+
+    def test_normalize_rejects_outside_and_file_ops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_root(tmp)
+            edit = {
+                "changes": {
+                    "file:///etc/passwd": [
+                        {"range": {"start": {"line": 0, "character": 0},
+                                   "end": {"line": 0, "character": 1}}, "newText": "x"}
+                    ]
+                }
+            }
+            with self.assertRaises(lspmod.LspUnavailable):
+                lspmod.normalize_workspace_edit(edit, str(root))
+            op = {"documentChanges": [{"kind": "create", "uri": "file://" + str(root / "new.py")}]}
+            with self.assertRaises(lspmod.LspUnavailable):
+                lspmod.normalize_workspace_edit(op, str(root))
+
+
 class LspManagers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="dvcsx-lsp-")
@@ -170,7 +222,7 @@ class LspManagers(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_definition_and_status(self):
-        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))})
+        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0)
         try:
             data = manager.definition("ws1", str(self.root), "target.py", "x\n", 0, 0)
             self.assertEqual(data["server"], "python")
@@ -188,6 +240,24 @@ class LspManagers(unittest.TestCase):
             self.assertIn("tsserver", rows["vue"]["hint"])
             manager.stop_workspace("ws1")
             self.assertEqual(manager.instances, {})
+        finally:
+            manager.stop_all()
+
+    def test_rename_preview_and_apply(self):
+        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0)
+        try:
+            target = self.root / "target.py"
+            text = target.read_text("utf-8")
+            preview = manager.rename_plan(
+                "ws1", str(self.root), "target.py", text, 0, 0, "renamed"
+            )
+            self.assertEqual(preview["plan"][0]["path"], "target.py")
+            self.assertEqual(target.read_text("utf-8"), text)
+            summary = lspmod.apply_workspace_edit(str(self.root), preview["plan"])
+            self.assertEqual(summary, [{"path": "target.py", "edits": 1}])
+            self.assertTrue(target.read_text("utf-8").startswith("renamed"))
+            with self.assertRaises(lspmod.LspUnavailable):
+                manager.rename_plan("ws1", str(self.root), "target.py", text, 0, 0, " ")
         finally:
             manager.stop_all()
 
@@ -220,7 +290,7 @@ class LspApi(unittest.TestCase):
         (self.static / "index.html").write_text("<html></html>", "utf-8")
         self.env = FakeEnv(FAKE_LSP_ROOT=str(self.root), FAKE_LSP_RECORD=None, FAKE_LSP_IGNORE=None)
         self.env.__enter__()
-        self.manager = servermod.LspManager(commands={"python": (sys.executable, str(FAKE))})
+        self.manager = servermod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0)
         self.server = serve(
             servermod.Handler,
             static=self.static.resolve(),
@@ -271,6 +341,46 @@ class LspApi(unittest.TestCase):
         self.assertEqual(code, 200, data)
         rows = {row["id"]: row for row in data["servers"]}
         self.assertTrue(rows["python"]["available"])
+
+    def test_rename_preview_and_apply(self):
+        target = self.root / "target.py"
+        before = target.read_text("utf-8")
+        body = {
+            "ws": self.ws,
+            "path": "target.py",
+            "text": before,
+            "line": 0,
+            "character": 0,
+            "newName": "renamed",
+        }
+        code, data = self.call("/lsp/rename", body)
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["files"], [{"path": "target.py", "edits": 1}])
+        self.assertEqual(target.read_text("utf-8"), before)
+
+        code, data = self.call("/lsp/rename-apply", body)
+        self.assertEqual(code, 200, data)
+        self.assertTrue(data["applied"])
+        self.assertTrue(target.read_text("utf-8").startswith("renamed"))
+
+        body["newName"] = " "
+        code, data = self.call("/lsp/rename", body)
+        self.assertEqual(code, 400, data)
+
+    def test_rename_rejects_edits_outside(self):
+        target = self.root / "target.py"
+        body = {
+            "ws": self.ws,
+            "path": "target.py",
+            "text": target.read_text("utf-8"),
+            "line": 0,
+            "character": 0,
+            "newName": "renamed",
+        }
+        with FakeEnv(FAKE_LSP_ESCAPE="rename"):
+            code, data = self.call("/lsp/rename", body)
+            self.assertEqual(code, 400, data)
+            self.assertIn("工作副本外", data.get("error", ""))
 
     def test_definition_rejects_bad_input(self):
         code, data = self.call(

@@ -92,6 +92,22 @@ def main():
                 if IGNORE == "definition":
                     continue
                 send({"jsonrpc": "2.0", "id": message["id"], "result": locations()})
+            elif method == "textDocument/rename":
+                params = message.get("params") or {}
+                uri = (params.get("textDocument") or {}).get("uri", "")
+                name = params.get("newName", "renamed")
+                edit = {
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 3},
+                    },
+                    "newText": name,
+                }
+                if os.environ.get("FAKE_LSP_ESCAPE") == "rename":
+                    changes = {"file:///etc/passwd": [edit]}
+                else:
+                    changes = {uri: [edit]}
+                send({"jsonrpc": "2.0", "id": message["id"], "result": {"changes": changes}})
             elif method in (
                 "textDocument/typeDefinition",
                 "textDocument/implementation",

@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared"
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "services"))
 # 同目录下的 LSP 桥接；按文件加载本模块时也能找到。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lsp_client import LspError, LspManager, LspUnavailable
+from lsp_client import LspError, LspManager, LspUnavailable, apply_workspace_edit
 from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
 from metrics import Metrics
 from netutil import is_loopback_address as is_loopback
@@ -2306,6 +2306,10 @@ class Handler(WebHandler):
             return self._lsp_definition(body)
         if route == "lsp/query":
             return self._lsp_query(body, str(body.get("action") or "definition"))
+        if route == "lsp/rename":
+            return self._lsp_rename(body)
+        if route == "lsp/rename-apply":
+            return self._lsp_rename(body, apply=True)
         if route == "settings":
             if self.settings is None:
                 raise ApiError(404, "设置没有起来")
@@ -2575,7 +2579,7 @@ class Handler(WebHandler):
     def _lsp_definition(self, body):
         return self._lsp_query(body, "definition")
 
-    def _lsp_query(self, body, action="definition"):
+    def _lsp_args(self, body):
         self._check_write()
         if self.lsp is None:
             raise ApiError(404, "代码索引没有起来")
@@ -2598,12 +2602,53 @@ class Handler(WebHandler):
             raise ApiError(400, "行与列要是整数")
         if line < 0 or character < 0:
             raise ApiError(400, "行与列不能是负数")
+        return ws, rel, text, line, character
+
+    def _lsp_query(self, body, action="definition"):
+        ws, rel, text, line, character = self._lsp_args(body)
         try:
             return self.lsp.query(ws["id"], ws["root"], rel, text, line, character, action)
         except LspUnavailable as exc:
             raise ApiError(400, str(exc))
         except LspError as exc:
             raise ApiError(504, str(exc))
+
+    def _lsp_rename(self, body, apply=False):
+        ws, rel, text, line, character = self._lsp_args(body)
+        name = body.get("newName")
+        if not isinstance(name, str):
+            raise ApiError(400, "要给新名字")
+        try:
+            data = self.lsp.rename_plan(
+                ws["id"], ws["root"], rel, text, line, character, name
+            )
+        except LspUnavailable as exc:
+            raise ApiError(400, str(exc))
+        except LspError as exc:
+            raise ApiError(504, str(exc))
+        plan = data["plan"]
+        summary = {
+            "server": data["server"],
+            "files": [{"path": item["path"], "edits": len(item["edits"])} for item in plan],
+            "total": sum(len(item["edits"]) for item in plan),
+        }
+        if not apply:
+            return summary
+        lock = workspace_lock(ws["id"])
+        if not lock.acquire(blocking=False):
+            raise ApiError(409, "这个工作副本上还有别的操作在跑，等它结束再重命名")
+        try:
+            applied = apply_workspace_edit(ws["root"], plan)
+        except LspError as exc:
+            raise ApiError(400, str(exc))
+        finally:
+            lock.release()
+        return {
+            "server": data["server"],
+            "files": applied,
+            "total": sum(item["edits"] for item in applied),
+            "applied": True,
+        }
 
     def _commit_detail(self, query):
         ws = self._ws(query)

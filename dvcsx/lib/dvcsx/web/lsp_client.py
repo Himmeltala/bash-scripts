@@ -217,6 +217,138 @@ def normalize_locations(result, root):
     return out
 
 
+MAX_EDIT_FILE = 512 * 1024
+
+
+def position_to_index(text, line, character):
+    """LSP 的行列换成文本下标：行从 0 起，character 按 UTF-16 单元数算。"""
+    if line < 0 or character < 0:
+        raise ValueError("行列不能是负数")
+    starts = [0]
+    for index, char in enumerate(text):
+        if char == "\n":
+            starts.append(index + 1)
+    if line >= len(starts):
+        raise ValueError("行超出文件")
+    start = starts[line]
+    end = starts[line + 1] if line + 1 < len(starts) else len(text)
+    count = 0
+    index = start
+    while index < end and count < character:
+        count += 2 if ord(text[index]) > 0xFFFF else 1
+        index += 1
+    if count != character:
+        raise ValueError("列超出这一行")
+    return index
+
+
+def apply_text_edits(text, edits):
+    """把一组 LSP 文本改动应用到文本上；范围重叠或越界都报错，不留半份改动。"""
+    spans = []
+    for edit in edits:
+        rng = edit.get("range") or {}
+        start = rng.get("start") or {}
+        end = rng.get("end") or {}
+        try:
+            begin = position_to_index(
+                text, int(start.get("line", 0)), int(start.get("character", 0))
+            )
+            stop = position_to_index(text, int(end.get("line", 0)), int(end.get("character", 0)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("改动的行列不对：%s" % exc)
+        if stop < begin:
+            raise ValueError("改动的范围反了")
+        spans.append((begin, stop, str(edit.get("newText") or "")))
+    spans.sort(key=lambda item: item[0], reverse=True)
+    for index in range(1, len(spans)):
+        if spans[index][1] > spans[index - 1][0]:
+            raise ValueError("改动的范围重叠了")
+    out = text
+    for begin, stop, new_text in spans:
+        out = out[:begin] + new_text + out[stop:]
+    return out
+
+
+def normalize_workspace_edit(edit, root):
+    """WorkspaceEdit 换成 [{path, edits}]；建删改名与工作副本外的改动都不接。"""
+    if not isinstance(edit, dict):
+        return []
+    grouped = {}
+
+    def collect(uri, edits):
+        path = uri_to_path(uri)
+        if not path or not inside(root, path):
+            raise LspUnavailable("重命名的改动落在工作副本外，没处理")
+        key = os.path.relpath(path, root).replace(os.sep, "/")
+        if isinstance(edits, list):
+            grouped.setdefault(key, []).extend(edits)
+
+    changes = edit.get("changes")
+    if isinstance(changes, dict):
+        for uri, edits in changes.items():
+            collect(uri, edits)
+    document_changes = edit.get("documentChanges")
+    if isinstance(document_changes, list):
+        for change in document_changes:
+            if not isinstance(change, dict):
+                continue
+            if change.get("kind"):
+                raise LspUnavailable("重命名还要建删或改名文件，这一版不处理")
+            doc = change.get("textDocument") or {}
+            collect(doc.get("uri"), change.get("edits"))
+    return [
+        {"path": path, "edits": grouped[path]}
+        for path in sorted(grouped)
+        if grouped[path]
+    ]
+
+
+def apply_workspace_edit(root, plan):
+    """把重命名的改动落到磁盘：先把所有文件算好，再逐个替换，改一半好收场。"""
+    prepared = []
+    summary = []
+    for item in plan:
+        full = os.path.join(root, item["path"])
+        if not inside(root, full) or not os.path.isfile(full):
+            raise LspError("重命名要改的文件不存在：%s" % item["path"])
+        try:
+            with open(full, "rb") as handle:
+                raw = handle.read()
+        except OSError as exc:
+            raise LspError("读不了 %s：%s" % (item["path"], exc))
+        if len(raw) > MAX_EDIT_FILE:
+            raise LspError("文件太大，重命名不处理：%s" % item["path"])
+        if b"\x00" in raw:
+            raise LspError("二进制文件重命名不处理：%s" % item["path"])
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise LspError("不是 UTF-8，重命名不处理：%s" % item["path"])
+        try:
+            updated = apply_text_edits(text, item["edits"])
+        except ValueError as exc:
+            raise LspError("%s：%s" % (item["path"], exc))
+        prepared.append((full, updated.encode("utf-8")))
+        summary.append({"path": item["path"], "edits": len(item["edits"])})
+    temp_files = []
+    try:
+        for full, payload in prepared:
+            tmp = full + ".dvcsx-rename.tmp"
+            with open(tmp, "wb") as handle:
+                handle.write(payload)
+            temp_files.append((tmp, full))
+        for tmp, full in temp_files:
+            os.replace(tmp, full)
+    finally:
+        for tmp, _ in temp_files:
+            if os.path.exists(tmp):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+    return summary
+
+
 class LspServer:
     """一条 LSP 会话。请求串行由调用方保证，这里只管协议。"""
 
@@ -395,6 +527,18 @@ class LspServer:
             "textDocument/definition", path, text, language, line, character
         )
 
+    def rename(self, path, text, language, line, character, new_name):
+        self.sync(path, text, language)
+        return self.request(
+            "textDocument/rename",
+            {
+                "textDocument": {"uri": path_to_uri(path)},
+                "position": {"line": line, "character": character},
+                "newName": new_name,
+            },
+            timeout=self.request_timeout,
+        )
+
     def stop(self):
         try:
             self.request("shutdown", None, timeout=3)
@@ -441,13 +585,15 @@ class _Instance:
 class LspManager:
     """按（工作区, 语言）管理语言服务器进程。"""
 
-    def __init__(self, commands=None, idle=600.0, max_per_ws=2):
+    def __init__(self, commands=None, idle=600.0, max_per_ws=2, rename_warm=1.0):
         override = commands or {}
         self.commands = {
             key: tuple(override.get(key) or entry["command"]) for key, entry in SERVERS.items()
         }
         self.idle = idle
         self.max_per_ws = max_per_ws
+        # pyright 这类服务器要问过一次才开始分析整个项目，重命名第一次问会漏掉没开过的文件。
+        self.rename_warm = rename_warm
         self.instances = {}
         self.starting = {}
         self.lock = threading.Lock()
@@ -486,15 +632,7 @@ class LspManager:
         method = self.ACTIONS.get(action)
         if not method:
             raise LspUnavailable("不认识的动作：%s" % action)
-        key = server_key(path)
-        if not key:
-            raise LspUnavailable("这种文件没有语言服务器：%s" % path)
-        if SERVERS[key].get("unsupported"):
-            raise LspUnavailable(SERVERS[key]["unsupported"])
-        command = self.commands[key]
-        if not shutil.which(command[0]):
-            entry = SERVERS[key]
-            raise LspUnavailable("%s 语言服务器没装：%s" % (entry["title"], entry["hint"]))
+        key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
         extra = {"context": {"includeDeclaration": True}} if action == "references" else None
@@ -505,6 +643,41 @@ class LspManager:
             )
             instance.last_used = time.time()
         return {"server": key, "locations": normalize_locations(raw, root)}
+
+    def rename_plan(self, ws, root, path, text, line, character, new_name):
+        """问一次重命名，把结果整理成要改的文件与改动；这里不动磁盘。"""
+        name = str(new_name or "").strip()
+        if not name or len(name) > 200 or "\n" in name:
+            raise LspUnavailable("新名字不能为空，也不能换行")
+        key = self._ready(path)
+        instance = self._instance(ws, key, root)
+        full = os.path.join(root, path)
+        language = language_id(key, path)
+        with instance.lock:
+            instance.last_used = time.time()
+            first = instance.server.rename(full, text, language, line, character, name)
+            second = first
+            if self.rename_warm:
+                # 第一次请求会让服务器把项目分析起来，稍等再问一次拿完整结果。
+                time.sleep(self.rename_warm)
+                second = instance.server.rename(full, text, language, line, character, name)
+            instance.last_used = time.time()
+        plans = [normalize_workspace_edit(first, root), normalize_workspace_edit(second, root)]
+        plan = max(plans, key=lambda item: sum(len(entry["edits"]) for entry in item))
+        return {"server": key, "plan": plan}
+
+    def _ready(self, path):
+        """这个文件能不能查：有对应的语言、服务器受支持且装好了。"""
+        key = server_key(path)
+        if not key:
+            raise LspUnavailable("这种文件没有语言服务器：%s" % path)
+        if SERVERS[key].get("unsupported"):
+            raise LspUnavailable(SERVERS[key]["unsupported"])
+        command = self.commands[key]
+        if not shutil.which(command[0]):
+            entry = SERVERS[key]
+            raise LspUnavailable("%s 语言服务器没装：%s" % (entry["title"], entry["hint"]))
+        return key
 
     def _instance(self, ws, key, root):
         mark = (ws, key)
