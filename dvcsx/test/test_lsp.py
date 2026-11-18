@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -263,6 +264,10 @@ class VueBridgeManager(unittest.TestCase):
                 [(item["name"], item["depth"]) for item in outline["symbols"]],
                 [("App", 0), ("main", 1)],
             )
+            # Vue 这一版没有诊断。
+            self.assertEqual(
+                manager.diagnostics("ws", str(self.root), "Comp.vue", "x\n")["diagnostics"], []
+            )
         finally:
             manager.stop_all()
 
@@ -435,6 +440,29 @@ class LspManagers(unittest.TestCase):
         finally:
             manager.stop_all()
 
+    def test_diagnostics(self):
+        with FakeEnv(FAKE_LSP_DIAGNOSTICS="1"):
+            manager = lspmod.LspManager(
+                commands={"python": (sys.executable, str(FAKE))},
+                rename_warm=0,
+                bridge_command=(),
+            )
+            try:
+                items = []
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    items = manager.diagnostics(
+                        "ws1", str(self.root), "target.py", "x\n"
+                    )["diagnostics"]
+                    if items:
+                        break
+                    time.sleep(0.2)
+                self.assertEqual(items[0]["severity"], "error")
+                self.assertEqual(items[0]["message"], "假错误")
+                self.assertEqual(items[0]["line"], 0)
+            finally:
+                manager.stop_all()
+
     def test_missing_and_unknown_servers(self):
         manager = lspmod.LspManager(commands={"python": ("no-such-lsp-cmd",)}, bridge_command=())
         try:
@@ -532,6 +560,21 @@ class LspApi(unittest.TestCase):
         self.assertIn("target.py", data["files"])
         self.assertNotIn("node_modules/pkg/index.js", data["files"])
         self.assertIn("sub/other.py", data["files"])
+
+    def test_diagnostics(self):
+        with FakeEnv(FAKE_LSP_DIAGNOSTICS="1"):
+            code, data = 500, {}
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                code, data = self.call(
+                    "/lsp/diagnostics",
+                    {"ws": self.ws, "path": "target.py", "text": "x\n"},
+                )
+                if code == 200 and data.get("diagnostics"):
+                    break
+                time.sleep(0.2)
+            self.assertEqual(code, 200, data)
+            self.assertEqual(data["diagnostics"][0]["message"], "假错误")
 
     def test_rename_preview_and_apply(self):
         target = self.root / "target.py"

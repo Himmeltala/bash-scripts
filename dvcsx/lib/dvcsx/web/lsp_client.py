@@ -125,6 +125,8 @@ class TsserverBridge:
         self.pending = {}
         self.next_id = 0
         self.opened = set()
+        self.diagnostics = {}
+        self.diag_lock = threading.Lock()
         self.lock = threading.Lock()
         self.write_lock = threading.Lock()
         env = os.environ.copy()
@@ -155,6 +157,37 @@ class TsserverBridge:
             message = read_message(self.proc.stdout)
             if message is None:
                 break
+            if message.get("type") == "event":
+                kind = message.get("event")
+                body = message.get("body") or {}
+                if kind in ("syntaxDiag", "semanticDiag", "suggestionDiag") and body.get("file"):
+                    items = []
+                    for item in body.get("diagnostics") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        start = item.get("start") or {}
+                        try:
+                            line = int(start.get("line", 1)) - 1
+                            character = int(start.get("offset", 1)) - 1
+                        except (TypeError, ValueError):
+                            continue
+                        category = str(item.get("category") or "error")
+                        level = "error" if category == "error" else "warning" if category == "warning" else "info"
+                        message = str(item.get("text") or "").strip()
+                        if not message:
+                            continue
+                        items.append(
+                            {
+                                "severity": level,
+                                "line": max(0, line),
+                                "character": max(0, character),
+                                "message": message[:500],
+                                "source": "",
+                            }
+                        )
+                    with self.diag_lock:
+                        self.diagnostics[body["file"]] = items[:200]
+                continue
             if message.get("type") != "response":
                 continue
             with self.lock:
@@ -222,6 +255,20 @@ class TsserverBridge:
                 self.request("open", {"file": path})
             except LspError:
                 self.opened.discard(path)
+
+    def open(self, path):
+        if path in self.opened:
+            return
+        self.opened.add(path)
+        try:
+            self.request("open", {"file": path})
+        except LspError:
+            self.opened.discard(path)
+            raise
+
+    def snapshot(self, path):
+        with self.diag_lock:
+            return list(self.diagnostics.get(path) or [])
 
     def forward(self, name, arguments):
         if self.proc.poll() is not None:
@@ -336,6 +383,41 @@ def inside(root, target):
         return os.path.commonpath([os.path.abspath(root), os.path.abspath(target)]) == os.path.abspath(root)
     except ValueError:
         return False
+
+
+DIAGNOSTIC_LEVELS = {1: "error", 2: "warning", 3: "info", 4: "hint"}
+
+
+def normalize_diagnostics(items):
+    """LSP 的 Diagnostic[] 换成带严重级别与位置的列表。"""
+    out = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        rng = item.get("range") or {}
+        start = rng.get("start") or {}
+        try:
+            line = int(start.get("line", 0))
+            character = int(start.get("character", 0))
+        except (TypeError, ValueError):
+            continue
+        severity = item.get("severity")
+        level = DIAGNOSTIC_LEVELS.get(severity, "info") if isinstance(severity, int) else "info"
+        message = str(item.get("message") or "").strip()
+        if not message:
+            continue
+        out.append(
+            {
+                "severity": level,
+                "line": max(0, line),
+                "character": max(0, character),
+                "message": message[:500],
+                "source": str(item.get("source") or ""),
+            }
+        )
+        if len(out) >= 200:
+            break
+    return out
 
 
 def normalize_locations(result, root):
@@ -692,6 +774,8 @@ class LspServer:
         self.doc_lock = threading.Lock()
         self.versions = {}
         self.texts = {}
+        self.diagnostics = {}
+        self.diag_lock = threading.Lock()
         self.stderr_tail = []
         env = os.environ.copy()
         extra = [path for path in STABLE_BIN if os.path.isdir(path)]
@@ -722,6 +806,13 @@ class LspServer:
             message = read_message(stream)
             if message is None:
                 break
+            if message.get("method") == "textDocument/publishDiagnostics":
+                params = message.get("params") or {}
+                uri = str(params.get("uri") or "")
+                if uri:
+                    with self.diag_lock:
+                        self.diagnostics[uri] = normalize_diagnostics(params.get("diagnostics") or [])
+                continue
             if "id" in message and ("result" in message or "error" in message):
                 with self.lock:
                     slot = self.pending.pop(message["id"], None)
@@ -852,6 +943,10 @@ class LspServer:
         return self.query(
             "textDocument/definition", path, text, language, line, character
         )
+
+    def snapshot(self, uri):
+        with self.diag_lock:
+            return list(self.diagnostics.get(uri) or [])
 
     def documentsymbol(self, path, text, language):
         self.sync(path, text, language)
@@ -1048,6 +1143,21 @@ class LspManager:
             )
             instance.last_used = time.time()
         return {"server": key, "locations": normalize_locations(raw, root)}
+
+    def diagnostics(self, ws, root, path, text):
+        """把文件交给服务器，返回当前攒下的诊断；服务器是异步推的，前端隔一会儿再取。"""
+        key = self._ready(path)
+        instance = self._instance(ws, key, root)
+        full = os.path.join(root, path)
+        if SERVERS[key].get("bridge_only"):
+            # tsserver 的 geterr 对 .vue 不回话，Vue 这一版先不给诊断。
+            return {"server": key, "diagnostics": []}
+        with instance.lock:
+            instance.last_used = time.time()
+            instance.server.sync(full, text, language_id(key, path))
+            instance.last_used = time.time()
+            items = instance.server.snapshot(path_to_uri(full))
+        return {"server": key, "diagnostics": items}
 
     def symbols(self, ws, root, path, text):
         """整份文件的符号大纲：普通服务器问 documentSymbol，Vue 走 tsserver 的 navtree。"""

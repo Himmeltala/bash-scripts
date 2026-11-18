@@ -87,6 +87,8 @@ export const api = {
   lspStatus: () => call('GET', '/lsp/status'),
   // 整份文件的符号大纲。
   symbols: (ws, path, text) => call('POST', '/lsp/symbols', { ws, path, text }),
+  // 诊断：把当前文本交给服务器，取它推回来的错误与警告。
+  diagnostics: (ws, path, text) => call('POST', '/lsp/diagnostics', { ws, path, text }),
   // 快速打开用的整份文件清单。
   files: (ws) => call('GET', `/files?ws=${encodeParam(ws)}`),
 }

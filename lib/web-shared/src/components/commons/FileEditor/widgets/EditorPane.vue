@@ -1,7 +1,7 @@
 <template>
   <div class="edit-body">
     <div ref="gutterRef" class="gutter" aria-hidden="true">
-      <div v-for="n in lineCount" :key="n" class="ln">{{ n }}</div>
+      <div v-for="n in lineCount" :key="n" class="ln" :class="markerClass(n)">{{ n }}</div>
     </div>
     <div class="edit-stage">
       <div
@@ -40,9 +40,11 @@ const props = defineProps({
   modelValue: { type: String, default: '' },
   highlighted: { type: String, default: '' },
   lineCount: { type: Number, default: 1 },
+  // 行号前的诊断标记：行号（从 1 起）-> error / warning / info。
+  markers: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret'])
+const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit'])
 
 const gutterRef = ref(null)
 const codeRef = ref(null)
@@ -92,7 +94,16 @@ function onFocus() {
 
 function onInput(event) {
   emit('update:modelValue', event.target.value)
+  emit('edit')
   syncCaret()
+}
+
+function markerClass(n) {
+  const level = props.markers ? props.markers[n] : ''
+  if (level === 'error') return 'has-error'
+  if (level === 'warning') return 'has-warning'
+  if (level === 'info' || level === 'hint') return 'has-info'
+  return ''
 }
 
 // Ctrl（Mac 上是 Command）+ 左键点在一个词上：把词与 LSP 行列抛给调用方去查定义。

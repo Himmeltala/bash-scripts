@@ -59,6 +59,17 @@
         title="符号大纲（Ctrl+Shift+O）"
         @click="openOutline"
       />
+      <v-btn
+        size="small"
+        variant="text"
+        class="problems-btn"
+        :title="`问题（${problems.length}）`"
+        @click="problemsAsk.on = true"
+      >
+        <v-badge :content="problems.length" :model-value="problems.length > 0" color="error">
+          <v-icon>mdi-alert-circle-outline</v-icon>
+        </v-badge>
+      </v-btn>
       <v-progress-circular v-if="defining" indeterminate size="16" class="busy" />
       <v-btn
         size="small"
@@ -224,6 +235,8 @@
                 @menu="openSymbolMenu"
                 @rename="openRename"
                 @caret="onCaret"
+                @edit="onEdit"
+                :markers="markers"
               />
             </div>
           </template>
@@ -382,6 +395,39 @@
         <v-btn v-else color="primary" variant="flat" :loading="renameAsk.busy" @click="applyRename">
           重命名
         </v-btn>
+      </template>
+    </FloatingDialog>
+
+    <FloatingDialog
+      v-model="problemsAsk.on"
+      :initial-width="520"
+      :initial-height="420"
+      :min-width="360"
+      :min-height="240"
+    >
+      <template #title>问题（{{ problems.length }}）</template>
+      <p v-if="!problems.length" class="ask-hint">这个文件现在没有错误或警告。</p>
+      <div v-else class="def-list">
+        <button
+          v-for="(item, i) in problems"
+          :key="`${item.line}:${item.character}:${i}`"
+          type="button"
+          class="def-item"
+          @click="onProblem(item)"
+        >
+          <v-icon
+            size="16"
+            :color="item.severity === 'error' ? 'error' : item.severity === 'warning' ? 'warning' : 'info'"
+          >
+            {{ SEVERITY_ICONS[item.severity] || 'mdi-information' }}
+          </v-icon>
+          <span class="mono def-line">{{ item.line + 1 }}</span>
+          <span class="def-path">{{ item.message }}</span>
+        </button>
+      </div>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="problemsAsk.on = false">关闭</v-btn>
       </template>
     </FloatingDialog>
 
@@ -599,6 +645,28 @@ const SYMBOL_ICONS = {
 const outlineAsk = reactive({ on: false, loading: false, error: '', items: [], filter: '', path: '' })
 const quickAsk = reactive({ on: false, loading: false, error: '', files: [], filter: '', loaded: false })
 const lineAsk = reactive({ on: false, value: '', error: '' })
+// 诊断：当前文件的错误与警告，行号前的圆点与问题列表都用这份。
+const problems = ref([])
+const problemsAsk = reactive({ on: false })
+let diagSeq = 0
+let diagTimer = 0
+let editTimer = 0
+const SEVERITY_ICONS = {
+  error: 'mdi-alert-circle',
+  warning: 'mdi-alert',
+  info: 'mdi-information',
+  hint: 'mdi-lightbulb-on-outline',
+}
+const markers = computed(() => {
+  const map = {}
+  for (const item of problems.value) {
+    const line = (item.line || 0) + 1
+    const level = item.severity === 'error' ? 'error' : item.severity === 'warning' ? 'warning' : 'info'
+    if (map[line] === 'error') continue
+    if (!map[line] || level === 'error') map[line] = level
+  }
+  return map
+})
 
 function extensionOf(path) {
   const name = String(path || '')
@@ -758,6 +826,7 @@ async function show(node, line = 0) {
   const editor = editorOf(node.path)
   // 过大文件只有下载占位，没有编辑器可开。
   if (!editor) return
+  refreshDiagnostics(node.path)
   // 实例还没读过内容（新页签、回到旧页签，或刚从过大文件的占位换回编辑器），读一遍。
   if (!editor.path) {
     if (await editor.open(node.path, line)) restoreDraft(node.path, editor)
@@ -776,6 +845,7 @@ async function activate(tab) {
   const editor = editorOf(tab.path)
   if (!editor || editor.path) return
   if (await editor.open(tab.path)) restoreDraft(tab.path, editor)
+  refreshDiagnostics(tab.path)
 }
 
 // 关页签：没保存的问一句再关，关的是当前就停到旁边那个。
@@ -907,6 +977,40 @@ async function runSymbol(action) {
   } finally {
     defining.value = false
   }
+}
+
+// 诊断：先取一次，服务器是异步推的，1.6 秒后再取一次补上。
+function refreshDiagnostics(path = activePath.value) {
+  if (!path) {
+    problems.value = []
+    return
+  }
+  const seq = ++diagSeq
+  clearTimeout(diagTimer)
+  const run = async () => {
+    const editor = editorOf(path)
+    if (!editor || !editor.path) return
+    if (seq !== diagSeq || path !== activePath.value) return
+    try {
+      const data = await api.diagnostics(props.ws.id, path, editor.text)
+      if (seq === diagSeq && path === activePath.value) problems.value = data.diagnostics || []
+    } catch (err) {
+      if (seq === diagSeq && path === activePath.value) problems.value = []
+    }
+  }
+  run()
+  diagTimer = setTimeout(run, 1600)
+}
+
+function onEdit({ path }) {
+  if (path !== activePath.value) return
+  clearTimeout(editTimer)
+  editTimer = setTimeout(() => refreshDiagnostics(path), 900)
+}
+
+function onProblem(item) {
+  problemsAsk.on = false
+  openLocation({ path: activePath.value, line: item.line, character: item.character })
 }
 
 // 状态栏与 IDE 快捷键：快速打开、符号大纲、跳到行。
@@ -1152,6 +1256,8 @@ function downloadHeld() {
 watch(activePath, (path) => {
   caret.line = 1
   caret.column = 1
+  problems.value = []
+  refreshDiagnostics(path)
   locate(path)
 })
 watch(searching, (on) => {
@@ -1306,6 +1412,7 @@ function onSaved({ path, data }) {
   // 保存期间可能已经切到别的页签，那边的内容不能被这份草稿盖掉。
   if (tabOf(tabs.value, path)) tabs.value = updateTab(tabs.value, path, { size: data.size })
   treeRef.value?.reloadDir(dirName(path))
+  refreshDiagnostics(path)
 }
 
 // 退出搜索：清空输入，结果列表跟着收起来，左侧回到目录树。
@@ -1399,6 +1506,8 @@ onBeforeUnmount(() => {
   })
   clearTimeout(searchTimer)
   clearTimeout(noticeTimer)
+  clearTimeout(diagTimer)
+  clearTimeout(editTimer)
   window.removeEventListener('mousedown', onMenuOutside, true)
   window.removeEventListener('keydown', onMenuKey, true)
   searchSeq += 1
@@ -1526,6 +1635,10 @@ onBeforeUnmount(() => {
 }
 .dialog-filter {
   margin-bottom: 8px;
+}
+.problems-btn {
+  min-width: 0;
+  padding: 0 8px;
 }
 .sym-menu {
   position: fixed;

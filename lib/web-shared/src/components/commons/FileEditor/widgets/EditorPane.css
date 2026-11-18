@@ -18,7 +18,29 @@
   border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 .ln {
+  position: relative;
   height: 1.6em;
+}
+.ln.has-error::before,
+.ln.has-warning::before,
+.ln.has-info::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+}
+.ln.has-error::before {
+  background: rgb(var(--v-theme-error));
+}
+.ln.has-warning::before {
+  background: rgb(var(--v-theme-warning));
+}
+.ln.has-info::before {
+  background: rgb(var(--v-theme-info));
 }
 .edit-stage {
   position: relative;

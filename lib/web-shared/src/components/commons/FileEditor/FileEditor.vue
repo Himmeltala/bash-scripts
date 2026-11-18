@@ -68,6 +68,8 @@
         @menu="onMenu"
         @rename="onRename"
         @caret="onCaret"
+        :markers="markers"
+        @edit="$emit('edit', { path: path })"
       />
       <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
@@ -93,12 +95,13 @@ import {
 const props = defineProps({
   rootName: { type: String, default: '/' },
   size: { type: Number, default: undefined },
+  markers: { type: Object, default: () => ({}) },
   // 取数与落盘由调用方给：打开哪个文件、存到哪里，组件不认。
   loader: { type: Function, required: true },
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename', 'caret'])
+const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename', 'caret', 'edit'])
 
 const {
   path,

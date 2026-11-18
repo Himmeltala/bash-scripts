@@ -4,11 +4,13 @@
     :model-value="modelValue"
     :highlighted="highlighted"
     :line-count="lineCount"
+    :markers="markers"
     @update:model-value="$emit('update:modelValue', $event)"
     @symbol="$emit('symbol', $event)"
     @menu="$emit('menu', $event)"
     @rename="$emit('rename', $event)"
     @caret="$emit('caret', $event)"
+    @edit="$emit('edit')"
   />
 </template>
 
@@ -21,9 +23,10 @@ const props = defineProps({
   modelValue: { type: String, default: '' },
   // 由各类型的处理器给：代码取扩展名对应的语言，markdown 固定，纯文本为空。
   language: { type: String, default: '' },
+  markers: { type: Object, default: () => ({}) },
 })
 
-defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret'])
+defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit'])
 
 const paneRef = ref(null)
 

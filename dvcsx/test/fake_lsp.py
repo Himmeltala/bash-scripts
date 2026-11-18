@@ -151,6 +151,28 @@ def main():
             continue
         if method:
             record({"method": method, "params": message.get("params")})
+            if method == "textDocument/didOpen" and os.environ.get("FAKE_LSP_DIAGNOSTICS") == "1":
+                uri = ((message.get("params") or {}).get("textDocument") or {}).get("uri", "")
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "textDocument/publishDiagnostics",
+                        "params": {
+                            "uri": uri,
+                            "diagnostics": [
+                                {
+                                    "range": {
+                                        "start": {"line": 0, "character": 0},
+                                        "end": {"line": 0, "character": 3},
+                                    },
+                                    "severity": 1,
+                                    "message": "假错误",
+                                    "source": "fake",
+                                }
+                            ],
+                        },
+                    }
+                )
             if method == "exit":
                 return 0
 
