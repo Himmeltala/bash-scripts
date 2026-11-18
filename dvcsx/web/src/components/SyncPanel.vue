@@ -178,7 +178,7 @@
         <h3>提交</h3>
         <p class="hint">
           <template v-if="isGit">
-            勾选要提交的路径并填写提交说明。会先暂存选中的路径再提交；索引里如果有未选中的暂存改动，会拒绝提交。
+            填写提交说明，提交索引里已暂存的内容。未暂存的文件留在变更页，提交后仍然是改动。
           </template>
           <template v-else>
             勾选要提交的路径并填写提交说明。冲突与未纳入版本控制的路径不能提交。
@@ -193,29 +193,43 @@
           :maxlength="8000"
           counter
         />
-        <div class="row picks">
-          <v-btn size="x-small" variant="text" @click="pickAll">全选</v-btn>
-          <v-btn size="x-small" variant="text" @click="picked = []">清空</v-btn>
-          <span class="hint">已选 {{ picked.length }} 个</span>
-        </div>
-        <div class="files">
-          <v-checkbox
-            v-for="item in committable"
-            :key="item.path"
-            v-model="picked"
-            :value="item.path"
-            density="compact"
-            hide-details
-          >
-            <template #label>
+        <template v-if="isGit">
+          <div class="row picks">
+            <span class="hint">已暂存 {{ staged.length }} 项</span>
+          </div>
+          <div class="files">
+            <div v-for="item in staged" :key="item.path" class="staged-row">
               <span class="mono path">{{ item.path }}</span>
-              <span class="state">{{ itemLabel(item.item) }}</span>
-            </template>
-          </v-checkbox>
-          <p v-if="!committable.length" class="hint">没有可提交的改动。</p>
-        </div>
-        <p v-if="info.conflicts && info.conflicts.length" class="hint bad">
-          有冲突：{{ info.conflicts.join('、') }}。先解决冲突再提交。
+              <span class="state">{{ statusOf(item.item).text }}</span>
+            </div>
+            <p v-if="!staged.length" class="hint">索引里还没有内容，先到变更页暂存</p>
+          </div>
+        </template>
+        <template v-else>
+          <div class="row picks">
+            <v-btn size="x-small" variant="text" @click="pickAll">全选</v-btn>
+            <v-btn size="x-small" variant="text" @click="picked = []">清空</v-btn>
+            <span class="hint">已选 {{ picked.length }} 个</span>
+          </div>
+          <div class="files">
+            <v-checkbox
+              v-for="item in committable"
+              :key="item.path"
+              v-model="picked"
+              :value="item.path"
+              density="compact"
+              hide-details
+            >
+              <template #label>
+                <span class="mono path">{{ item.path }}</span>
+                <span class="state">{{ itemLabel(item.item) }}</span>
+              </template>
+            </v-checkbox>
+            <p v-if="!committable.length" class="hint">没有可提交的改动。</p>
+          </div>
+        </template>
+        <p v-if="conflicts.length" class="hint bad">
+          有冲突：{{ conflicts.join('、') }}。先解决冲突再提交。
         </p>
         <p v-if="missing.length" class="hint warn">
           本地缺失：{{ missing.join('、') }}。先 svn delete 再提交。
@@ -224,7 +238,7 @@
           color="primary"
           prepend-icon="mdi-source-commit"
           :loading="running === 'commit'"
-          :disabled="busy || info.writable === false || !picked.length || !message.trim()"
+          :disabled="commitDisabled"
           @click="ask('commit')"
         >
           提交
@@ -282,6 +296,8 @@ const lastError = ref('')
 const outputLines = ref([])
 const commandLine = ref('')
 const pending = ref('')
+// 索引为空时点提交要确认是否先把全部改动暂存再提交，点下按钮时记下这个选择。
+const stageAllCommit = ref(false)
 const confirmOn = ref(false)
 const pullMode = ref('ff')
 const setUpstream = ref(false)
@@ -320,6 +336,17 @@ const committable = computed(() =>
 const missing = computed(() =>
   (info.value.files || []).filter((item) => item.item === 'missing').map((item) => item.path),
 )
+// Git 的提交只认索引：已暂存的条目只读展示，按钮按索引与冲突判断能不能点。
+const staged = computed(() => (info.value.status && info.value.status.staged) || [])
+const unstaged = computed(() => (info.value.status && info.value.status.unstaged) || [])
+const conflicts = computed(() => info.value.conflicts || [])
+const commitDisabled = computed(() => {
+  if (busy.value || info.value.writable === false || !message.value.trim()) return true
+  if (isGit.value) {
+    return conflicts.value.length > 0 || (!staged.value.length && !unstaged.value.length)
+  }
+  return !picked.value.length
+})
 
 function itemLabel(item) {
   if (isGit.value && item === 'unversioned') return '未跟踪'
@@ -402,9 +429,12 @@ const confirmText = computed(() => {
     case 'update':
       return '从服务器更新工作副本。'
     case 'commit':
-      return isGit.value
-        ? `把 ${picked.value.length} 个路径提交到本地仓库，提交说明：${message.value.trim()}`
-        : `把 ${picked.value.length} 个路径提交到服务器，提交说明：${message.value.trim()}`
+      if (isGit.value) {
+        return stageAllCommit.value
+          ? '索引里还没有内容，要把全部改动暂存后一起提交吗？'
+          : `把索引里已暂存的 ${staged.value.length} 项提交到本地仓库，提交说明：${message.value.trim()}`
+      }
+      return `把 ${picked.value.length} 个路径提交到服务器，提交说明：${message.value.trim()}`
     default:
       return ''
   }
@@ -464,6 +494,7 @@ function pickAll() {
 
 function ask(action) {
   pending.value = action
+  stageAllCommit.value = action === 'commit' && isGit.value && !staged.value.length
   confirmOn.value = true
 }
 
@@ -556,7 +587,12 @@ async function run() {
     if (action === 'push') body.set_upstream = setUpstream.value
     if (action === 'commit') {
       body.message = message.value
-      body.paths = picked.value
+      // Git 只提交索引，不再传 paths；索引空时按确认框的选择整目录暂存。
+      if (isGit.value) {
+        if (stageAllCommit.value) body.stage_all = true
+      } else {
+        body.paths = picked.value
+      }
     }
     const data = await api.startOperation(body)
     jobId.value = data.id
@@ -591,6 +627,7 @@ function reset() {
   lastError.value = ''
   error.value = ''
   pending.value = ''
+  stageAllCommit.value = false
   message.value = ''
   picked.value = []
   pickedInitialized.value = false
@@ -710,6 +747,13 @@ h3 {
 }
 .picks {
   gap: 4px;
+}
+.staged-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
 }
 .files {
   max-height: 280px;
