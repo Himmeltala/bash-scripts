@@ -57,7 +57,6 @@
           </template>
         </v-list-item>
       </v-list>
-      <p class="hint dir">{{ profiles.dir }}</p>
     </aside>
 
     <section class="pane">
@@ -347,12 +346,6 @@ onMounted(async () => {
 .editor > * {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.dir {
-  flex: none;
-  word-break: break-all;
-  padding: 0 0.5rem;
 }
 
 .hint {
