@@ -104,6 +104,9 @@
         </button>
       </template>
       <template v-else-if="menu.mode === 'group'">
+        <button type="button" class="ctxitem" @click="addInGroup(menu.target)">
+          <v-icon size="16">mdi-plus</v-icon>{{ labels.menuAddInGroup }}
+        </button>
         <button type="button" class="ctxitem" @click="newSubGroup">
           <v-icon size="16">mdi-folder-plus-outline</v-icon>新建子分组
         </button>
@@ -239,12 +242,13 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import DirectoryPicker from '../commons/DirectoryPicker/index.js'
 import FloatingDialog from '../../feedbacks/commons/FloatingDialog.vue'
 import { copyText } from '../../utils/commons/clipboard.js'
 import {
+  adoptIntoGroup,
   flattenRows,
   fullNodes as buildNodes,
   inSubtree as isInside,
@@ -271,6 +275,7 @@ const DEFAULTS = {
   empty: '还没有工作区',
   forgetTitle: '移出工作区',
   menuAlias: '设置别名',
+  menuAddInGroup: '新增工作区',
   copyRel: '复制相对路径',
   copyAbs: '复制绝对路径',
   aliasTitle: '设置别名',
@@ -609,7 +614,30 @@ function baseName(full) {
   return parts.length ? parts[parts.length - 1] : full
 }
 
+// 右键分组新加的工作区：加完挂到这个分组下，等列表里出现新 id 再落位。
+const addParent = ref('')
+let knownIds = new Set(props.workspaces.map((ws) => ws.id))
+
+function addInGroup(group) {
+  menu.open = false
+  openDialog()
+  addParent.value = group ? group.id : ''
+}
+
+watch(
+  () => props.workspaces.map((ws) => ws.id).join(','),
+  () => {
+    const fresh = props.workspaces.filter((ws) => !knownIds.has(ws.id)).map((ws) => ws.id)
+    knownIds = new Set(props.workspaces.map((ws) => ws.id))
+    if (!addParent.value || !fresh.length) return
+    const parent = addParent.value
+    addParent.value = ''
+    emit('groups-change', adoptIntoGroup(buildNodes(props.groups, props.workspaces), fresh, parent))
+  },
+)
+
 function openDialog() {
+  addParent.value = ''
   path.value = ''
   pathOk.value = false
   dialogKey.value += 1
