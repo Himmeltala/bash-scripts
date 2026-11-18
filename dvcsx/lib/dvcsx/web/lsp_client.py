@@ -372,6 +372,92 @@ def normalize_locations(result, root):
     return out
 
 
+SYMBOL_KINDS = {
+    1: "file", 2: "module", 3: "namespace", 4: "package", 5: "class", 6: "method",
+    7: "property", 8: "field", 9: "constructor", 10: "enum", 11: "interface",
+    12: "function", 13: "variable", 14: "constant", 15: "string", 16: "number",
+    17: "boolean", 18: "array", 19: "object", 20: "key", 21: "null",
+    22: "enumMember", 23: "struct", 24: "event", 25: "operator", 26: "typeParameter",
+}
+
+
+def normalize_symbols(raw):
+    """LSP 的 DocumentSymbol[] 或 SymbolInformation[] 摊平成带层级的列表。"""
+    out = []
+
+    def walk(items, depth):
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "")
+            if not name:
+                continue
+            rng = item.get("selectionRange") or item.get("range")
+            if not rng and isinstance(item.get("location"), dict):
+                rng = item["location"].get("range")
+            start = (rng or {}).get("start") or {}
+            try:
+                line = int(start.get("line", 0))
+                character = int(start.get("character", 0))
+            except (TypeError, ValueError):
+                line, character = 0, 0
+            kind = item.get("kind")
+            label = SYMBOL_KINDS.get(kind, "symbol") if isinstance(kind, int) else "symbol"
+            if kind is not None and not isinstance(kind, int):
+                label = str(kind)
+            out.append(
+                {
+                    "name": name,
+                    "kind": label,
+                    "line": line,
+                    "character": character,
+                    "depth": depth,
+                }
+            )
+            if isinstance(item.get("children"), list):
+                walk(item["children"], depth + 1)
+
+    if isinstance(raw, list):
+        walk(raw, 0)
+    return out
+
+
+def tsserver_symbols(raw):
+    """tsserver navtree 的 childItems 摊平成同样的形状。"""
+    out = []
+
+    def walk(items, depth):
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("text") or item.get("name") or "")
+            if not name:
+                continue
+            spans = item.get("spans") or []
+            start = (spans[0] or {}).get("start") if spans else item.get("start")
+            start = start or {}
+            try:
+                line = int(start.get("line", 1)) - 1
+                character = int(start.get("offset", 1)) - 1
+            except (TypeError, ValueError):
+                line, character = 0, 0
+            out.append(
+                {
+                    "name": name,
+                    "kind": str(item.get("kind") or "symbol"),
+                    "line": max(0, line),
+                    "character": max(0, character),
+                    "depth": depth,
+                }
+            )
+            if isinstance(item.get("childItems"), list):
+                walk(item["childItems"], depth + 1)
+
+    body = raw if isinstance(raw, dict) else {}
+    walk(body.get("childItems"), 0)
+    return out
+
+
 def tsserver_locations(raw, root, action="definition"):
     """tsserver 的结果换成工作副本相对路径；行列从 1 起换成从 0 起。"""
     if action == "references":
@@ -767,6 +853,14 @@ class LspServer:
             "textDocument/definition", path, text, language, line, character
         )
 
+    def documentsymbol(self, path, text, language):
+        self.sync(path, text, language)
+        return self.request(
+            "textDocument/documentSymbol",
+            {"textDocument": {"uri": path_to_uri(path)}},
+            timeout=self.request_timeout,
+        )
+
     def rename(self, path, text, language, line, character, new_name):
         self.sync(path, text, language)
         return self.request(
@@ -954,6 +1048,23 @@ class LspManager:
             )
             instance.last_used = time.time()
         return {"server": key, "locations": normalize_locations(raw, root)}
+
+    def symbols(self, ws, root, path, text):
+        """整份文件的符号大纲：普通服务器问 documentSymbol，Vue 走 tsserver 的 navtree。"""
+        key = self._ready(path)
+        instance = self._instance(ws, key, root)
+        full = os.path.join(root, path)
+        if SERVERS[key].get("bridge_only"):
+            with instance.lock:
+                instance.last_used = time.time()
+                raw = instance.bridge.forward("navtree", {"file": full})
+                instance.last_used = time.time()
+            return {"server": key, "symbols": tsserver_symbols(raw)}
+        with instance.lock:
+            instance.last_used = time.time()
+            raw = instance.server.documentsymbol(full, text, language_id(key, path))
+            instance.last_used = time.time()
+        return {"server": key, "symbols": normalize_symbols(raw)}
 
     def rename_plan(self, ws, root, path, text, line, character, new_name):
         """问一次重命名，把结果整理成要改的文件与改动；这里不动磁盘。"""

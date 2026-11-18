@@ -88,6 +88,29 @@ def main():
                 )
             elif method == "shutdown":
                 send({"jsonrpc": "2.0", "id": message["id"], "result": None})
+            elif method == "textDocument/documentSymbol":
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": [
+                            {
+                                "name": "alpha",
+                                "kind": 12,
+                                "range": {"start": {"line": 0, "character": 0}},
+                                "selectionRange": {"start": {"line": 0, "character": 4}},
+                                "children": [
+                                    {
+                                        "name": "beta",
+                                        "kind": 13,
+                                        "range": {"start": {"line": 1, "character": 2}},
+                                        "selectionRange": {"start": {"line": 1, "character": 2}},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                )
             elif method == "textDocument/definition":
                 if IGNORE == "definition":
                     continue

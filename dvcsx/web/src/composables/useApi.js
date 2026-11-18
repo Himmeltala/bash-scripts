@@ -85,4 +85,8 @@ export const api = {
   renameApply: (ws, path, text, line, character, newName) =>
     call('POST', '/lsp/rename-apply', { ws, path, text, line, character, newName }),
   lspStatus: () => call('GET', '/lsp/status'),
+  // 整份文件的符号大纲。
+  symbols: (ws, path, text) => call('POST', '/lsp/symbols', { ws, path, text }),
+  // 快速打开用的整份文件清单。
+  files: (ws) => call('GET', `/files?ws=${encodeParam(ws)}`),
 }

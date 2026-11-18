@@ -42,7 +42,7 @@ const props = defineProps({
   lineCount: { type: Number, default: 1 },
 })
 
-const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename'])
+const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret'])
 
 const gutterRef = ref(null)
 const codeRef = ref(null)
@@ -80,6 +80,8 @@ function syncCaret() {
   }
   caretLine.value = line
   scrollTop.value = el.scrollTop
+  const lineStart = before.lastIndexOf("\n") + 1
+  emit('caret', { line: line + 1, column: pos - lineStart + 1 })
 }
 
 function onFocus() {

@@ -55,6 +55,8 @@ LOG_MAX = 200
 LOG_SKIP_MAX = 1000
 # 浏览目录时一层最多回这么多项，再多的目录列出来也翻不动。
 BROWSE_MAX = 500
+# 快速打开要一次列出工作副本里的文件，到上限就停。
+FILES_MAX = 20000
 # 浏览目录的搜索：命中与扫过的文件都设上限，大工作副本不至于把页面拖住。
 SEARCH_MAX = 300
 SEARCH_FILES_MAX = 20000
@@ -1068,6 +1070,22 @@ def search_lines(path, needle):
     for number, line in enumerate(text.splitlines(), 1):
         if needle in line.lower():
             yield number, line.strip()[:SEARCH_LINE_MAX]
+
+
+def browse_files(root, ignore=()):
+    """快速打开用的文件清单：跳过 ignore 里的目录，按路径排序，到上限就停。"""
+    skip = {str(name) for name in ignore if name}
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(name for name in dirnames if name not in skip)
+        for name in sorted(filenames):
+            path = os.path.join(dirpath, name)
+            if not inside(root, path):
+                continue
+            out.append(os.path.relpath(path, root).replace(os.sep, "/"))
+            if len(out) >= FILES_MAX:
+                return out, True
+    return out, False
 
 
 def browse_search(root, rel, query, mode, ignore=()):
@@ -2271,6 +2289,8 @@ class Handler(WebHandler):
             return self._file(query)
         if route == "search":
             return self._search(query)
+        if route == "files":
+            return self._files(query)
         if route == "settings" and method == "GET":
             return self._settings_payload()
         if route == "lsp/status":
@@ -2306,6 +2326,8 @@ class Handler(WebHandler):
             return self._lsp_definition(body)
         if route == "lsp/query":
             return self._lsp_query(body, str(body.get("action") or "definition"))
+        if route == "lsp/symbols":
+            return self._lsp_symbols(body)
         if route == "lsp/rename":
             return self._lsp_rename(body)
         if route == "lsp/rename-apply":
@@ -2569,6 +2591,16 @@ class Handler(WebHandler):
         )
         return {"workspace": ws, **browse_search(ws["root"], rel, text, mode, ignore)}
 
+    def _files(self, query):
+        ws = self._ws(query)
+        ignore = (
+            self.settings.search_ignore()
+            if self.settings is not None
+            else list(SEARCH_IGNORE_DEFAULTS)
+        )
+        files, truncated = browse_files(ws["root"], ignore)
+        return {"files": files, "truncated": truncated}
+
     def _lsp_status(self):
         # 不拉进程，只报各语言服务器装没装；同样只认本机，免得把本机有什么暴露出去。
         self._check_write()
@@ -2579,7 +2611,7 @@ class Handler(WebHandler):
     def _lsp_definition(self, body):
         return self._lsp_query(body, "definition")
 
-    def _lsp_args(self, body):
+    def _lsp_file_args(self, body):
         self._check_write()
         if self.lsp is None:
             raise ApiError(404, "代码索引没有起来")
@@ -2595,6 +2627,10 @@ class Handler(WebHandler):
             raise ApiError(400, "要把文件内容一起带上")
         if len(text.encode("utf-8")) > MAX_FILE:
             raise ApiError(400, "文件太大，超过 %d KB 不做索引" % (MAX_FILE // 1024))
+        return ws, rel, text
+
+    def _lsp_args(self, body):
+        ws, rel, text = self._lsp_file_args(body)
         try:
             line = int(body.get("line"))
             character = int(body.get("character"))
@@ -2608,6 +2644,15 @@ class Handler(WebHandler):
         ws, rel, text, line, character = self._lsp_args(body)
         try:
             return self.lsp.query(ws["id"], ws["root"], rel, text, line, character, action)
+        except LspUnavailable as exc:
+            raise ApiError(400, str(exc))
+        except LspError as exc:
+            raise ApiError(504, str(exc))
+
+    def _lsp_symbols(self, body):
+        ws, rel, text = self._lsp_file_args(body)
+        try:
+            return self.lsp.symbols(ws["id"], ws["root"], rel, text)
         except LspUnavailable as exc:
             raise ApiError(400, str(exc))
         except LspError as exc:

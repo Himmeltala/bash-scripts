@@ -67,6 +67,7 @@
         @symbol="onSymbol"
         @menu="onMenu"
         @rename="onRename"
+        @caret="onCaret"
       />
       <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
@@ -97,7 +98,7 @@ const props = defineProps({
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename'])
+const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename', 'caret'])
 
 const {
   path,
@@ -197,6 +198,11 @@ function onMenu(payload) {
 // F2 重命名：带上文件路径交给调用方。
 function onRename(symbol) {
   emit('rename', { path: path.value, ...symbol })
+}
+
+// 光标行列：状态栏用。
+function onCaret(position) {
+  emit('caret', { path: path.value, ...position })
 }
 
 const leaveAsk = ref(false)

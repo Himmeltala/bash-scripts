@@ -7,7 +7,7 @@
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
 <template>
-  <div class="panel" @keydown.ctrl.s.prevent="save">
+  <div class="panel" @keydown.ctrl.s.prevent="save" @keydown="onPanelKey">
     <div class="bar">
       <div class="left">
         <v-text-field
@@ -45,6 +45,20 @@
       >
         返回目录
       </v-btn>
+      <v-btn
+        icon="mdi-file-find-outline"
+        size="small"
+        variant="text"
+        title="快速打开（Ctrl+P）"
+        @click="openQuickOpen"
+      />
+      <v-btn
+        icon="mdi-format-list-bulleted-type"
+        size="small"
+        variant="text"
+        title="符号大纲（Ctrl+Shift+O）"
+        @click="openOutline"
+      />
       <v-progress-circular v-if="defining" indeterminate size="16" class="busy" />
       <v-btn
         size="small"
@@ -209,6 +223,7 @@
                 @definition="onDefinition"
                 @menu="openSymbolMenu"
                 @rename="openRename"
+                @caret="onCaret"
               />
             </div>
           </template>
@@ -219,6 +234,16 @@
           />
         </div>
       </div>
+    </div>
+
+    <div v-if="activePath" class="statusbar">
+      <button type="button" class="cell link" title="跳到行（Ctrl+G）" @click="openGotoLine">
+        {{ caret.line }}:{{ caret.column }}
+      </button>
+      <span class="cell">{{ languageLabel }}</span>
+      <span class="cell" :class="{ muted: !serverReady }" :title="serverTitle">{{ serverLabel }}</span>
+      <v-spacer />
+      <span class="cell">UTF-8</span>
     </div>
 
     <FloatingDialog
@@ -360,6 +385,112 @@
       </template>
     </FloatingDialog>
 
+    <FloatingDialog
+      v-model="outlineAsk.on"
+      :initial-width="520"
+      :initial-height="460"
+      :min-width="360"
+      :min-height="300"
+    >
+      <template #title>符号大纲</template>
+      <v-text-field
+        v-model="outlineAsk.filter"
+        density="compact"
+        variant="outlined"
+        hide-details
+        autofocus
+        placeholder="筛选符号"
+        prepend-inner-icon="mdi-magnify"
+        class="dialog-filter"
+      />
+      <p v-if="outlineAsk.loading" class="ask-hint">正在取符号…</p>
+      <p v-else-if="outlineAsk.error" class="ask-error">{{ outlineAsk.error }}</p>
+      <div v-else class="def-list">
+        <button
+          v-for="item in outlineRows"
+          :key="`${item.line}:${item.character}:${item.name}`"
+          type="button"
+          class="def-item"
+          :style="{ paddingLeft: `${10 + item.depth * 14}px` }"
+          @click="pickSymbol(item)"
+        >
+          <v-icon size="16">{{ symbolIcon(item) }}</v-icon>
+          <span class="mono def-path">{{ item.name }}</span>
+          <span class="mono def-line">{{ item.line + 1 }}</span>
+        </button>
+      </div>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="outlineAsk.on = false">关闭</v-btn>
+      </template>
+    </FloatingDialog>
+
+    <FloatingDialog
+      v-model="quickAsk.on"
+      :initial-width="560"
+      :initial-height="480"
+      :min-width="380"
+      :min-height="300"
+    >
+      <template #title>快速打开</template>
+      <v-text-field
+        v-model="quickAsk.filter"
+        density="compact"
+        variant="outlined"
+        hide-details
+        autofocus
+        placeholder="输入文件名"
+        prepend-inner-icon="mdi-magnify"
+        class="dialog-filter"
+        @keyup.enter="pickQuick(quickRows[0])"
+      />
+      <p v-if="quickAsk.loading" class="ask-hint">正在列文件…</p>
+      <p v-else-if="quickAsk.error" class="ask-error">{{ quickAsk.error }}</p>
+      <div v-else class="def-list">
+        <button
+          v-for="path in quickRows"
+          :key="path"
+          type="button"
+          class="def-item"
+          @click="pickQuick(path)"
+        >
+          <v-icon size="16">mdi-file-outline</v-icon>
+          <span class="mono def-path">{{ path }}</span>
+        </button>
+        <p v-if="!quickRows.length" class="ask-hint">没有匹配的文件。</p>
+      </div>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="quickAsk.on = false">关闭</v-btn>
+      </template>
+    </FloatingDialog>
+
+    <FloatingDialog
+      v-model="lineAsk.on"
+      :initial-width="360"
+      :initial-height="220"
+      :min-width="300"
+      :min-height="180"
+    >
+      <template #title>跳到行</template>
+      <v-text-field
+        v-model="lineAsk.value"
+        type="number"
+        density="compact"
+        variant="outlined"
+        hide-details
+        autofocus
+        label="行号"
+        @keyup.enter="submitGotoLine"
+      />
+      <p v-if="lineAsk.error" class="ask-error">{{ lineAsk.error }}</p>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="lineAsk.on = false">取消</v-btn>
+        <v-btn color="primary" variant="flat" @click="submitGotoLine">跳过去</v-btn>
+      </template>
+    </FloatingDialog>
+
     <div
       v-if="symMenu.on"
       class="sym-menu"
@@ -399,6 +530,7 @@ import {
 } from '../composables/browseTabs'
 import { saveSession, sessionOf } from '../composables/browseSessions'
 import { buildSearchTree, flattenSearchTree } from '../composables/browseSearchTree'
+import { filterPaths } from '../composables/fuzzyMatch'
 import { dirName } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -439,6 +571,69 @@ const renameAsk = reactive({
   error: '',
   busy: false,
 })
+// 状态栏：光标行列、文件语言、对应的语言服务器。
+const caret = reactive({ line: 1, column: 1 })
+const servers = ref([])
+const serversLoaded = ref(false)
+const LANGUAGES = {
+  js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript',
+  ts: 'TypeScript', tsx: 'TypeScript', vue: 'Vue', py: 'Python', pyi: 'Python',
+  sh: 'Shell', bash: 'Shell', zsh: 'Shell', java: 'Java', json: 'JSON',
+  md: 'Markdown', css: 'CSS', scss: 'SCSS', html: 'HTML', xml: 'XML',
+  yml: 'YAML', yaml: 'YAML', sql: 'SQL', go: 'Go', rs: 'Rust', c: 'C',
+  h: 'C', cpp: 'C++', hpp: 'C++', cs: 'C#', rb: 'Ruby', php: 'PHP', kt: 'Kotlin',
+}
+const SERVER_BY_EXT = {
+  sh: 'shell', bash: 'shell', zsh: 'shell', py: 'python', pyi: 'python',
+  js: 'typescript', jsx: 'typescript', ts: 'typescript', tsx: 'typescript',
+  mjs: 'typescript', cjs: 'typescript', vue: 'vue', java: 'java',
+}
+const SYMBOL_ICONS = {
+  class: 'mdi-format-letter-case', interface: 'mdi-connection',
+  enum: 'mdi-format-list-numbered', function: 'mdi-function',
+  method: 'mdi-function-variant', constructor: 'mdi-hammer-wrench',
+  variable: 'mdi-variable', constant: 'mdi-variable-box', property: 'mdi-tag-outline',
+  field: 'mdi-tag', namespace: 'mdi-folder-outline', module: 'mdi-package-variant',
+  struct: 'mdi-cube-outline', typeParameter: 'mdi-generic',
+}
+const outlineAsk = reactive({ on: false, loading: false, error: '', items: [], filter: '', path: '' })
+const quickAsk = reactive({ on: false, loading: false, error: '', files: [], filter: '', loaded: false })
+const lineAsk = reactive({ on: false, value: '', error: '' })
+
+function extensionOf(path) {
+  const name = String(path || '')
+  const dot = name.lastIndexOf('.')
+  return dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
+}
+
+const languageLabel = computed(() => {
+  const ext = extensionOf(activePath.value)
+  return ext ? LANGUAGES[ext] || ext.toUpperCase() : '文本'
+})
+
+const serverInfo = computed(() => {
+  const id = SERVER_BY_EXT[extensionOf(activePath.value)]
+  return id ? servers.value.find((item) => item.id === id) || null : null
+})
+const serverReady = computed(() => !!(serverInfo.value && serverInfo.value.available))
+const serverLabel = computed(() => {
+  if (!activePath.value) return ''
+  const info = serverInfo.value
+  if (!info) return '无代码索引'
+  return info.available ? `${info.title} 索引就绪` : `${info.title} 未装`
+})
+const serverTitle = computed(() => {
+  const info = serverInfo.value
+  if (!info) return '这种文件没有语言服务器'
+  return info.available ? info.command : info.hint
+})
+const outlineRows = computed(() => {
+  const q = outlineAsk.filter.trim().toLowerCase()
+  if (!q) return outlineAsk.items
+  return outlineAsk.items.filter((item) => String(item.name).toLowerCase().includes(q))
+})
+const quickRows = computed(() => filterPaths(quickAsk.files, quickAsk.filter))
+
 // 右键标识符弹出的代码菜单：位置、词，以及来源文件与行列。
 const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 0, word: '' })
 const SYMBOL_TITLES = {
@@ -714,6 +909,111 @@ async function runSymbol(action) {
   }
 }
 
+// 状态栏与 IDE 快捷键：快速打开、符号大纲、跳到行。
+async function loadServers() {
+  if (serversLoaded.value) return
+  try {
+    const data = await api.lspStatus()
+    servers.value = data.servers || []
+    serversLoaded.value = true
+  } catch (err) {
+    servers.value = []
+  }
+}
+
+function onCaret(position) {
+  if (!position || position.path !== activePath.value) return
+  caret.line = position.line
+  caret.column = position.column
+}
+
+function onPanelKey(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+  const key = (event.key || '').toLowerCase()
+  if (key === 'p' && !event.shiftKey) {
+    event.preventDefault()
+    openQuickOpen()
+  } else if (key === 'g' && !event.shiftKey) {
+    event.preventDefault()
+    openGotoLine()
+  } else if (key === 'o' && event.shiftKey) {
+    event.preventDefault()
+    openOutline()
+  }
+}
+
+async function openOutline() {
+  const tab = activeTab.value
+  const editor = tab ? editorOf(tab.path) : null
+  if (!tab || !editor || !editor.path) {
+    flash('先打开一个文件再看大纲')
+    return
+  }
+  Object.assign(outlineAsk, {
+    on: true,
+    loading: true,
+    error: '',
+    items: [],
+    filter: '',
+    path: tab.path,
+  })
+  try {
+    const data = await api.symbols(props.ws.id, tab.path, editor.text)
+    outlineAsk.items = data.symbols || []
+    if (!outlineAsk.items.length) outlineAsk.error = '这个文件没有符号'
+  } catch (err) {
+    outlineAsk.error = err.message
+  } finally {
+    outlineAsk.loading = false
+  }
+}
+
+function symbolIcon(item) {
+  return SYMBOL_ICONS[item.kind] || 'mdi-symbol'
+}
+
+async function pickSymbol(item) {
+  outlineAsk.on = false
+  await openLocation({ path: outlineAsk.path, line: item.line, character: item.character })
+}
+
+async function openQuickOpen() {
+  Object.assign(quickAsk, { on: true, filter: '', error: '' })
+  if (quickAsk.loaded) return
+  quickAsk.loading = true
+  try {
+    const data = await api.files(props.ws.id)
+    quickAsk.files = data.files || []
+    quickAsk.loaded = true
+  } catch (err) {
+    quickAsk.error = err.message
+  } finally {
+    quickAsk.loading = false
+  }
+}
+
+async function pickQuick(path) {
+  if (!path) return
+  quickAsk.on = false
+  await show({ path, name: path.split('/').pop(), type: 'file' })
+}
+
+function openGotoLine() {
+  if (!activePath.value) return
+  Object.assign(lineAsk, { on: true, value: String(caret.line || 1), error: '' })
+}
+
+async function submitGotoLine() {
+  const tab = activeTab.value
+  const line = Number.parseInt(String(lineAsk.value).trim(), 10)
+  if (!tab || !Number.isFinite(line) || line < 1) {
+    lineAsk.error = '给一个从 1 开始的行号'
+    return
+  }
+  lineAsk.on = false
+  await show(tab, line)
+}
+
 // 重命名：先填新名字、看要改哪些文件，确认后才落盘；F2 与右键菜单都走这里。
 function openRename(payload) {
   Object.assign(renameAsk, {
@@ -849,7 +1149,11 @@ function downloadHeld() {
   link.remove()
 }
 
-watch(activePath, (path) => locate(path))
+watch(activePath, (path) => {
+  caret.line = 1
+  caret.column = 1
+  locate(path)
+})
 watch(searching, (on) => {
   if (!on) locate(activePath.value)
 })
@@ -1075,6 +1379,7 @@ async function refresh() {
 
 // 回来时把树摊回原来的层次，读出停着的那一个页签，草稿跟着放回去；其余页签等点开再读。
 onMounted(async () => {
+  loadServers()
   if (keptExpanded.length) treeRef.value?.restoreExpanded(keptExpanded)
   const tab = tabOf(tabs.value, activePath.value) || tabs.value[0] || null
   if (!tab) return
@@ -1189,6 +1494,38 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   font-size: 0.74rem;
   color: rgb(var(--v-theme-on-surface-variant));
+}
+.statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 12px;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  font-size: 0.72rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.cell {
+  flex: 0 0 auto;
+}
+.cell.link {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cell.link:hover {
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+.cell.muted {
+  color: rgb(var(--v-theme-warning));
+}
+.dialog-filter {
+  margin-bottom: 8px;
 }
 .sym-menu {
   position: fixed;

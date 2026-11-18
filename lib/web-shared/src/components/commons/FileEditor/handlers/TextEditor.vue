@@ -8,6 +8,7 @@
     @symbol="$emit('symbol', $event)"
     @menu="$emit('menu', $event)"
     @rename="$emit('rename', $event)"
+    @caret="$emit('caret', $event)"
   />
 </template>
 
@@ -22,7 +23,7 @@ const props = defineProps({
   language: { type: String, default: '' },
 })
 
-defineEmits(['update:modelValue', 'symbol', 'menu', 'rename'])
+defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret'])
 
 const paneRef = ref(null)
 

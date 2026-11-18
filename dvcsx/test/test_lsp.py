@@ -258,8 +258,73 @@ class VueBridgeManager(unittest.TestCase):
             plan = manager.rename_plan("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "helper")
             self.assertEqual([item["path"] for item in plan["plan"]], ["Comp.vue"])
             self.assertEqual(len(plan["plan"][0]["edits"]), 1)
+            outline = manager.symbols("ws", str(self.root), "Comp.vue", "x\n")
+            self.assertEqual(
+                [(item["name"], item["depth"]) for item in outline["symbols"]],
+                [("App", 0), ("main", 1)],
+            )
         finally:
             manager.stop_all()
+
+
+class SymbolResults(unittest.TestCase):
+    def test_lsp_symbols_flatten(self):
+        raw = [
+            {
+                "name": "alpha",
+                "kind": 12,
+                "selectionRange": {"start": {"line": 0, "character": 4}},
+                "children": [
+                    {
+                        "name": "beta",
+                        "kind": 13,
+                        "selectionRange": {"start": {"line": 1, "character": 2}},
+                    }
+                ],
+            },
+            {
+                "name": "gamma",
+                "kind": 5,
+                "location": {
+                    "uri": "file:///x",
+                    "range": {"start": {"line": 3, "character": 0}},
+                },
+            },
+        ]
+        self.assertEqual(
+            lspmod.normalize_symbols(raw),
+            [
+                {"name": "alpha", "kind": "function", "line": 0, "character": 4, "depth": 0},
+                {"name": "beta", "kind": "variable", "line": 1, "character": 2, "depth": 1},
+                {"name": "gamma", "kind": "class", "line": 3, "character": 0, "depth": 0},
+            ],
+        )
+        self.assertEqual(lspmod.normalize_symbols(None), [])
+
+    def test_tsserver_symbols_flatten(self):
+        raw = {
+            "childItems": [
+                {
+                    "text": "App",
+                    "kind": "class",
+                    "spans": [{"start": {"line": 2, "offset": 1}}],
+                    "childItems": [
+                        {
+                            "text": "main",
+                            "kind": "method",
+                            "spans": [{"start": {"line": 3, "offset": 5}}],
+                        }
+                    ],
+                }
+            ]
+        }
+        self.assertEqual(
+            lspmod.tsserver_symbols(raw),
+            [
+                {"name": "App", "kind": "class", "line": 1, "character": 0, "depth": 0},
+                {"name": "main", "kind": "method", "line": 2, "character": 4, "depth": 1},
+            ],
+        )
 
 
 class RenameEdits(unittest.TestCase):
@@ -336,6 +401,11 @@ class LspManagers(unittest.TestCase):
             self.assertIn({"path": "target.py", "line": 5, "character": 0}, refs["locations"])
             kind = manager.query("ws1", str(self.root), "target.py", "x\n", 0, 0, "typeDefinition")
             self.assertEqual(len(kind["locations"]), 2)
+            outline = manager.symbols("ws1", str(self.root), "target.py", "x\n")
+            self.assertEqual(
+                [(item["name"], item["depth"]) for item in outline["symbols"]],
+                [("alpha", 0), ("beta", 1)],
+            )
             rows = {row["id"]: row for row in manager.status()}
             self.assertTrue(rows["python"]["available"])
             self.assertTrue(rows["java"]["available"] in (True, False))
@@ -441,10 +511,27 @@ class LspApi(unittest.TestCase):
         )
         self.assertEqual(code, 400, data)
 
+        code, data = self.call(
+            "/lsp/symbols",
+            {"ws": self.ws, "path": "target.py", "text": "x\n"},
+        )
+        self.assertEqual(code, 200, data)
+        self.assertEqual([item["name"] for item in data["symbols"]], ["alpha", "beta"])
+
         code, data = self.call("/lsp/status")
         self.assertEqual(code, 200, data)
         rows = {row["id"]: row for row in data["servers"]}
         self.assertTrue(rows["python"]["available"])
+
+    def test_files_listing_respects_ignore(self):
+        ignored = self.root / "node_modules"
+        (ignored / "pkg").mkdir(parents=True)
+        (ignored / "pkg" / "index.js").write_text("x\n", "utf-8")
+        code, data = self.call("/files?ws=" + self.ws)
+        self.assertEqual(code, 200, data)
+        self.assertIn("target.py", data["files"])
+        self.assertNotIn("node_modules/pkg/index.js", data["files"])
+        self.assertIn("sub/other.py", data["files"])
 
     def test_rename_preview_and_apply(self):
         target = self.root / "target.py"

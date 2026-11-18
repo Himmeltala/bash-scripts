@@ -58,6 +58,26 @@ def main():
             reply(message, body={"echo": message.get("arguments")})
         elif command in ("definition", "typeDefinition", "implementation"):
             reply(message, body=[{"file": FILE, "start": {"line": 2, "offset": 3}}])
+        elif command == "navtree":
+            reply(
+                message,
+                body={
+                    "childItems": [
+                        {
+                            "text": "App",
+                            "kind": "class",
+                            "spans": [{"start": {"line": 2, "offset": 1}}],
+                            "childItems": [
+                                {
+                                    "text": "main",
+                                    "kind": "method",
+                                    "spans": [{"start": {"line": 3, "offset": 5}}],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
         elif command == "references":
             reply(
                 message,
