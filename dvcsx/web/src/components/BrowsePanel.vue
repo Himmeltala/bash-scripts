@@ -121,26 +121,76 @@
 
       <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
-      <EmptyState
-        v-if="held"
-        icon="mdi-file-hidden"
-        :icon-size="28"
-        :path="held.path"
-        :hint="`这个文件有 ${formatBytes(held.size)}，超过 ${formatBytes(PREVIEW_MAX)} 的预览上限，默认不加载。`"
-        action="下载文件"
-        action-icon="mdi-download"
-        @action="downloadHeld"
-      />
-      <FileEditor
-        v-else
-        ref="editorRef"
-        :root-name="rootName"
-        :size="activeNode ? activeNode.size : undefined"
-        :loader="loadFile"
-        :saver="saveFile"
-        @navigate="reveal"
-        @saved="onSaved"
-      />
+      <div class="main">
+        <div v-if="tabs.length" ref="tabbarRef" class="tabbar">
+          <div
+            v-for="tab in tabs"
+            :key="tab.path"
+            class="tab"
+            :class="{ active: tab.path === activePath }"
+            :data-path="tab.path"
+            :title="tab.path"
+            @click="activate(tab)"
+            @mousedown.middle.prevent="closeTab(tab)"
+          >
+            <v-icon
+              size="14"
+              class="tab-icon"
+              :style="tabIcon(tab).color ? { color: tabIcon(tab).color } : null"
+            >
+              {{ tabIcon(tab).icon }}
+            </v-icon>
+            <span class="tab-name">{{ tab.name }}</span>
+            <span v-if="tab.dirty" class="tab-dirty" title="还没保存" />
+            <button
+              class="tab-close"
+              type="button"
+              :title="`关闭 ${tab.name}`"
+              @click.stop="closeTab(tab)"
+            >
+              <v-icon size="14">mdi-close</v-icon>
+            </button>
+          </div>
+        </div>
+
+        <div class="panes">
+          <template v-if="tabs.length">
+            <div
+              v-for="tab in tabs"
+              v-show="tab.path === activePath"
+              :key="tab.path"
+              class="pane"
+            >
+              <EmptyState
+                v-if="isHeldNode(tab)"
+                icon="mdi-file-hidden"
+                :icon-size="28"
+                :path="tab.path"
+                :hint="`这个文件有 ${formatBytes(tab.size)}，超过 ${formatBytes(PREVIEW_MAX)} 的预览上限，默认不加载。`"
+                action="下载文件"
+                action-icon="mdi-download"
+                @action="downloadHeld"
+              />
+              <FileEditor
+                v-else
+                :ref="(el) => setEditor(tab.path, el)"
+                :root-name="rootName"
+                :size="tab.size"
+                :loader="loadFile"
+                :saver="saveFile"
+                @navigate="reveal"
+                @saved="onSaved"
+                @dirty="(on) => setDirty(tab.path, on)"
+              />
+            </div>
+          </template>
+          <EmptyState
+            v-else
+            icon="mdi-file-outline"
+            hint="从左边选一个文件，右边显示它的内容。"
+          />
+        </div>
+      </div>
     </div>
 
     <FloatingDialog
@@ -205,6 +255,14 @@ import { EmptyState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../composables/browseOps'
+import {
+  closeTab as closeTabIn,
+  followMoved,
+  openTab as openTabIn,
+  renameTabs,
+  tabOf,
+  updateTab,
+} from '../composables/browseTabs'
 import { dirName } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -214,8 +272,12 @@ const props = defineProps({
 })
 
 const treeRef = ref(null)
-const editorRef = ref(null)
-const activeNode = ref(null)
+const tabbarRef = ref(null)
+// 打开过的文件各占一个页签，每个页签一个编辑器实例：草稿、视图与滚动都留在各自那份里。
+const tabs = ref([])
+const activePath = ref('')
+const editors = new Map()
+const activeTab = computed(() => tabOf(tabs.value, activePath.value))
 const refreshing = ref(false)
 // 左侧目录树的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
@@ -239,7 +301,6 @@ const rootName = computed(
   () => String(props.ws.root || '').replace(/\/+$/, '').split('/').pop() || '/',
 )
 const rootNode = computed(() => ({ name: rootName.value, path: '', type: 'dir' }))
-const activePath = computed(() => (activeNode.value ? activeNode.value.path : ''))
 
 // 取数函数与行内状态由这一侧给，树的展开与缓存交给共用组件。
 const loadLayer = (path) => api.tree(props.ws.id, path)
@@ -255,24 +316,80 @@ async function reveal(dirPath) {
 const loadFile = (path) => api.file(props.ws.id, path)
 const saveFile = (path, text) => api.save(props.ws.id, path, text)
 
-const held = computed(() => (isHeldNode(activeNode.value) ? activeNode.value : null))
+const held = computed(() => (isHeldNode(activeTab.value) ? activeTab.value : null))
 
-// 过大文件的占位把编辑器整个换掉了，这时没有草稿可问，直接放行。
-async function leaveEditor() {
-  if (!editorRef.value) return true
-  return editorRef.value.confirmLeave()
+// 页签与编辑器实例对起来：挂载时登记，卸载时按挂载时那个路径注销。
+function setEditor(path, el) {
+  if (el) editors.set(path, el)
+  else editors.delete(path)
 }
 
+function editorOf(path) {
+  return editors.get(path) || null
+}
+
+function setDirty(path, on) {
+  const tab = tabOf(tabs.value, path)
+  if (!tab || tab.dirty === on) return
+  tabs.value = updateTab(tabs.value, path, { dirty: on })
+}
+
+function tabIcon(tab) {
+  return fileIcon(tab.name)
+}
+
+// 切换页签时左侧树跟着走：展开到所在目录，把这一行滚进视野；搜索时树是藏着的，等退出搜索再定位。
+async function locate(path) {
+  if (!path) return
+  await nextTick()
+  const rows = tabbarRef.value?.querySelectorAll('[data-path]')
+  for (const el of rows || []) {
+    if (el.dataset.path !== path) continue
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    break
+  }
+  if (searching.value) return
+  await treeRef.value?.reveal(dirName(path))
+  if (activePath.value !== path) return
+  await nextTick()
+  treeRef.value?.scrollTo(path)
+}
+
+// 打开文件：已经开着就切过去，草稿、视图与滚动都还留在那个实例里；没开过就新加一个页签。
 async function show(node, line = 0) {
-  if (!(await leaveEditor())) return
-  activeNode.value = node
-  if (isHeldNode(node)) {
-    editorRef.value?.close()
+  const found = tabOf(tabs.value, node.path)
+  if (!found) tabs.value = openTabIn(tabs.value, node)
+  else if (node.size !== undefined && node.size !== found.size) {
+    tabs.value = updateTab(tabs.value, node.path, { size: node.size })
+  }
+  activePath.value = node.path
+  await nextTick()
+  const editor = editorOf(node.path)
+  // 过大文件只有下载占位，没有编辑器可开。
+  if (!editor) return
+  // 实例还没读过内容（新页签，或刚从过大文件的占位换回编辑器），读一遍。
+  if (!editor.path) {
+    await editor.open(node.path, line)
     return
   }
-  // 从过大文件的占位切回来时编辑器是刚挂上的，等它出现再打开。
-  await nextTick()
-  await editorRef.value?.open(node.path, line)
+  if (!line) return
+  // 跳行要按新位置重读文件，草稿还在就先问一句。
+  if (editor.dirty && !(await editor.confirmLeave())) return
+  await editor.open(node.path, line)
+}
+
+function activate(tab) {
+  activePath.value = tab.path
+}
+
+// 关页签：没保存的问一句再关，关的是当前就停到旁边那个。
+async function closeTab(tab) {
+  const editor = editorOf(tab.path)
+  if (editor && editor.dirty && !(await editor.confirmLeave())) return
+  const before = activePath.value
+  const result = closeTabIn(tabs.value, tab.path, before)
+  tabs.value = result.tabs
+  if (result.active !== before) activePath.value = result.active
 }
 
 function pick(node) {
@@ -293,6 +410,11 @@ function downloadHeld() {
   link.click()
   link.remove()
 }
+
+watch(activePath, (path) => locate(path))
+watch(searching, (on) => {
+  if (!on) locate(activePath.value)
+})
 
 // 右键菜单的新建、改名、删除：弹窗在这里，接口也在这里，目录树只报动作。
 const nameAsk = reactive({ on: false, mode: '', node: null, dir: '', value: '', error: '', busy: false })
@@ -338,10 +460,17 @@ function onTreeAction({ action, node }) {
   }
 }
 
-// 当前打开的文件是不是就是它，或者在它底下。
-function affectedBy(path) {
-  const active = activePath.value
-  return !!active && (active === path || active.startsWith(`${path}/`))
+// 改名与删除会动到磁盘上的文件：动到哪个页签，就先把那个页签的草稿问清楚。
+function affectedTabs(path) {
+  return tabs.value.filter((tab) => tab.path === path || tab.path.startsWith(`${path}/`))
+}
+
+async function leaveTabs(list) {
+  for (const tab of list) {
+    const editor = editorOf(tab.path)
+    if (editor && editor.dirty && !(await editor.confirmLeave())) return false
+  }
+  return true
 }
 
 async function submitName() {
@@ -375,25 +504,25 @@ async function doCreate(kind, dir, name) {
       : await api.newFile(props.ws.id, dir, name)
   await treeRef.value?.reveal(dir)
   await treeRef.value?.reloadDir(dir)
-  // 新建的文件直接打开；正开着别的文件就不抢，免得把没保存的草稿挤掉。
-  if (kind === 'file' && !editorRef.value?.dirty) {
+  // 新建的文件直接开一个页签；别的页签的草稿都还在自己那边，不会被挤掉。
+  if (kind === 'file') {
     await show({ name: data.name, path: data.path, type: 'file', size: 0 })
   }
 }
 
 async function doRename(node, name) {
   if (name === node.name) return true
-  if (affectedBy(node.path) && !(await leaveEditor())) return false
-  const active = activePath.value
+  if (!(await leaveTabs(affectedTabs(node.path)))) return false
   const data = await api.renameEntry(props.ws.id, node.path, name)
   await treeRef.value?.reloadDir(dirName(node.path))
-  if (active === node.path) {
-    activeNode.value = { ...activeNode.value, name: data.name, path: data.path }
-    if (!isHeldNode(activeNode.value)) await editorRef.value?.open(data.path)
-  } else if (active.startsWith(`${node.path}/`)) {
-    const moved = data.path + active.slice(node.path.length)
-    activeNode.value = { ...activeNode.value, path: moved }
-    if (!isHeldNode(activeNode.value)) await editorRef.value?.open(moved)
+  const before = activePath.value
+  const renamed = renameTabs(tabs.value, node.path, data.path, data.name)
+  tabs.value = renamed.tabs
+  activePath.value = followMoved(renamed.moved, before)
+  // 页签换了键，编辑器是重新挂上的，按新路径再读一次。
+  await nextTick()
+  for (const item of renamed.moved) {
+    await editorOf(item.to)?.open(item.to)
   }
   return true
 }
@@ -404,12 +533,17 @@ async function submitDelete() {
   delAsk.busy = true
   delAsk.error = ''
   try {
-    if (affectedBy(node.path) && !(await leaveEditor())) return
+    const touched = affectedTabs(node.path)
+    if (!(await leaveTabs(touched))) return
     await api.deleteEntry(props.ws.id, node.path)
-    if (affectedBy(node.path)) {
-      activeNode.value = null
-      editorRef.value?.close()
+    // 删掉的文件在哪个页签上开着，就一并关掉，停到旁边剩下的那个。
+    let next = activePath.value
+    for (const tab of touched) {
+      const result = closeTabIn(tabs.value, tab.path, next)
+      tabs.value = result.tabs
+      next = result.active
     }
+    if (next !== activePath.value) activePath.value = next
     await treeRef.value?.reloadDir(dirName(node.path))
     delAsk.on = false
   } catch (err) {
@@ -420,15 +554,13 @@ async function submitDelete() {
 }
 
 function save() {
-  editorRef.value?.save()
+  editorOf(activePath.value)?.save()
 }
 
-// 保存成功后刷新：文件大小与目录树里记着的那一份要跟上。
+// 保存成功后刷新：页签与目录树里记着的那一份要跟上。
 function onSaved({ path, data }) {
-  // 保存期间可能已经换到别的文件，那边的内容不能被这份草稿盖掉。
-  if (activePath.value === path && activeNode.value) {
-    activeNode.value = { ...activeNode.value, size: data.size }
-  }
+  // 保存期间可能已经切到别的页签，那边的内容不能被这份草稿盖掉。
+  if (tabOf(tabs.value, path)) tabs.value = updateTab(tabs.value, path, { size: data.size })
   treeRef.value?.reloadDir(dirName(path))
 }
 
@@ -496,7 +628,8 @@ async function refresh() {
     }
     await treeRef.value?.refreshAll()
     // 有没保存的改动就不重新读，免得草稿被磁盘上的旧内容盖掉。
-    if (activeNode.value && !editorRef.value?.dirty) await editorRef.value?.reload()
+    const editor = editorOf(activePath.value)
+    if (editor && !editor.dirty) await editor.reload()
   } finally {
     refreshing.value = false
   }
@@ -504,8 +637,9 @@ async function refresh() {
 
 function reset() {
   // 树按 ws.id 重建一份，展开状态与缓存不在这里清。
-  activeNode.value = null
-  editorRef.value?.close()
+  tabs.value = []
+  activePath.value = ''
+  editors.clear()
   query.value = ''
   search.matches = []
   search.error = ''
@@ -626,6 +760,91 @@ onBeforeUnmount(() => {
 .body.resizing {
   cursor: col-resize;
   user-select: none;
+}
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+.tabbar::-webkit-scrollbar {
+  height: 6px;
+}
+.tab {
+  flex: 0 0 auto;
+  max-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+}
+.tab:hover {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+.tab.active {
+  color: rgb(var(--v-theme-on-surface));
+  background: rgb(var(--v-theme-surface));
+  box-shadow: inset 0 -2px 0 rgb(var(--v-theme-primary));
+}
+.tab-icon {
+  flex: 0 0 auto;
+}
+.tab-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-dirty {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-modified));
+}
+.tab-close {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 1px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+}
+.tab:hover .tab-close,
+.tab.active .tab-close {
+  opacity: 0.7;
+}
+.tab .tab-close:hover {
+  opacity: 1;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+}
+.panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .tree {
   width: var(--tree-width, 300px);

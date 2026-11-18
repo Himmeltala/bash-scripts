@@ -94,7 +94,7 @@ const props = defineProps({
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'saved'])
+const emit = defineEmits(['navigate', 'saved', 'dirty'])
 
 const {
   path,
@@ -109,6 +109,9 @@ const {
   saver: props.saver,
 })
 const paneRef = ref(null)
+
+// 草稿改没改：页签栏靠这个标未保存，只在变化时报一次。
+watch(dirty, (on) => emit('dirty', on))
 
 // 文件类型处理器给出这类文件的渲染与编辑方式，具体组件按需加载。
 const mode = ref('source')
@@ -234,7 +237,7 @@ function cancelLeave() {
 
 onBeforeUnmount(() => answerLeave(false))
 
-defineExpose({ open, reload, close, save, discard, confirmLeave, cancelLeave, dirty })
+defineExpose({ open, reload, close, save, discard, confirmLeave, cancelLeave, path, dirty })
 </script>
 
 <style scoped src="./FileEditor.css"></style>

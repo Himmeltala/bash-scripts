@@ -1,5 +1,5 @@
 <template>
-  <div class="file-tree">
+  <div ref="rootRef" class="file-tree">
     <template v-if="root">
       <FileTreeNode
         :node="root"
@@ -185,6 +185,7 @@ const EMPTY = { loading: false, error: '', entries: [], truncated: false }
 const expanded = reactive({})
 const cache = reactive({})
 const started = ref(false)
+const rootRef = ref(null)
 
 const rootKey = computed(() => (props.root ? props.keyOf(props.root) : ''))
 const rootState = computed(() => cache[rootKey.value] || EMPTY)
@@ -234,6 +235,16 @@ function reload() {
 
 async function reloadDir(key) {
   await load(key, true)
+}
+
+// 把某一行滚进视口：切换页签时左侧树跟着定位，行按路径找，不用拼选择器。
+function scrollTo(key) {
+  const rows = rootRef.value ? rootRef.value.querySelectorAll('[data-path]') : []
+  for (const row of rows) {
+    if (row.dataset.path !== key) continue
+    row.scrollIntoView({ block: 'nearest' })
+    return
+  }
 }
 
 async function refreshAll() {
@@ -358,7 +369,7 @@ onBeforeUnmount(() => {
   bindMenu(false)
 })
 
-defineExpose({ reveal, reload, reloadDir, refreshAll, toggle })
+defineExpose({ reveal, reload, reloadDir, refreshAll, scrollTo, toggle })
 </script>
 
 <style scoped>

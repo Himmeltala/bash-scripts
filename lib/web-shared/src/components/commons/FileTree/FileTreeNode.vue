@@ -3,6 +3,7 @@
     <div
       class="row"
       :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick }]"
+      :data-path="key"
       :style="{ paddingLeft: 4 + depth * 14 + 'px' }"
       @click="onRowClick"
       @contextmenu.prevent.stop="onContext"
