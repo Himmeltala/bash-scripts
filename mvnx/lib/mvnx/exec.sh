@@ -13,7 +13,7 @@ newest_class_file() {
   printf '%s\n' "${newest#* }"
 }
 
-# 模块要不要重新编译：源码、各级 pom 或生成源里有文件比最新 class 新，就重新编译。
+# 模块要不要重新编译：源码、生成源、构建入口或各级 pom 里有文件比最新 class 新，就重新编译。
 # 源文件比最新 class 旧却没有同名 class，说明它本不产出 class，Maven 会因此每次全量重编，这里不处理；资源不参与比较。
 needs_compile() {
   local dir=$1 newest d depth=0
@@ -21,7 +21,9 @@ needs_compile() {
 
   local -a roots=()
   local r
-  for r in "$dir/src/main/java" "$dir/target/generated-sources"; do
+  # Java 之外常见的 JVM 语言目录也扫：Java 类引用 Kotlin/Groovy/Scala 的类型时，只看 java 会漏掉这些文件的改动。
+  for r in "$dir/src/main/java" "$dir/src/main/kotlin" "$dir/src/main/groovy" "$dir/src/main/scala" \
+    "$dir/target/generated-sources" "$dir/mvnw" "$dir/.mvn"; do
     [[ -e "$r" ]] && roots+=("$r")
   done
 
@@ -68,12 +70,20 @@ apply_start_mode() {
         mvnargs="clean $mvnargs"
         ;;
       "$MODE_AUTO")
-        if [[ $allow_skip -eq 1 ]] && ! needs_compile "$dir"; then
-          mvnargs+=" $SKIP_ARGS"
-          n=$(count_classless_sources "$dir")
-          printf '跳过编译「%s」：源码未更新（-c 强制编译）\n' "$tag" >&2
-          if ((n > 0)); then
-            printf '  另有 %d 个源文件不产出 class，会触发全量重编\n' "$n" >&2
+        if [[ $allow_skip -eq 1 ]]; then
+          if needs_compile "$dir"; then
+            if [[ -z $(newest_class_file "$dir") ]]; then
+              printf '编译「%s」：还没有已编译的 class\n' "$tag" >&2
+            else
+              printf '编译「%s」：源码、生成源、构建入口或 pom 有更新\n' "$tag" >&2
+            fi
+          else
+            mvnargs+=" $SKIP_ARGS"
+            n=$(count_classless_sources "$dir")
+            printf '跳过编译「%s」：源码未更新（-c 正常编译，--rebuild 先 clean）\n' "$tag" >&2
+            if ((n > 0)); then
+              printf '  另有 %d 个源文件不产出 class，会触发全量重编\n' "$n" >&2
+            fi
           fi
         fi
         ;;

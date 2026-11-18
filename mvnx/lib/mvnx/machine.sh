@@ -67,8 +67,9 @@ machine_exec() {
   if [[ $START_MODE == "$MODE_NO_COMPILE" ]]; then
     local dir=$workdir
     [[ -n "$plpath" ]] && dir="$workdir/$plpath"
-    [[ -d "$dir/target/classes" ]] ||
-      die "「$id」没有 target/classes，先编译或去掉 $MODE_FLAG" "$EXIT_USAGE"
+    # 空目录与没编过没区别，按没有 class 拒绝，别等运行时才报找不到类。
+    [[ -n $(newest_class_file "$dir") ]] ||
+      die "「$id」没有已编译的 class，先编译或去掉 $MODE_FLAG" "$EXIT_USAGE"
   fi
 
   match=$(printf '%s\n' "$match" | apply_start_mode "$allow_skip" | apply_extra_args)

@@ -37,10 +37,10 @@ EOF
       --args "参数"           追加到 mvn 参数尾部，可与其他选项同用
 
 启动方式（只对 run 与 war 有效，命令行里后面写的覆盖前面的）:
-  （不写）       自动：源码与各级 pom 都没比 target/classes 新就跳过编译
-  -c, --compile  强制编译，就是手工敲 mvn 的效果
-      --no-compile  跳过编译直接跑已有的 class，模块没编过时会报错退出
-      --rebuild  先 clean 再编译后启动，改动大或判定猜错时用
+  （不写）       自动：源码、生成源与各级 pom 都没比 target/classes 新就跳过编译
+  -c, --compile  正常编译：不加跳过参数，是否重编由 Maven 自己判断
+      --no-compile  跳过编译直接跑已有的 class，模块没有 class 时以退出码 2 拒绝
+      --rebuild  先 clean 再执行，等于 mvn clean <目标>
 
 跳过编译省下整个模块的重编时间：任一源码没有 class，Maven 就全量重编。
 

@@ -123,4 +123,61 @@ cat > "$tmp/war/both/pom.xml" <<'EOF'
 EOF
 expect_war "$tmp/war/both" 'mvn jetty:run' 'jetty 优先'
 
+# 自动判编译：只有源码与构建入口都没更新时才跳过；多语言源码、wrapper、.mvn 的改动都要算进来。
+mkdir -p "$tmp/compile/src/main/java/demo" "$tmp/compile/target/classes/demo"
+cat > "$tmp/compile/pom.xml" <<'EOF'
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>demo</groupId>
+  <artifactId>compile-demo</artifactId>
+  <version>1.0</version>
+  <build><plugins><plugin>
+    <artifactId>spring-boot-maven-plugin</artifactId>
+  </plugin></plugins></build>
+</project>
+EOF
+printf 'package demo;\n@SpringBootApplication\npublic class App { public static void main(String[] a) {} }\n' \
+  > "$tmp/compile/src/main/java/demo/App.java"
+touch -d '2020-01-01 00:00:00' "$tmp/compile/pom.xml" "$tmp/compile/src/main/java/demo/App.java"
+: > "$tmp/compile/target/classes/demo/App.class"
+touch -d '2020-06-01 00:00:00' "$tmp/compile/target/classes/demo/App.class"
+
+run_auto() { ( cd "$tmp/compile" && bash "$repo/mvnx/bin/mvnx" exec --id run:compile-demo --mode auto ); }
+
+out=$(run_auto 2>/dev/null) || fail '自动模式执行失败'
+[[ "$out" == *'maven.main.skip=true'* ]] || fail "源码未更新应跳过编译：$out"
+
+mkdir -p "$tmp/compile/src/main/kotlin/demo"
+printf 'class Foo\n' > "$tmp/compile/src/main/kotlin/demo/Foo.kt"
+touch -d '2020-07-01 00:00:00' "$tmp/compile/src/main/kotlin/demo/Foo.kt"
+out=$(run_auto 2>/dev/null) || fail 'Kotlin 改动后执行失败'
+[[ "$out" != *'maven.main.skip'* ]] || fail "Kotlin 改动应触发编译：$out"
+touch -d '2020-01-01 00:00:00' "$tmp/compile/src/main/kotlin/demo/Foo.kt"
+
+printf '#!/bin/sh\n' > "$tmp/compile/mvnw"
+touch -d '2020-07-01 00:00:00' "$tmp/compile/mvnw"
+out=$(run_auto 2>/dev/null) || fail 'wrapper 改动后执行失败'
+[[ "$out" != *'maven.main.skip'* ]] || fail "wrapper 改动应触发编译：$out"
+touch -d '2020-01-01 00:00:00' "$tmp/compile/mvnw"
+
+mkdir -p "$tmp/compile/.mvn"
+printf -- '-T 1C\n' > "$tmp/compile/.mvn/maven.config"
+touch -d '2020-07-01 00:00:00' "$tmp/compile/.mvn/maven.config"
+out=$(run_auto 2>/dev/null) || fail '.mvn 改动后执行失败'
+[[ "$out" != *'maven.main.skip'* ]] || fail ".mvn 改动应触发编译：$out"
+touch -d '2020-01-01 00:00:00' "$tmp/compile/.mvn/maven.config"
+
+out=$(run_auto 2>/dev/null) || fail '恢复后执行失败'
+[[ "$out" == *'maven.main.skip=true'* ]] || fail "全部恢复后应重新跳过编译：$out"
+
+# 跳过编译要求模块里确实有 class：有 class 放行，空目录按没编过拒绝。
+out=$(cd "$tmp/compile" && bash "$repo/mvnx/bin/mvnx" exec --id run:compile-demo --mode no-compile 2>/dev/null) ||
+  fail '已有 class 时跳过编译应能执行'
+[[ "$out" == *'maven.main.skip=true'* ]] || fail "跳过编译没有带上跳过参数：$out"
+
+mkdir -p "$tmp/noclass/target/classes"
+cp "$tmp/compile/pom.xml" "$tmp/noclass/pom.xml"
+( cd "$tmp/noclass" && bash "$repo/mvnx/bin/mvnx" exec --id run:compile-demo --mode no-compile ) >/dev/null 2>&1
+[[ $? -eq 2 ]] || fail '空 target/classes 应以用法错误退出'
+
 printf 'ok - mvnx 机器接口\n'

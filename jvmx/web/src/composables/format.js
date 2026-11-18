@@ -40,10 +40,10 @@ export const KIND_TEXT = {
 }
 
 export const MODE_ITEMS = [
-  { value: 'auto', title: '自动判编译', hint: '源码没动过就跳过编译，与命令行一致' },
-  { value: 'compile', title: '强制编译', hint: '总是先编译再跑' },
-  { value: 'no-compile', title: '不编译', hint: '直接用已编译的 class 跑，没编过会拒绝' },
-  { value: 'rebuild', title: '重新编译', hint: '先 clean 再跑' },
+  { value: 'auto', title: '自动判编译', hint: '源码、生成源与构建入口都没更新就跳过编译' },
+  { value: 'compile', title: '正常编译', hint: '不追加跳过参数，是否重编由 Maven 自己判断' },
+  { value: 'no-compile', title: '跳过编译', hint: '直接用已有的 class 跑，没有 class 会拒绝' },
+  { value: 'rebuild', title: '先 clean', hint: '先清理再执行，等于 mvn clean <目标>' },
 ]
 
 // Gradle 没有 Maven 的编译判定，只提供直接跑与先 clean 两档。
