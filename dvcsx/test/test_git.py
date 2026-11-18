@@ -814,6 +814,13 @@ class GitIndexOps(unittest.TestCase):
         self.assertEqual([i["path"] for i in data["status"]["staged"]], ["sub/new.txt"])
         self.assertEqual(data["status"]["unstaged"], [])
 
+    def test_sync_info_has_status_and_conflicts(self):
+        run(["git", "add", "-A"], cwd=self.repo)
+        code, data = self.call("/sync-info?ws=" + self.ws)
+        self.assertEqual(code, 200)
+        self.assertEqual([i["path"] for i in data["status"]["staged"]], ["sub/new.txt"])
+        self.assertEqual(data["conflicts"], [])
+
     def test_unstage_rename_restores_both_ends(self):
         run(["git", "mv", "tracked.txt", "moved.txt"], cwd=self.repo)
         code, _ = self.call("/unstage", {"ws": self.ws, "paths": ["moved.txt"]})

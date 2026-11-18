@@ -1964,6 +1964,9 @@ def git_sync_info(root):
         "has_head": bool(info["revision"]),
         "files": files,
         "truncated": truncated,
+        # 分组与冲突直接复用这次 git status 的解析结果，不再跑第二遍。
+        "status": split_status(files),
+        "conflicts": [item["path"] for item in files if item["item"] == "conflicted"],
     }
 
 
