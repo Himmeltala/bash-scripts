@@ -562,7 +562,8 @@ class ApiOperation(unittest.TestCase):
                 self.assertTrue(read_event("changes"), "改动后没有收到 changes 事件")
                 conn.close()
 
-                # 网页提交：后台先暂存再提交，任务状态能拿到结果。
+                # 网页提交只提交索引：先暂存 a.txt，任务状态能拿到结果。
+                run(["git", "add", "a.txt"], cwd=work)
                 status, data = call(
                     "/operations",
                     {
