@@ -27,7 +27,10 @@
     </template>
 
     <template v-else>
-      <p v-if="rootState.loading" class="hint">{{ text.rootLoading }}</p>
+      <!-- 第一层还在读：转个圈，不用文字。 -->
+      <div v-if="rootState.loading" class="root-loading">
+        <v-progress-circular indeterminate :size="14" :width="2" />
+      </div>
       <p v-else-if="rootState.error" class="hint bad">{{ rootState.error }}</p>
       <p v-else-if="!rootState.entries.length" class="hint">{{ text.rootEmpty }}</p>
       <template v-else>
@@ -163,10 +166,8 @@ const props = defineProps({
 const emit = defineEmits(['pick', 'action'])
 
 const DEFAULTS = {
-  loading: '正在读取…',
   empty: '空目录',
   truncated: '这一层文件太多，只列了前面一部分。',
-  rootLoading: '正在读取目录…',
   rootEmpty: '空目录',
   copyRel: '复制相对路径',
   copyAbs: '复制绝对路径',
@@ -411,6 +412,10 @@ defineExpose({
   margin: 2px 0 2px 30px;
   font-size: 0.76rem;
   color: rgb(var(--v-theme-on-surface-variant));
+}
+.root-loading {
+  display: flex;
+  padding: 6px 0 6px 36px;
 }
 .hint.bad {
   color: rgb(var(--v-theme-error));

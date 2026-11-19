@@ -20,7 +20,15 @@
         <v-icon size="16">{{ open ? 'mdi-chevron-down' : 'mdi-chevron-right' }}</v-icon>
       </v-btn>
       <span v-else class="arrow-space" />
-      <v-icon size="16" :class="isDir ? 'folder' : 'file'" :style="iconStyle">
+      <!-- 目录正在读这一层时，用转圈顶替文件夹图标，读完自动复原。 -->
+      <v-progress-circular
+        v-if="isDir && open && state.loading"
+        indeterminate
+        :size="14"
+        :width="2"
+        class="spin"
+      />
+      <v-icon v-else size="16" :class="isDir ? 'folder' : 'file'" :style="iconStyle">
         {{ icon }}
       </v-icon>
       <slot name="row-before-label" :node="node" :open="open" :state="state" />
@@ -29,9 +37,8 @@
     </div>
 
     <template v-if="isDir && open">
-      <p v-if="state.loading" class="hint">{{ text.loading }}</p>
-      <p v-else-if="state.error" class="hint bad">{{ state.error }}</p>
-      <p v-else-if="!state.entries.length" class="hint">{{ text.empty }}</p>
+      <p v-if="state.error" class="hint bad">{{ state.error }}</p>
+      <p v-else-if="!state.loading && !state.entries.length" class="hint">{{ text.empty }}</p>
       <template v-else>
         <FileTreeNode
           v-for="child in state.entries"
@@ -86,7 +93,6 @@ const emit = defineEmits(['toggle', 'pick', 'context'])
 
 // 每层的提示文案由调用方给，这里只兜底。
 const DEFAULTS = {
-  loading: '正在读取…',
   empty: '空目录',
   truncated: '这一层文件太多，只列了前面一部分。',
 }
@@ -150,6 +156,10 @@ function onContext(event) {
 .folder {
   color: rgb(var(--v-theme-primary));
   flex: 0 0 auto;
+}
+.spin {
+  flex: 0 0 auto;
+  margin: 0 1px;
 }
 .file {
   color: rgb(var(--v-theme-on-surface-variant));

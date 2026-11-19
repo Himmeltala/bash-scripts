@@ -127,7 +127,6 @@ const downloadOf = (node) => api.entryUrl(props.ws.id, node.rel)
 const keyOf = (node) => node.rel
 const dirOf = (node) => node.dir
 const treeTexts = {
-  rootLoading: '正在读取目录…',
   rootEmpty: '这个工作区是空的。',
   truncated: '这一层太多，只列了前面一部分。',
 }
