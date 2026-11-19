@@ -27,6 +27,8 @@
         @click="onClick"
         @contextmenu="onContextMenu"
         @keydown="onKeydown"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
       />
     </div>
   </div>
@@ -44,7 +46,7 @@ const props = defineProps({
   markers: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit'])
+const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit', 'hover', 'hover-end'])
 
 const gutterRef = ref(null)
 const codeRef = ref(null)
@@ -125,6 +127,90 @@ function onContextMenu(event) {
   if (!symbol) return
   event.preventDefault()
   emit('menu', { ...symbol, x: event.clientX, y: event.clientY })
+}
+
+// 鼠标悬停：单文件不用字符测量库，按等宽字宽与行高把坐标换回行列。
+let hoverTimer = 0
+let hoverKey = ''
+let charWidth = 0
+let metricsKey = ''
+
+function measureCharWidth(el) {
+  const style = getComputedStyle(el)
+  const key = [style.fontFamily, style.fontSize, style.fontWeight, style.letterSpacing].join('|')
+  if (charWidth && metricsKey === key) return charWidth
+  const probe = document.createElement('span')
+  probe.textContent = 'M'.repeat(20)
+  probe.style.cssText = [
+    'position:absolute',
+    'visibility:hidden',
+    'white-space:pre',
+    `font:${style.font}`,
+    `letter-spacing:${style.letterSpacing}`,
+  ].join(';')
+  el.parentElement.appendChild(probe)
+  const width = probe.getBoundingClientRect().width / 20
+  probe.remove()
+  charWidth = width || 8
+  metricsKey = key
+  return charWidth
+}
+
+function symbolAtPoint(event) {
+  const el = editorRef.value
+  if (!el) return null
+  const style = getComputedStyle(el)
+  const rect = el.getBoundingClientRect()
+  const padLeft = parseFloat(style.paddingLeft) || 0
+  const padTop = parseFloat(style.paddingTop) || 0
+  const lineHeight = parseFloat(style.lineHeight) || 20
+  const x = event.clientX - rect.left - padLeft + el.scrollLeft
+  const y = event.clientY - rect.top - padTop + el.scrollTop
+  if (x < 0 || y < 0) return null
+  const lines = el.value.split('\n')
+  const line = Math.floor(y / lineHeight)
+  if (line < 0 || line >= lines.length) return null
+  const text = lines[line]
+  const column = Math.floor(x / measureCharWidth(el))
+  if (column < 0 || column >= text.length) return null
+  let offset = 0
+  for (let i = 0; i < line; i += 1) offset += lines[i].length + 1
+  return symbolAt(el.value, offset + column)
+}
+
+function endHover() {
+  clearTimeout(hoverTimer)
+  if (hoverKey) {
+    hoverKey = ''
+    emit('hover-end')
+  }
+}
+
+function onMouseMove(event) {
+  if (event.buttons || event.ctrlKey || event.metaKey) {
+    endHover()
+    return
+  }
+  const symbol = symbolAtPoint(event)
+  if (!symbol) {
+    endHover()
+    return
+  }
+  const key = `${symbol.line}:${symbol.character}`
+  if (key === hoverKey) return
+  clearTimeout(hoverTimer)
+  if (hoverKey) {
+    hoverKey = ''
+    emit('hover-end')
+  }
+  hoverTimer = setTimeout(() => {
+    hoverKey = key
+    emit('hover', { ...symbol, x: event.clientX, y: event.clientY })
+  }, 600)
+}
+
+function onMouseLeave() {
+  endHover()
 }
 
 // F2 是 VSCode 的重命名快捷键；浏览器没占它，光标在标识符上就交给调用方。

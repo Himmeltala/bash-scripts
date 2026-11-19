@@ -11,6 +11,8 @@
     @rename="$emit('rename', $event)"
     @caret="$emit('caret', $event)"
     @edit="$emit('edit')"
+    @hover="$emit('hover', $event)"
+    @hover-end="$emit('hover-end', $event)"
   />
 </template>
 
@@ -26,7 +28,7 @@ const props = defineProps({
   markers: { type: Object, default: () => ({}) },
 })
 
-defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit'])
+defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit', 'hover', 'hover-end'])
 
 const paneRef = ref(null)
 

@@ -70,6 +70,8 @@
         @caret="onCaret"
         :markers="markers"
         @edit="$emit('edit', { path: path })"
+        @hover="$emit('hover', { path: path, ...$event })"
+        @hover-end="$emit('hover-end', { path: path })"
       />
       <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
     </div>
@@ -101,7 +103,7 @@ const props = defineProps({
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename', 'caret', 'edit'])
+const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename', 'caret', 'edit', 'hover', 'hover-end'])
 
 const {
   path,

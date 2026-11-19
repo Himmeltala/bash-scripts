@@ -237,6 +237,8 @@
                 @rename="openRename"
                 @caret="onCaret"
                 @edit="onEdit"
+                @hover="onHover"
+                @hover-end="onHoverEnd"
                 :markers="markers"
               />
             </div>
@@ -554,6 +556,14 @@
     </FloatingDialog>
 
     <div
+      v-if="hoverTip.on"
+      class="hover-tip"
+      :style="{ left: `${hoverTip.x}px`, top: `${hoverTip.y}px` }"
+    >
+      <pre class="hover-tip-text mono">{{ hoverTip.text }}</pre>
+    </div>
+
+    <div
       v-if="tabMenu.on"
       class="sym-menu tab-menu"
       :style="{ left: `${tabMenu.x}px`, top: `${tabMenu.y}px` }"
@@ -736,6 +746,10 @@ const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 
 // 标签页右键菜单与悬停框。
 const tabMenu = reactive({ on: false, x: 0, y: 0, path: '' })
 const hoverAsk = reactive({ on: false, word: '', text: '' })
+// 鼠标悬停的浮层与缓存：同一个位置只问一次。
+const hoverTip = reactive({ on: false, x: 0, y: 0, text: '' })
+const hoverCache = new Map()
+let hoverSeq = 0
 const SYMBOL_TITLES = {
   definition: '定义',
   typeDefinition: '类型定义',
@@ -1195,6 +1209,49 @@ async function tabAction(action) {
   }
 }
 
+// 鼠标停在标识符上一会儿：浮层显示类型与文档，换位置或移出就收起。
+function onHover({ path, line, character, x, y }) {
+  if (path !== activePath.value || !serverReady.value) return
+  const key = `${path}:${line}:${character}`
+  const left = Math.max(8, Math.min(x + 14, window.innerWidth - 448))
+  const top = Math.max(8, Math.min(y + 14, window.innerHeight - 228))
+  const cached = hoverCache.get(key)
+  if (cached !== undefined) {
+    if (!cached) return
+    Object.assign(hoverTip, { on: true, x: left, y: top, text: cached })
+    return
+  }
+  const editor = editorOf(path)
+  if (!editor || !editor.path) return
+  const seq = ++hoverSeq
+  Object.assign(hoverTip, { on: true, x: left, y: top, text: '读取悬停…' })
+  api
+    .hover(props.ws.id, path, editor.text, line, character)
+    .then((data) => {
+      if (seq !== hoverSeq) return
+      const text = (data && data.hover && data.hover.text) || ''
+      hoverCache.set(key, text)
+      if (hoverCache.size > 200) hoverCache.delete(hoverCache.keys().next().value)
+      if (!text) {
+        hoverTip.on = false
+        return
+      }
+      hoverTip.text = text
+    })
+    .catch((err) => {
+      if (seq === hoverSeq) {
+        hoverTip.on = false
+        flash(err.message)
+      }
+    })
+}
+
+function onHoverEnd({ path } = {}) {
+  if (path && path !== activePath.value) return
+  hoverSeq += 1
+  hoverTip.on = false
+}
+
 // 悬停：Ctrl+I 看光标处的词，右键菜单里也能看。
 function offsetOf(text, line, column) {
   const lines = String(text || '').split('\n')
@@ -1627,6 +1684,8 @@ onBeforeUnmount(() => {
   clearTimeout(noticeTimer)
   clearTimeout(diagTimer)
   clearTimeout(editTimer)
+  hoverSeq += 1
+  hoverCache.clear()
   window.removeEventListener('mousedown', onMenuOutside, true)
   window.removeEventListener('keydown', onMenuKey, true)
   searchSeq += 1
@@ -1758,6 +1817,27 @@ onBeforeUnmount(() => {
 .problems-btn {
   min-width: 0;
   padding: 0 8px;
+}
+.hover-tip {
+  position: fixed;
+  z-index: 3000;
+  max-width: 440px;
+  max-height: 260px;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.24);
+  pointer-events: none;
+}
+.hover-tip-text {
+  margin: 0;
+  max-height: 244px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.76rem;
 }
 .hover-text {
   margin: 0;
