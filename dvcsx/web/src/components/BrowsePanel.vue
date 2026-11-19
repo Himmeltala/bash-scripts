@@ -83,13 +83,6 @@
       </v-btn>
     </div>
 
-    <div v-if="notice" class="notice">
-      <span class="notice-text">{{ notice }}</span>
-      <button type="button" class="notice-close" title="关掉" @click="notice = ''">
-        <v-icon size="14">mdi-close</v-icon>
-      </button>
-    </div>
-
     <div ref="splitRef" class="body" :class="{ resizing }">
       <aside class="tree" :style="{ '--tree-width': `${treeWidth}px` }">
         <div v-if="!searching" class="tree-tools">
@@ -403,13 +396,31 @@
 
     <FloatingDialog
       v-model="problemsAsk.on"
+      storage-key="dvcsx-problems"
       :initial-width="520"
       :initial-height="420"
       :min-width="360"
       :min-height="240"
     >
-      <template #title>问题（{{ problems.length }}）</template>
-      <p v-if="!problems.length" class="ask-hint">这个文件现在没有错误或警告。</p>
+      <template #title>问题</template>
+      <div v-if="!problemsLoading && problemStats.length" class="problem-stats">
+        <span
+          v-for="level in problemStats"
+          :key="level.id"
+          class="problem-stat"
+          :class="level.id"
+        >
+          <v-icon size="14">{{ level.icon }}</v-icon>
+          {{ level.label }} {{ level.count }}
+        </span>
+      </div>
+      <LoadingState v-if="problemsLoading" hint="正在取诊断…" />
+      <EmptyState
+        v-else-if="!problems.length"
+        icon="mdi-check-circle-outline"
+        :icon-size="40"
+        hint="这个文件现在没有错误或警告。"
+      />
       <div v-else class="def-list">
         <button
           v-for="(item, i) in problems"
@@ -436,6 +447,7 @@
 
     <FloatingDialog
       v-model="outlineAsk.on"
+      storage-key="dvcsx-outline"
       :initial-width="520"
       :initial-height="460"
       :min-width="360"
@@ -452,8 +464,14 @@
         prepend-inner-icon="mdi-magnify"
         class="dialog-filter"
       />
-      <p v-if="outlineAsk.loading" class="ask-hint">正在取符号…</p>
+      <LoadingState v-if="outlineAsk.loading" hint="正在取符号…" />
       <p v-else-if="outlineAsk.error" class="ask-error">{{ outlineAsk.error }}</p>
+      <EmptyState
+        v-else-if="!outlineRows.length"
+        icon="mdi-format-list-bulleted"
+        :icon-size="40"
+        :hint="outlineAsk.filter.trim() ? '没有匹配的符号。' : '这个文件里没有可列的符号。'"
+      />
       <div v-else class="def-list">
         <button
           v-for="item in outlineRows"
@@ -476,6 +494,7 @@
 
     <FloatingDialog
       v-model="quickAsk.on"
+      storage-key="dvcsx-quick-open"
       :initial-width="560"
       :initial-height="480"
       :min-width="380"
@@ -493,8 +512,14 @@
         class="dialog-filter"
         @keyup.enter="pickQuick(quickRows[0])"
       />
-      <p v-if="quickAsk.loading" class="ask-hint">正在列文件…</p>
+      <LoadingState v-if="quickAsk.loading" hint="正在列文件…" />
       <p v-else-if="quickAsk.error" class="ask-error">{{ quickAsk.error }}</p>
+      <EmptyState
+        v-else-if="!quickRows.length"
+        icon="mdi-file-search-outline"
+        :icon-size="40"
+        :hint="quickAsk.filter.trim() ? '没有匹配的文件。' : '这个工作副本里没有可打开的文件。'"
+      />
       <div v-else class="def-list">
         <button
           v-for="path in quickRows"
@@ -506,7 +531,6 @@
           <v-icon size="16">mdi-file-outline</v-icon>
           <span class="mono def-path">{{ path }}</span>
         </button>
-        <p v-if="!quickRows.length" class="ask-hint">没有匹配的文件。</p>
       </div>
       <template #actions>
         <v-spacer />
@@ -601,7 +625,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { storeToRefs } from 'pinia'
 import { api } from '../composables/useApi'
 import { FileEditor, FileTree, copyText, fileIcon, symbolAt } from '@bash-scripts/web-shared'
-import { EmptyState, SplitHandle } from '@bash-scripts/web-shared/layouts'
+import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../composables/browseOps'
@@ -616,6 +640,7 @@ import {
 import { saveSession, sessionOf } from '../composables/browseSessions'
 import { buildSearchTree, flattenSearchTree } from '../composables/browseSearchTree'
 import { filterPaths } from '../composables/fuzzyMatch'
+import { toast } from '../composables/notice'
 import { dirName } from '../composables/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -637,10 +662,8 @@ const keptExpanded = kept && kept.expanded ? kept.expanded : []
 const editors = new Map()
 const activeTab = computed(() => tabOf(tabs.value, activePath.value))
 const refreshing = ref(false)
-// 代码索引：查定义时的转圈、顶栏提示条，以及多个候选时的那张列表。
+// 代码索引：查定义时的转圈，以及多个候选时的那张列表。
 const defining = ref(false)
-const notice = ref('')
-let noticeTimer = 0
 const defAsk = reactive({ on: false, word: '', title: '定义', list: [] })
 // 重命名：先填新名字、看预览，确认后才动磁盘。
 const renameAsk = reactive({
@@ -687,6 +710,7 @@ const lineAsk = reactive({ on: false, value: '', error: '' })
 // 诊断：当前文件的错误与警告，行号前的圆点与问题列表都用这份。
 const problems = ref([])
 const problemsAsk = reactive({ on: false })
+const problemsLoading = ref(false)
 let diagSeq = 0
 let diagTimer = 0
 let editTimer = 0
@@ -696,6 +720,19 @@ const SEVERITY_ICONS = {
   info: 'mdi-information',
   hint: 'mdi-lightbulb-on-outline',
 }
+// 问题弹窗里的分类统计：只列这一份文件里真有的级别。
+const PROBLEM_LEVELS = [
+  { id: 'error', label: '错误', icon: 'mdi-alert-circle' },
+  { id: 'warning', label: '警告', icon: 'mdi-alert' },
+  { id: 'info', label: '信息', icon: 'mdi-information' },
+  { id: 'hint', label: '提示', icon: 'mdi-lightbulb-on-outline' },
+]
+const problemStats = computed(() =>
+  PROBLEM_LEVELS.map((level) => ({
+    ...level,
+    count: problems.value.filter((item) => item.severity === level.id).length,
+  })).filter((level) => level.count > 0)
+)
 const markers = computed(() => {
   const map = {}
   for (const item of problems.value) {
@@ -1038,21 +1075,26 @@ async function runSymbol(action) {
 
 // 诊断：先取一次，服务器是异步推的，1.6 秒后再取一次补上。
 function refreshDiagnostics(path = activePath.value) {
+  const seq = ++diagSeq
+  clearTimeout(diagTimer)
+  // 换文件时先把转圈收掉，旧请求回来时序号已经对不上，不会再把它打开。
+  problemsLoading.value = false
   if (!path) {
     problems.value = []
     return
   }
-  const seq = ++diagSeq
-  clearTimeout(diagTimer)
   const run = async () => {
+    if (seq !== diagSeq || path !== activePath.value) return
     const editor = editorOf(path)
     if (!editor || !editor.path) return
-    if (seq !== diagSeq || path !== activePath.value) return
+    problemsLoading.value = true
     try {
       const data = await api.diagnostics(props.ws.id, path, editor.text)
       if (seq === diagSeq && path === activePath.value) problems.value = data.diagnostics || []
     } catch (err) {
       if (seq === diagSeq && path === activePath.value) problems.value = []
+    } finally {
+      if (seq === diagSeq && path === activePath.value) problemsLoading.value = false
     }
   }
   run()
@@ -1385,12 +1427,9 @@ async function openLocation(loc) {
   )
 }
 
+// 提示走全页共用的那条 snackbar，颜色沿用原来提示条的警示色。
 function flash(text) {
-  notice.value = text
-  clearTimeout(noticeTimer)
-  noticeTimer = setTimeout(() => {
-    notice.value = ''
-  }, 8000)
+  toast(text, 'warning')
 }
 
 // 点目录行收起或展开，点文件行开到第一处命中，点命中行开到那一行。
@@ -1681,7 +1720,6 @@ onBeforeUnmount(() => {
     expanded: treeRef.value ? treeRef.value.expandedKeys() : keptExpanded,
   })
   clearTimeout(searchTimer)
-  clearTimeout(noticeTimer)
   clearTimeout(diagTimer)
   clearTimeout(editTimer)
   hoverSeq += 1
@@ -1718,34 +1756,29 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   margin-right: 4px;
 }
-.notice {
+/* 问题弹窗顶部的分类统计：图标、级别与条数。 */
+.problem-stats {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  background: rgba(var(--v-theme-warning), 0.14);
+  gap: 12px;
+  margin-bottom: 8px;
   font-size: 0.78rem;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
-.notice-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  word-break: break-word;
+.problem-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.notice-close {
-  flex: 0 0 auto;
-  display: flex;
-  padding: 2px;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.7;
+.problem-stat.error {
+  color: rgb(var(--v-theme-error));
 }
-.notice-close:hover {
-  opacity: 1;
-  background: rgba(var(--v-theme-on-surface), 0.12);
+.problem-stat.warning {
+  color: rgb(var(--v-theme-warning));
+}
+.problem-stat.info {
+  color: rgb(var(--v-theme-info));
 }
 .def-list {
   display: flex;
@@ -1811,7 +1844,10 @@ onBeforeUnmount(() => {
 .cell.muted {
   color: rgb(var(--v-theme-warning));
 }
+/* 弹窗正文是纵向 flex，v-input 默认 flex: 1 1 auto，会被拉高一整块；
+   筛选框只占自己那一行，剩下的空间留给列表。 */
 .dialog-filter {
+  flex: 0 0 auto;
   margin-bottom: 8px;
 }
 .problems-btn {
@@ -2054,15 +2090,16 @@ onBeforeUnmount(() => {
   overflow: auto;
   padding: 6px 4px;
 }
-/* 树顶那排按钮平时藏起来，鼠标移进左树才露出来；停靠顶部，树往下滚也够得着。 */
+/* 树顶的按钮浮在树上面：负的下边距把占位抵掉，不占文档流；sticky 让它滚动时也停在原处，
+   平时藏起来，鼠标移进左树才露出来。只有按钮本身接鼠标，底下那行照常能点。 */
 .tree-tools {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   justify-content: flex-end;
   height: 24px;
-  margin: -6px -4px 0;
+  margin: 0 -4px -24px;
   padding: 0 4px;
   pointer-events: none;
   opacity: 0;
@@ -2070,7 +2107,11 @@ onBeforeUnmount(() => {
 }
 .tree:hover .tree-tools {
   opacity: 1;
+}
+.tree-tools :deep(.v-btn) {
   pointer-events: auto;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
 .hint {
   margin: 16px;

@@ -45,7 +45,7 @@ import '@bash-scripts/web-shared/style.css'
 | 弹窗与布局 | `FloatingDialog`、`SplitHandle`、`useSplitPane` |
 | 主题 | `createThemedVuetify`、`useThemeToggle`（`/theme`） |
 | 工具 | `baseName`/`dirName`/`shortPath`/`formatBytes`/`formatMoney` 等（`/format`）、`createJsonClient`（`/http`） |
-| 提示 | `EmptyState`、`ToastHost`、`useToast`（`/ui`） |
+| 提示 | `EmptyState`、`LoadingState`、`ToastHost`、`useToast`（`/ui`） |
 | 指标 | `Metrics`、`MetricCpu`/`MetricMemory`/`MetricDisk`/`MetricDownload`/`MetricUpload`、`MetricSparkline`（`/metrics`） |
 | 构建 | `vite-preset.js`：Vue 插件、vuetify 别名、依赖去重、产物目录、代理与固定文件名 |
 

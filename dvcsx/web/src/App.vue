@@ -77,11 +77,12 @@ import WorkspacePanel from './components/WorkspacePanel.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
-import { ToastHost, useToast } from '@bash-scripts/web-shared/feedbacks'
+import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { useSplitPane } from '@bash-scripts/web-shared'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api, metricsEventsUrl, stateEventsUrl } from './composables/useApi'
+import { snack, toast } from './composables/notice'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'dvcsx-ws'
@@ -91,7 +92,6 @@ const state = reactive({ workspaces: [], groups: [] })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
 const settingsOpen = ref(false)
-const { snack, toast } = useToast()
 
 // 左侧工作副本列表的宽度随分隔条拖动改变，双击分隔条还原；记在本地下次打开接着用。
 const shellRef = ref(null)
