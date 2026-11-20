@@ -640,31 +640,26 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { api } from '../composables/useApi'
+import { api } from '../utils/api'
 import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
-import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../composables/browseOps'
-import { SOURCE_LABELS, previewKindOf } from '../composables/previewTypes'
-import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../composables/browseMenus'
-import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../composables/diagnostics'
+import { PREVIEW_MAX, isHeldNode } from '../utils/browseOps'
+import { SOURCE_LABELS, previewKindOf } from '../utils/previewTypes'
+import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../utils/browseMenus'
+import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../utils/diagnostics'
 import { useDiagnostics } from '../composables/useDiagnostics'
 import { useCodeIndex } from '../composables/useCodeIndex'
+import { useBrowseSearch } from '../composables/useBrowseSearch'
+import { useBrowseEditors } from '../composables/useBrowseEditors'
+import { useBrowseFiles } from '../composables/useBrowseFiles'
 import ImagePreview from './previews/ImagePreview.vue'
-import {
-  closeTab as closeTabIn,
-  followMoved,
-  openTab as openTabIn,
-  renameTabs,
-  tabOf,
-  updateTab,
-} from '../composables/browseTabs'
-import { saveSession, sessionOf } from '../composables/browseSessions'
-import { buildSearchTree, flattenSearchTree } from '../composables/browseSearchTree'
-import { filterPaths } from '../composables/fuzzyMatch'
-import { toast } from '../composables/notice'
-import { dirName } from '../composables/format'
+import { tabOf, updateTab } from '../utils/browseTabs'
+import { saveSession, sessionOf } from '../utils/browseSessions'
+import { filterPaths } from '../utils/fuzzyMatch'
+import { toast } from '../utils/notice'
+import { dirName } from '../utils/format'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
 
@@ -677,17 +672,30 @@ const tabbarRef = ref(null)
 // 打开过的文件各占一个页签，每个页签一个编辑器实例：草稿、视图与滚动都留在各自那份里。
 // 面板换走再回来（换工作区、切到别的页签）接上次的样子：页签、停的位置与没保存的草稿都按工作区留着。
 const kept = sessionOf(props.ws.id)
-const tabs = ref(kept ? kept.tabs : [])
-const activePath = ref(kept ? kept.active : '')
-const drafts = new Map(kept && kept.drafts ? kept.drafts : [])
 // 左侧树上次展开到哪些目录；换回这个工作区时原样摊开。
 const keptExpanded = kept && kept.expanded ? kept.expanded : []
-const editors = new Map()
+// 页签、编辑器实例与草稿交给组合式函数；读文件内容时顺手刷新诊断。
+const {
+  tabs,
+  activePath,
+  activeTab,
+  drafts,
+  editorOf,
+  setEditor,
+  takeDrafts,
+  restoreDraft,
+  setDirty,
+  show,
+  activate,
+  closeTab,
+} = useBrowseEditors({
+  kept,
+  refreshDiagnostics: (path) => refreshDiagnostics(path),
+})
 // 按扩展名挑预览器；加新类型在 previewTypes 里登记，再补一个组件挂进这张表。
 const VIEWERS = { image: ImagePreview }
 // 预览切回源码的页签；不改源码的类型一直走预览。
 const sourceView = reactive(new Set())
-const activeTab = computed(() => tabOf(tabs.value, activePath.value))
 const refreshing = ref(false)
 // 状态栏的光标位置留在这一侧，代码索引那边只读它。
 const caret = reactive({ line: 1, column: 1 })
@@ -767,16 +775,16 @@ const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useS
 // 搜索：query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
 const preferences = usePreferencesStore()
 const { searchMode: mode } = storeToRefs(preferences)
-const query = ref('')
-const searching = computed(() => String(query.value ?? '').trim() !== '')
-const search = reactive({ loading: false, error: '', matches: [], truncated: false, mode: 'name' })
-// 结果按目录归成树；收起的目录记在这里，重新搜一次就从全展开开始。
-const collapsedDirs = ref(new Set())
-const resultRows = computed(() =>
-  flattenSearchTree(buildSearchTree(search.matches), collapsedDirs.value)
-)
-let searchSeq = 0
-let searchTimer = 0
+const {
+  query,
+  searching,
+  search,
+  collapsedDirs,
+  resultRows,
+  clearSearch,
+  toggleResultDir,
+  runSearch,
+} = useBrowseSearch({ wsId: () => props.ws.id, mode })
 
 const rootName = computed(
   () => String(props.ws.root || '').replace(/\/+$/, '').split('/').pop() || '/',
@@ -803,106 +811,6 @@ const loadFile = (path) => api.file(props.ws.id, path)
 const saveFile = (path, text) => api.save(props.ws.id, path, text)
 
 const held = computed(() => (isHeldNode(activeTab.value) ? activeTab.value : null))
-
-// 页签与编辑器实例对起来：挂载时登记，卸载时按挂载时那个路径注销。
-function setEditor(path, el) {
-  if (el) editors.set(path, el)
-  else editors.delete(path)
-}
-
-function editorOf(path) {
-  return editors.get(path) || null
-}
-
-// 换走时把还活着的编辑器里的草稿取出来；还没读过内容的页签不动，草稿本来就还在。
-function takeDrafts() {
-  for (const tab of tabs.value) {
-    const editor = editorOf(tab.path)
-    if (!editor || !editor.path) continue
-    if (editor.dirty) drafts.set(tab.path, editor.text)
-    else drafts.delete(tab.path)
-  }
-}
-
-// 回到旧页签：文件读进来之后把草稿放回去，未保存标记跟着回来。
-// 磁盘上已经是这份草稿时不用放，标记也要落回干净，别留着一个假的未保存。
-function restoreDraft(path, editor) {
-  const text = drafts.get(path)
-  if (text !== undefined && editor.text !== text) editor.restore(text)
-  setDirty(path, editor.dirty)
-}
-
-function setDirty(path, on) {
-  const tab = tabOf(tabs.value, path)
-  if (!tab || tab.dirty === on) return
-  tabs.value = updateTab(tabs.value, path, { dirty: on })
-}
-
-function tabIcon(tab) {
-  return fileIcon(tab.name)
-}
-
-// 切换页签时左侧树跟着走：展开到所在目录，把这一行滚进视野；搜索时树是藏着的，等退出搜索再定位。
-async function locate(path) {
-  if (!path) return
-  await nextTick()
-  const rows = tabbarRef.value?.querySelectorAll('[data-path]')
-  for (const el of rows || []) {
-    if (el.dataset.path !== path) continue
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    break
-  }
-  if (searching.value) return
-  await treeRef.value?.reveal(dirName(path))
-  if (activePath.value !== path) return
-  await nextTick()
-  treeRef.value?.scrollTo(path)
-}
-
-// 打开文件：已经开着就切过去，草稿、视图与滚动都还留在那个实例里；没开过就新加一个页签。
-async function show(node, line = 0) {
-  const found = tabOf(tabs.value, node.path)
-  if (!found) tabs.value = openTabIn(tabs.value, node)
-  else if (node.size !== undefined && node.size !== found.size) {
-    tabs.value = updateTab(tabs.value, node.path, { size: node.size })
-  }
-  activePath.value = node.path
-  await nextTick()
-  const editor = editorOf(node.path)
-  // 过大文件只有下载占位，没有编辑器可开。
-  if (!editor) return
-  refreshDiagnostics(node.path)
-  // 实例还没读过内容（新页签、回到旧页签，或刚从过大文件的占位换回编辑器），读一遍。
-  if (!editor.path) {
-    if (await editor.open(node.path, line)) restoreDraft(node.path, editor)
-    return
-  }
-  if (!line) return
-  // 跳行要按新位置重读文件，草稿还在就先问一句。
-  if (editor.dirty && !(await editor.confirmLeave())) return
-  await editor.open(node.path, line)
-}
-
-// 点开另一个页签：回到旧工作区时只读过停着的那一个，其余的等点到再读。
-async function activate(tab) {
-  activePath.value = tab.path
-  await nextTick()
-  const editor = editorOf(tab.path)
-  if (!editor || editor.path) return
-  if (await editor.open(tab.path)) restoreDraft(tab.path, editor)
-  refreshDiagnostics(tab.path)
-}
-
-// 关页签：没保存的问一句再关，关的是当前就停到旁边那个。
-async function closeTab(tab) {
-  const editor = editorOf(tab.path)
-  if (editor && editor.dirty && !(await editor.confirmLeave())) return
-  const before = activePath.value
-  const result = closeTabIn(tabs.value, tab.path, before)
-  tabs.value = result.tabs
-  drafts.delete(tab.path)
-  if (result.active !== before) activePath.value = result.active
-}
 
 function pick(node) {
   return show(node)
@@ -1127,13 +1035,6 @@ function flash(text) {
 }
 
 // 点目录行收起或展开，点文件行开到第一处命中，点命中行开到那一行。
-function toggleResultDir(path) {
-  const next = new Set(collapsedDirs.value)
-  if (next.has(path)) next.delete(path)
-  else next.add(path)
-  collapsedDirs.value = next
-}
-
 function onResultRow(row) {
   if (row.type === 'dir') {
     toggleResultDir(row.path)
@@ -1173,144 +1074,25 @@ watch(searching, (on) => {
   if (!on) locate(activePath.value)
 })
 
-// 右键菜单的新建、改名、删除：弹窗在这里，接口也在这里，目录树只报动作。
-const nameAsk = reactive({ on: false, mode: '', node: null, dir: '', value: '', error: '', busy: false })
-const delAsk = reactive({ on: false, node: null, error: '', busy: false })
-
-const nameTitle = computed(
-  () => ({ file: '新建文件', dir: '新建目录', rename: '重命名' })[nameAsk.mode] || '',
-)
-
-const nameLabel = computed(() => {
-  if (nameAsk.mode === 'dir') return '目录名'
-  if (nameAsk.node && nameAsk.node.type === 'dir') return '目录名'
-  return '文件名'
+// 新建、改名与删除交给组合式函数：目录树只报动作，页签跟着路径走。
+const {
+  nameAsk,
+  delAsk,
+  nameTitle,
+  nameLabel,
+  onTreeAction,
+  submitName,
+  submitDelete,
+} = useBrowseFiles({
+  wsId: () => props.ws.id,
+  tabs,
+  activePath,
+  drafts,
+  editorOf,
+  show,
+  reveal: (dir) => treeRef.value?.reveal(dir),
+  reload: (dir) => treeRef.value?.reloadDir(dir),
 })
-
-function onTreeAction({ action, node }) {
-  if (action === 'create-file' || action === 'create-dir') {
-    Object.assign(nameAsk, {
-      on: true,
-      mode: action === 'create-file' ? 'file' : 'dir',
-      node,
-      dir: node.path,
-      value: '',
-      error: '',
-      busy: false,
-    })
-    return
-  }
-  if (action === 'rename') {
-    Object.assign(nameAsk, {
-      on: true,
-      mode: 'rename',
-      node,
-      dir: dirName(node.path),
-      value: node.name,
-      error: '',
-      busy: false,
-    })
-    return
-  }
-  if (action === 'delete') {
-    Object.assign(delAsk, { on: true, node, error: '', busy: false })
-  }
-}
-
-// 改名与删除会动到磁盘上的文件：动到哪个页签，就先把那个页签的草稿问清楚。
-function affectedTabs(path) {
-  return tabs.value.filter((tab) => tab.path === path || tab.path.startsWith(`${path}/`))
-}
-
-async function leaveTabs(list) {
-  for (const tab of list) {
-    const editor = editorOf(tab.path)
-    if (editor && editor.dirty && !(await editor.confirmLeave())) return false
-  }
-  return true
-}
-
-async function submitName() {
-  if (nameAsk.busy) return
-  const name = nameAsk.value.trim()
-  const problem = entryNameProblem(name)
-  if (problem) {
-    nameAsk.error = problem
-    return
-  }
-  nameAsk.busy = true
-  nameAsk.error = ''
-  try {
-    if (nameAsk.mode === 'rename') {
-      if (!(await doRename(nameAsk.node, name))) return
-    } else {
-      await doCreate(nameAsk.mode, nameAsk.dir, name)
-    }
-    nameAsk.on = false
-  } catch (err) {
-    nameAsk.error = err.message
-  } finally {
-    nameAsk.busy = false
-  }
-}
-
-async function doCreate(kind, dir, name) {
-  const data =
-    kind === 'dir'
-      ? await api.mkdir(props.ws.id, dir, name)
-      : await api.newFile(props.ws.id, dir, name)
-  await treeRef.value?.reveal(dir)
-  await treeRef.value?.reloadDir(dir)
-  // 新建的文件直接开一个页签；别的页签的草稿都还在自己那边，不会被挤掉。
-  if (kind === 'file') {
-    await show({ name: data.name, path: data.path, type: 'file', size: 0 })
-  }
-}
-
-async function doRename(node, name) {
-  if (name === node.name) return true
-  if (!(await leaveTabs(affectedTabs(node.path)))) return false
-  const data = await api.renameEntry(props.ws.id, node.path, name)
-  await treeRef.value?.reloadDir(dirName(node.path))
-  const before = activePath.value
-  const renamed = renameTabs(tabs.value, node.path, data.path, data.name)
-  tabs.value = renamed.tabs
-  activePath.value = followMoved(renamed.moved, before)
-  // 旧路径的草稿已经问过、跟着页签一起作废；页签换了键，编辑器重新挂上后按新路径读一次。
-  for (const item of renamed.moved) drafts.delete(item.from)
-  await nextTick()
-  for (const item of renamed.moved) {
-    await editorOf(item.to)?.open(item.to)
-  }
-  return true
-}
-
-async function submitDelete() {
-  if (delAsk.busy) return
-  const node = delAsk.node
-  delAsk.busy = true
-  delAsk.error = ''
-  try {
-    const touched = affectedTabs(node.path)
-    if (!(await leaveTabs(touched))) return
-    await api.deleteEntry(props.ws.id, node.path)
-    // 删掉的文件在哪个页签上开着，就一并关掉，停到旁边剩下的那个。
-    let next = activePath.value
-    for (const tab of touched) {
-      const result = closeTabIn(tabs.value, tab.path, next)
-      tabs.value = result.tabs
-      drafts.delete(tab.path)
-      next = result.active
-    }
-    if (next !== activePath.value) activePath.value = next
-    await treeRef.value?.reloadDir(dirName(node.path))
-    delAsk.on = false
-  } catch (err) {
-    delAsk.error = err.message
-  } finally {
-    delAsk.busy = false
-  }
-}
 
 function save() {
   editorOf(activePath.value)?.save()
@@ -1324,58 +1106,9 @@ function onSaved({ path, data }) {
   refreshDiagnostics(path)
 }
 
-// 退出搜索：清空输入，结果列表跟着收起来，左侧回到目录树。
-function clearSearch() {
-  query.value = ''
-  search.matches = []
-  search.error = ''
-  search.loading = false
-  search.truncated = false
-}
-
 function iconOf(hit) {
   return fileIcon(hit.name)
 }
-
-async function runSearch() {
-  clearTimeout(searchTimer)
-  const text = String(query.value ?? '').trim()
-  if (!text) return
-  const mine = ++searchSeq
-  search.loading = true
-  search.error = ''
-  try {
-    const data = await api.search(props.ws.id, text, mode.value)
-    if (mine !== searchSeq) return
-    search.matches = data.matches || []
-    search.truncated = !!data.truncated
-    collapsedDirs.value = new Set()
-  } catch (err) {
-    if (mine !== searchSeq) return
-    search.matches = []
-    search.truncated = false
-    search.error = err.message
-    collapsedDirs.value = new Set()
-  } finally {
-    if (mine === searchSeq) search.loading = false
-  }
-}
-
-// 输入停下来再搜，免得每敲一个字都扫一遍工作副本；条件一变就让旧结果作废。
-watch([query, mode], () => {
-  clearTimeout(searchTimer)
-  searchSeq += 1
-  search.matches = []
-  search.truncated = false
-  search.error = ''
-  search.mode = mode.value
-  if (!searching.value) {
-    search.loading = false
-    return
-  }
-  search.loading = true
-  searchTimer = setTimeout(runSearch, 300)
-})
 
 async function refresh() {
   refreshing.value = true
@@ -1413,11 +1146,9 @@ onBeforeUnmount(() => {
     drafts,
     expanded: treeRef.value ? treeRef.value.expandedKeys() : keptExpanded,
   })
-  clearTimeout(searchTimer)
   disposeCodeIndex()
   window.removeEventListener('mousedown', onMenuOutside, true)
   window.removeEventListener('keydown', onMenuKey, true)
-  searchSeq += 1
 })
 </script>
 

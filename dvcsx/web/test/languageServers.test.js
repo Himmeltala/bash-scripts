@@ -13,7 +13,7 @@ import {
   SERVER_BY_EXT,
   SYMBOL_ICONS,
   SYMBOL_TITLES,
-} from '../src/composables/languageServers.js'
+} from '../src/utils/languageServers.js'
 
 test('挂服务器的扩展名都有语言名', () => {
   for (const ext of Object.keys(SERVER_BY_EXT)) {

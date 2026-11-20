@@ -26,7 +26,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { formatBytes } from '@bash-scripts/web-shared/format'
-import { isSvgPath } from '../../composables/previewTypes'
+import { isSvgPath } from '../../utils/previewTypes'
 
 const props = defineProps({
   url: { type: String, required: true },

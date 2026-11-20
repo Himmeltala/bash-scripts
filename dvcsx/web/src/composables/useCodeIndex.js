@@ -8,10 +8,10 @@
  */
 import { computed, reactive, ref } from 'vue'
 import { symbolAt } from '@bash-scripts/web-shared'
-import { api } from './useApi'
-import { extensionOf } from './browseOps'
-import { LANGUAGES, SERVER_BY_EXT, SYMBOL_ICONS, SYMBOL_TITLES } from './languageServers'
-import { offsetOf } from './textPositions'
+import { api } from '../utils/api.js'
+import { extensionOf } from '../utils/browseOps.js'
+import { LANGUAGES, SERVER_BY_EXT, SYMBOL_ICONS, SYMBOL_TITLES } from '../utils/languageServers.js'
+import { offsetOf } from '../utils/textPositions.js'
 
 export function useCodeIndex({
   wsId,

@@ -30,7 +30,7 @@
 
 <script setup>
 import { WorkspaceList } from '@bash-scripts/web-shared'
-import { api } from '../composables/useApi'
+import { api } from '../utils/api'
 
 defineProps({
   workspaces: { type: Array, required: true },

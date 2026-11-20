@@ -50,7 +50,7 @@ import BrowsePanel from './BrowsePanel.vue'
 import ChangesPanel from './ChangesPanel.vue'
 import LogPanel from './LogPanel.vue'
 import SyncPanel from './SyncPanel.vue'
-import { workspaceEventsUrl } from '../composables/useApi'
+import { workspaceEventsUrl } from '../utils/api'
 import { usePreferencesStore } from '../stores/preferences'
 
 const props = defineProps({

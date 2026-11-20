@@ -17,7 +17,7 @@ import {
   findBranchOf,
   itemLabelOf,
   missingOf,
-} from '../src/composables/syncView.js'
+} from '../src/utils/syncView.js'
 
 test('Git 只挡冲突，SVN 还挡未纳管与缺失', () => {
   const files = [

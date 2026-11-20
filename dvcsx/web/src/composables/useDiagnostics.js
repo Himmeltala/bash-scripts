@@ -7,8 +7,8 @@
  * @Description: 当前文件的诊断：取数、防抖、行号圆点与问题列表的统计。
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { api } from './useApi'
-import { markersOf, statsOf } from './diagnostics'
+import { api } from '../utils/api.js'
+import { markersOf, statsOf } from '../utils/diagnostics.js'
 
 export function useDiagnostics({ wsId, activePath, editorOf, onOpen }) {
   const problems = ref([])

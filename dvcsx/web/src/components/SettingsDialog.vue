@@ -102,7 +102,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
-import { api } from '../composables/useApi'
+import { api } from '../utils/api'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })
 const emit = defineEmits(['update:modelValue', 'saved'])

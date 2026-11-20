@@ -335,16 +335,16 @@ import { useStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
 import DiffView from '@bash-scripts/web-shared/diff'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
-import { buildGraph, DOT_Y } from '../composables/gitGraph'
+import { buildGraph, DOT_Y } from '../utils/gitGraph'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
-import { firstLine, shortenPath, shortPath, when } from '../composables/format'
+import { firstLine, shortenPath, shortPath, when } from '../utils/format'
 import {
   LANE_COLORS,
   refsOf as marksOfEntry,
   revLabel as revTextOf,
   stateOf as stateOfEntry,
   tone,
-} from '../composables/logView'
+} from '../utils/logView'
 import { useCommitLog } from '../composables/useCommitLog'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree, useSplitPane } from '@bash-scripts/web-shared'

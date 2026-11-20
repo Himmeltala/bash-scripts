@@ -1,7 +1,7 @@
 // 变更页“默认不渲染”的路径判断：锁文件与构建产物，纯函数测试。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isDeferred } from '../src/composables/deferred.js'
+import { isDeferred } from '../src/utils/deferred.js'
 
 test('常见锁文件在任何层级都默认不渲染', () => {
   for (const path of [

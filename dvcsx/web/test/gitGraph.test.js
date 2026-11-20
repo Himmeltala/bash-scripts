@@ -1,7 +1,7 @@
 // 时间线分列的纯函数测试：不跑浏览器，只验坐标与连线。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildGraph, DOT_Y, LANE_W } from '../src/composables/gitGraph.js'
+import { buildGraph, DOT_Y, LANE_W } from '../src/utils/gitGraph.js'
 
 const PALETTE = ['#111111', '#222222', '#333333', '#444444']
 const commit = (revision, ...parents) => ({ revision, parents })

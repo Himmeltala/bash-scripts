@@ -7,7 +7,7 @@
  * @Description: 后台同步任务的启动、输出流、断线接回与取消。
  */
 import { computed, ref } from 'vue'
-import { api, jobEventsUrl } from './useApi'
+import { api, jobEventsUrl } from '../utils/api.js'
 
 export function useSyncJob({ wsId, bodyFor, onFinish }) {
   const running = ref('')

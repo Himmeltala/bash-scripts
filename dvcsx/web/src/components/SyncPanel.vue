@@ -276,8 +276,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { LogView } from '@bash-scripts/web-shared'
-import { api } from '../composables/useApi'
-import { statusOf } from '../composables/format'
+import { api } from '../utils/api'
+import { statusOf } from '../utils/format'
 import {
   PULL_MODES,
   branchItemsOf,
@@ -288,7 +288,7 @@ import {
   findBranchOf,
   itemLabelOf,
   missingOf,
-} from '../composables/syncView'
+} from '../utils/syncView'
 import { useSyncJob } from '../composables/useSyncJob'
 
 const props = defineProps({

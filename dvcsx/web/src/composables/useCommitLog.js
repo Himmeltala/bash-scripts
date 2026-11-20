@@ -7,8 +7,8 @@
  * @Description: 提交日志的取数：首屏、远端同步、加载更多、选中提交与差异。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { api } from './useApi'
-import { isDeferred } from './deferred'
+import { api } from '../utils/api.js'
+import { isDeferred } from '../utils/deferred.js'
 
 export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, page = 50 }) {
   const entries = ref([])
