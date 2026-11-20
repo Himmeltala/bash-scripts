@@ -9,17 +9,37 @@
         <span class="brand">{{ title }}</span>
       </v-app-bar-title>
       <v-spacer />
-      <v-chip
-        v-if="workspaces.length"
-        size="small"
-        variant="tonal"
-        class="running"
-        :color="running ? 'ready' : undefined"
-        prepend-icon="mdi-play-circle-outline"
-        :title="running ? `所有工作区共 ${running} 个进程在跑` : '所有工作区都没有在跑的进程'"
-      >
-        {{ running }} 个在跑
-      </v-chip>
+      <v-menu v-if="workspaces.length" location="bottom end">
+        <template #activator="{ props: menuProps }">
+          <v-chip
+            v-bind="menuProps"
+            size="small"
+            variant="tonal"
+            class="running"
+            :color="running ? 'ready' : undefined"
+            prepend-icon="mdi-play-circle-outline"
+            :title="running ? `所有工作区共 ${running} 个进程在跑` : '所有工作区都没有在跑的进程'"
+          >
+            {{ running }} 个在跑
+          </v-chip>
+        </template>
+        <v-list density="compact" class="running-menu">
+          <v-list-item
+            v-for="row in runningRows"
+            :key="row.id"
+            :active="current && current.id === row.id"
+            @click="pickWorkspace(row.id)"
+          >
+            <v-list-item-title class="run-name">{{ row.name }}</v-list-item-title>
+            <template #append>
+              <span class="run-count">{{ row.count }} 个</span>
+            </template>
+          </v-list-item>
+          <v-list-item v-if="!runningRows.length" disabled>
+            <v-list-item-title>没有在跑的进程</v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-menu>
       <slot name="metrics" />
       <v-btn
         :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
@@ -59,11 +79,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import EmptyState from '../../layouts/commons/EmptyState.vue'
 import SplitHandle from '../../layouts/commons/SplitHandle.vue'
 import ToastHost from '../../feedbacks/commons/ToastHost.vue'
 import { useSplitPane } from '../../composables/commons/useSplitPane.js'
+import { runningByWorkspace } from '../../utils/services/serviceStatus.js'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -77,7 +98,14 @@ const props = defineProps({
   toggleTheme: { type: Function, required: true },
 })
 
-defineEmits(['empty-action'])
+const emit = defineEmits(['empty-action', 'select-workspace'])
+
+// 点「x 个在跑」展开的清单：哪个工作区在跑，点一行切过去。
+const runningRows = computed(() => runningByWorkspace(props.workspaces))
+
+function pickWorkspace(id) {
+  emit('select-workspace', id)
+}
 
 // 左侧工作区列表的宽度随分隔条拖动改变，双击分隔条还原；按工具名下记着，下次打开接着用。
 const shellRef = ref(null)
@@ -102,6 +130,18 @@ const { size: sideWidth, resizing, start: startSplit, reset: resetSplit } = useS
 }
 .running {
   margin-right: 10px;
+  cursor: pointer;
+}
+.running-menu {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.run-name {
+  font-size: 0.86rem;
+}
+.run-count {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.78rem;
 }
 .shell {
   position: relative;

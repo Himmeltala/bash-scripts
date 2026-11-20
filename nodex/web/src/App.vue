@@ -9,6 +9,7 @@
     :empty="empty"
     :toggle-theme="toggleTheme"
     @empty-action="addWorkspace()"
+    @select-workspace="select"
   >
     <template #sidebar>
       <WorkspaceList
