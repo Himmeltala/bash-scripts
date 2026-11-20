@@ -7,13 +7,10 @@ import argparse
 import json
 import os
 import sys
-import threading
-import webbrowser
 from pathlib import Path
 
 import netutil
-from runtime import check_static
-from web import WebServer
+from runtime import check_static, serve as serve_web
 
 from . import VERSION
 from .app import App
@@ -62,11 +59,32 @@ def _parse_web_args(argv):
         return None
 
 
-def _open_browser(url):
-    try:
-        webbrowser.open(url)
-    except Exception:  # noqa: BLE001 - 打不开浏览器不影响服务本身
-        pass
+def _print_ready(url, port, host, opts):
+    local = netutil.host_url("127.0.0.1", port)
+    if opts.json:
+        print(
+            json.dumps(
+                {"url": url, "local": local, "host": host, "port": port},
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        return
+    print("jvmx 网页：%s" % url)
+    if url != local:
+        print("本机 %s" % local)
+    if not netutil.is_loopback_host(host):
+        print(
+            "页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1",
+            file=sys.stderr,
+        )
+        if not opts.allow_write:
+            print(
+                "写操作和 JDK、目录读取默认只认本机；要放开给其他机器，加 --allow-write",
+                file=sys.stderr,
+            )
+    print("按 Ctrl+C 退出。", file=sys.stderr)
+    sys.stdout.flush()
 
 
 def cmd_web(argv):
@@ -93,51 +111,15 @@ def cmd_web(argv):
     home = cache_home()
     app = App(home, static=static, allow_write=opts.allow_write)
     app.start_background()
-    try:
-        httpd = WebServer((host, opts.port), app.make_handler())
-    except OSError as exc:
-        print("jvmx: 监听 %s:%s 失败：%s" % (host, opts.port, exc), file=sys.stderr)
-        app.close()
-        return 1
-
-    port = httpd.server_address[1]
-    url = netutil.host_url(host, port)
-    local = netutil.host_url("127.0.0.1", port)
-    if opts.json:
-        print(
-            json.dumps(
-                {"url": url, "local": local, "host": host, "port": port},
-                ensure_ascii=False,
-            ),
-            flush=True,
-        )
-    else:
-        print("jvmx 网页：%s" % url)
-        if url != local:
-            print("本机 %s" % local)
-        if not netutil.is_loopback_host(host):
-            print(
-                "页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1",
-                file=sys.stderr,
-            )
-            if not opts.allow_write:
-                print(
-                    "写操作和 JDK、目录读取默认只认本机；要放开给其他机器，加 --allow-write",
-                    file=sys.stderr,
-                )
-        print("按 Ctrl+C 退出。", file=sys.stderr)
-        sys.stdout.flush()
-
-    if opts.open:
-        threading.Timer(0.5, _open_browser, args=(url,)).start()
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.server_close()
-        app.close()
-    return 0
+    return serve_web(
+        app.make_handler(),
+        host,
+        opts.port,
+        on_ready=lambda url, port: _print_ready(url, port, host, opts),
+        open_browser=opts.open,
+        cleanup=app.close,
+        label="jvmx",
+    )
 
 
 def main(argv=None):

@@ -10,13 +10,14 @@ import threading
 import time
 from pathlib import Path
 
-from browse import list_dirs
 from metrics import Metrics
 from netutil import is_loopback_address
 from runner import run_log_path
-from sse import MetricsStream, SSEMixin, StateStream, tail
+from sse import MetricsStream, StateStream, tail
+from stores import LayoutStore
 from toolchain import effective_home, iter_home_dirs, prepend_bin
-from web import ApiError, WebHandler, log
+from toolweb import NOT_HANDLED, ToolHandler
+from web import ApiError, log
 
 from .runs import RunRegistry
 from .store import KIND_GRADLE, Store, clean_targets, detect_project, service_id
@@ -98,6 +99,50 @@ def public_run(run):
     return dict((key, run.get(key, "")) for key in RUN_FIELDS)
 
 
+class _Engine:
+    """把 App 的方法包成 ToolHandler 认的几个动作。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    def add_workspace(self, root):
+        self.app.add_workspace(root)
+
+    def remove_workspace(self, ws):
+        self.app.forget_workspace(ws)
+
+    def call(self, action, *args):
+        if action == "scan":
+            self.app.scan(args[0])
+        elif action == "update":
+            self.app.update_service(args[0])
+        # tick 由 state_payload 自己推进运行表，这里不用再做。
+
+    def start(self, body):
+        return self.app.start_service(body)
+
+    def stop(self, run):
+        self.app.stop_service(run)
+
+
+class _State:
+    """ToolHandler 按状态行找工作区；jvmx 的工作区在 Store 里。"""
+
+    def __init__(self, store):
+        self.store = store
+
+    def find(self, kind, ws):
+        return self.store.find(ws)
+
+
+class _Aliases:
+    def __init__(self, store):
+        self.store = store
+
+    def set(self, ws, alias):
+        self.store.set_alias(ws, alias)
+
+
 class App:
     """一个 jvmx 网页进程的全部状态。"""
 
@@ -111,6 +156,11 @@ class App:
         self.tools = tools or default_tools()
         self.jdk_roots = tuple(jdk_roots) if jdk_roots is not None else JDK_ROOTS
         self.store = Store(self.home / "state.json")
+        self.groups = LayoutStore(self.home / "groups.json")
+        # 旧版把分组放在 state.json 里，取出来放进 groups.json 之后就不再回头读。
+        legacy_groups = self.store.take_groups()
+        if legacy_groups and not self.groups.nodes():
+            self.groups.set(legacy_groups)
         self.runs = RunRegistry(self.home / "runs.json", self.logs)
         self.metrics = Metrics()
         self.scan_lock = threading.Lock()
@@ -118,7 +168,7 @@ class App:
         self._jdks_at = 0.0
         # 状态与指标各一条后台线程，页面开几个都共用这一份。
         self.state_stream = StateStream(
-            [self.store.path, self.runs.path],
+            [self.store.path, self.groups.path, self.runs.path],
             build=self.state_payload,
             tick=self.tick,
         )
@@ -234,7 +284,7 @@ class App:
     def state_payload(self):
         self.runs.advance()
         workspaces = self.store.workspaces()
-        groups = self.store.groups()
+        groups = self.groups.nodes()
         group_of = dict(
             (node["id"], node.get("parent") or "")
             for node in groups
@@ -367,6 +417,7 @@ class App:
             raise ApiError(404, "没有这个工作区：%s" % ws_id)
         self.runs.stop_workspace(ws_id)
         self.store.remove(ws_id)
+        self.groups.drop("ws", ws_id)
         self.runs.remove_workspace(ws_id)
         shutil.rmtree(self.logs / ws_id, ignore_errors=True)
 
@@ -375,10 +426,14 @@ class App:
     def make_handler(self):
         app = self
 
-        class Handler(SSEMixin, WebHandler):
+        class Handler(ToolHandler):
             server_version = "jvmx/0.1.0"
             api_prefix = "/__jvmx/api"
             static = app.static
+            state = _State(app.store)
+            engine = _Engine(app)
+            aliases = _Aliases(app.store)
+            layout = app.groups
             state_stream = app.state_stream
             metrics_stream = app.metrics_stream
             metrics = app.metrics
@@ -396,6 +451,15 @@ class App:
                     "%s只允许本机发起；要放开给其他机器，用 --allow-write 启动" % what,
                 )
 
+            def _read_allowed(self, what):
+                self._require_local(what)
+
+            def _write_allowed(self):
+                self._require_local("写操作")
+
+            def build_state(self):
+                return app.state_payload()
+
             def _log_path(self, runid):
                 logs = Path(self.logs).resolve()
                 path = run_log_path(logs, runid)
@@ -404,18 +468,6 @@ class App:
                 except ValueError:
                     raise ApiError(400, "运行号不对")
                 return path
-
-            def _stream_routes(self, route, query):
-                if route == "state/stream":
-                    self._sse([(self.state_stream, "state"), (self.metrics_stream, "metrics")])
-                    return True
-                if route == "log/stream":
-                    self._stream_log((query.get("run") or [""])[0])
-                    return True
-                if route == "metrics/stream":
-                    self._sse([(self.metrics_stream, "metrics")])
-                    return True
-                return False
 
             def _log_page(self, query):
                 runid = (query.get("run") or [""])[0]
@@ -434,51 +486,19 @@ class App:
                     "more": more,
                 }
 
-            def _dispatch(self, method, route, query, body):
-                if route == "state":
-                    return app.state_payload()
-                if route == "log":
-                    return self._log_page(query)
-                if route == "metrics":
-                    return self.metrics.snapshot()
-                if route == "dirs":
-                    self._require_local("浏览目录")
-                    return list_dirs((query.get("path") or [""])[0])
+            def _tool_get(self, route, query, method):
                 if route == "jdks":
                     self._require_local("读取 JDK 列表")
                     return {"jdks": app.jdks(), "current": os.environ.get("JAVA_HOME", "")}
+                return NOT_HANDLED
 
-                if method != "POST":
-                    raise ApiError(405, "这个接口只接受 POST")
-                self._require_local("写操作")
-
-                if route == "workspaces":
-                    return app.add_workspace(str(body.get("root", "")).strip())
-                if route == "forget":
-                    app.forget_workspace(str(body.get("ws", "")))
-                    return {"ok": True}
-                if route == "alias":
-                    ws = str(body.get("ws", "")).strip()
-                    if not ws or app.store.find(ws) is None:
-                        raise ApiError(404, "没有这个工作区：%s" % ws)
-                    app.store.set_alias(ws, str(body.get("alias", "")))
-                    return {"ok": True}
-                if route == "groups":
-                    return {"ok": True, "groups": app.store.set_groups(body.get("nodes") or [])}
-                if route == "rescan":
-                    app.scan(str(body.get("ws", "")).strip())
-                    return {"ok": True}
-                if route == "start":
-                    return app.start_service(body)
-                if route == "stop":
-                    app.stop_service(str(body.get("run", "")))
-                    return {"ok": True}
-                if route == "update":
-                    app.update_service(body)
-                    return {"ok": True}
+            def _tool_post(self, route, body):
                 if route == "jdk":
                     app.set_jdk(str(body.get("ws", "")).strip(), body.get("jdk"))
                     return {"ok": True}
-                raise ApiError(404, "没有这个接口：%s" % route)
+                return NOT_HANDLED
+
+            def _tool_update_args(self, body):
+                return (body,)
 
         return Handler

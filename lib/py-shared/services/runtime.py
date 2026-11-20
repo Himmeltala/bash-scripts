@@ -1,7 +1,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-14 20:58:46
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-17 23:35:13
+# @LastEditTime: 2026-11-20 00:00:00
 # @FilePath: \lib\py-shared\services\runtime.py
 # @Description: 网页进程的启动骨架：检查打包目录、起监听、打印就绪行与信号处理。
 
@@ -28,12 +28,28 @@ def start_streams(*streams):
         stream.start()
 
 
-def serve(handler, host, port, ready=None, title=None, open_browser=False):
-    """绑定端口并一直服务；ready 是给 bash 认的就绪行前缀。"""
+def serve(
+    handler,
+    host,
+    port,
+    ready=None,
+    title=None,
+    open_browser=False,
+    on_ready=None,
+    cleanup=None,
+    label="网页",
+):
+    """绑定端口并一直服务。
+
+    ready 是给 bash 认的就绪行前缀；on_ready(url, port) 给调用方自己打地址；
+    cleanup 在绑定失败与服务结束时都会调用，用来停后台线程或收子进程。
+    """
     try:
         httpd = WebServer((host, port), handler)
     except OSError as exc:
-        log("端口 %s 用不了：%s" % (port, exc))
+        log("%s：端口 %s 用不了：%s" % (label, port, exc))
+        if cleanup is not None:
+            cleanup()
         return 1
     httpd.daemon_threads = True
     port = httpd.server_address[1]
@@ -45,6 +61,8 @@ def serve(handler, host, port, ready=None, title=None, open_browser=False):
         print("%s %s:%d" % (ready, addr, port), flush=True)
     if title:
         log("%s：%s" % (title, url))
+    if on_ready is not None:
+        on_ready(url, port)
 
     def shutdown(signum, frame):
         log("收到信号 %d，退出" % signum)
@@ -54,9 +72,13 @@ def serve(handler, host, port, ready=None, title=None, open_browser=False):
     signal.signal(signal.SIGINT, shutdown)
 
     if open_browser:
-        threading.Timer(0.5, webbrowser.open, args=(url,)).start()
+        timer = threading.Timer(0.5, webbrowser.open, args=(url,))
+        timer.daemon = True
+        timer.start()
     try:
         httpd.serve_forever()
     finally:
         httpd.server_close()
+        if cleanup is not None:
+            cleanup()
     return 0

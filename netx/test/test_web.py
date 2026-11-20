@@ -17,7 +17,8 @@ sys.path.insert(0, str(REPO / "netx" / "lib"))
 
 from netx.db import Database
 from netx.parse import parse_payload
-from netx.web import WebServer, can_write, make_handler
+from netx.web import can_write, make_handler
+from web import WebServer
 
 
 class WebTest(unittest.TestCase):

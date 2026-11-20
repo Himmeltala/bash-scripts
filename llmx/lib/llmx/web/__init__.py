@@ -27,8 +27,9 @@ import fileio
 import metrics as metrics_mod
 import netutil
 import pathutil
+from runtime import serve as serve_web
 from sse import MetricsStream, SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
-from web import ApiError, WebHandler, WebServer
+from web import ApiError, WebHandler
 
 from .. import cli, profiles, sessions
 from ..config import Config, ConfigError, config_path, load, render, validate_text
@@ -434,12 +435,6 @@ def is_loopback(host: str) -> bool:
     return netutil.is_loopback_host(host)
 
 
-def urls(host: str, port: int) -> tuple[str, str]:
-    """返回 (对外地址, 本机地址)。"""
-    local = netutil.host_url("127.0.0.1", port)
-    return netutil.host_url(host, port), local
-
-
 def serve(
     config: Config,
     host: str = "0.0.0.0",
@@ -452,47 +447,38 @@ def serve(
     if not (0 <= port <= 65535):
         print("llmx: --port 取 0 到 65535", file=sys.stderr)
         return 2
-    try:
-        # 客户端提前断开不算错误：共用 WebServer 已经按这个口径处理。
-        httpd = WebServer((host, port), _make_handler(config, allow_write=allow_write))
-    except OSError as exc:
-        print(f"llmx: 监听 {host}:{port} 失败：{exc}", file=sys.stderr)
-        return 1
-    port = httpd.server_address[1]
-    url, local = urls(host, port)
-    if as_json:
-        print(json.dumps({"url": url, "local": local, "host": host, "port": port}, ensure_ascii=False))
-    else:
-        print(f"llmx 网页界面：{url}")
-        if url != local:
-            print(f"本机 {local}")
-        if not is_loopback(host):
+
+    def on_ready(url: str, actual_port: int) -> None:
+        local = netutil.host_url("127.0.0.1", actual_port)
+        if as_json:
             print(
-                "页面没有登录，同一网络里能连上的人都能看用量；只想本机看就加 --host 127.0.0.1",
-                file=sys.stderr,
+                json.dumps(
+                    {"url": url, "local": local, "host": host, "port": actual_port},
+                    ensure_ascii=False,
+                )
             )
-            if not allow_write:
+        else:
+            print(f"llmx 网页界面：{url}")
+            if url != local:
+                print(f"本机 {local}")
+            if not is_loopback(host):
                 print(
-                    "配置读写与会话清理只认本机；要放开给其他机器，加 --allow-write",
+                    "页面没有登录，同一网络里能连上的人都能看用量；只想本机看就加 --host 127.0.0.1",
                     file=sys.stderr,
                 )
-        print("按 Ctrl+C 退出。", file=sys.stderr)
-    sys.stdout.flush()
-    if open_browser:
-        threading.Thread(target=_open, args=(url,), daemon=True).start()
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.server_close()
-    return 0
+                if not allow_write:
+                    print(
+                        "配置读写与会话清理只认本机；要放开给其他机器，加 --allow-write",
+                        file=sys.stderr,
+                    )
+            print("按 Ctrl+C 退出。", file=sys.stderr)
+        sys.stdout.flush()
 
-
-def _open(url: str) -> None:
-    import webbrowser
-
-    try:
-        webbrowser.open(url)
-    except Exception:  # noqa: BLE001 - 打不开浏览器不影响服务本身
-        pass
+    return serve_web(
+        _make_handler(config, allow_write=allow_write),
+        host,
+        port,
+        on_ready=on_ready,
+        open_browser=open_browser,
+        label="llmx",
+    )

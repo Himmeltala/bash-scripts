@@ -1,38 +1,31 @@
 <template>
-  <WorkspaceShell
+  <ToolApp
     title="nodex"
-    :workspaces="state.workspaces"
-    :current="current"
-    :running="running"
-    :dark="dark"
-    :snack="snack"
+    :api="api"
+    storage-key="nodex-ws"
+    collapsed-key="nodex-ws-collapsed"
+    :extra-state="{ nodes: [], currentNode: '' }"
+    added-notice="已添加，正在列出脚本"
     :empty="empty"
-    :toggle-theme="toggleTheme"
-    @empty-action="addWorkspace()"
-    @select-workspace="select"
+    :remember-theme="rememberTheme"
+    :load-extra="loadExtra"
+    :list-texts="listTexts"
   >
-    <template #sidebar>
-      <WorkspaceList
-        :workspaces="state.workspaces"
-        :groups="state.groups"
-        :current="currentId"
-        :busy="adding"
-        @select="select"
-        @add="addWorkspace"
-        @remove="removeWorkspace"
-        @changed="refresh"
-        @groups-change="setGroups"
-        @notice="toast($event.text, $event.color)"
-      />
-    </template>
-
-    <template #metrics>
-      <Metrics :dark="dark" :metrics="metrics" />
-    </template>
-
-    <template #default="{ ws }">
+    <template
+      #panel="{
+        ws,
+        state,
+        dark,
+        toast,
+        act,
+        startService,
+        stopService,
+        saveService,
+        rescan,
+        removeWorkspace,
+      }"
+    >
       <ServicePanel
-        v-if="ws"
         :ws="ws"
         :dark="dark"
         :nodes="state.nodes"
@@ -40,26 +33,20 @@
         @start="startService"
         @stop="stopService"
         @save="saveService"
-        @setnode="setWorkspaceNode"
+        @setnode="setWorkspaceNode($event, act, toast)"
         @scan="rescan"
         @forget="removeWorkspace"
         @notice="toast"
       />
     </template>
-  </WorkspaceShell>
+  </ToolApp>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
-import WorkspaceList from './components/WorkspaceList.vue'
+import { ToolApp } from '@bash-scripts/web-shared'
 import ServicePanel from './components/ServicePanel.vue'
-import { Metrics } from '@bash-scripts/web-shared/metrics'
-import { useThemeToggle } from '@bash-scripts/web-shared/theme'
-import { WorkspaceShell, useWorkspaceState } from '@bash-scripts/web-shared'
 import { api } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
-
-const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
 
 const empty = {
   icon: 'mdi-view-dashboard-outline',
@@ -69,42 +56,19 @@ const empty = {
   hintWidth: 420,
 }
 
-const {
-  state,
-  current,
-  currentId,
-  adding,
-  snack,
-  toast,
-  metrics,
-  running,
-  select,
-  setGroups,
-  refresh,
-  act,
-  start,
-  addWorkspace,
-  removeWorkspace,
-  rescan,
-  startService,
-  stopService,
-  saveService,
-} = useWorkspaceState({
-  api,
-  storageKey: 'nodex-ws',
-  extraState: { nodes: [], currentNode: '' },
-  addedNotice: '已添加，正在列出脚本',
-  loadExtra: async (snapshot) => {
-    const data = await api.nodes()
-    snapshot.nodes = data.nodes || []
-    snapshot.currentNode = data.current || ''
-  },
-})
+const listTexts = {
+  addTip: '选 Node 工程所在的目录，加的时候会自动往上找声明了工作区的 package.json。',
+  removeText: '登记的服务与日志一起删掉，正在跑的进程会先停掉。工程目录本身不动。',
+}
 
-async function setWorkspaceNode({ ws, node }) {
+async function loadExtra(snapshot) {
+  const data = await api.nodes()
+  snapshot.nodes = data.nodes || []
+  snapshot.currentNode = data.current || ''
+}
+
+async function setWorkspaceNode({ ws, node }, act, toast) {
   const ok = await act('设置 Node', () => api.setNode(ws, node))
   if (ok) toast(node ? 'Node 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
 }
-
-onMounted(start)
 </script>

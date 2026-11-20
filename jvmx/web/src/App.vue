@@ -1,38 +1,31 @@
 <template>
-  <WorkspaceShell
+  <ToolApp
     title="jvmx"
-    :workspaces="state.workspaces"
-    :current="current"
-    :running="running"
-    :dark="dark"
-    :snack="snack"
+    :api="api"
+    storage-key="jvmx-ws"
+    collapsed-key="jvmx-ws-collapsed"
+    :extra-state="{ jdks: [], currentJdk: '' }"
+    added-notice="已添加，正在列出目标"
     :empty="empty"
-    :toggle-theme="toggleTheme"
-    @empty-action="addWorkspace()"
-    @select-workspace="select"
+    :remember-theme="rememberTheme"
+    :load-extra="loadExtra"
+    :list-texts="listTexts"
   >
-    <template #sidebar>
-      <WorkspaceList
-        :workspaces="state.workspaces"
-        :groups="state.groups"
-        :current="currentId"
-        :busy="adding"
-        @select="select"
-        @add="addWorkspace"
-        @remove="removeWorkspace"
-        @changed="refresh"
-        @groups-change="setGroups"
-        @notice="toast($event.text, $event.color)"
-      />
-    </template>
-
-    <template #metrics>
-      <Metrics :dark="dark" :metrics="metrics" />
-    </template>
-
-    <template #default="{ ws }">
+    <template
+      #panel="{
+        ws,
+        state,
+        dark,
+        toast,
+        act,
+        startService,
+        stopService,
+        saveService,
+        rescan,
+        removeWorkspace,
+      }"
+    >
       <ServicePanel
-        v-if="ws"
         :ws="ws"
         :dark="dark"
         :jdks="state.jdks"
@@ -40,26 +33,20 @@
         @start="startService"
         @stop="stopService"
         @save="saveService"
-        @setjdk="setWorkspaceJdk"
+        @setjdk="setWorkspaceJdk($event, act, toast)"
         @scan="rescan"
         @forget="removeWorkspace"
         @notice="toast($event.text, $event.color)"
       />
     </template>
-  </WorkspaceShell>
+  </ToolApp>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
-import WorkspaceList from './components/WorkspaceList.vue'
+import { ToolApp } from '@bash-scripts/web-shared'
 import ServicePanel from './components/ServicePanel.vue'
-import { Metrics } from '@bash-scripts/web-shared/metrics'
-import { useThemeToggle } from '@bash-scripts/web-shared/theme'
-import { WorkspaceShell, useWorkspaceState } from '@bash-scripts/web-shared'
 import { api } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
-
-const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
 
 const empty = {
   icon: 'mdi-view-dashboard-outline',
@@ -69,42 +56,19 @@ const empty = {
   hintWidth: 460,
 }
 
-const {
-  state,
-  current,
-  currentId,
-  adding,
-  snack,
-  toast,
-  metrics,
-  running,
-  select,
-  setGroups,
-  refresh,
-  act,
-  start,
-  addWorkspace,
-  removeWorkspace,
-  rescan,
-  startService,
-  stopService,
-  saveService,
-} = useWorkspaceState({
-  api,
-  storageKey: 'jvmx-ws',
-  extraState: { jdks: [], currentJdk: '' },
-  addedNotice: '已添加，正在列出目标',
-  loadExtra: async (snapshot) => {
-    const data = await api.jdks()
-    snapshot.jdks = data.jdks || []
-    snapshot.currentJdk = data.current || ''
-  },
-})
+const listTexts = {
+  addTip: '选 Maven 或 Gradle 工程所在的目录，加的时候会往上找 pom.xml 或 settings.gradle。',
+  removeText: '登记的服务与日志一起删掉，正在跑的进程会先停掉。工程目录本身不动。',
+}
 
-async function setWorkspaceJdk({ ws, jdk }) {
+async function loadExtra(snapshot) {
+  const data = await api.jdks()
+  snapshot.jdks = data.jdks || []
+  snapshot.currentJdk = data.current || ''
+}
+
+async function setWorkspaceJdk({ ws, jdk }, act, toast) {
   const ok = await act('设置 JDK', () => api.setJdk(ws, jdk))
   if (ok) toast(jdk ? 'JDK 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
 }
-
-onMounted(start)
 </script>

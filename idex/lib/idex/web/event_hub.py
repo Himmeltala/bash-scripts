@@ -5,7 +5,8 @@ import threading
 import time
 from pathlib import Path
 
-from server_common import log
+from sse import StateStream
+
 from vcs_summary import (
     changes_signature,
 )
@@ -14,8 +15,6 @@ from vcs_summary import (
 SSE_HEARTBEAT = 15
 # 工作副本的检查间隔。
 WATCH_INTERVAL = 3
-# 工作区列表这类轻量状态的检查间隔。
-STATE_WATCH_INTERVAL = 0.5
 
 
 class EventHub:
@@ -83,71 +82,6 @@ class EventHub:
             if revision is not None:
                 last_revision = revision
             time.sleep(WATCH_INTERVAL)
-
-
-class StateStream:
-    """登记表一变就推一份给所有页面；页面不用再定时来取。"""
-
-    def __init__(self, paths, build):
-        # 登记表与分组结构各一个文件，哪个变了都推一份；只给一个路径也照收。
-        if isinstance(paths, (str, Path)):
-            paths = [paths]
-        self.paths = [Path(p) for p in paths]
-        self.build = build
-        self.lock = threading.Lock()
-        self.subs = set()
-        self.payload = None
-
-    def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def subscribe(self):
-        box = queue.Queue(maxsize=1)
-        with self.lock:
-            self.subs.add(box)
-            if self.payload is not None:
-                box.put_nowait(self.payload)
-        return box
-
-    def unsubscribe(self, box):
-        with self.lock:
-            self.subs.discard(box)
-
-    def _publish(self, payload):
-        with self.lock:
-            self.payload = payload
-            subs = list(self.subs)
-        for box in subs:
-            if box.full():
-                try:
-                    box.get_nowait()
-                except queue.Empty:
-                    pass
-            try:
-                box.put_nowait(payload)
-            except queue.Full:
-                pass
-
-    def _mtimes(self):
-        out = []
-        for path in self.paths:
-            try:
-                out.append(path.stat().st_mtime_ns)
-            except OSError:
-                out.append(None)
-        return tuple(out)
-
-    def _run(self):
-        seen = None
-        while True:
-            mtimes = self._mtimes()
-            if mtimes != seen:
-                seen = mtimes
-                try:
-                    self._publish(self.build())
-                except Exception as exc:
-                    log("取工作区列表失败：%r" % exc)
-            time.sleep(STATE_WATCH_INTERVAL)
 
 
 HUB = EventHub()

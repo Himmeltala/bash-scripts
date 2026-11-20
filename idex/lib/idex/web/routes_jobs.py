@@ -10,6 +10,11 @@ from server_common import workspace_lock
 from vcs_ops import operation_plan
 
 
+def _job_finished(job):
+    """任务收尾时通知这个工作副本上的页面刷新状态。"""
+    HUB.broadcast(job.owner, "repo", {"action": job.action, "ok": job.ok})
+
+
 class JobRoutes:
     """路由表里 operations 那几条的实现，靠 MRO 混进 Handler。"""
 
@@ -34,7 +39,9 @@ class JobRoutes:
                 plan["command"],
             )
             JOBS.add(job)
-            threading.Thread(target=run_job, args=(job, lock, HUB), daemon=True).start()
+            threading.Thread(
+                target=run_job, args=(job, lock, _job_finished), daemon=True
+            ).start()
         except Exception:
             lock.release()
             raise

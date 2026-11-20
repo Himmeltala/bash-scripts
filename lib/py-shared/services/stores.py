@@ -152,6 +152,14 @@ class LayoutStore:
             write_json(self.path, {"nodes": out}, ensure_ascii=False)
         return out
 
+    def drop(self, kind, ident):
+        """去掉某个节点；工作区移出时，指向它的那条分组记录也一并清掉。"""
+        nodes = self.nodes()
+        kept = [node for node in nodes if not (node["kind"] == kind and node["id"] == ident)]
+        if len(kept) == len(nodes):
+            return nodes
+        return self.set(kept)
+
 
 def attach_layout(snapshot, store):
     """把左侧分组结构拼进状态回话。"""

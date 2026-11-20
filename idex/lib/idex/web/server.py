@@ -15,13 +15,10 @@ import queue
 import re
 import shlex
 import shutil
-import signal
 import subprocess
 import sys
-import threading
 import time
 import uuid
-import webbrowser
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -36,10 +33,11 @@ from fileio import PreviewError, read_json, read_text_preview, write_json, write
 from metrics import Metrics
 from netutil import is_loopback_address as is_loopback
 from pathutil import PathError, safe_relative, within
+from runtime import check_static, serve as serve_web, start_streams
 from sse import MetricsStream
 from stores import LayoutStore
 from routes_lsp import LspRoutes
-from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
+from web import ApiError, STREAMED, WebHandler, zip_dir
 from server_common import MAX_FILE, inside, log, safe_rel, workspace_lock
 from vcs_cli import GIT_TIMEOUT, SVN_TIMEOUT, git, svn
 from browse_fs import browse_file, browse_files, browse_list, browse_rel, browse_search, delete_entry, make_entry, read_unversioned, rename_entry, save_file, save_upload
@@ -134,8 +132,7 @@ from routes_stream import StreamRoutes
 from routes_jobs import JobRoutes
 from routes_workspaces import WorkspacesRoutes, _add_workspace, _forget_workspace, _save_groups, _save_settings, _set_alias, list_dirs
 from server_stores import SEARCH_IGNORE_DEFAULTS, SEARCH_IGNORE_MAX, SEARCH_IGNORE_LEN, Settings, Workspaces, clean_search_ignore
-from jobs import JOB_KEEP, JOB_LINES_MAX, OPERATION_TIMEOUT, JOBS, Job, Jobs, run_job, terminate_process
-from event_hub import HUB, SSE_HEARTBEAT, STATE_WATCH_INTERVAL, WATCH_INTERVAL, EventHub, StateStream
+from event_hub import HUB, SSE_HEARTBEAT, WATCH_INTERVAL, EventHub, StateStream
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
 # 单行超过这个宽度按大文件处理：压缩过的 JS/CSS 一行几十万字符，页面渲染不动。
@@ -583,9 +580,8 @@ class Handler(JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes
 
 
 def serve(args):
-    static = Path(args.static).resolve()
-    if not (static / "index.html").is_file():
-        log("缺 %s/index.html，前端还没打包" % static)
+    static = check_static(args.static)
+    if static is None:
         return 3
     if not (shutil.which("svn") or shutil.which("git")):
         log("找不到 svn 与 git 命令，装上其中一个再试")
@@ -602,42 +598,19 @@ def serve(args):
         [args.state, Path(args.state).parent / "groups.json"],
         lambda: {"workspaces": Handler.store.workspaces(), "groups": Handler.groups.nodes()},
     )
-    Handler.state_stream.start()
     Handler.metrics_stream = MetricsStream(METRICS)
-    Handler.metrics_stream.start()
+    start_streams(Handler.state_stream, Handler.metrics_stream)
 
-    try:
-        httpd = WebServer((args.host, args.port), Handler)
-    except OSError as exc:
-        log("端口 %s 用不了：%s" % (args.port, exc))
-        return 1
-    httpd.daemon_threads = True
-    port = httpd.server_address[1]
-    host = guess_host() if is_any(args.host) else args.host
-    url = "http://%s:%d/" % (host, port)
-
-    print("IDEX_WEB_READY %s:%d" % (host, port), flush=True)
-    log("idex 网页：%s" % url)
-
-    def shutdown(signum, frame):
-        log("收到信号 %d，退出" % signum)
-        threading.Thread(target=httpd.shutdown, daemon=True).start()
-
-    import signal
-
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
-
-    if args.open:
-        threading.Timer(0.5, webbrowser.open, args=(url,)).start()
-    try:
-        httpd.serve_forever()
-    finally:
-        httpd.server_close()
-        # 语言服务器是页面按需拉起的子进程，退出时一并收掉。
-        if Handler.lsp is not None:
-            Handler.lsp.stop_all()
-    return 0
+    return serve_web(
+        Handler,
+        args.host,
+        args.port,
+        ready="IDEX_WEB_READY",
+        title="idex 网页",
+        open_browser=args.open,
+        cleanup=Handler.lsp.stop_all,
+        label="idex",
+    )
 
 
 def main(argv=None):

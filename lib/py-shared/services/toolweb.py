@@ -50,6 +50,18 @@ class ToolHandler(SSEMixin, WebHandler):
         """update 请求要带的字段，由各工具给。"""
         raise NotImplementedError
 
+    def _read_allowed(self, what):
+        """工具可以在这里限制某些读接口；默认都放行。"""
+        return None
+
+    def _write_allowed(self):
+        """写接口的统一前置检查；默认都放行，jvmx 用它限制本机。"""
+        return None
+
+    def _log_page(self, query):
+        """日志分页；默认从状态行取运行状态，工具自己有运行表就覆写。"""
+        return log_page(self.state, self.logs, query, self.run_kind)
+
     def _dispatch(self, method, route, query, body):
         if route == "log/stream":
             self._stream_log((query.get("run") or [""])[0])
@@ -65,8 +77,9 @@ class ToolHandler(SSEMixin, WebHandler):
                 log("tick 失败：%s" % exc.message)
             return self.build_state()
         if route == "log":
-            return log_page(self.state, self.logs, query, self.run_kind)
+            return self._log_page(query)
         if route == "dirs":
+            self._read_allowed("浏览目录")
             return list_dirs((query.get("path") or [""])[0])
         if route == "metrics/stream":
             self._sse([(self.metrics_stream, "metrics")])
@@ -79,6 +92,7 @@ class ToolHandler(SSEMixin, WebHandler):
             return result
         if method != "POST":
             raise ApiError(405, "这个接口只接受 POST")
+        self._write_allowed()
 
         engine = self.engine
         if route == "workspaces":
@@ -92,11 +106,12 @@ class ToolHandler(SSEMixin, WebHandler):
             return {"ok": True}
         if route == "forget":
             ws = str(body.get("ws", ""))
-            engine.remove_workspace(ws)
-            if self.home_store is not None:
-                self.home_store.remove(ws)
+            # 先清别名与工具链目录，再移出工作区；工作区没了再按 id 删会找不到。
             if self.aliases is not None:
                 self.aliases.set(ws, "")
+            if self.home_store is not None:
+                self.home_store.remove(ws)
+            engine.remove_workspace(ws)
             return {"ok": True}
         if route == "alias":
             ws = str(body.get("ws", "")).strip()

@@ -151,8 +151,10 @@ class Fanout:
 class StateStream(Fanout):
     """状态文件一变就推一份；tick 也走这条线程，开几个页面都只跑一条。"""
 
-    def __init__(self, paths, build, tick, pump=PUMP_INTERVAL, tick_interval=STATE_TICK_INTERVAL):
+    def __init__(self, paths, build, tick=None, pump=PUMP_INTERVAL, tick_interval=STATE_TICK_INTERVAL):
         super().__init__()
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
         self.paths = [Path(p) for p in paths]
         self.build = build
         self.tick = tick
@@ -181,7 +183,7 @@ class StateStream(Fanout):
                 time.sleep(self.pump)
                 continue
             now = time.time()
-            if now >= next_tick:
+            if self.tick is not None and now >= next_tick:
                 next_tick = now + self.tick_interval
                 try:
                     self.tick()

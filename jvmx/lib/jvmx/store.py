@@ -1,7 +1,8 @@
-"""工作区登记表：state.json 里存工作区、别名、分组与每行参数。
+"""工作区登记表：state.json 里存工作区、别名与每行参数。
 
 jvmx 不解析 pom / settings.gradle，目标由 mvnx / gradlex 的 ``--list --json``
-给出，这里只保存扫描结果与用户在页面上改过的参数。
+给出，这里只保存扫描结果与用户在页面上改过的参数。分组结构在 groups.json，由共享的
+LayoutStore 管理。
 """
 
 import copy
@@ -12,7 +13,6 @@ import time
 from pathlib import Path
 
 from fileio import read_json, write_json
-from stores import clean_node
 from web import ApiError
 
 KIND_MVN = "mvn"
@@ -23,8 +23,7 @@ KINDS = (KIND_MVN, KIND_GRADLE)
 MVN_MARKERS = ("pom.xml", "mvnw")
 GRADLE_MARKERS = ("settings.gradle", "settings.gradle.kts", "gradlew")
 
-# 分组的规模上限与别名长度，与共享层保持一致。
-MAX_GROUPS = 2000
+# 别名的长度上限，与共享层保持一致。
 MAX_ALIAS = 80
 
 # 每行参数里可以存的键：额外参数、Maven 启动方式、Gradle 的两项构建开关。
@@ -124,16 +123,12 @@ class Store:
         workspaces = data.get("workspaces")
         if not isinstance(workspaces, list):
             workspaces = []
-        groups = data.get("groups")
-        if not isinstance(groups, list):
-            groups = []
         return {
             "workspaces": [
                 item
                 for item in workspaces
                 if isinstance(item, dict) and item.get("id") and item.get("root")
-            ],
-            "groups": [item for item in groups if isinstance(item, dict)],
+            ]
         }
 
     def _write(self, data):
@@ -143,9 +138,17 @@ class Store:
         with self.lock:
             return copy.deepcopy(self._read()["workspaces"])
 
-    def groups(self):
+    def take_groups(self):
+        """旧版把分组存在 state.json 里；启动时取出来交给 LayoutStore，并从状态文件删掉。"""
         with self.lock:
-            return copy.deepcopy(self._read()["groups"])
+            data = read_json(self.path, default=None)
+            if not isinstance(data, dict):
+                return []
+            groups = data.pop("groups", None)
+            if not isinstance(groups, list):
+                return []
+            write_json(self.path, data)
+            return groups
 
     def find(self, ws_id):
         for item in self.workspaces():
@@ -207,12 +210,6 @@ class Store:
                 return None
             removed = [item for item in data["workspaces"] if item["id"] == ws_id][0]
             data["workspaces"] = kept
-            # 工作区没了，指向它的分组节点也一并清掉。
-            data["groups"] = [
-                node
-                for node in data["groups"]
-                if not (node.get("kind") == "ws" and node.get("id") == ws_id)
-            ]
             self._write(data)
             return copy.deepcopy(removed)
 
@@ -261,18 +258,3 @@ class Store:
                 return
         raise ApiError(404, "没有这个工作区：%s" % ws_id)
 
-    def set_groups(self, nodes):
-        if not isinstance(nodes, list):
-            raise ApiError(400, "分组结构不对")
-        if len(nodes) > MAX_GROUPS:
-            raise ApiError(400, "节点太多，最多 %s 个" % MAX_GROUPS)
-        out = []
-        for item in nodes:
-            node = clean_node(item)
-            if node is not None:
-                out.append(node)
-        with self.lock:
-            data = self._read()
-            data["groups"] = out
-            self._write(data)
-        return copy.deepcopy(out)

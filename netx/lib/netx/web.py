@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import json
-import signal
 import sys
-import threading
 import time
-import webbrowser
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -15,8 +12,9 @@ sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
 
 from netutil import is_loopback_address, is_loopback_host  # noqa: E402
+from runtime import serve as serve_web  # noqa: E402
 from sse import SSEMixin, sse_data  # noqa: E402
-from web import ApiError, WebHandler, WebServer  # noqa: E402
+from web import ApiError, WebHandler  # noqa: E402
 
 from .collector import Collector  # noqa: E402
 from .db import Database  # noqa: E402
@@ -200,35 +198,25 @@ def run(args) -> int:
     collector = Collector(db, tracker)
     collector.start()
     handler = make_handler(db, collector, allow_write=getattr(args, "allow_write", False))
-    try:
-        server = WebServer((args.host, args.port), handler)
-    except OSError as exc:
-        collector.stop()
-        print("netx: 端口 %d 起不来：%s" % (args.port, exc), file=sys.stderr)
-        return 1
 
-    url = "http://%s:%d/" % ("127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host, args.port)
-    print("netx: %s" % url)
-    if not is_loopback_host(args.host):
-        print(
-            "netx: 页面没有登录，抓到的请求内容含密码与 Token；同网段能连上的人都能看。",
-            file=sys.stderr,
+    def on_ready(url, port):
+        shown = "http://%s:%d/" % (
+            "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host,
+            port,
         )
-    if args.open:
-        webbrowser.open(url)
+        print("netx: %s" % shown)
+        if not is_loopback_host(args.host):
+            print(
+                "netx: 页面没有登录，抓到的请求内容含密码与 Token；同网段能连上的人都能看。",
+                file=sys.stderr,
+            )
 
-    stopping = False
-
-    def _stop(signum, frame):
-        nonlocal stopping
-        stopping = True
-        threading.Thread(target=server.shutdown, daemon=True).start()
-
-    signal.signal(signal.SIGINT, _stop)
-    signal.signal(signal.SIGTERM, _stop)
-    try:
-        server.serve_forever()
-    finally:
-        collector.stop()
-        server.server_close()
-    return 0
+    return serve_web(
+        handler,
+        args.host,
+        args.port,
+        on_ready=on_ready,
+        open_browser=args.open,
+        cleanup=collector.stop,
+        label="netx",
+    )

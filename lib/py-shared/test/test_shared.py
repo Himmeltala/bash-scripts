@@ -381,6 +381,20 @@ class LayoutStoreTest(unittest.TestCase):
             with self.assertRaises(Exception):
                 store.set(many)
 
+    def test_drop_removes_only_the_named_node(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = stores.LayoutStore(Path(td) / "groups.json")
+            store.set(
+                [
+                    {"kind": "group", "id": "g1", "name": "组"},
+                    {"kind": "ws", "id": "ws1", "parent": "g1"},
+                    {"kind": "ws", "id": "ws2"},
+                ]
+            )
+            out = store.drop("ws", "ws1")
+            self.assertEqual([node["id"] for node in out], ["g1", "ws2"])
+            self.assertEqual(store.nodes(), out)
+
     def test_broken_file_reads_as_empty(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "groups.json"

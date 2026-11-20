@@ -141,23 +141,28 @@ class Sessions:
 
     def kill_group(self, sid, grace=10.0):
         """整组 TERM，超时再 KILL。会话首进程就是组长，组号等于会话号。"""
-        try:
-            sid = int(sid)
-        except (TypeError, ValueError):
+        kill_group(sid, grace)
+
+
+def kill_group(sid, grace=10.0):
+    """整组 TERM，超时再 KILL。sid 要是进程组号（首进程 pid）。"""
+    try:
+        sid = int(sid)
+    except (TypeError, ValueError):
+        return
+    try:
+        os.killpg(sid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    deadline = time.time() + grace
+    while time.time() < deadline:
+        if not group_alive(sid):
             return
-        try:
-            os.killpg(sid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            return
-        deadline = time.time() + grace
-        while time.time() < deadline:
-            if not group_alive(sid):
-                return
-            time.sleep(0.1)
-        try:
-            os.killpg(sid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
+        time.sleep(0.1)
+    try:
+        os.killpg(sid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def group_alive(sid):
