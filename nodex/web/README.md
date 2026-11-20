@@ -1,6 +1,6 @@
 # nodex 网页前端
 
-源码在 `src/`，Vite 打包到 `../lib/nodex/web/static`；产物随仓库提交，`install.sh` 每次安装会重建。
+源码在 `src/`，Vite 打包到 `../lib/nodex/web/static`。
 
 ## 打包
 

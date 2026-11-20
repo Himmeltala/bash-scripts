@@ -1,20 +1,20 @@
 # bash-scripts
 
-自用的 bash 工具集合，一个目录一个命令；`bin/` 放可执行文件，`lib/` 放实现，安装时只软链 `bin/`。
+自用的命令行与网页工具集合，一个目录一个命令：`bin/` 放可执行文件，`lib/` 放实现与共享代码。
 
 | 命令 | 说明 |
 | --- | --- |
-| `mvnx` | 发现 Maven 模块并执行 `spring-boot:run`、`clean install` 或 `clean package` |
-| `idex` | 网页里的轻量级 IDE：目录浏览与编辑、代码索引、图片预览，加上 SVN / Git 的变更、日志与拉取推送 |
-| `nodex` | 网页里管理 Node 工作区、启停脚本、选 Node 版本、看日志与指标 |
-| `jvmx` | Maven 与 Gradle 共用的网页入口：工作区、启停、日志、指标、JDK |
-| `llmx` | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量并折算费用 |
-| `netx` | 旁路记录出网连接与发送内容，网页查看并支持按时间清理 |
-| `gradlex` | 发现 Gradle 构建并执行 `bootRun`、`run`、`bootJar` 或 `assemble` |
-| `zipx` | 压缩、解压、校验、包内增删，只管 zip |
-| `portx` | 按端口查占用或浏览监听端口，`-k` 才结束进程 |
+| `mvnx` | 发现 Maven 模块，启动、安装或打包 |
+| `gradlex` | 发现 Gradle 构建，启动或构建 |
+| `jvmx` | Maven 与 Gradle 共用的网页入口 |
+| `nodex` | 网页里管理 Node 工作区、启停脚本、选 Node 版本 |
+| `idex` | 网页里的轻量级 IDE，带 SVN / Git 变更管理 |
+| `llmx` | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用 |
+| `netx` | 旁路记录出网连接与明文内容 |
+| `zipx` | 压缩、解压、校验、包内增删 |
+| `portx` | 查端口占用与监听端口 |
 
-各工具的详细用法见对应目录下的 README。五个网页工具的默认端口：`llmx` 8000、`idex` 8100、`nodex` 8200、`jvmx` 8300、`netx` 8400。
+网页工具默认端口：`llmx` 8000、`idex` 8100、`nodex` 8200、`jvmx` 8300、`netx` 8400。
 
 ## 安装
 
@@ -32,18 +32,9 @@ cd bash-scripts
 ./install.sh
 ```
 
-装完重开 shell。重复执行 `install.sh` 等于先卸载再安装：源码复制到 `~/.local/share/bash-scripts`，各工具 `bin/` 下的可执行文件软链到 `~/.local/bin`，需要时再往 `~/.bashrc` 写带 `# bash-scripts 装的工具` 标记的 PATH 设置。安装目录是仓库镜像，不要直接改。
+装完重开 shell。重复执行 `install.sh` 等于先卸载再安装：源码放置到 `~/.local/share/bash-scripts`，各工具的可执行文件软链到 `~/.local/bin`，需要时再往 `~/.bashrc` 写带标记的 PATH 设置。
 
-可用环境变量覆盖：
-
-| 变量 | 默认值 |
-| --- | --- |
-| `BASH_SCRIPTS_INSTALL_DIR` | `${XDG_DATA_HOME:-~/.local/share}/bash-scripts` |
-| `BASH_SCRIPTS_BIN_DIR` | `~/.local/bin` |
-| `BASH_SCRIPTS_TARBALL_URL` | 仓库 main 分支的归档地址 |
-| `BASH_SCRIPTS_ENVIRONMENT` | 核对 PATH 用的系统配置文件，默认 `/etc/environment` |
-
-界面组件来自 `Himmeltala/bash-tui`，版本固定在 `bash-tui.ref`：安装时优先用同级检出，没有就按标签下载到 `vendor/bash-tui`；`BASH_TUI_DIR` 可显式指定。
+安装目录可用 `BASH_SCRIPTS_INSTALL_DIR` 与 `BASH_SCRIPTS_BIN_DIR` 覆盖。
 
 ## 卸载
 
@@ -51,8 +42,8 @@ cd bash-scripts
 curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/uninstall.sh | bash
 ```
 
-clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-path` 保留 PATH 设置。只清本项目的软链、源码目录和带标记的 PATH 段。
+clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-path` 保留 PATH 设置。
 
-## 环境要求
+## 外部依赖
 
-`mvnx` 需要 Maven 或 `./mvnw`，`jvmx` 的网页依赖 mvnx 与 gradlex；`idex` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`netx` 采集需要 `bpftrace` 与 root，查看与清理不需要；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。终端界面探不到终端时自动退回编号输入。
+`mvnx` 需要 Maven 或 `./mvnw`；`jvmx` 依赖 `mvnx` 与 `gradlex`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。
