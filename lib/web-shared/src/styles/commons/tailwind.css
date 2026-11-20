@@ -1,0 +1,9 @@
+/*
+ * Tailwind 工具类入口：只引主题与工具类，不引 preflight。
+ * Vuetify 自带底座样式，preflight 会改按钮、表单与标题的默认值，两套叠在一起容易互相打架。
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css";
+
+/* 共用组件不在各工程的 Vite 根目录里，显式加进来；工程自己的源码由插件自动扫描。 */
+@source "../..";

@@ -10,5 +10,6 @@ import '@fontsource/jetbrains-mono/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-500.css'
 import '@fontsource/jetbrains-mono/latin-700.css'
 import '@bash-scripts/web-shared/style.css'
+import '@bash-scripts/web-shared/tailwind.css'
 
 createApp(App).use(vuetify).mount('#app')

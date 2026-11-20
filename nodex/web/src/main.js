@@ -12,6 +12,7 @@ import '@fontsource/jetbrains-mono/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-500.css'
 import '@fontsource/jetbrains-mono/latin-700.css'
 import '@bash-scripts/web-shared/style.css'
+import '@bash-scripts/web-shared/tailwind.css'
 
 // 日志终端在设置对话框、压缩栏都用，注册成全局组件，页面里直接写 <LogView>。
 createApp(App).component('LogView', LogView).use(createPinia()).use(vuetify).mount('#app')

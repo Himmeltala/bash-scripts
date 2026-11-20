@@ -6,7 +6,8 @@
   "description": "nodex、jvmx、idex、llmx、netx 五个网页界面共用的组件、组合式函数与纯工具",
   "files": [
     "dist",
-    "vite-preset.js"
+    "vite-preset.js",
+    "src/styles/commons/tailwind.css"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -23,7 +24,8 @@
     "./layouts": "./dist/layouts.js",
     "./feedbacks": "./dist/feedbacks.js",
     "./vite-preset": "./vite-preset.js",
-    "./style.css": "./dist/web-shared.css"
+    "./style.css": "./dist/web-shared.css",
+    "./tailwind.css": "./src/styles/commons/tailwind.css"
   },
   "scripts": {
     "build": "vite build",
@@ -63,6 +65,8 @@
     }
   },
   "dependencies": {
-    "markdown-it": "^15.0.3"
+    "@tailwindcss/vite": "^4.3.5",
+    "markdown-it": "^15.0.3",
+    "tailwindcss": "^4.3.5"
   }
 }
