@@ -23,7 +23,7 @@
         :active="row.kind === 'ws' && row.id === current"
         active-color="primary"
         draggable="true"
-        :style="{ paddingLeft: `${12 + row.depth * 12}px` }"
+        :style="{ paddingLeft: `${12 + row.depth * 18}px` }"
         :class="rowClass(row)"
         @click="rowClick(row)"
         @contextmenu.prevent.stop="rowMenu($event, row)"
@@ -31,6 +31,13 @@
         @dragover.prevent="dragOver($event, row)"
         @dragend="dragEnd"
       >
+        <!-- 分组层级参考线：放到父级图标的竖中线上，子项层级一眼能看出来。 -->
+        <span
+          v-for="level in row.depth"
+          :key="level"
+          class="guide"
+          :style="{ left: `${20 + (level - 1) * 18}px` }"
+        />
         <v-list-item-title v-if="row.kind === 'group'" class="gname">
           <v-icon size="16">
             {{ collapsedIds.has(row.id) ? 'mdi-chevron-right' : 'mdi-chevron-down' }}
@@ -94,7 +101,7 @@
           :key="g.id"
           type="button"
           class="ctxitem"
-          :style="{ paddingLeft: `${10 + g.depth * 12}px` }"
+          :style="{ paddingLeft: `${10 + g.depth * 18}px` }"
           @click="moveTo(g.id)"
         >
           <v-icon size="16">mdi-folder-outline</v-icon>{{ g.name }}
@@ -686,6 +693,16 @@ function drop() {
 }
 .items :deep(.v-list-item) {
   border-radius: 8px;
+  position: relative;
+}
+/* 子项左侧的层级参考线，对着上一级图标的中线。 */
+.guide {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 1px;
+  background: rgba(var(--v-theme-on-surface), 0.14);
+  pointer-events: none;
 }
 /* 拖着的这一行淡下去，插入位置在目标行的上沿画一条线。 */
 .items :deep(.drag-src) {
@@ -705,7 +722,7 @@ function drop() {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-weight: 500;
+  font-weight: 600;
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .gtext {
