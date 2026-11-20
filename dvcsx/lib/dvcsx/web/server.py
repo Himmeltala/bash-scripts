@@ -38,14 +38,15 @@ from netutil import is_loopback_address as is_loopback
 from pathutil import PathError, safe_relative, within
 from sse import MetricsStream
 from stores import LayoutStore
+from routes_lsp import LspRoutes
 from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
+from server_common import MAX_FILE, inside, safe_rel, workspace_lock
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
 MAX_TEXT = 2 * 1024 * 1024
 # 单行超过这个宽度按大文件处理：压缩过的 JS/CSS 一行几十万字符，页面渲染不动。
 WIDE_LINE = 2000
 # 未纳入版本控制的文件没有差异可算，直接读内容预览，超过这个大小就不给。
-MAX_FILE = 512 * 1024
 SVN_TIMEOUT = 30
 GIT_TIMEOUT = 30
 # fetch 是取日志前顺手同步远端，等太久就把页面拖住了，超时先按本地记录出。
@@ -78,16 +79,6 @@ WATCH_INTERVAL = 3
 STATE_WATCH_INTERVAL = 0.5
 # 页面头部的性能指标只采一份给所有页面。
 METRICS = Metrics()
-
-
-# 同一个工作副本同时只跑一个写操作，避免两次提交或一次更新与一次提交撞在一起。
-_WS_LOCKS = {}
-_WS_LOCKS_GUARD = threading.Lock()
-
-
-def workspace_lock(wid):
-    with _WS_LOCKS_GUARD:
-        return _WS_LOCKS.setdefault(wid, threading.Lock())
 
 
 def terminate_process(proc):
@@ -961,21 +952,6 @@ def svn_commit_detail(root, rev):
         "message": entry["message"],
         "paths": entry["paths"],
     }
-
-
-def safe_rel(rel):
-    """接口收到的工作副本内相对路径：不许绝对路径，不许用 .. 跳出工作副本。"""
-    try:
-        return safe_relative(rel, "文件路径")
-    except PathError:
-        rel = (rel or "").strip()
-        if not rel:
-            raise ApiError(400, "没给文件路径")
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-
-
-def inside(root, target):
-    return within(target, root)
 
 
 def clean_paths(root, paths):
@@ -2304,7 +2280,7 @@ WRITE_ROUTES = {
 }
 
 
-class Handler(WebHandler):
+class Handler(LspRoutes, WebHandler):
     server_version = "dvcsx-web"
 
     static = None
@@ -2605,118 +2581,6 @@ class Handler(WebHandler):
         )
         files, truncated = browse_files(ws["root"], ignore)
         return {"files": files, "truncated": truncated}
-
-    def _lsp_status(self):
-        # 不拉进程，只报各语言服务器装没装；同样只认本机，免得把本机有什么暴露出去。
-        self._check_write()
-        if self.lsp is None:
-            raise ApiError(404, "代码索引没有起来")
-        return {"servers": self.lsp.status()}
-
-    def _lsp_definition(self, body):
-        return self._lsp_query(body, "definition")
-
-    def _lsp_file_args(self, body):
-        self._check_write()
-        if self.lsp is None:
-            raise ApiError(404, "代码索引没有起来")
-        ws = self.store.find(str(body.get("ws", "")))
-        if ws is None:
-            raise ApiError(404, "没有这个工作区：%s" % body.get("ws", ""))
-        rel = safe_rel(str(body.get("path", "")))
-        full = os.path.join(ws["root"], rel)
-        if not inside(ws["root"], full) or not os.path.isfile(full):
-            raise ApiError(400, "文件不存在：%s" % rel)
-        text = body.get("text")
-        if not isinstance(text, str):
-            raise ApiError(400, "要把文件内容一起带上")
-        if len(text.encode("utf-8")) > MAX_FILE:
-            raise ApiError(400, "文件太大，超过 %d KB 不做索引" % (MAX_FILE // 1024))
-        return ws, rel, text
-
-    def _lsp_args(self, body):
-        ws, rel, text = self._lsp_file_args(body)
-        try:
-            line = int(body.get("line"))
-            character = int(body.get("character"))
-        except (TypeError, ValueError):
-            raise ApiError(400, "行与列要是整数")
-        if line < 0 or character < 0:
-            raise ApiError(400, "行与列不能是负数")
-        return ws, rel, text, line, character
-
-    def _lsp_query(self, body, action="definition"):
-        ws, rel, text, line, character = self._lsp_args(body)
-        try:
-            return self.lsp.query(ws["id"], ws["root"], rel, text, line, character, action)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
-
-    def _lsp_symbols(self, body):
-        ws, rel, text = self._lsp_file_args(body)
-        try:
-            return self.lsp.symbols(ws["id"], ws["root"], rel, text)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
-
-    def _lsp_hover(self, body):
-        ws, rel, text, line, character = self._lsp_args(body)
-        try:
-            return self.lsp.hover(ws["id"], ws["root"], rel, text, line, character)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
-
-    def _lsp_diagnostics(self, body):
-        ws, rel, text = self._lsp_file_args(body)
-        try:
-            return self.lsp.diagnostics(ws["id"], ws["root"], rel, text)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
-
-    def _lsp_rename(self, body, apply=False):
-        ws, rel, text, line, character = self._lsp_args(body)
-        name = body.get("newName")
-        if not isinstance(name, str):
-            raise ApiError(400, "要给新名字")
-        try:
-            data = self.lsp.rename_plan(
-                ws["id"], ws["root"], rel, text, line, character, name
-            )
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
-        plan = data["plan"]
-        summary = {
-            "server": data["server"],
-            "files": [{"path": item["path"], "edits": len(item["edits"])} for item in plan],
-            "total": sum(len(item["edits"]) for item in plan),
-        }
-        if not apply:
-            return summary
-        lock = workspace_lock(ws["id"])
-        if not lock.acquire(blocking=False):
-            raise ApiError(409, "这个工作副本上还有别的操作在跑，等它结束再重命名")
-        try:
-            applied = apply_workspace_edit(ws["root"], plan)
-        except LspError as exc:
-            raise ApiError(400, str(exc))
-        finally:
-            lock.release()
-        return {
-            "server": data["server"],
-            "files": applied,
-            "total": sum(item["edits"] for item in applied),
-            "applied": True,
-        }
 
     def _commit_detail(self, query):
         ws = self._ws(query)
