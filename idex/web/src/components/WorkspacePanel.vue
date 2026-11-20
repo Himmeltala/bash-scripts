@@ -81,8 +81,8 @@ function closeEvents() {
 function openEvents() {
   closeEvents()
   // 页面在后台就不占着服务端的检查线程，回到前台再连，首推会补上这段变化。
-  // 普通目录没有版本控制可查，不用连这条推送。
-  if (!props.ws || !props.ws.id || plain.value || document.hidden) return
+  // 普通目录也连：服务端按目录项的大小与修改时间做指纹，浏览页同样能跟着刷新。
+  if (!props.ws || !props.ws.id || document.hidden) return
   events = new EventSource(workspaceEventsUrl(props.ws.id))
   events.addEventListener('changes', (event) => {
     let data = {}

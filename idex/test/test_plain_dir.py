@@ -76,8 +76,24 @@ class PlainDirTest(unittest.TestCase):
             names = zipfile.ZipFile(io.BytesIO(data)).namelist()
             self.assertIn("root/node_modules/x.js", names)
 
-    def test_change_signature_skips_plain_dir(self):
-        self.assertEqual(web.changes_signature({"vcs": "none", "root": "/tmp"}), (None, 0, None))
+    def test_change_signature_sees_plain_dir_edits(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.txt").write_text("hello", encoding="utf-8")
+            ws = {"vcs": "none", "root": td}
+            sig1, count1, rev1 = web.changes_signature(ws)
+            self.assertIsNotNone(sig1)
+            self.assertEqual(count1, 1)
+            self.assertIsNone(rev1)
+            self.assertEqual(web.changes_signature(ws)[0], sig1)
+
+            (root / "b.txt").write_text("new", encoding="utf-8")
+            sig2, count2, _ = web.changes_signature(ws)
+            self.assertNotEqual(sig2, sig1)
+            self.assertEqual(count2, 2)
+
+            (root / "a.txt").write_text("hello world", encoding="utf-8")
+            self.assertNotEqual(web.changes_signature(ws)[0], sig2)
 
 
 if __name__ == "__main__":

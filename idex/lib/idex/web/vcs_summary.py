@@ -1,6 +1,7 @@
 """变更清单与状态指纹：把 git 与 svn 的结果合成页面要的形状。"""
 
 import hashlib
+import os
 import shutil
 
 from web import ApiError
@@ -39,9 +40,10 @@ def changes_signature(ws):
 
     指纹变了才提醒页面；版本变了说明外面提交或更新过，日志与同步页要重读。
     """
-    # 普通目录没有版本控制可查，页面也只开浏览目录，不接这条推送。
+    # 普通目录没有版本控制可查：按目录项的名字、大小与修改时间做指纹，浏览页照样能收到变化。
     if ws.get("vcs") == "none":
-        return None, 0, None
+        signature, count = dir_signature(ws["root"])
+        return signature, count, None
     if ws.get("vcs") == "git":
         rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=ws["root"])
         if rc != 0:
@@ -58,6 +60,39 @@ def changes_signature(ws):
     if rc != 0:
         return None, 0, None
     return hashlib.sha1(out).hexdigest(), len(parse_status(out)), svn_revision(ws["root"])
+
+
+# 普通目录的指纹：递归读每项的路径、大小与修改时间。条目太多时扫到上限就停，
+# 免得几万个文件的目录每轮检查都全量走一遍。
+DIR_SCAN_MAX = 20000
+
+
+def dir_signature(root):
+    """普通目录当前状态的指纹，返回值与 changes_signature 的计数配套。"""
+    sig = hashlib.sha1()
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        try:
+            st = os.stat(dirpath)
+            rel = os.path.relpath(dirpath, root)
+            sig.update(("%s\0%d\n" % (rel, st.st_mtime_ns)).encode("utf-8", "replace"))
+        except OSError:
+            pass
+        for name in sorted(filenames):
+            path = os.path.join(dirpath, name)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            sig.update(
+                ("%s\0%d\0%d\n" % (os.path.relpath(path, root), st.st_size, st.st_mtime_ns))
+                .encode("utf-8", "replace")
+            )
+            count += 1
+            if count >= DIR_SCAN_MAX:
+                return sig.hexdigest(), count
+    return sig.hexdigest(), count
 
 
 def detect_vcs(root):
