@@ -4,7 +4,8 @@
       class="row"
       :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick }]"
       :data-path="key"
-      :style="{ paddingLeft: 4 + depth * 14 + 'px' }"
+      :data-type="node.type"
+      :style="{ paddingLeft: 4 + depth * 18 + 'px' }"
       @click="onRowClick"
       @contextmenu.prevent.stop="onContext"
     >

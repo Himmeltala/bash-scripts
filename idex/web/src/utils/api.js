@@ -24,6 +24,36 @@ export function jobEventsUrl(id) {
   return `${PREFIX}/operations/${encodeParam(id)}/events`
 }
 
+// 上传一个文件：请求体就是文件本身，名字与目录放查询参数。
+// 只有 XHR 能拿到上传进度，所以这里不走 fetch；失败时把状态码挂到 error 上。
+export function uploadFile(ws, dir, file, { overwrite = false, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const params = new URLSearchParams({ ws, dir, name: file.name })
+    if (overwrite) params.set('overwrite', '1')
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${PREFIX}/upload?${params.toString()}`)
+    xhr.responseType = 'json'
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) onProgress(event.loaded, event.total)
+      })
+    }
+    xhr.addEventListener('load', () => {
+      const data = xhr.response
+      if (xhr.status === 200 && data) {
+        resolve(data)
+        return
+      }
+      const err = new Error((data && data.error) || `上传失败（${xhr.status}）`)
+      err.status = xhr.status
+      reject(err)
+    })
+    xhr.addEventListener('error', () => reject(new Error('上传中断，检查网络或服务')))
+    xhr.addEventListener('abort', () => reject(new Error('上传已取消')))
+    xhr.send(file)
+  })
+}
+
 export const api = {
   state: () => call('GET', '/state'),
   dirs: (path = '') => call('GET', `/dirs${path ? `?path=${encodeParam(path)}` : ''}`),

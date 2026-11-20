@@ -42,7 +42,7 @@ from routes_lsp import LspRoutes
 from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
 from server_common import MAX_FILE, inside, log, safe_rel, workspace_lock
 from vcs_cli import GIT_TIMEOUT, SVN_TIMEOUT, git, svn
-from browse_fs import browse_file, browse_files, browse_list, browse_rel, browse_search, delete_entry, make_entry, read_unversioned, rename_entry, save_file
+from browse_fs import browse_file, browse_files, browse_list, browse_rel, browse_search, delete_entry, make_entry, read_unversioned, rename_entry, save_file, save_upload
 from routes_browse import BrowseRoutes
 from vcs_query import (
     svn_revision,
@@ -543,6 +543,42 @@ class Handler(JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes
         if self.allow_write or is_loopback(self.client_address[0]):
             return
         raise ApiError(403, "写操作只允许本机发起；要放开给其他机器，用 --allow-write 启动")
+
+    # 上传：请求体是文件原始字节，目录与文件名走查询参数，不走 JSON 那一套。
+
+    def _raw_post(self, route, query):
+        if route != "upload":
+            return False
+        try:
+            result = self._upload(query)
+        except ApiError as exc:
+            self._json(exc.status, {"error": exc.message})
+            return True
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return True
+        except Exception as exc:
+            self._error_log("上传出错 %s：%r" % (self.path, exc))
+            self._json(500, {"error": "服务端出错：%s" % exc})
+            return True
+        self._json(200, result)
+        return True
+
+    def _upload(self, query):
+        self._check_write()
+        ws = self.store.find((query.get("ws") or [""])[0])
+        if ws is None:
+            raise ApiError(404, "没有这个工作区")
+        length = self.headers.get("Content-Length")
+        if length is None:
+            raise ApiError(411, "上传必须带 Content-Length")
+        try:
+            length = int(length)
+        except ValueError:
+            raise ApiError(400, "Content-Length 不对")
+        rel = (query.get("dir") or [""])[0]
+        name = (query.get("name") or [""])[0]
+        overwrite = (query.get("overwrite") or [""])[0] == "1"
+        return save_upload(ws["root"], rel, name, self.rfile, length, overwrite)
 
 
 def serve(args):

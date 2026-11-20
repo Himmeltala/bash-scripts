@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """浏览目录的增删改：新建、改名、删除，已纳管的要走 svn 与 git，未纳管的直接动磁盘。"""
 
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 HERE = Path(__file__).resolve().parent
 SERVER = HERE.parent / "lib" / "idex" / "web" / "server.py"
@@ -82,6 +86,56 @@ class PlainDirOps(unittest.TestCase):
         status, data = self.call("/newfile", {"dir": "", "name": "a.txt"})
         self.assertEqual(status, 409, data)
         self.assertEqual((self.root / "a.txt").read_text("utf-8"), "a\n")
+
+    def upload(self, dir, name, data, overwrite=False):
+        url = "%s/upload?ws=%s&dir=%s&name=%s%s" % (
+            self.base,
+            self.ws,
+            quote(dir),
+            quote(name),
+            "&overwrite=1" if overwrite else "",
+        )
+        req = urllib.request.Request(url, data=data, method="POST")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    def test_upload_writes_raw_bytes(self):
+        payload = b"hello\x00world\xff"
+        status, data = self.upload("", "a.bin", payload)
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["path"], "a.bin")
+        self.assertEqual(data["size"], len(payload))
+        self.assertEqual((self.root / "a.bin").read_bytes(), payload)
+
+        status, data = self.call("/mkdir", {"dir": "", "name": "上传目录"})
+        self.assertEqual(status, 200, data)
+        status, data = self.upload("上传目录", "说明.md", "中文".encode("utf-8"))
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["path"], "上传目录/说明.md")
+        self.assertEqual((self.root / "上传目录" / "说明.md").read_text("utf-8"), "中文")
+
+    def test_upload_conflict_and_overwrite(self):
+        (self.root / "existing.txt").write_text("old", encoding="utf-8")
+        status, data = self.upload("", "existing.txt", b"new")
+        self.assertEqual(status, 409, data)
+        self.assertEqual((self.root / "existing.txt").read_text("utf-8"), "old")
+
+        status, data = self.upload("", "existing.txt", b"new", overwrite=True)
+        self.assertEqual(status, 200, data)
+        self.assertEqual((self.root / "existing.txt").read_text("utf-8"), "new")
+
+    def test_upload_rejects_empty_and_bad_names(self):
+        status, data = self.upload("", "empty.txt", b"")
+        self.assertEqual(status, 400, data)
+        self.assertFalse((self.root / "empty.txt").exists())
+
+        for name in ("../escape.txt", "a/b.txt", "."):
+            status, data = self.upload("", name, b"x")
+            self.assertEqual(status, 400, data)
+        self.assertFalse((Path(self.root).parent / "escape.txt").exists())
 
     def test_rename_then_delete(self):
         status, data = self.call("/rename", {"path": "a.txt", "name": "b.txt"})

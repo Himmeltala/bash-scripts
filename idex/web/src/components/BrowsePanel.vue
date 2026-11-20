@@ -7,7 +7,14 @@
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
 <template>
-  <div class="panel" @keydown.ctrl.s.prevent="save" @keydown="onPanelKey">
+  <div
+    class="panel"
+    @keydown.ctrl.s.prevent="save"
+    @keydown="onPanelKey"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDropFiles"
+  >
     <div class="bar">
       <div class="left">
         <v-text-field
@@ -86,6 +93,14 @@
     <div ref="splitRef" class="body" :class="{ resizing }">
       <aside class="tree" :style="{ '--tree-width': `${treeWidth}px` }">
         <div v-if="!searching" class="tree-tools">
+          <v-btn
+            icon="mdi-upload"
+            size="x-small"
+            variant="text"
+            title="上传文件到当前目录（也可以直接拖文件进来）"
+            @click="pickUpload()"
+          />
+          <input ref="uploadInput" type="file" multiple hidden @change="onUploadPicked" />
           <v-btn
             icon="mdi-collapse-all-outline"
             size="x-small"
@@ -559,6 +574,51 @@
       </template>
     </FloatingDialog>
 
+    <div v-if="dragOn" class="drop-mask">
+      <v-icon size="40">mdi-cloud-upload-outline</v-icon>
+      <p>{{ dropHint }}</p>
+    </div>
+
+    <div v-if="uploads.length" class="upload-panel">
+      <div class="upload-head">
+        <span>{{ uploadBusy ? '正在上传' : '上传完成' }}</span>
+        <button type="button" class="upload-close" title="关闭" @click="clearUploads">
+          <v-icon size="14">mdi-close</v-icon>
+        </button>
+      </div>
+      <div v-for="item in uploads" :key="item.id" class="upload-row">
+        <div class="upload-line">
+          <span class="upload-name" :title="item.error || item.name">{{ item.name }}</span>
+          <span class="upload-state" :class="item.state">{{ uploadStateText(item) }}</span>
+        </div>
+        <v-progress-linear
+          v-if="item.state === 'uploading'"
+          :model-value="item.percent"
+          height="3"
+          color="primary"
+        />
+      </div>
+    </div>
+
+    <FloatingDialog
+      v-model="uploadAsk.on"
+      :initial-width="420"
+      :initial-height="250"
+      :min-width="340"
+      :min-height="200"
+      persistent
+    >
+      <template #title>同名文件已存在</template>
+      <p class="up-conflict">{{ uploadAsk.name }}</p>
+      <p class="ask-hint">覆盖会替换目录里现有的同名文件。</p>
+      <template #actions>
+        <v-btn variant="text" @click="answerUpload('skip')">跳过</v-btn>
+        <v-btn variant="text" @click="answerUpload('cancel')">取消其余</v-btn>
+        <v-spacer />
+        <v-btn color="error" variant="flat" @click="answerUpload('overwrite')">覆盖</v-btn>
+      </template>
+    </FloatingDialog>
+
     <FloatingDialog
       v-model="lineAsk.on"
       :initial-width="360"
@@ -641,7 +701,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { api } from '../utils/api'
+import { api, uploadFile } from '../utils/api'
 import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
@@ -1114,7 +1174,7 @@ const {
   delAsk,
   nameTitle,
   nameLabel,
-  onTreeAction,
+  onTreeAction: onBrowseAction,
   submitName,
   submitDelete,
 } = useBrowseFiles({
@@ -1127,6 +1187,15 @@ const {
   reveal: (dir) => treeRef.value?.reveal(dir),
   reload: (dir) => treeRef.value?.reloadDir(dir),
 })
+
+// 目录树右键：上传交给本组件的文件选择，其余动作照旧交给组合式函数。
+function onTreeAction(payload) {
+  if (payload.action === 'upload') {
+    pickUpload(payload.node && payload.node.path)
+    return
+  }
+  return onBrowseAction(payload)
+}
 
 function save() {
   editorOf(activePath.value)?.save()
@@ -1229,6 +1298,156 @@ onBeforeUnmount(() => {
   clearTimeout(refreshTimer)
 })
 
+// 上传：选文件或拖进来，逐个传，各自显示进度；同名文件逐个问要不要覆盖。
+const uploadInput = ref(null)
+const uploads = ref([])
+const uploadBusy = ref(false)
+const dragOn = ref(false)
+const dropHint = ref('')
+const uploadAsk = reactive({ on: false, name: '' })
+let uploadSeq = 0
+let uploadAnswer = null
+let uploadHideTimer = 0
+
+function activeDir() {
+  const tab = activeTab.value
+  return tab && tab.path ? dirName(tab.path) : ''
+}
+
+let uploadTarget = null
+
+function pickUpload(dir) {
+  // 右键目录时传进来就传到那个目录；工具栏按钮不传，落到当前文件所在目录。
+  uploadTarget = typeof dir === 'string' ? dir : null
+  uploadInput.value?.click()
+}
+
+function onUploadPicked(event) {
+  const files = [...(event.target.files || [])]
+  event.target.value = ''
+  const dir = uploadTarget === null ? activeDir() : uploadTarget
+  uploadTarget = null
+  startUpload(files, dir)
+}
+
+// 拖到目录行就传进那个目录，拖到文件行传进它所在目录，空白处传进当前文件所在目录。
+function dropTargetDir(event) {
+  const row = event.target instanceof Element ? event.target.closest('.row[data-path]') : null
+  if (!row) return activeDir()
+  const path = row.dataset.path || ''
+  if (!path) return ''
+  return row.dataset.type === 'dir' ? path : dirName(path)
+}
+
+function onDragOver(event) {
+  if (![...(event.dataTransfer?.types || [])].includes('Files')) return
+  event.preventDefault()
+  dragOn.value = true
+  const dir = dropTargetDir(event)
+  dropHint.value = `上传到 ${dir || '/'}`
+}
+
+function onDragLeave(event) {
+  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return
+  dragOn.value = false
+}
+
+function onDropFiles(event) {
+  if (!event.dataTransfer) return
+  const files = [...event.dataTransfer.files]
+  dragOn.value = false
+  if (!files.length) return
+  event.preventDefault()
+  startUpload(files, dropTargetDir(event))
+}
+
+function uploadStateText(item) {
+  if (item.state === 'uploading') return `${item.percent}%`
+  if (item.state === 'done') return '完成'
+  if (item.state === 'skipped') return '跳过'
+  return '失败'
+}
+
+function clearUploads() {
+  clearTimeout(uploadHideTimer)
+  uploads.value = []
+}
+
+function askUpload(name) {
+  uploadAsk.name = name
+  uploadAsk.on = true
+  return new Promise((resolve) => {
+    uploadAnswer = resolve
+  })
+}
+
+function answerUpload(kind) {
+  uploadAsk.on = false
+  if (!uploadAnswer) return
+  const resolve = uploadAnswer
+  uploadAnswer = null
+  resolve(kind)
+}
+
+async function startUpload(files, dir) {
+  if (!files.length) return
+  clearTimeout(uploadHideTimer)
+  uploadBusy.value = true
+  let cancelled = false
+  for (const file of files) {
+    if (cancelled) break
+    const item = reactive({
+      id: ++uploadSeq,
+      name: file.name,
+      state: 'uploading',
+      percent: 0,
+      error: '',
+    })
+    uploads.value.push(item)
+    let overwrite = false
+    while (true) {
+      try {
+        await uploadFile(props.ws.id, dir, file, {
+          overwrite,
+          onProgress: (loaded, total) => {
+            item.percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0
+          },
+        })
+        item.state = 'done'
+        item.percent = 100
+        break
+      } catch (err) {
+        if (err.status === 409 && !overwrite) {
+          const answer = await askUpload(file.name)
+          if (answer === 'overwrite') {
+            overwrite = true
+            continue
+          }
+          if (answer === 'skip') {
+            item.state = 'skipped'
+            break
+          }
+          cancelled = true
+          item.state = 'skipped'
+          break
+        }
+        item.state = 'failed'
+        item.error = err.message
+        break
+      }
+    }
+  }
+  uploadBusy.value = false
+  await treeRef.value?.reloadDir(dir)
+  await treeRef.value?.reveal(dir)
+  // 没有失败就过几秒自己收起来；有失败留给人看一眼。
+  if (!uploads.value.some((item) => item.state === 'failed')) {
+    uploadHideTimer = setTimeout(() => {
+      uploads.value = []
+    }, 4000)
+  }
+}
+
 async function refresh() {
   refreshing.value = true
   try {
@@ -1276,10 +1495,92 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+}
+/* 拖文件进来时盖住整块浏览区，提示会传到哪个目录。 */
+.drop-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed rgb(var(--v-theme-primary));
+  border-radius: 8px;
+  background: rgba(var(--v-theme-surface), 0.86);
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+/* 上传进度：右下角小卡片，不挡目录树的操作。 */
+.upload-panel {
+  position: absolute;
+  right: 16px;
+  bottom: 32px;
+  z-index: 20;
+  width: 280px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.upload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.upload-close {
+  display: flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.upload-row + .upload-row {
+  margin-top: 6px;
+}
+.upload-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+.upload-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-state {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.upload-state.done {
+  color: rgb(var(--v-theme-ready));
+}
+.upload-state.failed {
+  color: rgb(var(--v-theme-error));
+}
+.up-conflict {
+  margin: 0;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 0.84rem;
+  word-break: break-all;
 }
 .bar {
   display: flex;

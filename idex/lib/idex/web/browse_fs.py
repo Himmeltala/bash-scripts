@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from web import ApiError
@@ -295,6 +296,48 @@ def make_entry(root, rel, name, kind):
     except OSError as exc:
         raise ApiError(403, "建不了：%s" % exc)
     return {"path": join_rel(parent_rel, name), "name": name, "type": kind}
+
+
+# 上传按块从连接里读，边收边写，多大都不占内存。
+UPLOAD_CHUNK = 64 * 1024
+
+
+def save_upload(root, rel, name, stream, length, overwrite=False):
+    """收一个上传的文件：先写同目录的临时文件，收全了再原子改名。
+
+    断网、取消、写盘失败都不会在目标位置留下半截文件。
+    """
+    parent_rel, parent = browse_parent(root, rel)
+    name = entry_name(name)
+    target = os.path.join(parent, name)
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % join_rel(parent_rel, name))
+    if os.path.isdir(target):
+        raise ApiError(409, "这里是目录，不能覆盖：%s" % name)
+    if os.path.lexists(target) and not overwrite:
+        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
+    if length <= 0:
+        raise ApiError(400, "上传内容为空")
+    fd, tmp = tempfile.mkstemp(prefix=".upload-", suffix=".part", dir=parent)
+    total = 0
+    try:
+        with os.fdopen(fd, "wb") as out:
+            remain = length
+            while remain > 0:
+                chunk = stream.read(min(UPLOAD_CHUNK, remain))
+                if not chunk:
+                    raise ApiError(400, "上传中断：只收到 %d/%d 字节" % (total, length))
+                out.write(chunk)
+                total += len(chunk)
+                remain -= len(chunk)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return {"path": join_rel(parent_rel, name), "name": name, "size": total}
 
 
 def rename_entry(root, vcs, rel, name):

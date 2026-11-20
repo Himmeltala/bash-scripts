@@ -151,6 +151,9 @@ class WebHandler(BaseHTTPRequestHandler):
         try:
             if method == "POST":
                 self._check_origin()
+                # 上传这类请求体不是 JSON 的接口自己读流自己回，不走下面的 JSON 流程。
+                if self._raw_post(route, query):
+                    return
             body = self._read_json() if method == "POST" else {}
             result = self._dispatch(method, route, query, body)
         except ApiError as exc:
@@ -169,6 +172,10 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _stream_routes(self, route, query):
         """GET 里要先接下的流式接口；返回 True 表示已经写完。"""
+        return False
+
+    def _raw_post(self, route, query):
+        """请求体不是 JSON 的 POST 接口；返回 True 表示已经自己回完。"""
         return False
 
     def _dispatch(self, method, route, query, body):

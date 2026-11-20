@@ -91,6 +91,15 @@
             <span>{{ text.newDir }}</span>
           </button>
           <button
+            v-if="isDirNode"
+            class="ft-item"
+            type="button"
+            @click="run('upload')"
+          >
+            <v-icon size="16">mdi-cloud-upload-outline</v-icon>
+            <span>{{ text.upload }}</span>
+          </button>
+          <button
             class="ft-item"
             type="button"
             :disabled="!relativePath"
@@ -176,6 +185,7 @@ const DEFAULTS = {
   copied: '已复制',
   newFile: '新建文件',
   newDir: '新建目录',
+  upload: '上传文件',
   rename: '重命名',
   delete: '删除',
 }
