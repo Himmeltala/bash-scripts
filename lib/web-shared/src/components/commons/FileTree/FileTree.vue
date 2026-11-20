@@ -278,6 +278,14 @@ async function reloadExpanded() {
   await Promise.all(keys.map((key) => load(key, true)))
 }
 
+// 只知道哪几处变了：重读这些路径所在的层，折叠着的目录不用管。
+async function reloadDirs(keys) {
+  const wanted = new Set(Array.isArray(keys) ? keys : [])
+  wanted.add(rootKey.value)
+  const list = [...wanted].filter((key) => key === rootKey.value || expanded[key])
+  await Promise.all(list.map((key) => load(key, true)))
+}
+
 // 把某一行滚进视口：切换页签时左侧树跟着定位，行按路径找，不用拼选择器。
 function scrollTo(key) {
   const rows = rootRef.value ? rootRef.value.querySelectorAll('[data-path]') : []
@@ -415,6 +423,7 @@ defineExpose({
   reload,
   reloadDir,
   reloadExpanded,
+  reloadDirs,
   refreshAll,
   scrollTo,
   toggle,

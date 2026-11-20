@@ -755,6 +755,8 @@ const props = defineProps({
   ws: { type: Object, required: true },
   // 工作副本的推送计数：外部有变动就加一，浏览页据此重读目录并标记已打开的文件。
   refresh: { type: Number, default: 0 },
+  // 这一轮变动的路径；为空表示只知道变了，不知道是哪几处。
+  changedPaths: { type: Array, default: () => [] },
 })
 
 const treeRef = ref(null)
@@ -921,6 +923,7 @@ function collapseAll() {
 
 // 文件的取数与落盘留在这一侧，编辑器只认路径和文本。
 const loadFile = (path) => api.file(props.ws.id, path)
+const statFile = (path) => api.stat(props.ws.id, path)
 const saveFile = (path, text) => api.save(props.ws.id, path, text)
 
 const held = computed(() => (isHeldNode(activeTab.value) ? activeTab.value : null))
@@ -1250,10 +1253,12 @@ function iconOf(hit) {
 // 外部变化的重读：事件合并、只重读展开的层、打开的文件只打标记，细节在同名组合式函数里。
 const diskSync = useBrowseDiskSync({
   refresh: () => props.refresh,
+  changedPaths: () => props.changedPaths,
   tabs,
   activeTab,
   editorOf,
   loadFile,
+  statFile,
   refreshDiagnostics,
   activate,
   searching,

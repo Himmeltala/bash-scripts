@@ -21,13 +21,28 @@ export function fuzzyScore(query, text) {
   return index
 }
 
+// 分数小的在前，同分按路径排；只留得住前 limit 条，不必为两万条路径全排序。
+function better(a, b) {
+  return a.score < b.score || (a.score === b.score && a.path.localeCompare(b.path) < 0)
+}
+
 export function filterPaths(paths, query, limit = 100) {
-  const rows = []
+  if (limit <= 0) return []
+  const best = []
   for (const path of paths || []) {
     const score = fuzzyScore(query, path)
     if (score < 0) continue
-    rows.push({ path, score })
+    const row = { path, score }
+    if (best.length >= limit && !better(row, best[best.length - 1])) continue
+    let low = 0
+    let high = best.length
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (better(best[mid], row)) low = mid + 1
+      else high = mid
+    }
+    best.splice(low, 0, row)
+    if (best.length > limit) best.pop()
   }
-  rows.sort((a, b) => a.score - b.score || a.path.localeCompare(b.path))
-  return rows.slice(0, limit).map((row) => row.path)
+  return best.map((row) => row.path)
 }

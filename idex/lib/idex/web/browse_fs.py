@@ -6,6 +6,8 @@ import pwd
 import shutil
 import stat
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from web import ApiError
@@ -34,7 +36,10 @@ def browse_rel(rel):
 
 
 def browse_list(root, rel):
-    """列一层目录，目录在前、文件在后；只认登记目录底下的东西。"""
+    """列一层目录，目录在前、文件在后；只认登记目录底下的东西。
+
+    先收名字排序，只给真正要显示的那一段取大小；大目录不必为截断掉的部分逐个 stat。
+    """
     rel = browse_rel(rel).rstrip("/")
     target = os.path.join(root, rel) if rel else root
     if not inside(root, target):
@@ -49,26 +54,32 @@ def browse_list(root, rel):
                     is_dir = entry.is_dir(follow_symlinks=True)
                 except OSError:
                     is_dir = False
-                item = {
-                    "name": entry.name,
-                    "path": (rel + "/" + entry.name) if rel else entry.name,
-                    "type": "dir" if is_dir else "file",
-                }
-                if not is_dir:
-                    try:
-                        item["size"] = entry.stat(follow_symlinks=True).st_size
-                    except OSError:
-                        item["size"] = 0
-                entries.append(item)
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": (rel + "/" + entry.name) if rel else entry.name,
+                        "type": "dir" if is_dir else "file",
+                    }
+                )
     except OSError as exc:
         raise ApiError(403, "读不了目录：%s" % exc)
     entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
     truncated = len(entries) > BROWSE_MAX
-    return {"path": rel, "entries": entries[:BROWSE_MAX], "truncated": truncated}
+    shown = entries[:BROWSE_MAX]
+    for item in shown:
+        if item["type"] == "file":
+            try:
+                item["size"] = os.stat(os.path.join(target, item["name"]), follow_symlinks=True).st_size
+            except OSError:
+                item["size"] = 0
+    return {"path": rel, "entries": shown, "truncated": truncated}
 
 
-def search_lines(path, needle):
-    """逐行找内容，跳过二进制、超大与不是 UTF-8 的文件，产出 (行号, 行文本)。"""
+def search_lines(path, needle, should_stop=None, needle_bytes=None):
+    """逐行找内容，跳过二进制、超大与不是 UTF-8 的文件，产出 (行号, 行文本)。
+
+    纯 ASCII 的查询先用字节比一遍，整份文件没有命中的就不做 UTF-8 解码。
+    """
     try:
         if os.path.getsize(path) > MAX_FILE:
             return
@@ -77,37 +88,83 @@ def search_lines(path, needle):
         return
     if b"\x00" in data:
         return
+    if needle_bytes is not None and needle_bytes not in data.lower():
+        return
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return
     for number, line in enumerate(text.splitlines(), 1):
+        if should_stop is not None and number % 200 == 0 and should_stop():
+            return
         if needle in line.lower():
             yield number, line.strip()[:SEARCH_LINE_MAX]
 
 
-def browse_files(root, ignore=()):
-    """快速打开用的文件清单：跳过 ignore 里的目录，按路径排序，到上限就停。"""
+# 快速打开的文件清单缓存：同一工作区连续用不必每次全量扫。
+FILES_CACHE_TTL = 30
+FILES_CACHE_MAX = 32
+_FILES_CACHE = {}
+_FILES_LOCK = threading.Lock()
+
+
+def _ignored_path(relpath, skip):
+    if not skip:
+        return False
+    return any(part in skip for part in relpath.split("/")[:-1])
+
+
+def browse_files(root, ignore=(), vcs="none"):
+    """快速打开用的文件清单：跳过 ignore 里的目录，按路径排序，到上限就停。
+
+    Git 工作区直接用 git ls-files，它认得忽略规则，也比 Python 逐层走快。
+    结果缓存一小段时间，页面切走再回来不必重扫。
+    """
     skip = {str(name) for name in ignore if name}
-    out = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(name for name in dirnames if name not in skip)
-        for name in sorted(filenames):
-            path = os.path.join(dirpath, name)
-            if not inside(root, path):
-                continue
-            out.append(os.path.relpath(path, root).replace(os.sep, "/"))
-            if len(out) >= FILES_MAX:
-                return out, True
-    return out, False
+    key = (root, tuple(sorted(skip)), vcs)
+    now = time.time()
+    with _FILES_LOCK:
+        hit = _FILES_CACHE.get(key)
+        if hit is not None and now - hit[0] < FILES_CACHE_TTL:
+            return hit[1]
+    result = None
+    if vcs == "git":
+        rc, out, _ = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=root)
+        if rc == 0:
+            files = [item for item in out.decode("utf-8", "replace").split("\0") if item]
+            files = sorted(item for item in files if not _ignored_path(item, skip))
+            result = (files[:FILES_MAX], len(files) > FILES_MAX)
+    if result is None:
+        out = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(name for name in dirnames if name not in skip)
+            for name in sorted(filenames):
+                path = os.path.join(dirpath, name)
+                if not inside(root, path):
+                    continue
+                out.append(os.path.relpath(path, root).replace(os.sep, "/"))
+                if len(out) >= FILES_MAX:
+                    result = (out, True)
+                    break
+            if result is not None:
+                break
+        if result is None:
+            result = (out, False)
+    with _FILES_LOCK:
+        if len(_FILES_CACHE) >= FILES_CACHE_MAX:
+            oldest = min(_FILES_CACHE, key=lambda item: _FILES_CACHE[item][0])
+            _FILES_CACHE.pop(oldest, None)
+        _FILES_CACHE[key] = (now, result)
+    return result
 
 
-def browse_search(root, rel, query, mode, ignore=()):
+def browse_search(root, rel, query, mode, ignore=(), should_stop=None):
     """在工作副本里按文件名或文件内容找。
 
     文件名只看文件本身的名字，做不区分大小写的包含匹配，不看所在目录；内容逐行
     找，只读预览得了的文本文件。ignore 里的目录名在任何一层出现都不往里走。
     命中或扫过的文件到上限就停，truncated 说明还有没扫完的。
+    should_stop 由调用方给：查询换了代就让它尽快收手，别把旧结果扫完。
     """
     base = browse_rel(rel).rstrip("/")
     target = os.path.join(root, base) if base else root
@@ -121,13 +178,21 @@ def browse_search(root, rel, query, mode, ignore=()):
     if not needle:
         return {"query": "", "mode": mode, "matches": [], "truncated": False}
     low = needle.lower()
+    needle_bytes = low.encode("utf-8") if low.isascii() else None
     skip = {str(name) for name in ignore if name}
     matches = []
     scanned = 0
     truncated = False
+    cancelled = False
     for dirpath, dirnames, filenames in os.walk(target):
+        if should_stop is not None and should_stop():
+            cancelled = True
+            break
         dirnames[:] = sorted(name for name in dirnames if name not in skip)
         for name in sorted(filenames):
+            if should_stop is not None and scanned % 200 == 0 and should_stop():
+                cancelled = True
+                break
             path = os.path.join(dirpath, name)
             # 链接指到工作副本外的不看，免得搜到别人的文件。
             if not inside(root, path):
@@ -142,7 +207,7 @@ def browse_search(root, rel, query, mode, ignore=()):
                 if low in name.lower():
                     matches.append({"path": relpath, "name": name, "size": size})
             else:
-                for number, line in search_lines(path, low):
+                for number, line in search_lines(path, low, should_stop, needle_bytes):
                     matches.append(
                         {
                             "path": relpath,
@@ -157,13 +222,14 @@ def browse_search(root, rel, query, mode, ignore=()):
             if len(matches) > SEARCH_MAX or scanned >= SEARCH_FILES_MAX:
                 truncated = True
                 break
-        if truncated:
+        if truncated or cancelled:
             break
     return {
         "query": needle,
         "mode": mode,
         "matches": matches[:SEARCH_MAX],
         "truncated": truncated,
+        "cancelled": cancelled,
         "scanned": scanned,
     }
 
@@ -174,6 +240,14 @@ def browse_file(root, rel):
     if not rel:
         raise ApiError(400, "没给文件路径")
     return read_unversioned(root, rel)
+
+
+def browse_file_info(root, rel):
+    """读文件内容并带上修改时间与大小，页面据此判断磁盘上那份换没换。"""
+    rel = browse_rel(rel)
+    text = browse_file(root, rel)
+    info = os.stat(os.path.join(root, rel))
+    return {"text": text, "size": info.st_size, "mtime_ns": info.st_mtime_ns}
 
 
 def read_unversioned(root, rel):
@@ -341,6 +415,7 @@ def entry_stat(root, rel):
         "type": kind,
         "size": None if kind == "dir" else info.st_size,
         "mtime": info.st_mtime,
+        "mtime_ns": info.st_mtime_ns,
         "mode": "%04o" % stat.S_IMODE(info.st_mode),
         "mode_text": stat.filemode(info.st_mode),
         "owner": _owner_name(info.st_uid),

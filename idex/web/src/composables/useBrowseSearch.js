@@ -34,6 +34,8 @@ export function useBrowseSearch({ wsId, mode, client = api }) {
   // 退出搜索：清空输入，结果列表跟着收起来，左侧回到目录树。
   function clearSearch() {
     query.value = ''
+    // 空查询带新代次发一次，服务端正扫的那一份看到代次变了就停。
+    client.search(wsId(), '', mode.value, '', ++seq).catch(() => {})
     search.matches = []
     search.error = ''
     search.loading = false
@@ -48,7 +50,7 @@ export function useBrowseSearch({ wsId, mode, client = api }) {
     search.loading = true
     search.error = ''
     try {
-      const data = await client.search(wsId(), text, mode.value)
+      const data = await client.search(wsId(), text, mode.value, '', mine)
       if (mine !== seq) return
       search.matches = data.matches || []
       search.truncated = !!data.truncated

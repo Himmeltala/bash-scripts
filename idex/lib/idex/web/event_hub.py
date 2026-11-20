@@ -3,12 +3,11 @@
 import queue
 import threading
 import time
-from pathlib import Path
 
 from sse import StateStream
 
 from vcs_summary import (
-    changes_signature,
+    changes_report,
 )
 
 # SSE 心跳：这段时间没有事件就发一行注释，别让中间设备把连接掐了。
@@ -68,12 +67,12 @@ class EventHub:
                     self.watchers.pop(wid, None)
                     return
             try:
-                signature, count, revision = changes_signature(ws)
+                signature, count, revision, paths = changes_report(ws)
             except Exception:
-                signature, count, revision = None, 0, None
+                signature, count, revision, paths = None, 0, None, []
             # 第一次也推一次：连接建立前后刚发生的改动不会漏掉，页面重载一次无妨。
             if signature is not None and signature != last:
-                self.broadcast(wid, "changes", {"ws": wid, "count": count})
+                self.broadcast(wid, "changes", {"ws": wid, "count": count, "paths": paths})
             if signature is not None:
                 last = signature
             # 版本变了说明外面提交或更新过，日志与同步页也要重读。

@@ -97,10 +97,10 @@ export const api = {
   newFile: (ws, dir, name) => call('POST', '/newfile', { ws, dir, name }),
   renameEntry: (ws, path, name) => call('POST', '/rename', { ws, path, name }),
   deleteEntry: (ws, path) => call('POST', '/delete', { ws, path }),
-  search: (ws, text, mode = 'name', path = '') =>
+  search: (ws, text, mode = 'name', path = '', token = '') =>
     call(
       'GET',
-      `/search?ws=${encodeParam(ws)}&q=${encodeParam(text)}&mode=${encodeParam(mode)}&path=${encodeParam(path)}`
+      `/search?ws=${encodeParam(ws)}&q=${encodeParam(text)}&mode=${encodeParam(mode)}&path=${encodeParam(path)}&token=${encodeParam(token)}`
     ),
   settings: () => call('GET', '/settings'),
   saveSettings: (searchIgnore) => call('POST', '/settings', { search_ignore: searchIgnore }),

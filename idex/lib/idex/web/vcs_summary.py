@@ -35,19 +35,20 @@ def changes_payload(ws):
     return {"info": info, "files": files, "truncated": truncated}
 
 
-def changes_signature(ws):
-    """工作副本当前状态的指纹，外加当前指向的版本。
+def changes_report(ws):
+    """工作副本的指纹、变更数、当前版本与这次变动的路径。
 
     指纹变了才提醒页面；版本变了说明外面提交或更新过，日志与同步页要重读。
+    路径给页面只重读改动所在的那几层目录，不用把展开的目录全列一遍。
     """
     # 普通目录没有版本控制可查：按目录项的名字、大小与修改时间做指纹，浏览页照样能收到变化。
     if ws.get("vcs") == "none":
         signature, count = dir_signature(ws["root"])
-        return signature, count, None
+        return signature, count, None, []
     if ws.get("vcs") == "git":
         rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=ws["root"])
         if rc != 0:
-            return None, 0, None
+            return None, 0, None, []
         files, _ = parse_git_status(out)
         has_head, head = git_head(ws["root"])
         rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=ws["root"])
@@ -55,11 +56,29 @@ def changes_signature(ws):
         sig.update(head.encode("utf-8") if has_head else b"")
         if rc == 0:
             sig.update(branch)
-        return sig.hexdigest(), len(files), head if has_head else ""
+        paths = []
+        for item in files:
+            if item.get("path"):
+                paths.append(item["path"])
+            if item.get("orig"):
+                paths.append(item["orig"])
+        return sig.hexdigest(), len(files), head if has_head else "", paths[:CHANGED_PATHS_MAX]
     rc, out, _ = svn(["status", "--xml"], cwd=ws["root"])
     if rc != 0:
-        return None, 0, None
-    return hashlib.sha1(out).hexdigest(), len(parse_status(out)), svn_revision(ws["root"])
+        return None, 0, None, []
+    files = parse_status(out)
+    paths = [item["path"] for item in files if item.get("path")]
+    return hashlib.sha1(out).hexdigest(), len(files), svn_revision(ws["root"]), paths[:CHANGED_PATHS_MAX]
+
+
+def changes_signature(ws):
+    """指纹、变更数与版本；事件推送只用前三项时走这里。"""
+    signature, count, revision, _ = changes_report(ws)
+    return signature, count, revision
+
+
+# 一轮推送最多带这么多条改动路径；再多就让页面退回整棵展开树的刷新。
+CHANGED_PATHS_MAX = 500
 
 
 # 普通目录的指纹：递归读每项的路径、大小与修改时间。条目太多时扫到上限就停，

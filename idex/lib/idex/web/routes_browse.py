@@ -5,7 +5,7 @@ import os
 from web import ApiError, STREAMED, zip_dir
 
 from browse_fs import (
-    browse_file,
+    browse_file_info,
     browse_files,
     browse_list,
     browse_rel,
@@ -20,6 +20,8 @@ from server_common import inside
 from stores import LayoutStore  # noqa: F401  只为了让类型提示与依赖关系看得出来
 
 SEARCH_IGNORE_DEFAULTS = (".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target")
+# 每个工作区最近一次搜索的代次；新请求换了代，旧的那个扫到一半就停。
+SEARCH_TOKENS = {}
 
 
 class BrowseRoutes:
@@ -38,7 +40,7 @@ class BrowseRoutes:
     def _file(self, query):
         ws = self._ws(query)
         rel = (query.get("path") or [""])[0]
-        return {"workspace": ws, "path": rel, "text": browse_file(ws["root"], rel)}
+        return {"workspace": ws, "path": rel, **browse_file_info(ws["root"], rel)}
 
     def _download(self, query, head=False):
         ws = self._ws(query)
@@ -105,7 +107,15 @@ class BrowseRoutes:
             if self.settings is not None
             else list(SEARCH_IGNORE_DEFAULTS)
         )
-        return {"workspace": ws, **browse_search(ws["root"], rel, text, mode, ignore)}
+        token = (query.get("token") or [""])[0]
+        should_stop = None
+        if token:
+            SEARCH_TOKENS[ws["id"]] = token
+            should_stop = lambda: SEARCH_TOKENS.get(ws["id"]) != token
+        return {
+            "workspace": ws,
+            **browse_search(ws["root"], rel, text, mode, ignore, should_stop),
+        }
 
     def _files(self, query):
         ws = self._ws(query)
@@ -114,5 +124,5 @@ class BrowseRoutes:
             if self.settings is not None
             else list(SEARCH_IGNORE_DEFAULTS)
         )
-        files, truncated = browse_files(ws["root"], ignore)
+        files, truncated = browse_files(ws["root"], ignore, ws.get("vcs", "none"))
         return {"files": files, "truncated": truncated}

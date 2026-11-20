@@ -38,7 +38,7 @@
       />
       <LogPanel v-else-if="shownTab === 'log'" :ws="ws" :refresh="repoKey" />
       <SyncPanel v-else-if="shownTab === 'sync'" :ws="ws" :refresh="repoKey" />
-      <BrowsePanel v-else :ws="ws" :refresh="changesKey" />
+      <BrowsePanel v-else :ws="ws" :refresh="changesKey" :changed-paths="changedPaths" />
     </div>
   </div>
 </template>
@@ -68,6 +68,8 @@ const shownTab = computed(() => (plain.value ? 'browse' : tab.value))
 const count = ref(0)
 // changes 只影响变更页；repo 是写操作结束，日志与同步信息也要重载。
 const changesKey = ref(0)
+// 这一轮变动的路径；浏览页只重读这些文件所在的目录。
+const changedPaths = ref([])
 const repoKey = ref(0)
 let events = null
 
@@ -92,10 +94,12 @@ function openEvents() {
       data = {}
     }
     if (typeof data.count === 'number') count.value = data.count
+    changedPaths.value = Array.isArray(data.paths) ? data.paths : []
     changesKey.value += 1
   })
   // 一次写操作结束，日志、同步信息与变更都可能变了。
   events.addEventListener('repo', () => {
+    changedPaths.value = []
     changesKey.value += 1
     repoKey.value += 1
   })
@@ -116,6 +120,7 @@ watch(
   () => props.ws.id,
   () => {
     count.value = 0
+    changedPaths.value = []
     openEvents()
   }
 )
