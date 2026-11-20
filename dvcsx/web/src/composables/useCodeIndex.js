@@ -7,7 +7,7 @@
  * @Description: 代码索引：定义、引用、重命名、悬停、符号大纲与语言服务器状态。
  */
 import { computed, reactive, ref } from 'vue'
-import { symbolAt } from '@bash-scripts/web-shared'
+import { symbolAt } from '@bash-scripts/web-shared/text'
 import { api } from '../utils/api.js'
 import { extensionOf } from '../utils/browseOps.js'
 import { LANGUAGES, SERVER_BY_EXT, SYMBOL_ICONS, SYMBOL_TITLES } from '../utils/languageServers.js'
@@ -22,6 +22,7 @@ export function useCodeIndex({
   openLocation,
   reloadDir,
   flash,
+  client = api,
 }) {
   // 查定义时的转圈，以及多个候选时的那张列表。
   const defining = ref(false)
@@ -79,7 +80,7 @@ export function useCodeIndex({
   async function loadServers() {
     if (serversLoaded.value) return
     try {
-      const data = await api.lspStatus()
+      const data = await client.lspStatus()
       servers.value = data.servers || []
       serversLoaded.value = true
     } catch (err) {
@@ -94,7 +95,7 @@ export function useCodeIndex({
     if (!editor) return
     defining.value = true
     try {
-      const data = await api.definition(wsId(), path, editor.text, line, character)
+      const data = await client.definition(wsId(), path, editor.text, line, character)
       const list = (data && data.locations) || []
       if (!list.length) {
         flash(`没找到「${word}」的定义`)
@@ -122,7 +123,7 @@ export function useCodeIndex({
     const title = SYMBOL_TITLES[action] || '定义'
     defining.value = true
     try {
-      const data = await api.query(
+      const data = await client.query(
         wsId(), item.path, editor.text, item.line, item.character, action
       )
       const list = (data && data.locations) || []
@@ -173,7 +174,7 @@ export function useCodeIndex({
     renameAsk.busy = true
     renameAsk.error = ''
     try {
-      const data = await api.renamePreview(
+      const data = await client.renamePreview(
         wsId(), renameAsk.path, editor.text, renameAsk.line, renameAsk.character, name
       )
       renameAsk.files = data.files || []
@@ -204,7 +205,7 @@ export function useCodeIndex({
     renameAsk.busy = true
     renameAsk.error = ''
     try {
-      const data = await api.renameApply(
+      const data = await client.renameApply(
         wsId(),
         renameAsk.path,
         editor.text,
@@ -243,7 +244,7 @@ export function useCodeIndex({
       path: tab.path,
     })
     try {
-      const data = await api.symbols(wsId(), tab.path, editor.text)
+      const data = await client.symbols(wsId(), tab.path, editor.text)
       outlineAsk.items = data.symbols || []
       if (!outlineAsk.items.length) outlineAsk.error = '这个文件没有符号'
     } catch (err) {
@@ -278,7 +279,7 @@ export function useCodeIndex({
     if (!editor || !editor.path) return
     const seq = ++hoverSeq
     Object.assign(hoverTip, { on: true, x: left, y: top, text: '读取悬停…' })
-    api
+    client
       .hover(wsId(), path, editor.text, line, character)
       .then((data) => {
         if (seq !== hoverSeq) return
@@ -326,7 +327,7 @@ export function useCodeIndex({
     if (!editor) return
     defining.value = true
     try {
-      const data = await api.hover(wsId(), path, editor.text, line, character)
+      const data = await client.hover(wsId(), path, editor.text, line, character)
       const text = (data && data.hover && data.hover.text) || ''
       if (!text) {
         flash(`「${word}」没有悬停信息`)

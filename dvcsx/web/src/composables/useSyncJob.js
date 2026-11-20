@@ -9,7 +9,7 @@
 import { computed, ref } from 'vue'
 import { api, jobEventsUrl } from '../utils/api.js'
 
-export function useSyncJob({ wsId, bodyFor, onFinish }) {
+export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream = (url) => new EventSource(url) }) {
   const running = ref('')
   const outputLines = ref([])
   const commandLine = ref('')
@@ -50,7 +50,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish }) {
   }
 
   function streamJob(id, action) {
-    const es = new EventSource(jobEventsUrl(id))
+    const es = openStream(jobEventsUrl(id))
     stream = es
     opened = 0
     es.onopen = () => {
@@ -81,7 +81,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish }) {
       if (settled) return
       // EventSource 会自己重连；顺手查一次任务状态，免得服务端没发完页面一直转。
       try {
-        const data = await api.job(id)
+        const data = await client.job(id)
         if (data.done) finishStream(data, action)
       } catch (err) {
         // 查不到就让 EventSource 继续重连。
@@ -99,7 +99,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish }) {
     lastError.value = ''
     try {
       const body = { ws: wsId(), action, ...bodyFor(action) }
-      const data = await api.startOperation(body)
+      const data = await client.startOperation(body)
       jobId.value = data.id
       commandLine.value = data.command || ''
       if (commandLine.value) outputLines.value.push(`$ ${commandLine.value}`, '')
@@ -116,7 +116,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish }) {
   async function attachRunningJob() {
     if (running.value || stream) return
     try {
-      const data = await api.latestOperation(wsId())
+      const data = await client.latestOperation(wsId())
       const job = data.job
       if (!job || job.done || running.value || stream) return
       running.value = job.action
@@ -134,7 +134,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish }) {
     if (!jobId.value) return
     canceling.value = true
     try {
-      await api.cancelOperation(jobId.value)
+      await client.cancelOperation(jobId.value)
     } catch (err) {
       lastError.value = err.message
     } finally {

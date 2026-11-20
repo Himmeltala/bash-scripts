@@ -6,11 +6,11 @@
  * @FilePath: \dvcsx\web\src\composables\useBrowseSearch.js
  * @Description: 浏览页的文件名与内容搜索：防抖、结果归树、目录收起。
  */
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { api } from '../utils/api.js'
 import { buildSearchTree, flattenSearchTree } from '../utils/browseSearchTree.js'
 
-export function useBrowseSearch({ wsId, mode }) {
+export function useBrowseSearch({ wsId, mode, client = api }) {
   // query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
   const query = ref('')
   const searching = computed(() => String(query.value ?? '').trim() !== '')
@@ -48,7 +48,7 @@ export function useBrowseSearch({ wsId, mode }) {
     search.loading = true
     search.error = ''
     try {
-      const data = await api.search(wsId(), text, mode.value)
+      const data = await client.search(wsId(), text, mode.value)
       if (mine !== seq) return
       search.matches = data.matches || []
       search.truncated = !!data.truncated
@@ -80,10 +80,13 @@ export function useBrowseSearch({ wsId, mode }) {
     timer = setTimeout(runSearch, 300)
   })
 
-  onBeforeUnmount(() => {
-    clearTimeout(timer)
-    seq += 1
-  })
+  // 在组件里跑时顺手接上卸载清理；单独调用（测试）时不注册生命周期。
+  if (getCurrentInstance()) {
+    onBeforeUnmount(() => {
+      clearTimeout(timer)
+      seq += 1
+    })
+  }
 
   return {
     query,

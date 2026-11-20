@@ -10,7 +10,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../utils/api.js'
 import { isDeferred } from '../utils/deferred.js'
 
-export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, page = 50 }) {
+export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, page = 50, client = api, autoStart = true }) {
   const entries = ref([])
   const current = ref(null)
   const detail = ref(null)
@@ -44,7 +44,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     loading.value = true
     error.value = ''
     try {
-      const data = await api.log(wsId(), page, 0, false, allBranches.value)
+      const data = await client.log(wsId(), page, 0, false, allBranches.value)
       if (mine !== loadSeq) return
       await applyEntries(data.entries || [])
       remote.value = data.remote || null
@@ -60,7 +60,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
   async function syncRemote(mine) {
     syncing.value = true
     try {
-      const data = await api.log(wsId(), page, 0, true, allBranches.value)
+      const data = await client.log(wsId(), page, 0, true, allBranches.value)
       if (mine !== loadSeq) return
       remote.value = data.remote || null
       // 已经翻过几页时不再替换首屏，免得把“加载更多”的结果截掉。
@@ -95,7 +95,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     if (moreLoading.value || exhausted.value) return
     moreLoading.value = true
     try {
-      const data = await api.log(wsId(), page, entries.value.length, false, allBranches.value)
+      const data = await client.log(wsId(), page, entries.value.length, false, allBranches.value)
       const seen = new Set(entries.value.map((entry) => entry.revision))
       const fresh = (data.entries || []).filter((entry) => !seen.has(entry.revision))
       entries.value = entries.value.concat(fresh)
@@ -129,7 +129,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
 
   async function loadDetail(entry) {
     try {
-      const data = await api.commit(wsId(), entry.revision)
+      const data = await client.commit(wsId(), entry.revision)
       // 连点不同提交时，晚到的旧结果不能盖住当前选中的说明。
       if (current.value && current.value.revision === entry.revision) detail.value = data
       return data
@@ -170,7 +170,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     diffLoading.value = true
     diffError.value = ''
     try {
-      const data = await api.revision(
+      const data = await client.revision(
         wsId(),
         current.value.revision,
         path,
@@ -195,13 +195,15 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
   }
 
   // 切换差异口径时按当前看的内容重新取一遍。
-  watch(diffScope, () => {
-    if (current.value) loadDiff(activePath.value)
-  })
-  watch(wsId, load)
-  watch(refresh, load)
-  watch(allBranches, load)
-  onMounted(load)
+  if (autoStart) {
+    watch(diffScope, () => {
+      if (current.value) loadDiff(activePath.value)
+    })
+    watch(wsId, load)
+    watch(refresh, load)
+    watch(allBranches, load)
+    onMounted(load)
+  }
 
   return {
     entries,
