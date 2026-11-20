@@ -5,7 +5,7 @@ import shutil
 import threading
 import time
 
-from lsp_protocol import (
+from .protocol import (
     LspError,
     LspUnavailable,
     lsp_hover_text,
@@ -19,9 +19,9 @@ from lsp_protocol import (
     tsserver_rename_plan,
     tsserver_symbols,
 )
-from lsp_servers import SERVERS, language_id, server_key, typescript_lib, which_node
-from lsp_session import LspServer, _Instance, stop_instance
-from lsp_tsserver import TsserverBridge
+from .servers import SERVERS, language_id, server_key, typescript_lib, which_node
+from .session import LspServer, _Instance, stop_instance
+from .tsserver import TsserverBridge
 
 
 class LspManager:

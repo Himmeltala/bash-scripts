@@ -8,7 +8,7 @@ import subprocess
 import threading
 import time
 
-from lsp_protocol import (
+from .protocol import (
     LspError,
     LspUnavailable,
     encode_message,
@@ -16,7 +16,7 @@ from lsp_protocol import (
     path_to_uri,
     read_message,
 )
-from lsp_servers import STABLE_BIN
+from .servers import STABLE_BIN
 
 
 class LspServer:

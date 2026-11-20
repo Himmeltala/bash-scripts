@@ -7,8 +7,8 @@ import signal
 import subprocess
 import threading
 
-from lsp_protocol import LspError, LspUnavailable, read_message, uri_to_path
-from lsp_servers import STABLE_BIN
+from .protocol import LspError, LspUnavailable, read_message, uri_to_path
+from .servers import STABLE_BIN
 
 
 class TsserverBridge:
