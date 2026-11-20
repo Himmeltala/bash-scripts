@@ -86,6 +86,20 @@ const headers = computed(() =>
 
 const cellProps = () => ({ class: 'text-end' })
 
+// 异常值标红：缓存命中低于 99%、请求数超过 1500、总 token 超过 3 亿、合计费用超过 30。
+// 只标明细行，合计行不着色。
+function alertCell(column, row) {
+  const raw = row[column.key]
+  if (raw == null || raw === '') return false
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return false
+  if (column.key === 'cache_hit') return value < 0.99
+  if (column.key === 'requests') return value > 1500
+  if (column.key === 'total_tokens') return value > 300000000
+  if (column.key === 'cost') return value > 30
+  return false
+}
+
 const totalsRow = computed(() => data.value?.totals || {})
 
 const sourceOf = (key) => SOURCE_LIST.find((item) => item.key === key)
@@ -129,7 +143,7 @@ function rowProps({ item }) {
         </span>
         <span
           v-else
-          :class="{ mono: column.mono, strong: column.strong }"
+          :class="{ mono: column.mono, strong: column.strong, 'cell-alert': alertCell(column, item) }"
           :title="column.key === 'api' ? item.api : column.key === 'session' ? item.session : null"
         >
           {{ cell(column, item) }}
@@ -208,6 +222,10 @@ function rowProps({ item }) {
 
 .strong {
   font-weight: 700;
+}
+
+.cell-alert {
+  color: rgb(var(--v-theme-error));
 }
 
 /* 合计行按普通数据行的行高与字号排，避免吸底后比上面的行高出一截。 */
