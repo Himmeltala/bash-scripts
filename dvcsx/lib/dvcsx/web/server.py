@@ -2216,6 +2216,93 @@ def list_dirs(raw):
 
 # HTTP
 
+# 路由表：路径 → 处理函数，处理函数收（handler, method, query, body）。
+# 只读接口任何方法都回；settings 与 operations 的读法只认 GET，其余方法交给写表。
+_NOT_HANDLED = object()
+
+
+def _add_workspace(handler, body):
+    root = str(body.get("root", "")).strip()
+    if not root:
+        raise ApiError(400, "没给目录")
+    item = handler.store.add(root)
+    return {"ok": True, "workspace": item}
+
+
+def _forget_workspace(handler, body):
+    wid = str(body.get("ws", ""))
+    handler.store.remove(wid)
+    if handler.lsp is not None:
+        handler.lsp.stop_workspace(wid)
+    return {"ok": True}
+
+
+def _set_alias(handler, body):
+    ws = handler.store.find(str(body.get("ws", "")))
+    if ws is None:
+        raise ApiError(404, "没有这个工作区")
+    handler.store.set_alias(ws["id"], str(body.get("alias", "")))
+    return {"ok": True}
+
+
+def _save_settings(handler, body):
+    if handler.settings is None:
+        raise ApiError(404, "设置没有起来")
+    handler.settings.set_search_ignore(body.get("search_ignore") or [])
+    return handler._settings_payload()
+
+
+def _save_groups(handler, body):
+    if handler.groups is None:
+        raise ApiError(404, "分组结构没有起来")
+    # 整份替换：页面改完一次就发整张表，服务端只做清洗。
+    return {"ok": True, "groups": handler.groups.set(body.get("nodes") or [])}
+
+
+READ_ROUTES = {
+    "state": lambda h, m, q, b: {"workspaces": h.store.workspaces(), "groups": h._group_nodes()},
+    "dirs": lambda h, m, q, b: list_dirs((q.get("path") or [""])[0]),
+    "changes": lambda h, m, q, b: h._changes(q),
+    "diff": lambda h, m, q, b: h._diff(q),
+    "log": lambda h, m, q, b: h._log(q),
+    "revision": lambda h, m, q, b: h._revision(q),
+    "commit": lambda h, m, q, b: h._commit_detail(q),
+    "sync-info": lambda h, m, q, b: h._sync_info(q),
+    "tree": lambda h, m, q, b: h._tree(q),
+    "file": lambda h, m, q, b: h._file(q),
+    "search": lambda h, m, q, b: h._search(q),
+    "files": lambda h, m, q, b: h._files(q),
+    "settings": lambda h, m, q, b: h._settings_payload() if m == "GET" else _NOT_HANDLED,
+    "lsp/status": lambda h, m, q, b: h._lsp_status(),
+    "download": lambda h, m, q, b: h._download(q, head=(m == "HEAD")),
+    "operations": lambda h, m, q, b: h._latest_job(q) if m == "GET" else _NOT_HANDLED,
+}
+
+WRITE_ROUTES = {
+    "workspaces": lambda h, m, q, b: _add_workspace(h, b),
+    "forget": lambda h, m, q, b: _forget_workspace(h, b),
+    "alias": lambda h, m, q, b: _set_alias(h, b),
+    "lsp/definition": lambda h, m, q, b: h._lsp_definition(b),
+    "lsp/query": lambda h, m, q, b: h._lsp_query(b, str(b.get("action") or "definition")),
+    "lsp/symbols": lambda h, m, q, b: h._lsp_symbols(b),
+    "lsp/diagnostics": lambda h, m, q, b: h._lsp_diagnostics(b),
+    "lsp/hover": lambda h, m, q, b: h._lsp_hover(b),
+    "lsp/rename": lambda h, m, q, b: h._lsp_rename(b),
+    "lsp/rename-apply": lambda h, m, q, b: h._lsp_rename(b, apply=True),
+    "settings": lambda h, m, q, b: _save_settings(h, b),
+    "groups": lambda h, m, q, b: _save_groups(h, b),
+    "save": lambda h, m, q, b: h._save(b),
+    "mkdir": lambda h, m, q, b: h._browse_create(b, "dir"),
+    "newfile": lambda h, m, q, b: h._browse_create(b, "file"),
+    "rename": lambda h, m, q, b: h._browse_rename(b),
+    "delete": lambda h, m, q, b: h._browse_delete(b),
+    "stage": lambda h, m, q, b: h._stage(b),
+    "unstage": lambda h, m, q, b: h._unstage(b),
+    "svn-add": lambda h, m, q, b: h._svn_add(b),
+    "svn-unadd": lambda h, m, q, b: h._svn_unadd(b),
+    "operations": lambda h, m, q, b: h._start_operation(b),
+}
+
 
 class Handler(WebHandler):
     server_version = "dvcsx-web"
@@ -2267,105 +2354,19 @@ class Handler(WebHandler):
         return False
 
     def _dispatch(self, method, route, query, body):
-        if route == "state":
-            return {"workspaces": self.store.workspaces(), "groups": self._group_nodes()}
-        if route == "dirs":
-            return list_dirs((query.get("path") or [""])[0])
-        if route == "changes":
-            return self._changes(query)
-        if route == "diff":
-            return self._diff(query)
-        if route == "log":
-            return self._log(query)
-        if route == "revision":
-            return self._revision(query)
-        if route == "commit":
-            return self._commit_detail(query)
-        if route == "sync-info":
-            return self._sync_info(query)
-        if route == "tree":
-            return self._tree(query)
-        if route == "file":
-            return self._file(query)
-        if route == "search":
-            return self._search(query)
-        if route == "files":
-            return self._files(query)
-        if route == "settings" and method == "GET":
-            return self._settings_payload()
-        if route == "lsp/status":
-            return self._lsp_status()
-        if route == "download":
-            return self._download(query, head=(method == "HEAD"))
-        if route == "operations" and method == "GET":
-            return self._latest_job(query)
+        handler = READ_ROUTES.get(route)
+        if handler is not None:
+            result = handler(self, method, query, body)
+            if result is not _NOT_HANDLED:
+                return result
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)", route)
         if match and method == "GET":
             return self._job_json(match.group(1))
         if method != "POST":
             raise ApiError(405, "这个接口只接受 POST")
-        if route == "workspaces":
-            root = str(body.get("root", "")).strip()
-            if not root:
-                raise ApiError(400, "没给目录")
-            item = self.store.add(root)
-            return {"ok": True, "workspace": item}
-        if route == "forget":
-            wid = str(body.get("ws", ""))
-            self.store.remove(wid)
-            if self.lsp is not None:
-                self.lsp.stop_workspace(wid)
-            return {"ok": True}
-        if route == "alias":
-            ws = self.store.find(str(body.get("ws", "")))
-            if ws is None:
-                raise ApiError(404, "没有这个工作区")
-            self.store.set_alias(ws["id"], str(body.get("alias", "")))
-            return {"ok": True}
-        if route == "lsp/definition":
-            return self._lsp_definition(body)
-        if route == "lsp/query":
-            return self._lsp_query(body, str(body.get("action") or "definition"))
-        if route == "lsp/symbols":
-            return self._lsp_symbols(body)
-        if route == "lsp/diagnostics":
-            return self._lsp_diagnostics(body)
-        if route == "lsp/hover":
-            return self._lsp_hover(body)
-        if route == "lsp/rename":
-            return self._lsp_rename(body)
-        if route == "lsp/rename-apply":
-            return self._lsp_rename(body, apply=True)
-        if route == "settings":
-            if self.settings is None:
-                raise ApiError(404, "设置没有起来")
-            self.settings.set_search_ignore(body.get("search_ignore") or [])
-            return self._settings_payload()
-        if route == "groups":
-            if self.groups is None:
-                raise ApiError(404, "分组结构没有起来")
-            # 整份替换：页面改完一次就发整张表，服务端只做清洗。
-            return {"ok": True, "groups": self.groups.set(body.get("nodes") or [])}
-        if route == "save":
-            return self._save(body)
-        if route == "mkdir":
-            return self._browse_create(body, "dir")
-        if route == "newfile":
-            return self._browse_create(body, "file")
-        if route == "rename":
-            return self._browse_rename(body)
-        if route == "delete":
-            return self._browse_delete(body)
-        if route == "stage":
-            return self._stage(body)
-        if route == "unstage":
-            return self._unstage(body)
-        if route == "svn-add":
-            return self._svn_add(body)
-        if route == "svn-unadd":
-            return self._svn_unadd(body)
-        if route == "operations":
-            return self._start_operation(body)
+        handler = WRITE_ROUTES.get(route)
+        if handler is not None:
+            return handler(self, method, query, body)
         match = re.fullmatch(r"operations/([0-9a-zA-Z_-]+)/cancel", route)
         if match:
             return self._cancel_job(match.group(1))
