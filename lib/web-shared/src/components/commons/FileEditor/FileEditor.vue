@@ -266,6 +266,8 @@ function cancelLeave() {
 
 // 草稿原文的取出与放回：调用方换走时拿走，回来读完同一个文件再放回去。
 const text = computed(() => state.draft)
+// 打开或上次保存时的磁盘内容：调用方拿它判断文件有没有在外面被改过。
+const base = computed(() => state.base)
 function restore(value) {
   state.draft = value == null ? '' : String(value)
 }
@@ -283,6 +285,7 @@ defineExpose({
   path,
   dirty,
   text,
+  base,
   restore,
 })
 </script>

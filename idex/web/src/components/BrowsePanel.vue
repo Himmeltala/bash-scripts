@@ -173,7 +173,7 @@
             :class="{ active: tab.path === activePath }"
             :data-path="tab.path"
             :title="tab.path"
-            @click="activate(tab)"
+            @click="activateTab(tab)"
             @mousedown.middle.prevent="closeTab(tab)"
             @contextmenu.prevent="openTabMenu(tab, $event)"
           >
@@ -186,6 +186,7 @@
             </v-icon>
             <span class="tab-name">{{ tab.name }}</span>
             <span v-if="tab.dirty" class="tab-dirty" title="还没保存" />
+            <span v-if="tab.stale" class="tab-stale" title="磁盘上已更新，点页签重新载入" />
             <button
               class="tab-close"
               type="button"
@@ -665,6 +666,8 @@ import { useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   ws: { type: Object, required: true },
+  // 工作副本的推送计数：外部有变动就加一，浏览页据此重读目录并标记已打开的文件。
+  refresh: { type: Number, default: 0 },
 })
 
 const treeRef = ref(null)
@@ -691,6 +694,7 @@ const {
 } = useBrowseEditors({
   kept,
   refreshDiagnostics: (path) => refreshDiagnostics(path),
+  onLoaded: (path) => markSynced(path),
 })
 // 按扩展名挑预览器；加新类型在 previewTypes 里登记，再补一个组件挂进这张表。
 const VIEWERS = { image: ImagePreview }
@@ -796,6 +800,27 @@ const loadLayer = (path) => api.tree(props.ws.id, path)
 const downloadOf = (node) => api.downloadUrl(props.ws.id, node.path)
 const rowClass = (node) => ({ selected: node.type === 'file' && node.path === activePath.value })
 const treeTexts = { truncated: '这一层文件太多，只列了前面一部分。' }
+
+function tabIcon(tab) {
+  return fileIcon(tab.name)
+}
+
+// 切换页签时左侧树跟着走：展开到所在目录，把这一行滚进视野；搜索时树是藏着的，等退出搜索再定位。
+async function locate(path) {
+  if (!path) return
+  await nextTick()
+  const rows = tabbarRef.value?.querySelectorAll('[data-path]')
+  for (const el of rows || []) {
+    if (el.dataset.path !== path) continue
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    break
+  }
+  if (searching.value) return
+  await treeRef.value?.reveal(dirName(path))
+  if (activePath.value !== path) return
+  await nextTick()
+  treeRef.value?.scrollTo(path)
+}
 
 async function reveal(dirPath) {
   await treeRef.value?.reveal(dirPath)
@@ -1069,9 +1094,18 @@ watch(activePath, (path) => {
   problems.value = []
   refreshDiagnostics(path)
   locate(path)
+  // 换到一个在外部被改过的页签：只打标记，点它才换内容。
+  markActiveStale()
 })
 watch(searching, (on) => {
-  if (!on) locate(activePath.value)
+  if (!on) {
+    // 搜索期间攒下的外部变化，退出搜索时把目录树补读一遍。
+    if (searchStale) {
+      searchStale = false
+      treeRef.value?.reloadExpanded()
+    }
+    locate(activePath.value)
+  }
 })
 
 // 新建、改名与删除交给组合式函数：目录树只报动作，页签跟着路径走。
@@ -1110,6 +1144,91 @@ function iconOf(hit) {
   return fileIcon(hit.name)
 }
 
+// 外部变化的重读：事件合并成一轮，只重读展开的层；打开的文件只打标记，点页签才换内容。
+let refreshTimer = 0
+// 每轮重读算一代；页签记着自己在哪一代核对过磁盘内容。
+const diskSeq = ref(0)
+let searchStale = false
+
+function markSynced(path) {
+  const tab = tabOf(tabs.value, path)
+  if (!tab) return
+  if (tab.stale || tab.diskSeq !== diskSeq.value) {
+    tabs.value = updateTab(tabs.value, path, { stale: false, diskSeq: diskSeq.value })
+  }
+}
+
+// 磁盘上的这份和编辑器里的底稿比：true 一致、false 改过、null 读不了。
+async function diskSameAsBase(tab) {
+  const editor = editorOf(tab.path)
+  if (!editor || !editor.path) return null
+  let text
+  try {
+    const data = await loadFile(tab.path)
+    text = (data.text || '').replace(/\r\n?/g, '\n')
+  } catch (err) {
+    return null
+  }
+  return text === editor.base
+}
+
+// 当前这个文件只做标记：正在读的那份不打断，点页签才换。
+async function markActiveStale() {
+  const tab = activeTab.value
+  if (!tab || tab.diskSeq === diskSeq.value) return
+  const same = await diskSameAsBase(tab)
+  if (same === true) markSynced(tab.path)
+  else if (same === false) tabs.value = updateTab(tabs.value, tab.path, { stale: true })
+}
+
+// 点页签时重读：没改过直接换上新内容，有草稿的先问。
+async function loadIfChanged(tab) {
+  const editor = editorOf(tab.path)
+  if (!editor || !editor.path || tab.diskSeq === diskSeq.value) return
+  const same = await diskSameAsBase(tab)
+  if (same !== false) {
+    if (same === true) markSynced(tab.path)
+    return
+  }
+  if (editor.dirty && !(await editor.confirmLeave())) return
+  if (await editor.open(tab.path)) {
+    markSynced(tab.path)
+    refreshDiagnostics(tab.path)
+  }
+}
+
+async function activateTab(tab) {
+  await loadIfChanged(tab)
+  await activate(tab)
+}
+
+async function runAutoRefresh() {
+  refreshTimer = 0
+  diskSeq.value += 1
+  if (searching.value) {
+    // 搜索结果占着左栏，目录树先不读；退出搜索时补一次。
+    searchStale = true
+  } else {
+    await treeRef.value?.reloadExpanded()
+  }
+  await markActiveStale()
+}
+
+// 连续变化（构建、批量生成）合并成一轮，别一条事件就读一遍目录。
+function scheduleAutoRefresh() {
+  if (refreshTimer) return
+  refreshTimer = setTimeout(runAutoRefresh, 1200)
+}
+
+watch(
+  () => props.refresh,
+  () => scheduleAutoRefresh()
+)
+
+onBeforeUnmount(() => {
+  clearTimeout(refreshTimer)
+})
+
 async function refresh() {
   refreshing.value = true
   try {
@@ -1120,7 +1239,10 @@ async function refresh() {
     await treeRef.value?.refreshAll()
     // 有没保存的改动就不重新读，免得草稿被磁盘上的旧内容盖掉。
     const editor = editorOf(activePath.value)
-    if (editor && !editor.dirty) await editor.reload()
+    if (editor && !editor.dirty) {
+      await editor.reload()
+      markSynced(activePath.value)
+    }
   } finally {
     refreshing.value = false
   }
@@ -1476,6 +1598,14 @@ onBeforeUnmount(() => {
   height: 6px;
   border-radius: 50%;
   background: rgb(var(--v-theme-modified));
+}
+/* 外部改过、页面还没换内容：点页签才重读。 */
+.tab-stale {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-primary));
 }
 .tab-close {
   flex: 0 0 auto;

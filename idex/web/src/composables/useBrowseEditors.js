@@ -9,7 +9,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { closeTab as closeTabIn, openTab as openTabIn, tabOf, updateTab } from '../utils/browseTabs.js'
 
-export function useBrowseEditors({ kept, refreshDiagnostics }) {
+export function useBrowseEditors({ kept, refreshDiagnostics, onLoaded }) {
   // 打开过的文件各占一个页签，每个页签一个编辑器实例：草稿、视图与滚动都留在各自那份里。
   const tabs = ref(kept ? kept.tabs : [])
   const activePath = ref(kept ? kept.active : '')
@@ -66,13 +66,16 @@ export function useBrowseEditors({ kept, refreshDiagnostics }) {
     refreshDiagnostics(node.path)
     // 实例还没读过内容（新页签、回到旧页签，或刚从过大文件的占位换回编辑器），读一遍。
     if (!editor.path) {
-      if (await editor.open(node.path, line)) restoreDraft(node.path, editor)
+      if (await editor.open(node.path, line)) {
+        restoreDraft(node.path, editor)
+        if (onLoaded) onLoaded(node.path)
+      }
       return
     }
     if (!line) return
     // 跳行要按新位置重读文件，草稿还在就先问一句。
     if (editor.dirty && !(await editor.confirmLeave())) return
-    await editor.open(node.path, line)
+    if (await editor.open(node.path, line) && onLoaded) onLoaded(node.path)
   }
 
   // 点开另一个页签：回到旧工作区时只读过停着的那一个，其余的等点到再读。
@@ -81,7 +84,10 @@ export function useBrowseEditors({ kept, refreshDiagnostics }) {
     await nextTick()
     const editor = editorOf(tab.path)
     if (!editor || editor.path) return
-    if (await editor.open(tab.path)) restoreDraft(tab.path, editor)
+    if (await editor.open(tab.path)) {
+      restoreDraft(tab.path, editor)
+      if (onLoaded) onLoaded(tab.path)
+    }
     refreshDiagnostics(tab.path)
   }
 

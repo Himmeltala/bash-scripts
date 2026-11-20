@@ -38,7 +38,7 @@
       />
       <LogPanel v-else-if="shownTab === 'log'" :ws="ws" :refresh="repoKey" />
       <SyncPanel v-else-if="shownTab === 'sync'" :ws="ws" :refresh="repoKey" />
-      <BrowsePanel v-else :ws="ws" />
+      <BrowsePanel v-else :ws="ws" :refresh="changesKey" />
     </div>
   </div>
 </template>

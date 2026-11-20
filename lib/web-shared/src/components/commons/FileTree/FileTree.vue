@@ -259,6 +259,12 @@ async function reloadDir(key) {
   await load(key, true)
 }
 
+// 外部变化后重读：只动正在展开的层，折叠层的缓存与整棵树的展开状态都留着。
+async function reloadExpanded() {
+  const keys = Object.keys(expanded).filter((key) => expanded[key])
+  await Promise.all(keys.map((key) => load(key, true)))
+}
+
 // 把某一行滚进视口：切换页签时左侧树跟着定位，行按路径找，不用拼选择器。
 function scrollTo(key) {
   const rows = rootRef.value ? rootRef.value.querySelectorAll('[data-path]') : []
@@ -395,6 +401,7 @@ defineExpose({
   reveal,
   reload,
   reloadDir,
+  reloadExpanded,
   refreshAll,
   scrollTo,
   toggle,
