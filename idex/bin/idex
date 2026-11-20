@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# idex 入口，默认起网页界面，共用机制在 ../lib/idex-core.sh。
+set -uo pipefail
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+lib="${self%/bin/*}/lib/idex-core.sh"
+[[ -f "$lib" ]] || { printf 'idex: 找不到 %s\n' "$lib" >&2; exit 1; }
+
+# shellcheck source=../lib/idex-core.sh
+source "$lib"
+main "$@"

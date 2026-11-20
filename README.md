@@ -5,7 +5,7 @@
 | 命令 | 说明 |
 | --- | --- |
 | `mvnx` | 发现 Maven 模块并执行 `spring-boot:run`、`clean install` 或 `clean package` |
-| `dvcsx` | 网页里查看与操作 SVN / Git 工作副本：变更、差异、日志、拉取推送、切换分支、更新提交、浏览编辑文件 |
+| `idex` | 网页里的轻量级 IDE：目录浏览与编辑、代码索引、图片预览，加上 SVN / Git 的变更、日志与拉取推送 |
 | `nodex` | 网页里管理 Node 工作区、启停脚本、选 Node 版本、看日志与指标 |
 | `jvmx` | Maven 与 Gradle 共用的网页入口：工作区、启停、日志、指标、JDK |
 | `llmx` | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量并折算费用 |
@@ -14,7 +14,7 @@
 | `zipx` | 压缩、解压、校验、包内增删，只管 zip |
 | `portx` | 按端口查占用或浏览监听端口，`-k` 才结束进程 |
 
-各工具的详细用法见对应目录下的 README。五个网页工具的默认端口：`llmx` 8000、`dvcsx` 8100、`nodex` 8200、`jvmx` 8300、`netx` 8400。
+各工具的详细用法见对应目录下的 README。五个网页工具的默认端口：`llmx` 8000、`idex` 8100、`nodex` 8200、`jvmx` 8300、`netx` 8400。
 
 ## 安装
 
@@ -55,4 +55,4 @@ clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-p
 
 ## 环境要求
 
-`mvnx` 需要 Maven 或 `./mvnw`，`jvmx` 的网页依赖 mvnx 与 gradlex；`dvcsx` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`netx` 采集需要 `bpftrace` 与 root，查看与清理不需要；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。终端界面探不到终端时自动退回编号输入。
+`mvnx` 需要 Maven 或 `./mvnw`，`jvmx` 的网页依赖 mvnx 与 gradlex；`idex` 需要 `svn` 或 `git`；`gradlex` 需要 Gradle 或 `gradlew`，`GRADLEX_GRADLE` 可指定入口；`llmx` 需要 `zstd` 读 DeepSeek Harness 日志；`netx` 采集需要 `bpftrace` 与 root，查看与清理不需要；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。终端界面探不到终端时自动退回编号输入。
