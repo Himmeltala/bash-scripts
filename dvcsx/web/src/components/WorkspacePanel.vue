@@ -44,12 +44,14 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+// 浏览页是默认页，随首屏一起打进来；其余三个面板按要看的页签再拉，首包小一截。
 import BrowsePanel from './BrowsePanel.vue'
-import ChangesPanel from './ChangesPanel.vue'
-import LogPanel from './LogPanel.vue'
-import SyncPanel from './SyncPanel.vue'
+
+const ChangesPanel = defineAsyncComponent(() => import('./ChangesPanel.vue'))
+const LogPanel = defineAsyncComponent(() => import('./LogPanel.vue'))
+const SyncPanel = defineAsyncComponent(() => import('./SyncPanel.vue'))
 import { workspaceEventsUrl } from '../utils/api'
 import { usePreferencesStore } from '../stores/preferences'
 
