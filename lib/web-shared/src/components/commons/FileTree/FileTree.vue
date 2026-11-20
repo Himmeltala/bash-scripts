@@ -32,7 +32,6 @@
         <v-progress-circular indeterminate :size="14" :width="2" />
       </div>
       <p v-else-if="rootState.error" class="hint bad">{{ rootState.error }}</p>
-      <p v-else-if="!rootState.entries.length" class="hint">{{ text.rootEmpty }}</p>
       <template v-else>
         <FileTreeNode
           v-for="node in rootState.entries"
@@ -118,6 +117,11 @@
             <span>{{ text.delete }}</span>
           </button>
           <div class="ft-sep" />
+          <button class="ft-item" type="button" @click="run('props')">
+            <v-icon size="16">mdi-information-outline</v-icon>
+            <span>{{ text.props }}</span>
+          </button>
+          <div class="ft-sep" />
         </template>
         <button
           class="ft-item"
@@ -175,9 +179,7 @@ const props = defineProps({
 const emit = defineEmits(['pick', 'action'])
 
 const DEFAULTS = {
-  empty: '空目录',
   truncated: '这一层文件太多，只列了前面一部分。',
-  rootEmpty: '空目录',
   copyRel: '复制相对路径',
   copyAbs: '复制绝对路径',
   downloadFile: '下载文件',
@@ -186,6 +188,7 @@ const DEFAULTS = {
   newFile: '新建文件',
   newDir: '新建目录',
   upload: '上传文件',
+  props: '属性',
   rename: '重命名',
   delete: '删除',
 }

@@ -137,6 +137,38 @@ class PlainDirOps(unittest.TestCase):
             self.assertEqual(status, 400, data)
         self.assertFalse((Path(self.root).parent / "escape.txt").exists())
 
+    def test_stat_reports_basic_metadata(self):
+        target = self.root / "meta.txt"
+        target.write_text("hello", encoding="utf-8")
+        os.chmod(target, 0o640)
+        status, data = json_call(self.base, "/stat?ws=%s&path=meta.txt" % self.ws)
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["name"], "meta.txt")
+        self.assertEqual(data["type"], "file")
+        self.assertEqual(data["size"], 5)
+        self.assertEqual(data["mode"], "0640")
+        self.assertEqual(data["mode_text"], "-rw-r-----")
+        self.assertGreater(data["mtime"], 0)
+        self.assertTrue(data["owner"])
+        self.assertTrue(data["group"])
+
+        status, data = json_call(self.base, "/stat?ws=%s" % self.ws)
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["type"], "dir")
+        self.assertIsNone(data["size"])
+
+        os.symlink("meta.txt", self.root / "link.txt")
+        status, data = json_call(self.base, "/stat?ws=%s&path=link.txt" % self.ws)
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["type"], "link")
+        self.assertEqual(data["link_target"], "meta.txt")
+        self.assertTrue(data["mode_text"].startswith("l"))
+
+        status, data = json_call(self.base, "/stat?ws=%s&path=../x" % self.ws)
+        self.assertEqual(status, 400, data)
+        status, data = json_call(self.base, "/stat?ws=%s&path=missing.txt" % self.ws)
+        self.assertEqual(status, 404, data)
+
     def test_rename_then_delete(self):
         status, data = self.call("/rename", {"path": "a.txt", "name": "b.txt"})
         self.assertEqual(status, 200, data)

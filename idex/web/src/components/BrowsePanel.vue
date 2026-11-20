@@ -620,6 +620,30 @@
     </FloatingDialog>
 
     <FloatingDialog
+      v-model="propsAsk.on"
+      :initial-width="540"
+      :initial-height="380"
+      :min-width="380"
+      :min-height="240"
+    >
+      <template #title>属性</template>
+      <LoadingState v-if="propsAsk.loading" hint="正在读取…" />
+      <p v-else-if="propsAsk.error" class="ask-error">{{ propsAsk.error }}</p>
+      <div v-else class="props-list">
+        <div v-for="row in propsRows" :key="row.label" class="props-row">
+          <span class="props-key">{{ row.label }}</span>
+          <span class="props-val" :class="{ mono: row.label === '路径' || row.label === '权限' }">
+            {{ row.value }}
+          </span>
+        </div>
+      </div>
+      <template #actions>
+        <v-spacer />
+        <v-btn variant="text" @click="propsAsk.on = false">关闭</v-btn>
+      </template>
+    </FloatingDialog>
+
+    <FloatingDialog
       v-model="lineAsk.on"
       :initial-width="360"
       :initial-height="220"
@@ -701,7 +725,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { api, uploadFile } from '../utils/api'
+import { api } from '../utils/api'
+import { useBrowseProps } from '../composables/useBrowseProps'
+import { useBrowseUploads } from '../composables/useBrowseUploads'
+import { useBrowseDiskSync } from '../composables/useBrowseDiskSync'
 import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
@@ -754,7 +781,8 @@ const {
 } = useBrowseEditors({
   kept,
   refreshDiagnostics: (path) => refreshDiagnostics(path),
-  onLoaded: (path) => markSynced(path),
+  // 读完文件记下这一代已核对；组合式函数在后面创建，回调到时才用到。
+  onLoaded: (path) => diskSync.markSynced(path),
 })
 // 按扩展名挑预览器；加新类型在 previewTypes 里登记，再补一个组件挂进这张表。
 const VIEWERS = { image: ImagePreview }
@@ -1160,10 +1188,7 @@ watch(activePath, (path) => {
 watch(searching, (on) => {
   if (!on) {
     // 搜索期间攒下的外部变化，退出搜索时把目录树补读一遍。
-    if (searchStale) {
-      searchStale = false
-      treeRef.value?.reloadExpanded()
-    }
+    diskSync.flushSearchStale()
     locate(activePath.value)
   }
 })
@@ -1188,14 +1213,23 @@ const {
   reload: (dir) => treeRef.value?.reloadDir(dir),
 })
 
-// 目录树右键：上传交给本组件的文件选择，其余动作照旧交给组合式函数。
+// 目录树右键：上传与属性留在本组件，其余动作照旧交给组合式函数。
 function onTreeAction(payload) {
   if (payload.action === 'upload') {
     pickUpload(payload.node && payload.node.path)
     return
   }
+  if (payload.action === 'props') {
+    openProps(payload.node ? payload.node.path : '')
+    return
+  }
   return onBrowseAction(payload)
 }
+
+// 属性：文件或目录的基础信息，只有看的份，不改磁盘上的东西。
+const { propsAsk, propsRows, openProps } = useBrowseProps({
+  wsId: () => props.ws.id,
+})
 
 function save() {
   editorOf(activePath.value)?.save()
@@ -1213,240 +1247,44 @@ function iconOf(hit) {
   return fileIcon(hit.name)
 }
 
-// 外部变化的重读：事件合并成一轮，只重读展开的层；打开的文件只打标记，点页签才换内容。
-let refreshTimer = 0
-// 每轮重读算一代；页签记着自己在哪一代核对过磁盘内容。
-const diskSeq = ref(0)
-let searchStale = false
-
-function markSynced(path) {
-  const tab = tabOf(tabs.value, path)
-  if (!tab) return
-  if (tab.stale || tab.diskSeq !== diskSeq.value) {
-    tabs.value = updateTab(tabs.value, path, { stale: false, diskSeq: diskSeq.value })
-  }
-}
-
-// 磁盘上的这份和编辑器里的底稿比：true 一致、false 改过、null 读不了。
-async function diskSameAsBase(tab) {
-  const editor = editorOf(tab.path)
-  if (!editor || !editor.path) return null
-  let text
-  try {
-    const data = await loadFile(tab.path)
-    text = (data.text || '').replace(/\r\n?/g, '\n')
-  } catch (err) {
-    return null
-  }
-  return text === editor.base
-}
-
-// 当前这个文件只做标记：正在读的那份不打断，点页签才换。
-async function markActiveStale() {
-  const tab = activeTab.value
-  if (!tab || tab.diskSeq === diskSeq.value) return
-  const same = await diskSameAsBase(tab)
-  if (same === true) markSynced(tab.path)
-  else if (same === false) tabs.value = updateTab(tabs.value, tab.path, { stale: true })
-}
-
-// 点页签时重读：没改过直接换上新内容，有草稿的先问。
-async function loadIfChanged(tab) {
-  const editor = editorOf(tab.path)
-  if (!editor || !editor.path || tab.diskSeq === diskSeq.value) return
-  const same = await diskSameAsBase(tab)
-  if (same !== false) {
-    if (same === true) markSynced(tab.path)
-    return
-  }
-  if (editor.dirty && !(await editor.confirmLeave())) return
-  if (await editor.open(tab.path)) {
-    markSynced(tab.path)
-    refreshDiagnostics(tab.path)
-  }
-}
-
-async function activateTab(tab) {
-  await loadIfChanged(tab)
-  await activate(tab)
-}
-
-async function runAutoRefresh() {
-  refreshTimer = 0
-  diskSeq.value += 1
-  if (searching.value) {
-    // 搜索结果占着左栏，目录树先不读；退出搜索时补一次。
-    searchStale = true
-  } else {
-    await treeRef.value?.reloadExpanded()
-  }
-  await markActiveStale()
-}
-
-// 连续变化（构建、批量生成）合并成一轮，别一条事件就读一遍目录。
-function scheduleAutoRefresh() {
-  if (refreshTimer) return
-  refreshTimer = setTimeout(runAutoRefresh, 1200)
-}
-
-watch(
-  () => props.refresh,
-  () => scheduleAutoRefresh()
-)
-
-onBeforeUnmount(() => {
-  clearTimeout(refreshTimer)
+// 外部变化的重读：事件合并、只重读展开的层、打开的文件只打标记，细节在同名组合式函数里。
+const diskSync = useBrowseDiskSync({
+  refresh: () => props.refresh,
+  tabs,
+  activeTab,
+  editorOf,
+  loadFile,
+  refreshDiagnostics,
+  activate,
+  searching,
+  treeRef,
 })
+const { activateTab } = diskSync
 
 // 上传：选文件或拖进来，逐个传，各自显示进度；同名文件逐个问要不要覆盖。
-const uploadInput = ref(null)
-const uploads = ref([])
-const uploadBusy = ref(false)
-const dragOn = ref(false)
-const dropHint = ref('')
-const uploadAsk = reactive({ on: false, name: '' })
-let uploadSeq = 0
-let uploadAnswer = null
-let uploadHideTimer = 0
-
-function activeDir() {
-  const tab = activeTab.value
-  return tab && tab.path ? dirName(tab.path) : ''
-}
-
-let uploadTarget = null
-
-function pickUpload(dir) {
-  // 右键目录时传进来就传到那个目录；工具栏按钮不传，落到当前文件所在目录。
-  uploadTarget = typeof dir === 'string' ? dir : null
-  uploadInput.value?.click()
-}
-
-function onUploadPicked(event) {
-  const files = [...(event.target.files || [])]
-  event.target.value = ''
-  const dir = uploadTarget === null ? activeDir() : uploadTarget
-  uploadTarget = null
-  startUpload(files, dir)
-}
-
-// 拖到目录行就传进那个目录，拖到文件行传进它所在目录，空白处传进当前文件所在目录。
-function dropTargetDir(event) {
-  const row = event.target instanceof Element ? event.target.closest('.row[data-path]') : null
-  if (!row) return activeDir()
-  const path = row.dataset.path || ''
-  if (!path) return ''
-  return row.dataset.type === 'dir' ? path : dirName(path)
-}
-
-function onDragOver(event) {
-  if (![...(event.dataTransfer?.types || [])].includes('Files')) return
-  event.preventDefault()
-  dragOn.value = true
-  const dir = dropTargetDir(event)
-  dropHint.value = `上传到 ${dir || '/'}`
-}
-
-function onDragLeave(event) {
-  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return
-  dragOn.value = false
-}
-
-function onDropFiles(event) {
-  if (!event.dataTransfer) return
-  const files = [...event.dataTransfer.files]
-  dragOn.value = false
-  if (!files.length) return
-  event.preventDefault()
-  startUpload(files, dropTargetDir(event))
-}
-
-function uploadStateText(item) {
-  if (item.state === 'uploading') return `${item.percent}%`
-  if (item.state === 'done') return '完成'
-  if (item.state === 'skipped') return '跳过'
-  return '失败'
-}
-
-function clearUploads() {
-  clearTimeout(uploadHideTimer)
-  uploads.value = []
-}
-
-function askUpload(name) {
-  uploadAsk.name = name
-  uploadAsk.on = true
-  return new Promise((resolve) => {
-    uploadAnswer = resolve
-  })
-}
-
-function answerUpload(kind) {
-  uploadAsk.on = false
-  if (!uploadAnswer) return
-  const resolve = uploadAnswer
-  uploadAnswer = null
-  resolve(kind)
-}
-
-async function startUpload(files, dir) {
-  if (!files.length) return
-  clearTimeout(uploadHideTimer)
-  uploadBusy.value = true
-  let cancelled = false
-  for (const file of files) {
-    if (cancelled) break
-    const item = reactive({
-      id: ++uploadSeq,
-      name: file.name,
-      state: 'uploading',
-      percent: 0,
-      error: '',
-    })
-    uploads.value.push(item)
-    let overwrite = false
-    while (true) {
-      try {
-        await uploadFile(props.ws.id, dir, file, {
-          overwrite,
-          onProgress: (loaded, total) => {
-            item.percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0
-          },
-        })
-        item.state = 'done'
-        item.percent = 100
-        break
-      } catch (err) {
-        if (err.status === 409 && !overwrite) {
-          const answer = await askUpload(file.name)
-          if (answer === 'overwrite') {
-            overwrite = true
-            continue
-          }
-          if (answer === 'skip') {
-            item.state = 'skipped'
-            break
-          }
-          cancelled = true
-          item.state = 'skipped'
-          break
-        }
-        item.state = 'failed'
-        item.error = err.message
-        break
-      }
-    }
-  }
-  uploadBusy.value = false
-  await treeRef.value?.reloadDir(dir)
-  await treeRef.value?.reveal(dir)
-  // 没有失败就过几秒自己收起来；有失败留给人看一眼。
-  if (!uploads.value.some((item) => item.state === 'failed')) {
-    uploadHideTimer = setTimeout(() => {
-      uploads.value = []
-    }, 4000)
-  }
-}
+const {
+  uploadInput,
+  uploads,
+  uploadBusy,
+  dragOn,
+  dropHint,
+  uploadAsk,
+  pickUpload,
+  onUploadPicked,
+  onDragOver,
+  onDragLeave,
+  onDropFiles,
+  uploadStateText,
+  clearUploads,
+  answerUpload,
+} = useBrowseUploads({
+  wsId: () => props.ws.id,
+  activeDir: () => (activeTab.value && activeTab.value.path ? dirName(activeTab.value.path) : ''),
+  reload: async (dir) => {
+    await treeRef.value?.reloadDir(dir)
+    await treeRef.value?.reveal(dir)
+  },
+})
 
 async function refresh() {
   refreshing.value = true
@@ -1460,7 +1298,7 @@ async function refresh() {
     const editor = editorOf(activePath.value)
     if (editor && !editor.dirty) {
       await editor.reload()
-      markSynced(activePath.value)
+      diskSync.markSynced(activePath.value)
     }
   } finally {
     refreshing.value = false
@@ -1575,6 +1413,25 @@ onBeforeUnmount(() => {
 }
 .upload-state.failed {
   color: rgb(var(--v-theme-error));
+}
+.props-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.props-row {
+  display: flex;
+  gap: 12px;
+  font-size: 0.84rem;
+}
+.props-key {
+  flex: 0 0 72px;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.props-val {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-all;
 }
 .up-conflict {
   margin: 0;

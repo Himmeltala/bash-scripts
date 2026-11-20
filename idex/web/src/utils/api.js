@@ -85,6 +85,7 @@ export const api = {
   cancelOperation: (id) => call('POST', `/operations/${encodeParam(id)}/cancel`, {}),
   tree: (ws, path = '') => call('GET', `/tree?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
   file: (ws, path) => call('GET', `/file?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
+  stat: (ws, path = '') => call('GET', `/stat?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
   // 直接交给浏览器下；目录由后端现场压成 zip。
   downloadUrl: (ws, path) => `${PREFIX}/download?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,
   save: (ws, path, text) => call('POST', '/save', { ws, path, text }),

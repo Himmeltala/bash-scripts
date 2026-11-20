@@ -11,6 +11,7 @@ from browse_fs import (
     browse_rel,
     browse_search,
     delete_entry,
+    entry_stat,
     make_entry,
     rename_entry,
     save_file,
@@ -23,6 +24,11 @@ SEARCH_IGNORE_DEFAULTS = (".git", ".svn", ".hg", "node_modules", "__pycache__", 
 
 class BrowseRoutes:
     """路由表里浏览目录那几条的实现，靠 MRO 混进 Handler。"""
+
+    def _stat(self, query):
+        ws = self._ws(query)
+        rel = (query.get("path") or [""])[0]
+        return {"workspace": ws, **entry_stat(ws["root"], rel)}
 
     def _tree(self, query):
         ws = self._ws(query)

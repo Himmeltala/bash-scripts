@@ -1,7 +1,10 @@
 """浏览目录的读写：列目录、取文件、搜索、保存，以及新建、改名、删除。"""
 
+import grp
 import os
+import pwd
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 
@@ -300,6 +303,50 @@ def make_entry(root, rel, name, kind):
 
 # 上传按块从连接里读，边收边写，多大都不占内存。
 UPLOAD_CHUNK = 64 * 1024
+
+
+def _owner_name(uid):
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
+
+
+def _group_name(gid):
+    try:
+        return grp.getgrgid(gid).gr_name
+    except KeyError:
+        return str(gid)
+
+
+def entry_stat(root, rel):
+    """右键属性要的基础信息：类型、大小、修改时间、权限与所有者。"""
+    rel = browse_rel(rel).rstrip("/") if rel else ""
+    target = os.path.join(root, rel) if rel else root
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if not os.path.lexists(target):
+        raise ApiError(404, "文件或目录不存在：%s" % (rel or "根目录"))
+    info = os.lstat(target)
+    if os.path.islink(target):
+        kind = "link"
+    elif os.path.isdir(target):
+        kind = "dir"
+    else:
+        kind = "file"
+    return {
+        "path": rel,
+        "name": os.path.basename(target) if rel else os.path.basename(os.path.abspath(root)),
+        "abs": os.path.abspath(target),
+        "type": kind,
+        "size": None if kind == "dir" else info.st_size,
+        "mtime": info.st_mtime,
+        "mode": "%04o" % stat.S_IMODE(info.st_mode),
+        "mode_text": stat.filemode(info.st_mode),
+        "owner": _owner_name(info.st_uid),
+        "group": _group_name(info.st_gid),
+        "link_target": os.readlink(target) if kind == "link" else "",
+    }
 
 
 def save_upload(root, rel, name, stream, length, overwrite=False):

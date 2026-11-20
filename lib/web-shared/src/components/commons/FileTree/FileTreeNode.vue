@@ -39,7 +39,6 @@
 
     <template v-if="isDir && open">
       <p v-if="state.error" class="hint bad">{{ state.error }}</p>
-      <p v-else-if="!state.loading && !state.entries.length" class="hint">{{ text.empty }}</p>
       <template v-else>
         <FileTreeNode
           v-for="child in state.entries"
@@ -94,7 +93,6 @@ const emit = defineEmits(['toggle', 'pick', 'context'])
 
 // 每层的提示文案由调用方给，这里只兜底。
 const DEFAULTS = {
-  empty: '空目录',
   truncated: '这一层文件太多，只列了前面一部分。',
 }
 const text = computed(() => ({ ...DEFAULTS, ...props.texts }))

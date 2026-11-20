@@ -400,6 +400,7 @@ READ_ROUTES = {
     "commit": lambda h, m, q, b: h._commit_detail(q),
     "sync-info": lambda h, m, q, b: h._sync_info(q),
     "tree": lambda h, m, q, b: h._tree(q),
+    "stat": lambda h, m, q, b: h._stat(q),
     "file": lambda h, m, q, b: h._file(q),
     "search": lambda h, m, q, b: h._search(q),
     "files": lambda h, m, q, b: h._files(q),
