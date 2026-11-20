@@ -276,8 +276,20 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { LogView } from '@bash-scripts/web-shared'
-import { api, jobEventsUrl } from '../composables/useApi'
+import { api } from '../composables/useApi'
 import { statusOf } from '../composables/format'
+import {
+  PULL_MODES,
+  branchItemsOf,
+  commitDisabledOf,
+  committableOf,
+  confirmTextOf,
+  confirmTitleOf,
+  findBranchOf,
+  itemLabelOf,
+  missingOf,
+} from '../composables/syncView'
+import { useSyncJob } from '../composables/useSyncJob'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -290,11 +302,7 @@ const dark = computed(() => theme.global.current.value.dark)
 
 const info = ref({})
 const loading = ref(false)
-const running = ref('')
 const error = ref('')
-const lastError = ref('')
-const outputLines = ref([])
-const commandLine = ref('')
 const pending = ref('')
 // 索引为空时点提交要确认是否先把全部改动暂存再提交，点下按钮时记下这个选择。
 const stageAllCommit = ref(false)
@@ -307,50 +315,53 @@ const checkout = ref(null)
 const message = ref('')
 const picked = ref([])
 const pickedInitialized = ref(false)
-const jobId = ref('')
-const canceling = ref(false)
-
-// 操作输出一行一行推过来，页面只维护这个数组。
-const output = computed(() => outputLines.value.join('\n'))
-let stream = null
-let settled = false
-let opened = 0
 // 上次读同步信息的时间：操作刚结束时自己会读一次，紧跟的推送不必再读。
 let loadedAt = 0
 
-const pullModes = [
-  { title: '只快进（推荐）', value: 'ff' },
-  { title: '合并', value: 'merge' },
-  { title: '变基', value: 'rebase' },
-]
+const pullModes = PULL_MODES
 
 const isGit = computed(() => props.ws.vcs === 'git')
+
+// 后台任务的启动、输出流、断线接回与取消交给组合式函数。
+const {
+  running,
+  output,
+  lastError,
+  canceling,
+  start: startJob,
+  attachRunningJob,
+  cancel: cancelJob,
+  reset: resetJob,
+  dispose: disposeJob,
+} = useSyncJob({
+  wsId: () => props.ws.id,
+  bodyFor,
+  onFinish,
+})
+
 const busy = computed(() => !!running.value)
 // Git 可以把未跟踪文件加进来；SVN 的未纳管、缺失路径与两者的冲突都不能提交。
-const blockedItems = computed(() =>
-  isGit.value ? ['conflicted'] : ['conflicted', 'unversioned', 'missing'],
-)
-const committable = computed(() =>
-  (info.value.files || []).filter((item) => !blockedItems.value.includes(item.item)),
-)
-const missing = computed(() =>
-  (info.value.files || []).filter((item) => item.item === 'missing').map((item) => item.path),
-)
+const committable = computed(() => committableOf(info.value.files, isGit.value))
+const missing = computed(() => missingOf(info.value.files))
 // Git 的提交只认索引：已暂存的条目只读展示，按钮按索引与冲突判断能不能点。
 const staged = computed(() => (info.value.status && info.value.status.staged) || [])
 const unstaged = computed(() => (info.value.status && info.value.status.unstaged) || [])
 const conflicts = computed(() => info.value.conflicts || [])
-const commitDisabled = computed(() => {
-  if (busy.value || info.value.writable === false || !message.value.trim()) return true
-  if (isGit.value) {
-    return conflicts.value.length > 0 || (!staged.value.length && !unstaged.value.length)
-  }
-  return !picked.value.length
-})
+const commitDisabled = computed(() =>
+  commitDisabledOf({
+    isGit: isGit.value,
+    busy: busy.value,
+    writable: info.value.writable,
+    message: message.value,
+    conflicts: conflicts.value,
+    staged: staged.value,
+    unstaged: unstaged.value,
+    picked: picked.value,
+  }),
+)
 
 function itemLabel(item) {
-  if (isGit.value && item === 'unversioned') return '未跟踪'
-  return statusOf(item).text
+  return itemLabelOf(item, isGit.value)
 }
 
 const pullLabel = computed(
@@ -359,21 +370,10 @@ const pullLabel = computed(
 
 // 分支下拉：本地分支直接切，远端分支选中的是从远端新建同名跟踪分支。
 const branches = computed(() => info.value.branches || [])
-const branchItems = computed(() =>
-  branches.value.map((item) => ({
-    title: item.remote
-      ? `${item.start_point}（远端，新建跟踪分支）`
-      : item.current
-        ? `${item.name}（当前）`
-        : item.name,
-    value: item.remote ? `remote:${item.start_point}` : `local:${item.name}`,
-  })),
-)
+const branchItems = computed(() => branchItemsOf(branches.value))
 
 function findBranch(value) {
-  return branches.value.find(
-    (item) => (item.remote ? `remote:${item.start_point}` : `local:${item.name}`) === value,
-  )
+  return findBranchOf(branches.value, value)
 }
 
 const pickedBranch = computed(() => findBranch(branchPick.value))
@@ -397,48 +397,23 @@ function askCheckout(create = false) {
   confirmOn.value = true
 }
 
-const confirmTitle = computed(() => {
-  if (pending.value === 'checkout') {
-    return checkout.value?.start_point || checkout.value?.create ? '新建分支并切换' : '切换分支'
-  }
-  return (
-    ({
-      pull: '拉取远端提交',
-      push: '推送当前分支',
-      update: '更新工作副本',
-      commit: isGit.value ? '提交到 Git' : '提交到 SVN',
-    })[pending.value] || '确认操作'
-  )
-})
+const confirmTitle = computed(() =>
+  confirmTitleOf(pending.value, checkout.value, isGit.value),
+)
 
-const confirmText = computed(() => {
-  switch (pending.value) {
-    case 'checkout':
-      if (!checkout.value) return ''
-      if (checkout.value.start_point) {
-        return `从 ${checkout.value.start_point} 新建本地分支 ${checkout.value.branch}，并切过去。`
-      }
-      if (checkout.value.create) {
-        return `从当前提交新建分支 ${checkout.value.branch}，并切过去。`
-      }
-      return `切换到分支 ${checkout.value.branch}。工作区有未提交改动且会被覆盖时，Git 会拒绝并留在原分支。`
-    case 'pull':
-      return `从 ${info.value.upstream || '远端'} 拉取到 ${info.value.branch || '当前分支'}，方式：${pullLabel.value}。`
-    case 'push':
-      return `把 ${info.value.branch || '当前分支'} 推到 ${info.value.upstream || '远端'}。`
-    case 'update':
-      return '从服务器更新工作副本。'
-    case 'commit':
-      if (isGit.value) {
-        return stageAllCommit.value
-          ? '索引里还没有内容，要把全部改动暂存后一起提交吗？'
-          : `把索引里已暂存的 ${staged.value.length} 项提交到本地仓库，提交说明：${message.value.trim()}`
-      }
-      return `把 ${picked.value.length} 个路径提交到服务器，提交说明：${message.value.trim()}`
-    default:
-      return ''
-  }
-})
+const confirmText = computed(() =>
+  confirmTextOf({
+    pending: pending.value,
+    checkout: checkout.value,
+    isGit: isGit.value,
+    info: info.value,
+    pullLabel: pullLabel.value,
+    stageAllCommit: stageAllCommit.value,
+    staged: staged.value,
+    picked: picked.value,
+    message: message.value,
+  }),
+)
 
 async function load() {
   loadedAt = Date.now()
@@ -470,24 +445,6 @@ async function load() {
   attachRunningJob()
 }
 
-// 页面刷新或重新打开时，如果后台还有任务在跑，接上它的输出。
-async function attachRunningJob() {
-  if (busy.value || stream) return
-  try {
-    const data = await api.latestOperation(props.ws.id)
-    const job = data.job
-    if (!job || job.done || busy.value || stream) return
-    running.value = job.action
-    settled = false
-    jobId.value = job.id
-    commandLine.value = job.command || ''
-    outputLines.value = commandLine.value ? [`$ ${commandLine.value}`, ''] : []
-    streamJob(job.id, job.action)
-  } catch (err) {
-    // 接不上历史任务不影响查看页面。
-  }
-}
-
 function pickAll() {
   picked.value = committable.value.map((item) => item.path)
 }
@@ -498,133 +455,43 @@ function ask(action) {
   confirmOn.value = true
 }
 
-function appendLine(line) {
-  outputLines.value.push(line)
-  // 命令发疯刷屏时只留最近这些行，页面不至于卡死。
-  if (outputLines.value.length > 5000) {
-    outputLines.value.splice(0, outputLines.value.length - 5000)
+// 启动任务时按当前的输入拼动作参数；Git 只提交索引，不再传 paths。
+function bodyFor(action) {
+  const body = {}
+  if (action === 'checkout') Object.assign(body, checkout.value || {})
+  if (action === 'pull') body.mode = pullMode.value
+  if (action === 'push') body.set_upstream = setUpstream.value
+  if (action === 'commit') {
+    body.message = message.value
+    if (isGit.value) {
+      if (stageAllCommit.value) body.stage_all = true
+    } else {
+      body.paths = picked.value
+    }
   }
+  return body
 }
 
-function closeStream() {
-  if (stream) {
-    stream.close()
-    stream = null
-  }
-}
-
-function finishStream(data, action) {
-  if (settled) return
-  settled = true
-  closeStream()
-  jobId.value = ''
-  if (data && data.ok === false) {
-    lastError.value = data.error || '操作没有成功，看上面的输出。'
-  } else if (action === 'commit') {
+// 任务收尾：提交后清空说明，切分支后清空选择，再通知外层并重读同步信息。
+function onFinish(action) {
+  if (action === 'commit') {
     message.value = ''
   } else if (action === 'checkout') {
     branchPick.value = ''
     newBranch.value = ''
   }
-  running.value = ''
   emit('done', action)
   load()
 }
 
-function streamJob(id, action) {
-  const es = new EventSource(jobEventsUrl(id))
-  stream = es
-  opened = 0
-  es.onopen = () => {
-    opened += 1
-    // 断线重连时服务端会从头重放，先把本地已显示的行换回命令行。
-    if (opened > 1) {
-      outputLines.value = commandLine.value ? [`$ ${commandLine.value}`, ''] : []
-    }
-  }
-  es.addEventListener('output', (event) => {
-    try {
-      appendLine(JSON.parse(event.data).line ?? '')
-    } catch (err) {
-      // 一行读不懂就跳过，不影响后面的输出。
-    }
-  })
-  es.addEventListener('done', (event) => {
-    let data = {}
-    try {
-      data = JSON.parse(event.data)
-    } catch (err) {
-      data = {}
-    }
-    finishStream(data, action)
-  })
-  es.onerror = async () => {
-    // 任务结束后服务端主动关连接也会触发这里，done 处理过就不再管。
-    if (settled) return
-    // EventSource 会自己重连；顺手查一次任务状态，免得服务端没发完页面一直转。
-    try {
-      const data = await api.job(id)
-      if (data.done) finishStream(data, action)
-    } catch (err) {
-      // 查不到就让 EventSource 继续重连。
-    }
-  }
-}
-
 async function run() {
   confirmOn.value = false
-  const action = pending.value
-  running.value = action
-  settled = false
-  outputLines.value = []
-  commandLine.value = ''
-  jobId.value = ''
-  lastError.value = ''
-  try {
-    const body = { ws: props.ws.id, action }
-    if (action === 'checkout') Object.assign(body, checkout.value || {})
-    if (action === 'pull') body.mode = pullMode.value
-    if (action === 'push') body.set_upstream = setUpstream.value
-    if (action === 'commit') {
-      body.message = message.value
-      // Git 只提交索引，不再传 paths；索引空时按确认框的选择整目录暂存。
-      if (isGit.value) {
-        if (stageAllCommit.value) body.stage_all = true
-      } else {
-        body.paths = picked.value
-      }
-    }
-    const data = await api.startOperation(body)
-    jobId.value = data.id
-    commandLine.value = data.command || ''
-    if (commandLine.value) outputLines.value.push(`$ ${commandLine.value}`, '')
-    streamJob(data.id, action)
-  } catch (err) {
-    lastError.value = err.message
-    running.value = ''
-    await load()
-  }
-}
-
-async function cancelJob() {
-  if (!jobId.value) return
-  canceling.value = true
-  try {
-    await api.cancelOperation(jobId.value)
-  } catch (err) {
-    lastError.value = err.message
-  } finally {
-    canceling.value = false
-  }
+  if (!(await startJob(pending.value))) await load()
 }
 
 function reset() {
-  settled = true
-  closeStream()
+  resetJob()
   info.value = {}
-  outputLines.value = []
-  commandLine.value = ''
-  lastError.value = ''
   error.value = ''
   pending.value = ''
   stageAllCommit.value = false
@@ -636,9 +503,6 @@ function reset() {
   branchPick.value = ''
   newBranch.value = ''
   checkout.value = null
-  jobId.value = ''
-  running.value = ''
-  canceling.value = false
 }
 
 watch(
@@ -660,8 +524,7 @@ watch(
 )
 onMounted(load)
 onBeforeUnmount(() => {
-  settled = true
-  closeStream()
+  disposeJob()
 })
 </script>
 

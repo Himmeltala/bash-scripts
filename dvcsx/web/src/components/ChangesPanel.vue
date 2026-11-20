@@ -220,6 +220,8 @@ import { SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../composables/format'
+import { groupsFor, keyOf, rowActionOf, scopeOf } from '../composables/changesView'
+import { useLeaveGuard } from '../composables/useLeaveGuard'
 import { isDeferred } from '../composables/deferred'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree } from '@bash-scripts/web-shared'
@@ -249,10 +251,8 @@ const editState = ref({ editable: false, baseText: '', reason: '' })
 const dirty = ref(false)
 const saving = ref(false)
 const saveError = ref('')
-const asking = ref(false)
 let pendingRefresh = false
 let pickSeq = 0
-let askResolve = null
 let revertingScope = false
 
 // 查看方式来自全局偏好，所有工作区共用；树形默认全部展开。
@@ -269,6 +269,17 @@ const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useS
 })
 
 const isGit = computed(() => props.ws.vcs === 'git')
+// 未保存改动的离店询问：保存与丢弃的动作留在页面，询问本身交给组合式函数。
+const {
+  asking,
+  confirmLeave,
+  answer: answerLeave,
+  cancel: cancelLeave,
+} = useLeaveGuard({
+  isDirty: () => dirty.value,
+  save: () => saveNow(),
+  drop: () => discard(),
+})
 const diffTitle = computed(() => (selected.value ? selected.value.path : ''))
 // 锁文件、构建产物与单行过长的文件不自动取差异；点过“加载差异”的文件记在这里，换回来不再拦。
 // 键带上差异口径：同一个文件在已暂存与更改里是两份内容。
@@ -307,16 +318,7 @@ function iconOf(file) {
   return fileIcon(file.path)
 }
 
-const GROUP_DEFS = [
-  { key: 'staged', title: '已暂存', action: '全部取消', icon: 'mdi-minus-circle-outline' },
-  { key: 'unstaged', title: '更改', action: '全部暂存', icon: 'mdi-plus-circle-outline' },
-  { key: 'conflicts', title: '冲突', action: '' },
-]
-
-// SVN 没有索引，只有一份“更改”；未纳管与刚纳入的行各自给纳入、撤回纳入的动作。
-const groups = computed(() =>
-  isGit.value ? GROUP_DEFS : [{ key: 'unstaged', title: '更改', action: '' }],
-)
+const groups = computed(() => groupsFor(isGit.value))
 
 function groupList(key) {
   if (!isGit.value) return files.value
@@ -354,28 +356,9 @@ function toggleDir(key, path) {
   trees[key].toggle(path)
 }
 
-// 差异口径：已暂存取索引对 HEAD，冲突取对 HEAD，其余取工作区对索引。
-function scopeOf(group) {
-  if (group === 'staged') return 'staged'
-  if (group === 'conflicts') return 'head'
-  return 'worktree'
-}
-
-function keyOf(group, path) {
-  return `${scopeOf(group)}:${path}`
-}
-
+// 行内动作按工作副本类型与所在组选，规则在 changesView 里。
 function rowAction(key, file) {
-  if (!isGit.value) {
-    if (file.item === 'unversioned') return { icon: 'mdi-plus-circle-outline', title: '纳入版本控制' }
-    if (file.item === 'added') {
-      return { icon: 'mdi-minus-circle-outline', title: '取消纳入版本控制，文件留在工作副本里' }
-    }
-    return null
-  }
-  if (key === 'staged') return { icon: 'mdi-minus-circle-outline', title: '取消暂存' }
-  if (key === 'conflicts') return { icon: 'mdi-check-circle-outline', title: '标记已解决' }
-  return { icon: 'mdi-plus-circle-outline', title: '暂存' }
+  return rowActionOf(key, file, isGit.value)
 }
 
 const groupKey = (key) => `group:${key}`
@@ -594,35 +577,6 @@ async function refreshNow() {
   await load()
 }
 
-// 换文件、刷新、换差异口径前都问一句，别把没写的改动丢了。
-function confirmLeave() {
-  if (!dirty.value) return Promise.resolve(true)
-  if (asking.value) return Promise.resolve(false)
-  asking.value = true
-  return new Promise((resolve) => {
-    askResolve = resolve
-  })
-}
-
-function resolveLeave(value) {
-  const resolve = askResolve
-  askResolve = null
-  asking.value = false
-  if (resolve) resolve(value)
-}
-
-async function answerLeave(kind) {
-  if (kind === 'cancel') {
-    resolveLeave(false)
-    return
-  }
-  if (kind === 'drop') {
-    discard()
-    resolveLeave('dropped')
-    return
-  }
-  resolveLeave((await saveNow()) ? 'saved' : false)
-}
 
 function onKeySave(event) {
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
@@ -664,7 +618,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeySave)
-  if (askResolve) resolveLeave(false)
+  cancelLeave()
 })
 
 defineExpose({ load })

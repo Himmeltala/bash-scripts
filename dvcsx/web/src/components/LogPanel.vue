@@ -329,20 +329,25 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
 import DiffView from '@bash-scripts/web-shared/diff'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
-import { api } from '../composables/useApi'
 import { buildGraph, DOT_Y } from '../composables/gitGraph'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
-import { actionOf, firstLine, shortenPath, shortPath, when } from '../composables/format'
-import { isDeferred } from '../composables/deferred'
+import { firstLine, shortenPath, shortPath, when } from '../composables/format'
+import {
+  LANE_COLORS,
+  refsOf as marksOfEntry,
+  revLabel as revTextOf,
+  stateOf as stateOfEntry,
+  tone,
+} from '../composables/logView'
+import { useCommitLog } from '../composables/useCommitLog'
 import { usePreferencesStore } from '../stores/preferences'
-import { useFileTree } from '@bash-scripts/web-shared'
-import { useSplitPane } from '@bash-scripts/web-shared'
+import { useFileTree, useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -358,30 +363,38 @@ const dark = computed(() => theme.global.current.value.dark)
 // 时间线默认连所有分支与标签一起列；关掉就只看当前分支与它的上游。
 const logAllBranches = useStorage('dvcsx.log.all-branches', true)
 
-const PAGE = 50
-const entries = ref([])
-const current = ref(null)
-const detail = ref(null)
-const remote = ref(null)
-const activePath = ref('')
-const content = ref({ text: '', truncated: false })
-// 锁文件与构建产物不自动取差异。同一提交里点过“加载差异”的路径记下来，换回来不再拦；
-// 换提交要重新拦一次，同一个路径在不同提交里的差异是另一份。
-const revealed = ref(new Set())
-// 单行过长要等第一次取到差异才知道，按“提交 + 路径”记住，换回来不必再请求。
-const widePaths = ref(new Set())
-const deferredKey = (path) =>
-  `${current.value ? current.value.revision : ''}\n${path}`
-const marked = (path) => isDeferred(path) || widePaths.value.has(deferredKey(path))
-const held = (path) => !!path && marked(path) && !revealed.value.has(deferredKey(path))
-const awaitingLoad = computed(() => held(activePath.value))
-const loading = ref(false)
-const syncing = ref(false)
-const moreLoading = ref(false)
-const exhausted = ref(false)
-const diffLoading = ref(false)
-const error = ref('')
-const diffError = ref('')
+const isGit = computed(() => props.ws.vcs === 'git')
+
+// 取数与选中状态交给组合式函数，这边只管布局与画时间线。
+const {
+  entries,
+  current,
+  detail,
+  remote,
+  activePath,
+  content,
+  marked,
+  awaitingLoad,
+  loading,
+  syncing,
+  moreLoading,
+  exhausted,
+  diffLoading,
+  error,
+  diffError,
+  load,
+  more,
+  select,
+  openPath,
+  wholeCommit,
+  showDeferred,
+} = useCommitLog({
+  wsId: () => props.ws.id,
+  refresh: () => props.refresh,
+  allBranches: logAllBranches,
+  diffScope: logDiffScope,
+  isGit: () => isGit.value,
+})
 
 const bodyRef = ref(null)
 const filesCollapsed = ref(false)
@@ -405,9 +418,6 @@ const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useS
   rightMin: 320,
   persist: 'dvcsx.log.list-width',
 })
-let diffSeq = 0
-// 连续切工作副本或连点刷新时，晚到的旧结果不能盖住新的一次加载。
-let loadSeq = 0
 
 // 树形视图的收起状态与摊平交给公共的文件树，平铺视图自己拼。
 const { rows: treeRows, collapsed: collapsedDirs, toggle: toggleDir } = useFileTree(
@@ -429,7 +439,6 @@ const pathRows = computed(() => {
   return treeRows.value
 })
 
-const isGit = computed(() => props.ws.vcs === 'git')
 // SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
 const pendingCount = computed(() => entries.value.filter((entry) => !entry.local).length)
 // 列表里只放提交说明的第一行，详情取整段；取不到就退回第一行。
@@ -440,56 +449,17 @@ const currentMessage = computed(
     '（没有写提交说明）',
 )
 
-// 提交上挂的分支与标签由后端一次查好；只是当前提交不在任何分支上时补一个 HEAD。
+// 提交上的分支标签、推送状态、版本号都是纯函数，参数在这里补齐。
 function refsOf(entry) {
-  if (!isGit.value) return []
-  const marks = []
-  const seen = new Set()
-  for (const ref of entry.labels || []) {
-    if (seen.has(ref.name)) continue
-    seen.add(ref.name)
-    if (ref.kind === 'head') {
-      marks.push({ kind: 'head', icon: 'mdi-source-branch', text: ref.name, title: '本地分支' })
-    } else if (ref.kind === 'tag') {
-      marks.push({ kind: 'tag', icon: 'mdi-tag-outline', text: ref.name, title: '标签' })
-    } else {
-      marks.push({
-        kind: 'upstream',
-        icon: 'mdi-cloud-outline',
-        text: ref.name,
-        title: '远端跟踪分支',
-      })
-    }
-  }
-  // 老服务端不给 labels 时按原来的 HEAD / 上游标记显示。
-  if (!entry.labels) {
-    if (entry.head) {
-      marks.push({
-        kind: 'head',
-        icon: 'mdi-source-branch',
-        text: (remote.value && remote.value.branch) || 'HEAD',
-        title: '本地分支当前提交',
-      })
-    }
-    if (entry.remote_tip && remote.value && remote.value.upstream) {
-      marks.push({
-        kind: 'upstream',
-        icon: 'mdi-cloud-outline',
-        text: remote.value.upstream,
-        title: '远端跟踪分支的最新提交',
-      })
-    }
-  }
-  if (entry.head && !marks.some((mark) => mark.kind === 'head')) {
-    marks.unshift({ kind: 'head', icon: 'mdi-source-branch', text: 'HEAD', title: '当前提交' })
-  }
-  return marks
+  return marksOfEntry(entry, isGit.value, remote.value)
 }
 
-// 时间线分列交给纯函数，换主题只是换一套颜色。
-const LANE_COLORS = {
-  light: ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'],
-  dark: ['#60a5fa', '#4ade80', '#fbbf24', '#f87171', '#c084fc', '#22d3ee', '#f472b6', '#a3e635'],
+function stateOf(entry) {
+  return stateOfEntry(entry, isGit.value)
+}
+
+function revLabel(rev) {
+  return revTextOf(rev, isGit.value)
 }
 
 const graphRows = computed(() =>
@@ -500,37 +470,6 @@ const graphWidth = computed(() => (isGit.value ? graphRows.value.width : 0))
 
 function lineOf(entry) {
   return isGit.value ? graphRows.value.rows.get(entry.revision) || null : null
-}
-
-// 提交相对本地分支与远端分支的位置；没有远端跟踪分支时不做判断。
-function stateOf(entry) {
-  if (!isGit.value) {
-    if (entry.local) return null
-    return {
-      kind: 'pending',
-      icon: 'mdi-cloud-download-outline',
-      text: '待更新',
-      title: '工作副本还没有这个版本',
-    }
-  }
-  if (entry.pushed === undefined) return null
-  if (!entry.local) {
-    return {
-      kind: 'pending',
-      icon: 'mdi-cloud-download-outline',
-      text: '待拉取',
-      title: '这个提交还只在远端分支上',
-    }
-  }
-  if (!entry.pushed) {
-    return {
-      kind: 'local',
-      icon: 'mdi-cloud-upload-outline',
-      text: '未推送',
-      title: '这个提交还没进远端分支',
-    }
-  }
-  return null
 }
 
 const filesStyle = computed(() =>
@@ -556,191 +495,11 @@ function toggleDiff() {
   diffCollapsed.value = true
 }
 
-// SVN 的版本号前面带 r，Git 给的是完整 sha，列表上只显示前 7 位。
-function revLabel(rev) {
-  return isGit.value ? String(rev).slice(0, 7) : `r${rev}`
-}
-
 const diffTitle = computed(() => {
   if (!current.value) return ''
   const rev = revLabel(current.value.revision)
   return activePath.value ? `${rev}  ${activePath.value}` : `${rev}  整次提交`
 })
-
-function tone(action) {
-  return `rgb(var(--v-theme-${actionOf(action).color}))`
-}
-
-// 先用本地已有的记录把列表画出来，再让后端连远端同步一次。同步慢的是网络，不该挡着看日志。
-async function load() {
-  const mine = ++loadSeq
-  loading.value = true
-  error.value = ''
-  try {
-    const data = await api.log(props.ws.id, PAGE, 0, false, logAllBranches.value)
-    if (mine !== loadSeq) return
-    await applyEntries(data.entries || [])
-    remote.value = data.remote || null
-  } catch (err) {
-    if (mine === loadSeq) error.value = err.message
-  } finally {
-    if (mine === loadSeq) loading.value = false
-  }
-  // SVN 的日志每次都从仓库现取，没有“先本地后远端”这一说，不用再同步一次。
-  if (isGit.value) syncRemote(mine)
-}
-
-async function syncRemote(mine) {
-  syncing.value = true
-  try {
-    const data = await api.log(props.ws.id, PAGE, 0, true, logAllBranches.value)
-    if (mine !== loadSeq) return
-    remote.value = data.remote || null
-    // 已经翻过几页时不再替换首屏，免得把“加载更多”的结果截掉。
-    if (entries.value.length > PAGE) return
-    await applyEntries(data.entries || [])
-  } catch (err) {
-    if (mine === loadSeq) error.value = err.message
-  } finally {
-    if (mine === loadSeq) syncing.value = false
-  }
-}
-
-// 换一批提交：路径只取过一次，刷新后按提交号接着用，免得重复请求。
-async function applyEntries(list) {
-  const cached = new Map(entries.value.map((entry) => [entry.revision, entry.paths]))
-  for (const entry of list) {
-    if (!entry.paths.length && cached.has(entry.revision)) entry.paths = cached.get(entry.revision)
-  }
-  entries.value = list
-  exhausted.value = list.length < PAGE
-  const revision = current.value && current.value.revision
-  const hit = revision ? entries.value.find((entry) => entry.revision === revision) : null
-  if (hit) {
-    // 同一条提交还在，选中项换成新对象即可，详情与差异不动。
-    current.value = hit
-    return
-  }
-  await select(entries.value[0] || null)
-}
-
-async function more() {
-  if (moreLoading.value || exhausted.value) return
-  moreLoading.value = true
-  try {
-    const data = await api.log(
-      props.ws.id,
-      PAGE,
-      entries.value.length,
-      false,
-      logAllBranches.value
-    )
-    const seen = new Set(entries.value.map((entry) => entry.revision))
-    const fresh = (data.entries || []).filter((entry) => !seen.has(entry.revision))
-    entries.value = entries.value.concat(fresh)
-    exhausted.value = fresh.length < PAGE
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    moreLoading.value = false
-  }
-}
-
-async function select(entry) {
-  current.value = entry
-  detail.value = null
-  activePath.value = ''
-  content.value = { text: '', truncated: false }
-  diffError.value = ''
-  if (!entry) return
-  if (!entry.paths.length) {
-    // git 的列表不带路径，选中这一条时从提交详情里取一次，取到就记在这条提交上。
-    const data = await loadDetail(entry)
-    if (!current.value || current.value.revision !== entry.revision) return
-    if (data && data.paths) entry.paths = data.paths
-  } else {
-    // SVN 的日志本来就带路径，说明照样后台取，差异不用等它。
-    loadDetail(entry)
-  }
-  // 提交里的文件常常好几个，默认打开第一个，省一次点击。
-  if (entry.paths.length) await openPath(entry.paths[0].path)
-}
-
-async function loadDetail(entry) {
-  try {
-    const data = await api.commit(props.ws.id, entry.revision)
-    // 连点不同提交时，晚到的旧结果不能盖住当前选中的说明。
-    if (current.value && current.value.revision === entry.revision) detail.value = data
-    return data
-  } catch (err) {
-    // 取不到就继续用列表里的第一行，不影响看差异。
-    return null
-  }
-}
-
-async function openPath(path) {
-  if (!current.value) return
-  activePath.value = path
-  await loadDiff(path)
-}
-
-async function wholeCommit() {
-  activePath.value = ''
-  await loadDiff('')
-}
-
-// 用户在右侧点了“加载差异”：记住这一份，再走正常的取差异流程。
-function showDeferred() {
-  if (!activePath.value) return
-  revealed.value.add(deferredKey(activePath.value))
-  loadDiff(activePath.value)
-}
-
-async function loadDiff(path) {
-  if (path && held(path)) {
-    // 大文件连差异接口都不请求：记下序号让在途的旧结果作废，页面只显示占位。
-    diffSeq += 1
-    diffLoading.value = false
-    diffError.value = ''
-    content.value = { text: '', truncated: false }
-    return
-  }
-  const mine = ++diffSeq
-  diffLoading.value = true
-  diffError.value = ''
-  try {
-    const data = await api.revision(
-      props.ws.id,
-      current.value.revision,
-      path,
-      logDiffScope.value === 'file'
-    )
-    // 连点提交或来回切口径时，晚到的旧结果不能盖住当前这一份。
-    if (mine !== diffSeq) return
-    if (path && data.wide && !revealed.value.has(deferredKey(path))) {
-      // 单行太长：差异取到也不渲染，记下这一份，换回来直接走占位。
-      widePaths.value.add(deferredKey(path))
-      content.value = { text: '', truncated: false }
-      return
-    }
-    content.value = data
-  } catch (err) {
-    if (mine !== diffSeq) return
-    content.value = { text: '', truncated: false }
-    diffError.value = err.message
-  } finally {
-    if (mine === diffSeq) diffLoading.value = false
-  }
-}
-
-// 切换差异口径时按当前看的内容重新取一遍。
-watch(logDiffScope, () => {
-  if (current.value) loadDiff(activePath.value)
-})
-watch(() => props.ws.id, load)
-watch(() => props.refresh, load)
-watch(logAllBranches, load)
-onMounted(load)
 
 defineExpose({ load })
 </script>
