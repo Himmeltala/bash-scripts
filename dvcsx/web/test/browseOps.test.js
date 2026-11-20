@@ -21,3 +21,4 @@ test('超过预览上限的文件才占位', () => {
   assert.equal(isHeldNode({ type: 'dir', size: PREVIEW_MAX * 2 }), false)
   assert.equal(isHeldNode(null), false)
 })
+

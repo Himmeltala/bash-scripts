@@ -205,8 +205,18 @@
               :key="tab.path"
               class="pane"
             >
+              <component
+                :is="viewerFor(tab)"
+                v-if="viewerFor(tab) && !sourceView.has(tab.path)"
+                :key="`preview:${tab.path}`"
+                :url="rawUrl(tab)"
+                :name="tab.name"
+                :path="tab.path"
+                :size="tab.size"
+                @source="toggleSource(tab.path)"
+              />
               <EmptyState
-                v-if="isHeldNode(tab)"
+                v-else-if="isHeldNode(tab)"
                 icon="mdi-file-hidden"
                 :icon-size="28"
                 :path="tab.path"
@@ -215,25 +225,35 @@
                 action-icon="mdi-download"
                 @action="downloadHeld"
               />
-              <FileEditor
-                v-else
-                :ref="(el) => setEditor(tab.path, el)"
-                :root-name="rootName"
-                :size="tab.size"
-                :loader="loadFile"
-                :saver="saveFile"
-                @navigate="reveal"
-                @saved="onSaved"
-                @dirty="(on) => setDirty(tab.path, on)"
-                @definition="onDefinition"
-                @menu="openSymbolMenu"
-                @rename="openRename"
-                @caret="onCaret"
-                @edit="onEdit"
-                @hover="onHover"
-                @hover-end="onHoverEnd"
-                :markers="markers"
-              />
+              <template v-else>
+                <div v-if="viewerFor(tab)" class="preview-bar">
+                  <button
+                    type="button"
+                    class="preview-act"
+                    @click="toggleSource(tab.path)"
+                  >
+                    {{ SOURCE_LABELS[previewKindOf(tab.path)] || '查看预览' }}
+                  </button>
+                </div>
+                <FileEditor
+                  :ref="(el) => setEditor(tab.path, el)"
+                  :root-name="rootName"
+                  :size="tab.size"
+                  :loader="loadFile"
+                  :saver="saveFile"
+                  @navigate="reveal"
+                  @saved="onSaved"
+                  @dirty="(on) => setDirty(tab.path, on)"
+                  @definition="onDefinition"
+                  @menu="openSymbolMenu"
+                  @rename="openRename"
+                  @caret="onCaret"
+                  @edit="onEdit"
+                  @hover="onHover"
+                  @hover-end="onHoverEnd"
+                  :markers="markers"
+                />
+              </template>
             </div>
           </template>
           <EmptyState
@@ -592,11 +612,13 @@
       class="sym-menu tab-menu"
       :style="{ left: `${tabMenu.x}px`, top: `${tabMenu.y}px` }"
     >
-      <button type="button" class="sym-item" @click="tabAction('close')">关闭</button>
-      <button type="button" class="sym-item" @click="tabAction('others')">关闭其他</button>
-      <button type="button" class="sym-item" @click="tabAction('all')">关闭全部</button>
-      <div class="sym-sep" />
-      <button type="button" class="sym-item" @click="tabAction('copy')">复制路径</button>
+      <template v-for="(item, index) in TAB_MENU" :key="index">
+        <div v-if="item.sep" class="sym-sep" />
+        <button v-else type="button" class="sym-item" @click="tabAction(item.action)">
+          <v-icon size="16">{{ item.icon }}</v-icon>
+          <span>{{ item.label }}</span>
+        </button>
+      </template>
     </div>
 
     <div
@@ -604,18 +626,13 @@
       class="sym-menu"
       :style="{ left: `${symMenu.x}px`, top: `${symMenu.y}px` }"
     >
-      <button type="button" class="sym-item" @click="runSymbol('definition')">转到定义</button>
-      <button type="button" class="sym-item" @click="runSymbol('typeDefinition')">
-        转到类型定义
-      </button>
-      <button type="button" class="sym-item" @click="runSymbol('implementation')">
-        转到实现
-      </button>
-      <button type="button" class="sym-item" @click="runSymbol('hover')">查看悬停</button>
-      <button type="button" class="sym-item" @click="runSymbol('references')">查找引用</button>
-      <button type="button" class="sym-item" @click="runSymbol('rename')">重命名符号</button>
-      <div class="sym-sep" />
-      <button type="button" class="sym-item" @click="runSymbol('copy')">复制标识符</button>
+      <template v-for="(item, index) in SYMBOL_MENU" :key="index">
+        <div v-if="item.sep" class="sym-sep" />
+        <button v-else type="button" class="sym-item" @click="runSymbol(item.action)">
+          <v-icon size="16">{{ item.icon }}</v-icon>
+          <span>{{ item.label }}</span>
+        </button>
+      </template>
     </div>
   </div>
 </template>
@@ -624,11 +641,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { api } from '../composables/useApi'
-import { FileEditor, FileTree, copyText, fileIcon, symbolAt } from '@bash-scripts/web-shared'
+import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../composables/browseOps'
+import { SOURCE_LABELS, previewKindOf } from '../composables/previewTypes'
+import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../composables/browseMenus'
+import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../composables/diagnostics'
+import { useDiagnostics } from '../composables/useDiagnostics'
+import { useCodeIndex } from '../composables/useCodeIndex'
+import ImagePreview from './previews/ImagePreview.vue'
 import {
   closeTab as closeTabIn,
   followMoved,
@@ -660,139 +683,78 @@ const drafts = new Map(kept && kept.drafts ? kept.drafts : [])
 // 左侧树上次展开到哪些目录；换回这个工作区时原样摊开。
 const keptExpanded = kept && kept.expanded ? kept.expanded : []
 const editors = new Map()
+// 按扩展名挑预览器；加新类型在 previewTypes 里登记，再补一个组件挂进这张表。
+const VIEWERS = { image: ImagePreview }
+// 预览切回源码的页签；不改源码的类型一直走预览。
+const sourceView = reactive(new Set())
 const activeTab = computed(() => tabOf(tabs.value, activePath.value))
 const refreshing = ref(false)
-// 代码索引：查定义时的转圈，以及多个候选时的那张列表。
-const defining = ref(false)
-const defAsk = reactive({ on: false, word: '', title: '定义', list: [] })
-// 重命名：先填新名字、看预览，确认后才动磁盘。
-const renameAsk = reactive({
-  on: false,
-  path: '',
-  line: 0,
-  character: 0,
-  word: '',
-  value: '',
-  step: 'input',
-  files: [],
-  total: 0,
-  error: '',
-  busy: false,
-})
-// 状态栏：光标行列、文件语言、对应的语言服务器。
+// 状态栏的光标位置留在这一侧，代码索引那边只读它。
 const caret = reactive({ line: 1, column: 1 })
-const servers = ref([])
-const serversLoaded = ref(false)
-const LANGUAGES = {
-  js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript',
-  ts: 'TypeScript', tsx: 'TypeScript', vue: 'Vue', py: 'Python', pyi: 'Python',
-  sh: 'Shell', bash: 'Shell', zsh: 'Shell', java: 'Java', json: 'JSON',
-  md: 'Markdown', css: 'CSS', scss: 'SCSS', html: 'HTML', xml: 'XML',
-  yml: 'YAML', yaml: 'YAML', sql: 'SQL', go: 'Go', rs: 'Rust', c: 'C',
-  h: 'C', cpp: 'C++', hpp: 'C++', cs: 'C#', rb: 'Ruby', php: 'PHP', kt: 'Kotlin',
-}
-const SERVER_BY_EXT = {
-  sh: 'shell', bash: 'shell', zsh: 'shell', py: 'python', pyi: 'python',
-  js: 'typescript', jsx: 'typescript', ts: 'typescript', tsx: 'typescript',
-  mjs: 'typescript', cjs: 'typescript', vue: 'vue', java: 'java',
-}
-const SYMBOL_ICONS = {
-  class: 'mdi-format-letter-case', interface: 'mdi-connection',
-  enum: 'mdi-format-list-numbered', function: 'mdi-function',
-  method: 'mdi-function-variant', constructor: 'mdi-hammer-wrench',
-  variable: 'mdi-variable', constant: 'mdi-variable-box', property: 'mdi-tag-outline',
-  field: 'mdi-tag', namespace: 'mdi-folder-outline', module: 'mdi-package-variant',
-  struct: 'mdi-cube-outline', typeParameter: 'mdi-generic',
-}
-const outlineAsk = reactive({ on: false, loading: false, error: '', items: [], filter: '', path: '' })
+// 代码索引：定义、引用、重命名、悬停、大纲与语言服务器状态。
+const {
+  defining,
+  defAsk,
+  renameAsk,
+  servers,
+  serversLoaded,
+  outlineAsk,
+  outlineRows,
+  hoverAsk,
+  hoverTip,
+  languageLabel,
+  serverReady,
+  serverLabel,
+  serverTitle,
+  loadServers,
+  onDefinition,
+  askLocations,
+  openRename,
+  previewRename,
+  applyRename,
+  openOutline,
+  symbolIcon,
+  pickSymbol,
+  onHover,
+  onHoverEnd,
+  showHoverAtCaret,
+  openHover,
+  dispose: disposeCodeIndex,
+} = useCodeIndex({
+  wsId: () => props.ws.id,
+  activePath,
+  activeTab,
+  editorOf,
+  caret,
+  openLocation: (loc) => openLocation(loc),
+  reloadDir: (path) => treeRef.value?.reloadDir(dirName(path)),
+  flash: (text) => flash(text),
+})
 const quickAsk = reactive({ on: false, loading: false, error: '', files: [], filter: '', loaded: false })
 const lineAsk = reactive({ on: false, value: '', error: '' })
 // 诊断：当前文件的错误与警告，行号前的圆点与问题列表都用这份。
-const problems = ref([])
-const problemsAsk = reactive({ on: false })
-const problemsLoading = ref(false)
-let diagSeq = 0
-let diagTimer = 0
-let editTimer = 0
-const SEVERITY_ICONS = {
-  error: 'mdi-alert-circle',
-  warning: 'mdi-alert',
-  info: 'mdi-information',
-  hint: 'mdi-lightbulb-on-outline',
-}
-// 问题弹窗里的分类统计：只列这一份文件里真有的级别。
-const PROBLEM_LEVELS = [
-  { id: 'error', label: '错误', icon: 'mdi-alert-circle' },
-  { id: 'warning', label: '警告', icon: 'mdi-alert' },
-  { id: 'info', label: '信息', icon: 'mdi-information' },
-  { id: 'hint', label: '提示', icon: 'mdi-lightbulb-on-outline' },
-]
-const problemStats = computed(() =>
-  PROBLEM_LEVELS.map((level) => ({
-    ...level,
-    count: problems.value.filter((item) => item.severity === level.id).length,
-  })).filter((level) => level.count > 0)
-)
-const markers = computed(() => {
-  const map = {}
-  for (const item of problems.value) {
-    const line = (item.line || 0) + 1
-    const level = item.severity === 'error' ? 'error' : item.severity === 'warning' ? 'warning' : 'info'
-    if (map[line] === 'error') continue
-    if (!map[line] || level === 'error') map[line] = level
-  }
-  return map
+const {
+  problems,
+  problemsAsk,
+  problemsLoading,
+  problemStats,
+  markers,
+  refreshDiagnostics,
+  onEdit,
+  onProblem,
+} = useDiagnostics({
+  wsId: () => props.ws.id,
+  activePath,
+  editorOf,
+  onOpen: (loc) => openLocation(loc),
 })
 
-function extensionOf(path) {
-  const name = String(path || '')
-  const dot = name.lastIndexOf('.')
-  return dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
-}
-
-const languageLabel = computed(() => {
-  const ext = extensionOf(activePath.value)
-  return ext ? LANGUAGES[ext] || ext.toUpperCase() : '文本'
-})
-
-const serverInfo = computed(() => {
-  const id = SERVER_BY_EXT[extensionOf(activePath.value)]
-  return id ? servers.value.find((item) => item.id === id) || null : null
-})
-const serverReady = computed(() => !!(serverInfo.value && serverInfo.value.available))
-const serverLabel = computed(() => {
-  if (!activePath.value) return ''
-  const info = serverInfo.value
-  if (!info) return '无代码索引'
-  return info.available ? `${info.title} 索引就绪` : `${info.title} 未装`
-})
-const serverTitle = computed(() => {
-  const info = serverInfo.value
-  if (!info) return '这种文件没有语言服务器'
-  return info.available ? info.command : info.hint
-})
-const outlineRows = computed(() => {
-  const q = outlineAsk.filter.trim().toLowerCase()
-  if (!q) return outlineAsk.items
-  return outlineAsk.items.filter((item) => String(item.name).toLowerCase().includes(q))
-})
 const quickRows = computed(() => filterPaths(quickAsk.files, quickAsk.filter))
 
 // 右键标识符弹出的代码菜单：位置、词，以及来源文件与行列。
 const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 0, word: '' })
-// 标签页右键菜单与悬停框。
+// 标签页右键菜单。
 const tabMenu = reactive({ on: false, x: 0, y: 0, path: '' })
-const hoverAsk = reactive({ on: false, word: '', text: '' })
-// 鼠标悬停的浮层与缓存：同一个位置只问一次。
-const hoverTip = reactive({ on: false, x: 0, y: 0, text: '' })
-const hoverCache = new Map()
-let hoverSeq = 0
-const SYMBOL_TITLES = {
-  definition: '定义',
-  typeDefinition: '类型定义',
-  implementation: '实现',
-  references: '引用',
-}
 // 左侧目录树的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
 const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
@@ -946,32 +908,30 @@ function pick(node) {
   return show(node)
 }
 
-// Ctrl+点击取到的词去问语言服务器：一条直接跳，多条列出来选，零条或出错在顶栏说明。
-async function onDefinition({ path, line, character, word }) {
-  if (!path) return
+// 预览器拿到的是原始字节，走下载接口；文件换了大小就换地址，免得拿旧的那份。
+function rawUrl(tab) {
+  const base = api.downloadUrl(props.ws.id, tab.path)
+  return tab.size ? `${base}&v=${tab.size}` : base
+}
+
+function viewerFor(tab) {
+  return tab ? VIEWERS[previewKindOf(tab.path)] || null : null
+}
+
+// 预览与源码之间来回切；切回预览前有没保存的草稿先问一句，切回编辑器时把内容读进来。
+async function toggleSource(path) {
   const editor = editorOf(path)
-  if (!editor) return
-  defining.value = true
-  try {
-    const data = await api.definition(props.ws.id, path, editor.text, line, character)
-    const list = (data && data.locations) || []
-    if (!list.length) {
-      flash(`没找到「${word}」的定义`)
-      return
-    }
-    if (list.length === 1) {
-      await openLocation(list[0])
-      return
-    }
-    defAsk.word = word
-    defAsk.title = '定义'
-    defAsk.list = list
-    defAsk.on = true
-  } catch (err) {
-    flash(err.message)
-  } finally {
-    defining.value = false
+  if (sourceView.has(path)) {
+    if (editor && editor.dirty && !(await editor.confirmLeave())) return
+    sourceView.delete(path)
+    return
   }
+  sourceView.add(path)
+  await nextTick()
+  const opened = editorOf(path)
+  if (!opened || opened.path) return
+  if (await opened.open(path)) restoreDraft(path, opened)
+  refreshDiagnostics(path)
 }
 
 // 右键标识符：在鼠标位置摆出代码菜单，点别处或按 Esc 收起。
@@ -1045,142 +1005,31 @@ async function runSymbol(action) {
     await openHover(item.path, item.line, item.character, item.word)
     return
   }
-  const editor = editorOf(item.path)
-  if (!editor) return
-  const title = SYMBOL_TITLES[action] || '定义'
-  defining.value = true
-  try {
-    const data = await api.query(
-      props.ws.id, item.path, editor.text, item.line, item.character, action
-    )
-    const list = (data && data.locations) || []
-    if (!list.length) {
-      flash(`没有找到「${item.word}」的${title}`)
-      return
-    }
-    if (list.length === 1) {
-      await openLocation(list[0])
-      return
-    }
-    defAsk.word = item.word
-    defAsk.title = title
-    defAsk.list = list
-    defAsk.on = true
-  } catch (err) {
-    flash(err.message)
-  } finally {
-    defining.value = false
-  }
-}
-
-// 诊断：先取一次，服务器是异步推的，1.6 秒后再取一次补上。
-function refreshDiagnostics(path = activePath.value) {
-  const seq = ++diagSeq
-  clearTimeout(diagTimer)
-  // 换文件时先把转圈收掉，旧请求回来时序号已经对不上，不会再把它打开。
-  problemsLoading.value = false
-  if (!path) {
-    problems.value = []
-    return
-  }
-  const run = async () => {
-    if (seq !== diagSeq || path !== activePath.value) return
-    const editor = editorOf(path)
-    if (!editor || !editor.path) return
-    problemsLoading.value = true
-    try {
-      const data = await api.diagnostics(props.ws.id, path, editor.text)
-      if (seq === diagSeq && path === activePath.value) problems.value = data.diagnostics || []
-    } catch (err) {
-      if (seq === diagSeq && path === activePath.value) problems.value = []
-    } finally {
-      if (seq === diagSeq && path === activePath.value) problemsLoading.value = false
-    }
-  }
-  run()
-  diagTimer = setTimeout(run, 1600)
-}
-
-function onEdit({ path }) {
-  if (path !== activePath.value) return
-  clearTimeout(editTimer)
-  editTimer = setTimeout(() => refreshDiagnostics(path), 900)
-}
-
-function onProblem(item) {
-  problemsAsk.on = false
-  openLocation({ path: activePath.value, line: item.line, character: item.character })
+  await askLocations(action, item)
 }
 
 // 状态栏与 IDE 快捷键：快速打开、符号大纲、跳到行。
-async function loadServers() {
-  if (serversLoaded.value) return
-  try {
-    const data = await api.lspStatus()
-    servers.value = data.servers || []
-    serversLoaded.value = true
-  } catch (err) {
-    servers.value = []
-  }
-}
-
 function onCaret(position) {
   if (!position || position.path !== activePath.value) return
   caret.line = position.line
   caret.column = position.column
 }
 
+// 快捷键表在 browseMenus；这里只放 action 到处理函数的对应。
+const SHORTCUT_RUN = {
+  'quick-open': openQuickOpen,
+  'goto-line': openGotoLine,
+  outline: openOutline,
+  hover: showHoverAtCaret,
+}
+
 function onPanelKey(event) {
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return
   const key = (event.key || '').toLowerCase()
-  if (key === 'p' && !event.shiftKey) {
-    event.preventDefault()
-    openQuickOpen()
-  } else if (key === 'g' && !event.shiftKey) {
-    event.preventDefault()
-    openGotoLine()
-  } else if (key === 'o' && event.shiftKey) {
-    event.preventDefault()
-    openOutline()
-  } else if (key === 'i' && !event.shiftKey) {
-    event.preventDefault()
-    showHoverAtCaret()
-  }
-}
-
-async function openOutline() {
-  const tab = activeTab.value
-  const editor = tab ? editorOf(tab.path) : null
-  if (!tab || !editor || !editor.path) {
-    flash('先打开一个文件再看大纲')
-    return
-  }
-  Object.assign(outlineAsk, {
-    on: true,
-    loading: true,
-    error: '',
-    items: [],
-    filter: '',
-    path: tab.path,
-  })
-  try {
-    const data = await api.symbols(props.ws.id, tab.path, editor.text)
-    outlineAsk.items = data.symbols || []
-    if (!outlineAsk.items.length) outlineAsk.error = '这个文件没有符号'
-  } catch (err) {
-    outlineAsk.error = err.message
-  } finally {
-    outlineAsk.loading = false
-  }
-}
-
-function symbolIcon(item) {
-  return SYMBOL_ICONS[item.kind] || 'mdi-symbol'
-}
-
-async function pickSymbol(item) {
-  outlineAsk.on = false
-  await openLocation({ path: outlineAsk.path, line: item.line, character: item.character })
+  const hit = SHORTCUTS.find((item) => item.key === key && item.shift === event.shiftKey)
+  if (!hit) return
+  event.preventDefault()
+  SHORTCUT_RUN[hit.action]()
 }
 
 async function openQuickOpen() {
@@ -1220,13 +1069,19 @@ async function submitGotoLine() {
   await show(tab, line)
 }
 
-// 标签页右键：关闭、关闭其他、关闭全部、复制路径。
+// 标签页右键：关闭、关闭其他、关闭全部、复制相对路径与绝对路径。
 function openTabMenu(tab, event) {
   symMenu.on = false
   tabMenu.x = Math.max(0, Math.min(event.clientX, window.innerWidth - 208))
-  tabMenu.y = Math.max(0, Math.min(event.clientY, window.innerHeight - 180))
+  tabMenu.y = Math.max(0, Math.min(event.clientY, window.innerHeight - 200))
   tabMenu.path = tab.path
   tabMenu.on = true
+}
+
+// 工作区登记的是绝对目录，拼上相对路径就是文件在磁盘上的位置。
+function absolutePath(path) {
+  const root = String(props.ws.root || '').replace(/\/+$/, '')
+  return root ? `${root}/${path}` : path
 }
 
 async function tabAction(action) {
@@ -1235,6 +1090,12 @@ async function tabAction(action) {
   if (action === 'copy') {
     await copyText(path)
     flash(`已复制 ${path}`)
+    return
+  }
+  if (action === 'copy-abs') {
+    const abs = absolutePath(path)
+    await copyText(abs)
+    flash(`已复制 ${abs}`)
     return
   }
   if (action === 'close') {
@@ -1248,173 +1109,6 @@ async function tabAction(action) {
     await closeTab(tab)
     // 有未保存草稿时用户可能取消，剩下就停手。
     if (tabOf(tabs.value, tab.path)) return
-  }
-}
-
-// 鼠标停在标识符上一会儿：浮层显示类型与文档，换位置或移出就收起。
-function onHover({ path, line, character, x, y }) {
-  if (path !== activePath.value || !serverReady.value) return
-  const key = `${path}:${line}:${character}`
-  const left = Math.max(8, Math.min(x + 14, window.innerWidth - 448))
-  const top = Math.max(8, Math.min(y + 14, window.innerHeight - 228))
-  const cached = hoverCache.get(key)
-  if (cached !== undefined) {
-    if (!cached) return
-    Object.assign(hoverTip, { on: true, x: left, y: top, text: cached })
-    return
-  }
-  const editor = editorOf(path)
-  if (!editor || !editor.path) return
-  const seq = ++hoverSeq
-  Object.assign(hoverTip, { on: true, x: left, y: top, text: '读取悬停…' })
-  api
-    .hover(props.ws.id, path, editor.text, line, character)
-    .then((data) => {
-      if (seq !== hoverSeq) return
-      const text = (data && data.hover && data.hover.text) || ''
-      hoverCache.set(key, text)
-      if (hoverCache.size > 200) hoverCache.delete(hoverCache.keys().next().value)
-      if (!text) {
-        hoverTip.on = false
-        return
-      }
-      hoverTip.text = text
-    })
-    .catch((err) => {
-      if (seq === hoverSeq) {
-        hoverTip.on = false
-        flash(err.message)
-      }
-    })
-}
-
-function onHoverEnd({ path } = {}) {
-  if (path && path !== activePath.value) return
-  hoverSeq += 1
-  hoverTip.on = false
-}
-
-// 悬停：Ctrl+I 看光标处的词，右键菜单里也能看。
-function offsetOf(text, line, column) {
-  const lines = String(text || '').split('\n')
-  let offset = 0
-  for (let i = 0; i < line - 1 && i < lines.length; i += 1) offset += lines[i].length + 1
-  return offset + Math.max(0, column - 1)
-}
-
-async function showHoverAtCaret() {
-  const tab = activeTab.value
-  const editor = tab ? editorOf(tab.path) : null
-  if (!tab || !editor || !editor.path) {
-    flash('先打开一个文件')
-    return
-  }
-  const symbol = symbolAt(editor.text, offsetOf(editor.text, caret.line, caret.column))
-  if (!symbol) {
-    flash('光标不在标识符上')
-    return
-  }
-  await openHover(tab.path, symbol.line, symbol.character, symbol.word)
-}
-
-async function openHover(path, line, character, word) {
-  const editor = editorOf(path)
-  if (!editor) return
-  defining.value = true
-  try {
-    const data = await api.hover(props.ws.id, path, editor.text, line, character)
-    const text = (data && data.hover && data.hover.text) || ''
-    if (!text) {
-      flash(`「${word}」没有悬停信息`)
-      return
-    }
-    Object.assign(hoverAsk, { on: true, word, text })
-  } catch (err) {
-    flash(err.message)
-  } finally {
-    defining.value = false
-  }
-}
-
-// 重命名：先填新名字、看要改哪些文件，确认后才落盘；F2 与右键菜单都走这里。
-function openRename(payload) {
-  Object.assign(renameAsk, {
-    on: true,
-    path: payload.path,
-    line: payload.line,
-    character: payload.character,
-    word: payload.word,
-    value: payload.word,
-    step: 'input',
-    files: [],
-    total: 0,
-    error: '',
-    busy: false,
-  })
-}
-
-async function previewRename() {
-  const editor = editorOf(renameAsk.path)
-  if (!editor) return
-  const name = renameAsk.value.trim()
-  if (!name) {
-    renameAsk.error = '新名字不能为空'
-    return
-  }
-  renameAsk.busy = true
-  renameAsk.error = ''
-  try {
-    const data = await api.renamePreview(
-      props.ws.id, renameAsk.path, editor.text, renameAsk.line, renameAsk.character, name
-    )
-    renameAsk.files = data.files || []
-    renameAsk.total = data.total || 0
-    renameAsk.step = 'preview'
-    if (!renameAsk.total) renameAsk.error = '没有找到要改的位置'
-  } catch (err) {
-    renameAsk.error = err.message
-  } finally {
-    renameAsk.busy = false
-  }
-}
-
-async function applyRename() {
-  const editor = editorOf(renameAsk.path)
-  if (!editor) return
-  // 有草稿的文件不能直接改盘，先让用户保存。
-  const dirty = renameAsk.files
-    .map((item) => item.path)
-    .filter((path) => {
-      const other = editorOf(path)
-      return other && other.dirty
-    })
-  if (dirty.length) {
-    renameAsk.error = `先保存这些文件的改动：${dirty.join('、')}`
-    return
-  }
-  renameAsk.busy = true
-  renameAsk.error = ''
-  try {
-    const data = await api.renameApply(
-      props.ws.id,
-      renameAsk.path,
-      editor.text,
-      renameAsk.line,
-      renameAsk.character,
-      renameAsk.value.trim()
-    )
-    // 改到开着的文件就重新读一遍，目录树刷一下所在目录。
-    for (const item of data.files || []) {
-      const other = editorOf(item.path)
-      if (other && other.path) await other.reload()
-      await treeRef.value?.reloadDir(dirName(item.path))
-    }
-    renameAsk.on = false
-    flash(`已重命名「${renameAsk.word}」，改了 ${data.total || 0} 处`)
-  } catch (err) {
-    renameAsk.error = err.message
-  } finally {
-    renameAsk.busy = false
   }
 }
 
@@ -1720,10 +1414,7 @@ onBeforeUnmount(() => {
     expanded: treeRef.value ? treeRef.value.expandedKeys() : keptExpanded,
   })
   clearTimeout(searchTimer)
-  clearTimeout(diagTimer)
-  clearTimeout(editTimer)
-  hoverSeq += 1
-  hoverCache.clear()
+  disposeCodeIndex()
   window.removeEventListener('mousedown', onMenuOutside, true)
   window.removeEventListener('keydown', onMenuKey, true)
   searchSeq += 1
@@ -1894,7 +1585,9 @@ onBeforeUnmount(() => {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.24);
 }
 .sym-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 7px 10px;
   border: 0;
@@ -2083,6 +1776,24 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* 预览切源码时顶上一颗按钮；预览器自己的样式跟组件走。 */
+.preview-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+}
+.preview-act {
+  padding: 2px 8px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.16);
+  border-radius: 4px;
+  background: rgb(var(--v-theme-surface));
+  color: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.preview-act:hover {
+  background: rgba(var(--v-theme-primary), 0.12);
 }
 .tree {
   width: var(--tree-width, 300px);
