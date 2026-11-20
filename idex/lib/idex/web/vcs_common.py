@@ -3,6 +3,7 @@ import os
 
 from web import ApiError
 from server_common import inside, safe_rel
+from vcs_cli import svn
 
 
 FETCH_TIMEOUT = 20

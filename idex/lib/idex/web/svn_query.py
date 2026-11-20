@@ -2,6 +2,7 @@
 from web import ApiError
 import os
 import xml.etree.ElementTree as ET
+from urllib.parse import unquote, urlparse
 
 from vcs_cli import svn
 

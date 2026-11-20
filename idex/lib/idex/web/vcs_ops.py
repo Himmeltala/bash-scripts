@@ -6,6 +6,7 @@ import subprocess
 
 from web import ApiError
 from jobs import OPERATION_TIMEOUT
+from server_common import inside, safe_rel
 from vcs_cli import git, svn
 
 from vcs_query import (
