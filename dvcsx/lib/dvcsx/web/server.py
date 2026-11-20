@@ -41,27 +41,21 @@ from stores import LayoutStore
 from routes_lsp import LspRoutes
 from web import ApiError, STREAMED, WebHandler, WebServer, guess_host, is_any, zip_dir
 from server_common import MAX_FILE, inside, safe_rel, workspace_lock
+from vcs_cli import GIT_TIMEOUT, SVN_TIMEOUT, git, svn
+from browse_fs import browse_file, browse_files, browse_list, browse_rel, browse_search, delete_entry, make_entry, read_unversioned, rename_entry, save_file
+from routes_browse import BrowseRoutes
+from vcs_query import FETCH_TIMEOUT, LOG_DEFAULT, LOG_FMT, LOG_MAX, LOG_SKIP_MAX, MAX_TEXT, STATUS_ORDER, UNVERSIONED_MAX, UNVERSIONED_SKIP, WIDE_LINE, change_diff, changes_payload, clean_paths, clip, column_item, diff_of, expand_unversioned, git_ahead_behind, git_branch, git_branches, git_change_diff, git_changes, git_commit_detail, git_diff_of, git_head, git_info, git_item, git_log, git_op_env, git_ref_exists, git_ref_labels, git_remote_sync, git_remotes, git_revision_diff, git_stage_args, git_sync_info, git_unstage_args, git_upstream, is_wide, node_text, parse_git_log, parse_git_status, parse_log, parse_name_status, parse_status, revision_diff, split_status, svn_add_args, svn_add_paths, svn_commit_detail, svn_entry_local, svn_info, svn_log_meta, svn_status_state, svn_sync_info, svn_unadd_args, svn_unadd_paths, svn_working_revisions, unversioned_files, workspace_paths, xml_of, detect_vcs
+from routes_vcs import VcsRoutes
 
 # 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
-MAX_TEXT = 2 * 1024 * 1024
 # 单行超过这个宽度按大文件处理：压缩过的 JS/CSS 一行几十万字符，页面渲染不动。
-WIDE_LINE = 2000
 # 未纳入版本控制的文件没有差异可算，直接读内容预览，超过这个大小就不给。
 SVN_TIMEOUT = 30
 GIT_TIMEOUT = 30
 # fetch 是取日志前顺手同步远端，等太久就把页面拖住了，超时先按本地记录出。
-FETCH_TIMEOUT = 20
-LOG_DEFAULT = 50
-LOG_MAX = 200
-LOG_SKIP_MAX = 1000
 # 浏览目录时一层最多回这么多项，再多的目录列出来也翻不动。
-BROWSE_MAX = 500
 # 快速打开要一次列出工作副本里的文件，到上限就停。
-FILES_MAX = 20000
 # 浏览目录的搜索：命中与扫过的文件都设上限，大工作副本不至于把页面拖住。
-SEARCH_MAX = 300
-SEARCH_FILES_MAX = 20000
-SEARCH_LINE_MAX = 240
 # 搜索默认跳过的目录名，按名字在工作副本里任何一层匹配；设置页可以改。
 SEARCH_IGNORE_DEFAULTS = [".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target"]
 SEARCH_IGNORE_MAX = 50
@@ -569,211 +563,31 @@ class Settings:
 
 # svn 查询
 
-def svn(args, cwd=None, timeout=SVN_TIMEOUT):
-    """跑一条 svn 命令，返回标准输出与错误文本。找不到 svn 与超时都按接口错误报出去。"""
-    try:
-        cp = subprocess.run(
-            ["svn", "--non-interactive", *args],
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        raise ApiError(504, "svn 命令超过 %d 秒没跑完：%s" % (timeout, " ".join(args)))
-    except OSError as exc:
-        raise ApiError(500, "跑不起 svn，确认 svn 在 PATH 中、目录还在：%s" % exc)
-    return cp.returncode, cp.stdout, cp.stderr.decode("utf-8", "replace").strip()
 
 
-def xml_of(out):
-    try:
-        return ET.fromstring(out)
-    except ET.ParseError as exc:
-        raise ApiError(500, "svn 返回的 XML 读不懂：%s" % exc)
 
 
-def node_text(parent, name):
-    node = parent.find(name) if parent is not None else None
-    return (node.text or "").strip() if node is not None and node.text else ""
 
 
-def svn_info(root):
-    rc, out, err = svn(["info", "--xml"], cwd=root)
-    if rc != 0:
-        raise ApiError(400, "这个目录不是 SVN 工作副本：%s" % (err or root))
-    entry = xml_of(out).find("entry")
-    if entry is None:
-        raise ApiError(500, "svn info 没有给出条目：%s" % root)
-    wc = entry.find("wc-info")
-    # svn 给的是百分号编码的地址，中文项目名在页面上要看原文。
-    return {
-        "root": node_text(wc, "wcroot-abspath") or os.path.abspath(root),
-        "revision": entry.get("revision", ""),
-        "url": unquote(node_text(entry, "url")),
-        "repo_root": unquote(node_text(entry.find("repository"), "root")),
-        "last_changed_rev": node_text(entry.find("commit"), "revision"),
-        "last_changed_author": node_text(entry.find("commit"), "author"),
-    }
 
 
 # 状态字母与中文名的对应只在页面上用，这里原样给 svn 的 item 值。
-STATUS_ORDER = {
-    "conflicted": 0,
-    "replaced": 1,
-    "renamed": 1,
-    "modified": 2,
-    "added": 3,
-    "deleted": 4,
-    "missing": 5,
-    "obstructed": 6,
-    "incomplete": 7,
-    "unversioned": 8,
-    "external": 9,
-    "normal": 10,
-}
 
 
-def parse_status(out):
-    files = []
-    for entry in xml_of(out).iter("entry"):
-        wc = entry.find("wc-status")
-        if wc is None:
-            continue
-        item = wc.get("item", "normal")
-        props = wc.get("props", "none")
-        # 只有属性变了的照 svn 的说法也是 normal，单独标出来，否则页面上看不见。
-        if item == "normal" and props != "modified":
-            continue
-        files.append(
-            {
-                "path": entry.get("path", ""),
-                "item": item,
-                "props": props,
-                "revision": wc.get("revision", ""),
-            }
-        )
-    files.sort(key=lambda f: (STATUS_ORDER.get(f["item"], 99), f["path"]))
-    return files
 
 
 # svn status 只报未纳入版本控制的目录本身，页面要能点到里面的文件，这里展开一层层。
 # 依赖与产物目录不展开：它们动辄上千个文件，列出来也没人一个个看。
-UNVERSIONED_SKIP = {".svn", ".git", ".hg", "node_modules", "__pycache__", "dist", "build"}
-UNVERSIONED_MAX = 200
 
 
-def unversioned_files(root, rel):
-    """列出目录下的文件（工作副本内相对路径），到上限就停，返回 (路径表, 是否还有更多)。"""
-    out = []
-    base = os.path.join(root, rel)
-    for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if d not in UNVERSIONED_SKIP)
-        for name in sorted(filenames):
-            out.append(os.path.relpath(os.path.join(dirpath, name), root))
-            if len(out) >= UNVERSIONED_MAX:
-                return out, True
-    return out, False
 
 
-def expand_unversioned(root, files):
-    out = []
-    truncated = False
-    for item in files:
-        target = os.path.join(root, item["path"])
-        if item["item"] == "unversioned" and os.path.isdir(target):
-            paths, more = unversioned_files(root, item["path"])
-            truncated = truncated or more
-            # 空目录没有文件可点，保留目录这一行，点开有提示。
-            if not paths:
-                out.append(item)
-                continue
-            out.extend({**item, "path": rel} for rel in paths)
-        else:
-            out.append(item)
-    out.sort(key=lambda f: (STATUS_ORDER.get(f["item"], 99), f["path"]))
-    return out, truncated
 
 
-def parse_log(out):
-    entries = []
-    for entry in xml_of(out).iter("logentry"):
-        paths = []
-        for item in entry.iter("path"):
-            paths.append(
-                {
-                    "action": item.get("action", ""),
-                    "kind": item.get("kind", ""),
-                    "path": (item.text or "").strip(),
-                    "copyfrom": item.get("copyfrom-path", ""),
-                }
-            )
-        entries.append(
-            {
-                "revision": entry.get("revision", ""),
-                "author": node_text(entry, "author"),
-                "date": node_text(entry, "date"),
-                "message": node_text(entry, "msg"),
-                "paths": paths,
-            }
-        )
-    return entries
 
 
-def svn_working_revisions(root):
-    """工作副本里每个条目各自的版本。
-
-    根目录的版本只记着上次更新的位置，自己刚提交的文件版本会更高，
-    所以判断“这一版在不在本地”要按文件各自的版本看。
-    """
-    rc, out, err = svn(["info", "--xml", "-R"], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "svn info 失败")
-    revs = {}
-    for entry in xml_of(out).iter("entry"):
-        try:
-            revs[entry.get("path", "")] = int(entry.get("revision", ""))
-        except ValueError:
-            continue
-    return revs
 
 
-def svn_entry_local(entry, prefix, revs, top, base_rev):
-    """这一版的改动是否已经在工作副本里。
-
-    工作副本根已经更新到这一版或更新时，整棵树都带上了这一版的改动，
-    直接算本地已有。否则再按文件各自的版本看：这一版新加的文件后来又被
-    删掉，就不在 revs 里，不能因此把这一版判成还没更新。
-    """
-    try:
-        rev = int(entry["revision"])
-    except (TypeError, ValueError):
-        return False
-    if rev <= base_rev:
-        return True
-    checked = 0
-    for item in entry["paths"]:
-        # 目录的版本不随提交往前走，拿它判断会把刚提交的改动误判成远程。
-        if item.get("kind") == "dir":
-            continue
-        path = item.get("path") or ""
-        if prefix:
-            if not path.startswith(prefix + "/"):
-                continue
-            rel = path[len(prefix) + 1:]
-        else:
-            rel = path.lstrip("/")
-        checked += 1
-        if rel in revs:
-            if revs[rel] < rev:
-                return False
-        elif item.get("action") != "D":
-            # 这一版新加或改名的文件本地还没有，说明还没更新到这一版。
-            return False
-    if checked:
-        return True
-    # 这一版只动了目录：按工作副本里最新的版本判断。
-    return top >= rev
 
 
 def svn_log(root, limit):
@@ -782,29 +596,6 @@ def svn_log(root, limit):
     return entries
 
 
-def svn_log_meta(root, limit, skip=0):
-    """日志连同工作副本的版本位置：文件里最高的版本号。"""
-    # 工作副本根目录本身的 BASE 往往是 r0，直接 svn log 会一条都没有；从 HEAD 往回想。
-    # svn log 没有跳过多少条的参数，多取 skip 条再切掉前面已有的。
-    fetch = limit + skip
-    rc, out, err = svn(["log", "--xml", "-v", "-l", str(fetch), "-r", "HEAD:1"], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "svn log 失败")
-    entries = parse_log(out)
-    revs = svn_working_revisions(root)
-    top = max(revs.values(), default=0)
-    info = svn_info(root)
-    try:
-        base_rev = int(info["revision"])
-    except (TypeError, ValueError):
-        base_rev = 0
-    # svn log 给的路径相对仓库根，工作副本在仓库里的位置要从这两个地址里减出来。
-    url_path = urlparse(info["url"]).path.rstrip("/")
-    repo_path = urlparse(info["repo_root"]).path.rstrip("/")
-    prefix = url_path[len(repo_path):].rstrip("/") if repo_path and url_path.startswith(repo_path) else url_path
-    for entry in entries:
-        entry["local"] = svn_entry_local(entry, prefix, revs, top, base_rev)
-    return entries[skip:], {"wc_revision": top}
 
 
 def svn_op(root, args, label):
@@ -870,968 +661,127 @@ def svn_commit(root, message, paths):
     return svn_op(root, svn_commit_args(root, message, paths), "commit")
 
 
-def svn_add_paths(state, paths):
-    """纳入版本控制只接受未纳管的路径；已纳管或本地缺失的先让用户看清楚。"""
-    if not paths:
-        raise ApiError(400, "没有选中要纳入版本控制的路径")
-    clean = []
-    for rel in paths:
-        if state.get(rel) != "unversioned":
-            raise ApiError(400, "只能纳入未纳入版本控制的路径：%s" % rel)
-        if rel not in clean:
-            clean.append(rel)
-    return clean
 
 
-def svn_add_args(root, paths):
-    # --parents 让新加的目录连同上级一起纳管，省得页面逐层选。
-    return ["add", "--parents", "--", *clean_paths(root, paths)]
 
 
-def svn_unadd_paths(state, paths):
-    """取消纳入只认刚纳入、还没提交的路径；改过或已提交的不在这里撤。"""
-    if not paths:
-        raise ApiError(400, "没有选中要取消纳入版本控制的路径")
-    clean = []
-    for rel in paths:
-        if state.get(rel) != "added":
-            raise ApiError(400, "只能取消还没提交的纳入：%s" % rel)
-        if rel not in clean:
-            clean.append(rel)
-    return clean
 
 
-def svn_unadd_args(root, paths):
-    # 撤回纳入用 svn revert：文件留着，只把待提交的新增标记去掉。
-    # 目录必须连子项一起撤，只撤目录本身 svn 会报 E155038。
-    return ["revert", "--depth", "infinity", "--", *clean_paths(root, paths)]
 
 
-def svn_status_state(root):
-    """路径到状态的对照表；未纳管目录按文件展开，与页面列的一致。"""
-    rc, out, err = svn(["status", "--xml"], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "svn status 失败")
-    files, _ = expand_unversioned(root, parse_status(out))
-    return {item["path"]: item["item"] for item in files}
 
 
-def svn_sync_info(root):
-    info = svn_info(root)
-    rc, out, err = svn(["status", "--xml"], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "svn status 失败")
-    files = [item for item in parse_status(out) if item["item"] != "unversioned"]
-    return {
-        **info,
-        "vcs": "svn",
-        "files": files,
-        "conflicts": [item["path"] for item in files if item["item"] == "conflicted"],
-    }
 
 
-def svn_commit_detail(root, rev):
-    """一个版本的完整信息；svn log 本来就给整段提交说明。"""
-    if not (rev or "").isdigit():
-        raise ApiError(400, "版本号不对：%s" % rev)
-    rc, out, err = svn(["log", "--xml", "-v", "-r", rev], cwd=root)
-    if rc != 0:
-        raise ApiError(400, err or "读不了这个版本")
-    entries = parse_log(out)
-    if not entries:
-        raise ApiError(404, "没有这个版本：%s" % rev)
-    entry = entries[0]
-    return {
-        "revision": entry["revision"],
-        "short": "r" + entry["revision"],
-        "author": entry["author"],
-        "email": "",
-        "date": entry["date"],
-        "parents": [],
-        "refs": [],
-        "message": entry["message"],
-        "paths": entry["paths"],
-    }
 
 
-def clean_paths(root, paths):
-    """接口收到的一批工作副本内相对路径：逐个校验，重复的只留一次。"""
-    if not isinstance(paths, (list, tuple)):
-        raise ApiError(400, "路径要是一个列表")
-    clean = []
-    for raw in paths:
-        if not isinstance(raw, str):
-            raise ApiError(400, "路径要是文本：%s" % raw)
-        rel = safe_rel(raw)
-        if not inside(root, os.path.join(root, rel)):
-            raise ApiError(400, "路径要在工作副本里：%s" % rel)
-        if rel not in clean:
-            clean.append(rel)
-    if not clean:
-        raise ApiError(400, "没有选中要处理的路径")
-    return clean
 
 
-def clip(text):
-    if len(text) <= MAX_TEXT:
-        return text, False
-    return text[:MAX_TEXT] + "\n…（差异太长，后面的没有显示）\n", True
 
 
-def is_wide(text):
-    """有没有一行超过 WIDE_LINE：压缩产物就是这样，按大文件对待。差异行前的 +/- 标记不算宽度。"""
-    for line in text.splitlines():
-        width = len(line) - 1 if line[:1] in "+- " else len(line)
-        if width > WIDE_LINE:
-            return True
-    return False
 
 
-def browse_rel(rel):
-    """浏览接口的路径：空串表示登记的目录本身，其余按工作副本内相对路径校验。"""
-    rel = (rel or "").strip()
-    if not rel:
-        return ""
-    return safe_rel(rel)
 
 
-def browse_list(root, rel):
-    """列一层目录，目录在前、文件在后；只认登记目录底下的东西。"""
-    rel = browse_rel(rel).rstrip("/")
-    target = os.path.join(root, rel) if rel else root
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    if not os.path.isdir(target):
-        raise ApiError(404, "目录不存在：%s" % (rel or "根目录"))
-    entries = []
-    try:
-        with os.scandir(target) as it:
-            for entry in it:
-                try:
-                    is_dir = entry.is_dir(follow_symlinks=True)
-                except OSError:
-                    is_dir = False
-                item = {
-                    "name": entry.name,
-                    "path": (rel + "/" + entry.name) if rel else entry.name,
-                    "type": "dir" if is_dir else "file",
-                }
-                if not is_dir:
-                    try:
-                        item["size"] = entry.stat(follow_symlinks=True).st_size
-                    except OSError:
-                        item["size"] = 0
-                entries.append(item)
-    except OSError as exc:
-        raise ApiError(403, "读不了目录：%s" % exc)
-    entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
-    truncated = len(entries) > BROWSE_MAX
-    return {"path": rel, "entries": entries[:BROWSE_MAX], "truncated": truncated}
 
 
-def search_lines(path, needle):
-    """逐行找内容，跳过二进制、超大与不是 UTF-8 的文件，产出 (行号, 行文本)。"""
-    try:
-        if os.path.getsize(path) > MAX_FILE:
-            return
-        data = Path(path).read_bytes()
-    except OSError:
-        return
-    if b"\x00" in data:
-        return
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        return
-    for number, line in enumerate(text.splitlines(), 1):
-        if needle in line.lower():
-            yield number, line.strip()[:SEARCH_LINE_MAX]
 
 
-def browse_files(root, ignore=()):
-    """快速打开用的文件清单：跳过 ignore 里的目录，按路径排序，到上限就停。"""
-    skip = {str(name) for name in ignore if name}
-    out = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(name for name in dirnames if name not in skip)
-        for name in sorted(filenames):
-            path = os.path.join(dirpath, name)
-            if not inside(root, path):
-                continue
-            out.append(os.path.relpath(path, root).replace(os.sep, "/"))
-            if len(out) >= FILES_MAX:
-                return out, True
-    return out, False
 
 
-def browse_search(root, rel, query, mode, ignore=()):
-    """在工作副本里按文件名或文件内容找。
-
-    文件名只看文件本身的名字，做不区分大小写的包含匹配，不看所在目录；内容逐行
-    找，只读预览得了的文本文件。ignore 里的目录名在任何一层出现都不往里走。
-    命中或扫过的文件到上限就停，truncated 说明还有没扫完的。
-    """
-    base = browse_rel(rel).rstrip("/")
-    target = os.path.join(root, base) if base else root
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    if not os.path.isdir(target):
-        raise ApiError(404, "目录不存在：%s" % (rel or "根目录"))
-    needle = (query or "").strip()
-    if mode not in ("name", "content"):
-        mode = "name"
-    if not needle:
-        return {"query": "", "mode": mode, "matches": [], "truncated": False}
-    low = needle.lower()
-    skip = {str(name) for name in ignore if name}
-    matches = []
-    scanned = 0
-    truncated = False
-    for dirpath, dirnames, filenames in os.walk(target):
-        dirnames[:] = sorted(name for name in dirnames if name not in skip)
-        for name in sorted(filenames):
-            path = os.path.join(dirpath, name)
-            # 链接指到工作副本外的不看，免得搜到别人的文件。
-            if not inside(root, path):
-                continue
-            relpath = os.path.relpath(path, root).replace(os.sep, "/")
-            scanned += 1
-            try:
-                size = os.path.getsize(path)
-            except OSError:
-                size = 0
-            if mode == "name":
-                if low in name.lower():
-                    matches.append({"path": relpath, "name": name, "size": size})
-            else:
-                for number, line in search_lines(path, low):
-                    matches.append(
-                        {
-                            "path": relpath,
-                            "name": name,
-                            "size": size,
-                            "line": number,
-                            "text": line,
-                        }
-                    )
-                    if len(matches) > SEARCH_MAX:
-                        break
-            if len(matches) > SEARCH_MAX or scanned >= SEARCH_FILES_MAX:
-                truncated = True
-                break
-        if truncated:
-            break
-    return {
-        "query": needle,
-        "mode": mode,
-        "matches": matches[:SEARCH_MAX],
-        "truncated": truncated,
-        "scanned": scanned,
-    }
 
 
-def browse_file(root, rel):
-    """读工作副本里的一个文件，大小、编码与二进制的限制跟未纳管文件预览一致。"""
-    rel = browse_rel(rel)
-    if not rel:
-        raise ApiError(400, "没给文件路径")
-    return read_unversioned(root, rel)
 
 
-def read_unversioned(root, rel):
-    """未纳入版本控制的文件没有差异，读内容当整份新增显示。"""
-    target = os.path.join(root, rel)
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    if os.path.isdir(target):
-        raise ApiError(400, "这是目录，里面没有可直接预览的文件")
-    if not os.path.isfile(target):
-        raise ApiError(404, "文件不存在：%s" % rel)
-    try:
-        return read_text_preview(target, MAX_FILE)
-    except PreviewError as exc:
-        if exc.kind == "too_large":
-            raise ApiError(413, "文件有 %d 字节，超过预览上限 %d" % (exc.size, exc.max_bytes))
-        if exc.kind == "binary":
-            raise ApiError(415, "这是二进制文件，看不了内容")
-        raise ApiError(415, "这个文件的编码不是 UTF-8，看不了内容")
 
 
-def save_file(root, rel, text):
-    """把浏览目录里改过的文件按 UTF-8 写回，换行风格跟原来保持一致。"""
-    rel = browse_rel(rel)
-    if not rel:
-        raise ApiError(400, "没给文件路径")
-    target = os.path.join(root, rel)
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    if os.path.isdir(target):
-        raise ApiError(400, "这是目录，不能按文件保存")
-    if not os.path.isfile(target):
-        raise ApiError(404, "文件不存在：%s" % rel)
-    try:
-        old = Path(target).read_bytes()
-    except OSError as exc:
-        raise ApiError(403, "读不了这个文件：%s" % exc)
-    # 只覆盖能被预览的文本，二进制与别的编码不碰。
-    if b"\x00" in old:
-        raise ApiError(415, "这是二进制文件，不能按文本保存")
-    try:
-        old.decode("utf-8")
-    except UnicodeDecodeError:
-        raise ApiError(415, "这个文件的编码不是 UTF-8，不能按文本保存")
-    try:
-        size = write_text_preserve_newlines(target, text, old=old)
-    except OSError as exc:
-        raise ApiError(403, "写不了这个文件：%s" % exc)
-    return {"path": rel, "size": size}
 
 
 # 浏览目录的增删改：新建、改名、删除。已纳管的交给 svn 与 git，保住历史；
 # 未纳管的直接动磁盘。新建只落盘，要不要纳入版本控制留给提交页决定。
 
-def entry_name(name):
-    """新建与改名只认单个名字：不能带路径分隔符，不能是 . 或 ..。"""
-    name = (name or "").strip()
-    if not name:
-        raise ApiError(400, "没给名字")
-    if name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
-        raise ApiError(400, "名字里不能带路径分隔符：%s" % name)
-    return name
 
 
-def join_rel(parent, name):
-    return "%s/%s" % (parent, name) if parent else name
 
 
-def browse_parent(root, rel):
-    """取一个要在里面新建东西的目录，空串表示登记的目录本身。"""
-    rel = browse_rel(rel).rstrip("/")
-    target = os.path.join(root, rel) if rel else root
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    if not os.path.isdir(target):
-        raise ApiError(404, "目录不存在：%s" % (rel or "根目录"))
-    return rel, target
 
 
-def browse_target(root, rel):
-    """取一个要改名或删除的条目；不允许动登记的目录本身。"""
-    rel = browse_rel(rel)
-    if not rel:
-        raise ApiError(400, "不能对工作副本的根目录做这个操作")
-    target = os.path.join(root, rel)
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    if not os.path.lexists(target):
-        raise ApiError(404, "文件或目录不存在：%s" % rel)
-    return rel, target
 
 
-def entry_kind(target):
-    return "dir" if os.path.isdir(target) else "file"
 
 
-def git_tracks(root, rel):
-    """Git 认得这个路径下的文件就算纳管；目录只要里面有已跟踪的文件也算。"""
-    rc, out, _ = git(["ls-files", "-z", "--", ":(literal)" + rel], cwd=root)
-    return rc == 0 and bool(out.strip(b"\0"))
 
 
-def svn_tracks(root, rel):
-    rc, _, _ = svn(["info", "--", rel], cwd=root)
-    return rc == 0
 
 
-def make_entry(root, rel, name, kind):
-    """在指定目录下新建目录或空文件；同名已存在时拒绝，不覆盖。"""
-    parent_rel, parent = browse_parent(root, rel)
-    name = entry_name(name)
-    target = os.path.join(parent, name)
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % join_rel(parent_rel, name))
-    if os.path.lexists(target):
-        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
-    try:
-        if kind == "dir":
-            os.mkdir(target)
-        else:
-            # x 模式带排他性：检查与创建之间被别人抢建也只会报错，不会覆盖。
-            with open(target, "x", encoding="utf-8"):
-                pass
-    except FileExistsError:
-        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
-    except OSError as exc:
-        raise ApiError(403, "建不了：%s" % exc)
-    return {"path": join_rel(parent_rel, name), "name": name, "type": kind}
 
 
-def rename_entry(root, vcs, rel, name):
-    """同目录改名：已纳管的走 git mv / svn mv，未纳管的直接改名。"""
-    rel, src = browse_target(root, rel)
-    name = entry_name(name)
-    dest_rel = join_rel(os.path.dirname(rel), name)
-    dest = os.path.join(root, dest_rel)
-    if not inside(root, dest):
-        raise ApiError(400, "路径要在工作副本里：%s" % dest_rel)
-    if src == dest:
-        return {"path": rel, "name": os.path.basename(rel), "type": entry_kind(src)}
-    if os.path.lexists(dest):
-        raise ApiError(409, "已经有同名的文件或目录：%s" % name)
-    try:
-        if vcs == "git" and git_tracks(root, rel):
-            rc, _, err = git(["mv", "--", rel, dest_rel], cwd=root)
-            if rc != 0:
-                raise ApiError(400, err or "git mv 失败")
-        elif vcs == "svn" and svn_tracks(root, rel):
-            rc, _, err = svn(["mv", "--", rel, dest_rel], cwd=root)
-            if rc != 0:
-                raise ApiError(400, err or "svn mv 失败")
-        else:
-            os.rename(src, dest)
-    except OSError as exc:
-        raise ApiError(403, "改名失败：%s" % exc)
-    return {"path": dest_rel, "name": name, "type": entry_kind(dest)}
 
 
-def delete_entry(root, vcs, rel):
-    """删除文件或整个目录：已纳管的走 git rm / svn rm，未纳管的直接删磁盘。"""
-    rel, target = browse_target(root, rel)
-    tracked = False
-    if vcs == "git" and git_tracks(root, rel):
-        tracked = True
-        rc, _, err = git(["rm", "-r", "-f", "--", rel], cwd=root)
-        if rc != 0:
-            raise ApiError(400, err or "git rm 失败")
-    elif vcs == "svn" and svn_tracks(root, rel):
-        tracked = True
-        rc, _, err = svn(["rm", "--force", "--", rel], cwd=root)
-        if rc != 0:
-            raise ApiError(400, err or "svn rm 失败")
-    else:
-        try:
-            if os.path.islink(target) or not os.path.isdir(target):
-                os.remove(target)
-            else:
-                shutil.rmtree(target)
-        except OSError as exc:
-            raise ApiError(403, "删不了：%s" % exc)
-        return {"path": rel, "removed": True, "tracked": False}
-    # git 只删已跟踪的文件，目录里剩下的未纳管内容按整目录删除一并清掉。
-    if os.path.lexists(target):
-        try:
-            if os.path.islink(target) or not os.path.isdir(target):
-                os.remove(target)
-            else:
-                shutil.rmtree(target)
-        except OSError as exc:
-            raise ApiError(403, "删不了剩下的内容：%s" % exc)
-    return {"path": rel, "removed": True, "tracked": tracked}
 
 
-def diff_of(root, args):
-    rc, out, err = svn(args, cwd=root)
-    text = out.decode("utf-8", "replace")
-    if rc != 0 and not text:
-        raise ApiError(400, err or "svn diff 失败")
-    text, truncated = clip(text)
-    return {"text": text, "truncated": truncated, "wide": is_wide(text), "error": err if rc != 0 else ""}
 
 
-def change_diff(root, rel, rev=None, full=False):
-    rel = safe_rel(rel)
-    target = os.path.join(root, rel)
-    if not inside(root, target):
-        raise ApiError(400, "路径要在工作副本里：%s" % rel)
-    # 相对工作副本根跑，差异里显示的就是工作副本内的相对路径。
-    args = ["diff"]
-    if full:
-        # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
-        args += ["-x", "-U1000000"]
-    if rev:
-        args += ["-c", str(rev)]
-    args += ["--", rel]
-    return diff_of(root, args)
 
 
-def revision_diff(root, rev, repo_path="", full=False):
-    if not (rev or "").isdigit():
-        raise ApiError(400, "版本号不对：%s" % rev)
-    args = ["diff"]
-    if full:
-        # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
-        args += ["-x", "-U1000000"]
-    args += ["-c", rev]
-    if repo_path:
-        # 日志里的路径是仓库内绝对路径，^/ 是 svn 在工作副本里认出仓库根的写法。
-        args += ["--", "^" + repo_path]
-    return diff_of(root, args)
 
 
 # git 查询
 
-def git(args, cwd=None, timeout=GIT_TIMEOUT, env=None):
-    """跑一条 git 命令，返回标准输出与错误文本。找不到 git 与超时都按接口错误报出去。"""
-    try:
-        cp = subprocess.run(
-            ["git", "--no-pager", *args],
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        raise ApiError(504, "git 命令超过 %d 秒没跑完：%s" % (timeout, " ".join(args)))
-    except OSError as exc:
-        raise ApiError(500, "跑不起 git，确认 git 在 PATH 中、目录还在：%s" % exc)
-    return cp.returncode, cp.stdout, cp.stderr.decode("utf-8", "replace").strip()
 
 
-def git_head(root):
-    """仓库有没有提交过；空仓库查 status、diff、log 都会在这上面碰壁。"""
-    rc, out, _ = git(["rev-parse", "--verify", "HEAD"], cwd=root)
-    return rc == 0, out.decode("utf-8", "replace").strip()
 
 
-def git_info(root):
-    rc, out, err = git(["rev-parse", "--show-toplevel"], cwd=root)
-    if rc != 0:
-        raise ApiError(400, "这个目录不是 Git 仓库：%s" % (err or root))
-    top = out.decode("utf-8", "replace").strip()
-    has_head, head = git_head(root)
-    rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=root)
-    branch = branch.decode("utf-8", "replace").strip() if rc == 0 else ""
-    rc, remote, _ = git(["remote", "get-url", "origin"], cwd=root)
-    remote = remote.decode("utf-8", "replace").strip() if rc == 0 else ""
-    return {
-        "root": root,
-        "top": top,
-        # 空仓库没有提交，HEAD 与分支都留空。
-        "revision": head[:7] if has_head else "",
-        "branch": branch if has_head else "",
-        "url": remote,
-    }
 
 
-def detect_vcs(root):
-    """认工作副本：先按 SVN 看，不是再看 Git；都不是就当普通目录收下，只给浏览目录。"""
-    if shutil.which("svn"):
-        try:
-            return "svn", svn_info(root)
-        except ApiError:
-            pass
-    if shutil.which("git"):
-        try:
-            return "git", git_info(root)
-        except ApiError:
-            pass
-    return "none", {"url": ""}
 
 
-def workspace_paths(ws):
-    """查文件内容用的根：Git 的路径相对仓库根，SVN 相对登记目录。"""
-    if ws.get("vcs") == "git":
-        return git_info(ws["root"])["top"]
-    return ws["root"]
 
 
-def git_item(code):
-    """把 git status 的两列状态码归到页面认得的那几种。"""
-    x, y = code[0], code[1]
-    both = x + y
-    # 冲突是 UU、AA、DD、AU 这些组合，先认，别落到删除或新增上。
-    if "U" in both or both in ("AA", "DD"):
-        return "conflicted"
-    if x == "?":
-        return "unversioned"
-    if "R" in both:
-        return "renamed"
-    if "C" in both:
-        return "added"
-    if "D" in both:
-        return "deleted"
-    if "A" in both:
-        return "added"
-    return "modified"
 
 
-def column_item(code):
-    """单列状态字母换成页面展示项；未跟踪在索引列记作 ?，这里单独认。"""
-    if code == "?":
-        return "unversioned"
-    return git_item(code + " ")
 
 
-def split_status(files):
-    """按索引列与工作区列把改动分三组，条目复制一份，item 换成本列展示项。"""
-    groups = {"staged": [], "unstaged": [], "conflicts": []}
-    for entry in files:
-        index = entry.get("index", " ")
-        worktree = entry.get("worktree", " ")
-        if entry.get("item") == "conflicted":
-            # 冲突跨两列，展示项仍按整个状态码算，不能只看一列。
-            groups["conflicts"].append(dict(entry, item=git_item(index + worktree)))
-            continue
-        if index in "AMDRCT":
-            groups["staged"].append(dict(entry, item=column_item(index)))
-        if worktree in "MDT" or index == "?":
-            groups["unstaged"].append(dict(entry, item=column_item(worktree)))
-    return groups
 
 
-def parse_git_status(out):
-    """git status --porcelain -z 的条目：XY<空格>路径\\0，重命名后面再跟一个原路径字段。"""
-    fields = out.decode("utf-8", "replace").split("\0")
-    files = []
-    untracked = 0
-    truncated = False
-    i = 0
-    while i < len(fields):
-        raw = fields[i]
-        i += 1
-        # 最后一个字段是 \0 之后剩下的空串；不足三列的不是条目。
-        if len(raw) < 4:
-            continue
-        code = raw[:2]
-        index, worktree = code[0], code[1]
-        path = raw[3:]
-        orig = ""
-        if code[0] in "RC":
-            # 重命名、复制的原路径紧跟在路径字段后面。
-            if i < len(fields):
-                orig = fields[i]
-            i += 1
-        item = git_item(code)
-        if item == "unversioned":
-            untracked += 1
-            # 没被 .gitignore 挡住的依赖目录会有成千上万个文件，列到上限就停。
-            if untracked > UNVERSIONED_MAX:
-                truncated = True
-                continue
-        entry = {"path": path, "item": item, "index": index, "worktree": worktree}
-        if orig:
-            entry["orig"] = orig
-        files.append(entry)
-    files.sort(key=lambda f: (STATUS_ORDER.get(f["item"], 99), f["path"]))
-    return files, truncated
 
 
-def git_changes(root):
-    info = git_info(root)
-    rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "git status 失败")
-    files, truncated = parse_git_status(out)
-    return {"info": info, "files": files, "truncated": truncated}
 
 
-def changes_payload(ws):
-    """工作副本的变更清单：Git 附带索引与工作区分组，SVN 按原样给。"""
-    if ws.get("vcs") == "git":
-        # 分组直接用这次 git status 的结果，不再跑第二遍。
-        data = git_changes(ws["root"])
-        data["status"] = split_status(data["files"])
-        return data
-    info = svn_info(ws["root"])
-    rc, out, err = svn(["status", "--xml"], cwd=ws["root"])
-    if rc != 0:
-        raise ApiError(500, err or "svn status 失败")
-    files, truncated = expand_unversioned(ws["root"], parse_status(out))
-    return {"info": info, "files": files, "truncated": truncated}
 
 
-def git_stage_args(root, paths):
-    # -A 连删除与重命名一起收进索引，与页面看到的整条改动一致。
-    return ["add", "-A", "--", *clean_paths(root, paths)]
 
 
-def git_unstage_args(root, paths):
-    """取消暂存；重命名的原路径也要带上，否则索引里会留下一条删除。"""
-    clean = clean_paths(root, paths)
-    rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
-    if rc != 0:
-        raise ApiError(500, err or "git status 失败")
-    files, _ = parse_git_status(out)
-    origins = {item["path"]: item["orig"] for item in files if item.get("orig")}
-    wanted = []
-    for rel in clean:
-        wanted.append(rel)
-        if origins.get(rel):
-            wanted.append(origins[rel])
-    all_paths = clean_paths(root, wanted)
-    has_head, _ = git_head(root)
-    # 空仓库没有 HEAD，restore 无从取源，只能把条目从索引里删掉。
-    if has_head:
-        return ["restore", "--staged", "--", *all_paths]
-    return ["rm", "-r", "--cached", "--", *all_paths]
 
 
-def git_diff_of(root, args):
-    rc, out, err = git(args, cwd=root)
-    text = out.decode("utf-8", "replace")
-    if rc != 0 and not text:
-        raise ApiError(400, err or "git diff 失败")
-    text, truncated = clip(text)
-    return {"text": text, "truncated": truncated, "wide": is_wide(text), "error": err if rc != 0 else ""}
 
 
-def git_change_diff(root, rel, full=False, scope="head"):
-    """未提交的改动，scope 决定取哪一段。
-
-    staged 取暂存区对 HEAD，worktree 取工作区对暂存区；head 取工作区加暂存区
-    对 HEAD，口径跟 SVN 对 BASE 一致，也是缺省值。
-    """
-    if scope == "staged":
-        args = ["diff", "--cached", "--", ":/" + rel]
-    elif scope == "worktree":
-        args = ["diff", "--", ":/" + rel]
-    else:
-        has_head, _ = git_head(root)
-        if has_head:
-            args = ["diff", "HEAD", "--", ":/" + rel]
-        else:
-            # 空仓库还没有 HEAD，暂存区里的算新增。
-            args = ["diff", "--cached", "--", ":/" + rel]
-    if full:
-        # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
-        args.insert(1, "--unified=1000000")
-    return git_diff_of(root, args)
 
 
-def git_revision_diff(root, sha, repo_path="", full=False):
-    if not re.fullmatch(r"[0-9a-fA-F]{4,40}", sha or ""):
-        raise ApiError(400, "提交号不对：%s" % sha)
-    # 日志里的路径相对仓库根，:/ 让 git 也按仓库根解释，工作区是子目录时也对得上。
-    args = ["show", "--format=", "--no-color", "--find-renames", sha]
-    if full:
-        args.insert(1, "--unified=1000000")
-    if repo_path:
-        args += ["--", ":/" + repo_path.lstrip("/")]
-    return git_diff_of(root, args)
 
 
-LOG_FMT = "%x1e%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s"
 
 
-def parse_git_log(text):
-    """git log --format=LOG_FMT 的输出：每条提交一行 \\x1e 开头、\\x1f 分字段。
-
-    路径不在这里取：列表里每条提交都带 --name-status 太慢，页面也只显示选中那一条的
-    文件，所以 paths 先留空，选中时由 git_commit_detail 现取。
-    """
-    entries = []
-    for line in text.split("\n"):
-        if not line.startswith("\x1e"):
-            continue
-        parts = line[1:].split("\x1f")
-        if len(parts) < 6:
-            continue
-        sha, short, author, date, parents, subject = parts[:6]
-        entries.append(
-            {
-                "revision": sha,
-                "short": short,
-                "author": author,
-                "date": date,
-                # 父提交给页面画时间线用；根提交这里是空表。
-                "parents": parents.split(),
-                "message": subject,
-                "paths": [],
-            }
-        )
-    return entries
 
 
-def parse_name_status(text):
-    """--name-status -z 的输出：动作与路径都用 \\0 分隔，改名与复制是“动作 原路径 新路径”。
-
-    不加 -z 时 git 会把非 ASCII 路径加 C 风格引号，取出来的路径再拿去查差异就成了非法 pathspec。
-    """
-    fields = text.split("\0")
-    paths = []
-    i = 0
-    while i < len(fields):
-        action_field = fields[i]
-        i += 1
-        # 末尾 NUL 后面是空串；动作列不是单个已知字母的跳过。
-        if not action_field:
-            continue
-        action = action_field[:1]
-        if action not in ("A", "C", "D", "M", "R", "T", "U", "X"):
-            continue
-        path = fields[i] if i < len(fields) else ""
-        i += 1
-        old_path = ""
-        if action in ("R", "C"):
-            # 页面点到的是改名后的路径，原路径留着显示“由…改名”。
-            old_path, path = path, fields[i] if i < len(fields) else ""
-            i += 1
-        if path:
-            paths.append({"action": action, "kind": "", "path": path, "copyfrom": old_path})
-    return paths
 
 
-def git_upstream(root):
-    """当前分支的远端跟踪分支，形如 origin/main；没配远端或游离 HEAD 就为空。"""
-    rc, out, _ = git(
-        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], cwd=root
-    )
-    name = out.decode("utf-8", "replace").strip()
-    return name if rc == 0 and name else ""
 
 
-def git_ref_exists(root, ref):
-    rc, _, _ = git(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], cwd=root)
-    return rc == 0
 
 
-def git_branch(root):
-    """当前分支名；游离 HEAD 时 git 给的是 HEAD，原样带回。"""
-    rc, out, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=root)
-    name = out.decode("utf-8", "replace").strip()
-    return name if rc == 0 else ""
 
 
-def git_ahead_behind(root, upstream):
-    """本地分支与远端跟踪分支各比对方多几个提交，返回 (领先, 落后)。"""
-    rc, out, _ = git(["rev-list", "--left-right", "--count", "HEAD..." + upstream], cwd=root)
-    if rc != 0:
-        return 0, 0
-    parts = out.decode("utf-8", "replace").split()
-    if len(parts) != 2:
-        return 0, 0
-    try:
-        return int(parts[0]), int(parts[1])
-    except ValueError:
-        return 0, 0
 
 
-def git_remote_sync(root, fetch=True):
-    """取日志前先同步一次远端，好让列表带上别人最新的提交。
-
-    只更新 .git 里的远端跟踪分支与对象，不动工作区、暂存区，也不合并。
-    远端连不上或超时就照旧列已有的记录，把原因带回页面。
-    fetch 为假时只读本地已有的远端跟踪分支，翻下一页时不必再连一次。
-    """
-    meta = {
-        "upstream": "",
-        "fetched": False,
-        "error": "",
-        "branch": git_branch(root),
-        "ahead": 0,
-        "behind": 0,
-    }
-    upstream = git_upstream(root)
-    if not upstream:
-        return meta
-    meta["upstream"] = upstream
-    if fetch:
-        remote = upstream.split("/", 1)[0]
-        if remote:
-            try:
-                rc, _, err = git(
-                    ["fetch", "--quiet", remote],
-                    cwd=root,
-                    timeout=FETCH_TIMEOUT,
-                    env=git_op_env(),
-                )
-                if rc != 0:
-                    meta["error"] = (err or "git fetch 失败").splitlines()[0]
-                else:
-                    meta["fetched"] = True
-            except ApiError as exc:
-                meta["error"] = exc.message
-    # 同步失败也按本地已有的远端跟踪分支算，页面照样能看出差多少。
-    meta["ahead"], meta["behind"] = git_ahead_behind(root, upstream)
-    return meta
 
 
-def git_remotes(root):
-    rc, out, _ = git(["remote"], cwd=root)
-    return out.decode("utf-8", "replace").split() if rc == 0 else []
 
 
-def git_branches(root):
-    """本地分支，加上还没有同名本地分支的远端跟踪分支，给页面切换用。"""
-    branches = []
-    local = set()
-    rc, out, _ = git(
-        ["for-each-ref", "--format=%(refname:short)%09%(HEAD)%09%(upstream:short)", "refs/heads"],
-        cwd=root,
-    )
-    if rc == 0:
-        for line in out.decode("utf-8", "replace").splitlines():
-            parts = line.split("\t")
-            if len(parts) < 3 or not parts[0]:
-                continue
-            name, head, upstream = parts[0], parts[1], parts[2]
-            local.add(name)
-            branches.append(
-                {"name": name, "current": head == "*", "upstream": upstream, "remote": False}
-            )
-    rc, out, _ = git(["for-each-ref", "--format=%(refname:short)", "refs/remotes"], cwd=root)
-    if rc == 0:
-        for ref in out.decode("utf-8", "replace").split():
-            # refs/remotes/origin/feature 在本地要建的分支叫 feature。
-            if not ref or ref.endswith("/HEAD") or "/" not in ref:
-                continue
-            name = ref.split("/", 1)[1]
-            if name in local:
-                continue
-            branches.append(
-                {
-                    "name": name,
-                    "current": False,
-                    "upstream": "",
-                    "remote": True,
-                    "start_point": ref,
-                }
-            )
-    return branches
 
 
-def git_ref_labels(root):
-    """提交号到分支/标签的对应，列表里给提交旁边标引用用。
-
-    附注标签要取它指到的提交号：%(objectname) 是标签对象本身，*objectname 才是提交。
-    """
-    fmt = "%(objectname)%09%(*objectname)%09%(refname:short)%09%(refname)"
-    rc, out, _ = git(
-        ["for-each-ref", "--format=" + fmt, "refs/heads", "refs/remotes", "refs/tags"],
-        cwd=root,
-    )
-    labels = {}
-    if rc != 0:
-        return labels
-    for line in out.decode("utf-8", "replace").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 4 or not parts[0]:
-            continue
-        sha, peeled, short, full = parts[0], parts[1] or parts[0], parts[2], parts[3]
-        # 远端仓库的 HEAD 是符号引用，短名会缩成远端名，别当成一个分支标出来。
-        if full.startswith("refs/remotes/") and full.endswith("/HEAD"):
-            continue
-        if full.startswith("refs/heads/"):
-            kind = "head"
-        elif full.startswith("refs/tags/"):
-            kind = "tag"
-        else:
-            kind = "remote"
-        labels.setdefault(peeled, []).append({"name": short, "kind": kind})
-    return labels
 
 
-def git_op_env():
-    """写操作的 git 环境：没人看着终端，不能让命令停在密码或口令提示上。"""
-    env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
-    env["GIT_EDITOR"] = "true"
-    env["GIT_SEQUENCE_EDITOR"] = "true"
-    # 合并时不要打开编辑器等一份提交说明。
-    env["GIT_MERGE_AUTOEDIT"] = "no"
-    return env
 
 
 def git_op(root, args, label):
@@ -2017,115 +967,10 @@ def operation_plan(ws, body):
     }
 
 
-def git_sync_info(root):
-    info = git_info(root)
-    upstream = git_upstream(root)
-    ahead, behind = git_ahead_behind(root, upstream) if upstream else (0, 0)
-    branch = info["branch"]
-    rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
-    files, truncated = parse_git_status(out) if rc == 0 else ([], False)
-    return {
-        **info,
-        "vcs": "git",
-        "upstream": upstream,
-        "ahead": ahead,
-        "behind": behind,
-        "detached": not branch or branch == "HEAD",
-        "remotes": git_remotes(root),
-        "branches": git_branches(root),
-        "has_head": bool(info["revision"]),
-        "files": files,
-        "truncated": truncated,
-        # 分组与冲突直接复用这次 git status 的解析结果，不再跑第二遍。
-        "status": split_status(files),
-        "conflicts": [item["path"] for item in files if item["item"] == "conflicted"],
-    }
 
 
-def git_commit_detail(root, sha):
-    """一次提交的完整说明、父提交与改动路径；日志列表里只放得下第一行。"""
-    if not re.fullmatch(r"[0-9a-fA-F]{4,40}", sha or ""):
-        raise ApiError(400, "提交号不对：%s" % sha)
-    fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%P%x1f%D%x1f%B"
-    rc, out, err = git(["show", "-s", "--no-color", "--format=" + fmt, sha], cwd=root)
-    if rc != 0:
-        raise ApiError(400, err or "读不了这个提交")
-    parts = out.decode("utf-8", "replace").split("\x1f", 7)
-    if len(parts) < 8:
-        raise ApiError(500, "git 返回的提交信息读不懂")
-    full, short, author, email, date, parents, refs, body = parts
-    # 路径只在这一条上算，列表里不带 --name-status，省掉每条提交的树比对与改名配对。
-    names_rc, names, _ = git(
-        ["show", "--no-color", "--name-status", "-z", "--format=", sha], cwd=root
-    )
-    return {
-        "revision": full.strip(),
-        "short": short.strip(),
-        "author": author.strip(),
-        "email": email.strip(),
-        "date": date.strip(),
-        "parents": parents.split(),
-        "refs": [item.strip() for item in refs.split(",") if item.strip()],
-        "message": body.strip("\n"),
-        "paths": parse_name_status(names.decode("utf-8", "replace")) if names_rc == 0 else [],
-    }
 
 
-def git_log(root, limit, upstream="", skip=0, all_refs=False):
-    has_head, head = git_head(root)
-    if not has_head:
-        return []
-    # 本地分支与远端跟踪分支一起列：还没拉进本地分支的提交也要看得见。
-    tracking = bool(upstream) and git_ref_exists(root, upstream)
-    if all_refs:
-        # --branches/--remotes/--tags 代替 HEAD 一个引用，时间线才看得到分叉与合并。
-        revs = ["HEAD", "--branches", "--remotes", "--tags"]
-    else:
-        revs = ["HEAD", upstream] if tracking else ["HEAD"]
-    # --topo-order 保证子提交排在父提交前面，页面按列表顺序画连线不会错位。
-    # 不带 --name-status：列表不显示每条提交的文件，带上它每条都要做一次树比对与改名配对，
-    # 仓库大时这一项就要一秒多。选中哪条，再由 git_commit_detail 现取那条的路径。
-    # -- . 让登记的是仓库子目录时只列这个子目录的提交，跟 svn log 从子目录跑一致。
-    rc, out, err = git(
-        [
-            "log", "-n", str(limit), "--skip=%d" % skip,
-            "--no-color", "--topo-order",
-            # 路径过滤默认会把没改这个目录的合并提交省掉，时间线就断开了；--full-history 留住它们。
-            "--full-history",
-            "--date=iso-strict", "--format=" + LOG_FMT, *revs, "--", ".",
-        ],
-        cwd=root,
-    )
-    if rc != 0:
-        raise ApiError(500, err or "git log 失败")
-    entries = parse_git_log(out.decode("utf-8", "replace"))
-    # 标出每条提交的位置：在所有本地分支上、已经进了远端分支，还是只在远端。
-    local_revs = ["HEAD", "--branches"] if all_refs else ["HEAD"]
-    rc, out, _ = git(["rev-list", *local_revs, "--", "."], cwd=root)
-    local = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
-    pushed = set()
-    tip = ""
-    if tracking:
-        rc, out, _ = git(["rev-parse", "--verify", "--quiet", upstream + "^{commit}"], cwd=root)
-        tip = out.decode("utf-8", "replace").strip() if rc == 0 else ""
-    # 全部引用时按“在任意远端跟踪分支上”算，单查当前上游会把别的远端分支误标成未推送；
-    # 仓库根本没有远端时不标，免得每条都写“未推送”。
-    has_remote = bool(git_remotes(root))
-    if tracking or (all_refs and has_remote):
-        pushed_revs = ["--remotes"] if all_refs else [upstream]
-        rc, out, _ = git(["rev-list", *pushed_revs, "--", "."], cwd=root)
-        pushed = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
-    labels = git_ref_labels(root)
-    for entry in entries:
-        revision = entry["revision"]
-        entry["local"] = revision in local
-        entry["head"] = revision == head
-        entry["labels"] = labels.get(revision, [])
-        if tracking or (all_refs and has_remote):
-            entry["pushed"] = revision in pushed
-        if tracking:
-            entry["remote_tip"] = revision == tip
-    return entries
 
 
 def changes_signature(ws):
@@ -2280,7 +1125,7 @@ WRITE_ROUTES = {
 }
 
 
-class Handler(LspRoutes, WebHandler):
+class Handler(VcsRoutes, BrowseRoutes, LspRoutes, WebHandler):
     server_version = "dvcsx-web"
 
     static = None
@@ -2355,130 +1200,17 @@ class Handler(LspRoutes, WebHandler):
             raise ApiError(404, "没有这个工作区：%s" % wid)
         return item
 
-    def _changes(self, query):
-        ws = self._ws(query)
-        return {"workspace": ws, **changes_payload(ws)}
 
-    def _diff(self, query):
-        ws = self._ws(query)
-        rel = safe_rel((query.get("path") or [""])[0])
-        rev = (query.get("rev") or [""])[0] or None
-        item = (query.get("item") or [""])[0]
-        scope = (query.get("scope") or [""])[0]
-        full = (query.get("full") or ["0"])[0] == "1"
-        # 未纳入版本控制的文件没有差异，读整份内容按新增显示；暂存区那段没有它。
-        if not rev and item == "unversioned" and scope != "staged":
-            text, truncated = clip(read_unversioned(workspace_paths(ws), rel))
-            return {"kind": "file", "path": rel, "text": text, "truncated": truncated}
-        if ws.get("vcs") == "git":
-            # 冲突文件只有对 HEAD 的差异能看，合并在工作区里的 --cc 格式不好读。
-            if item == "conflicted":
-                scope = "head"
-            result = git_change_diff(ws["root"], rel, full, scope)
-        else:
-            result = change_diff(ws["root"], rel, rev, full)
-        result.update({"kind": "diff", "path": rel})
-        return result
 
-    def _log(self, query):
-        ws = self._ws(query)
-        try:
-            limit = int((query.get("limit") or [str(LOG_DEFAULT)])[0])
-        except ValueError:
-            limit = LOG_DEFAULT
-        limit = max(1, min(LOG_MAX, limit))
-        try:
-            skip = int((query.get("skip") or ["0"])[0] or 0)
-        except ValueError:
-            skip = 0
-        skip = max(0, min(LOG_SKIP_MAX, skip))
-        # 翻下一页时不必再连远端同步一次。
-        sync = (query.get("sync") or ["1"])[0] != "0"
-        # 时间线默认连本地分支、远端跟踪分支与标签一起列；只要当前分支时传 all=0。
-        all_refs = (query.get("all") or ["1"])[0] != "0"
-        if ws.get("vcs") == "git":
-            remote = git_remote_sync(ws["root"], fetch=sync and skip == 0)
-            entries = git_log(ws["root"], limit, remote["upstream"], skip, all_refs)
-            return {"workspace": ws, "entries": entries, "remote": remote}
-        entries, remote = svn_log_meta(ws["root"], limit, skip)
-        return {"workspace": ws, "entries": entries, "remote": remote}
 
-    def _revision(self, query):
-        ws = self._ws(query)
-        rev = (query.get("rev") or [""])[0]
-        repo_path = (query.get("path") or [""])[0]
-        full = (query.get("full") or ["0"])[0] == "1"
-        if ws.get("vcs") == "git":
-            result = git_revision_diff(ws["root"], rev, repo_path, full)
-        else:
-            result = revision_diff(ws["root"], rev, repo_path, full)
-        result.update({"kind": "diff", "rev": rev, "path": repo_path})
-        return result
 
-    def _tree(self, query):
-        ws = self._ws(query)
-        rel = (query.get("path") or [""])[0]
-        return {"workspace": ws, **browse_list(ws["root"], rel)}
 
-    def _file(self, query):
-        ws = self._ws(query)
-        rel = (query.get("path") or [""])[0]
-        return {"workspace": ws, "path": rel, "text": browse_file(ws["root"], rel)}
 
-    def _download(self, query, head=False):
-        ws = self._ws(query)
-        rel = browse_rel((query.get("path") or [""])[0])
-        root = ws["root"]
-        target = os.path.join(root, rel) if rel else root
-        if not inside(root, target):
-            raise ApiError(400, "路径要在工作副本里：%s" % rel)
-        if os.path.isdir(target):
-            path, _ = zip_dir(target)
-            name = (os.path.basename(target.rstrip("/")) or "download") + ".zip"
-            try:
-                self._send_download(path, name, head=head)
-            finally:
-                os.unlink(path)
-            return STREAMED
-        if not os.path.isfile(target):
-            raise ApiError(404, "没有这个文件：%s" % (rel or "根目录"))
-        self._send_download(target, os.path.basename(target), head=head)
-        return STREAMED
 
-    def _save(self, body):
-        self._check_write()
-        ws = self.store.find(str(body.get("ws", "")))
-        if ws is None:
-            raise ApiError(404, "没有这个工作区")
-        rel = str(body.get("path", ""))
-        text = body.get("text", "")
-        if not isinstance(text, str):
-            raise ApiError(400, "文件内容要是文本")
-        return {"workspace": ws, **save_file(ws["root"], rel, text)}
 
-    def _browse_write_ws(self, body):
-        self._check_write()
-        ws = self.store.find(str(body.get("ws", "")))
-        if ws is None:
-            raise ApiError(404, "没有这个工作区")
-        return ws
 
-    def _browse_create(self, body, kind):
-        ws = self._browse_write_ws(body)
-        rel = str(body.get("dir", ""))
-        name = str(body.get("name", ""))
-        return {"workspace": ws, **make_entry(ws["root"], rel, name, kind)}
 
-    def _browse_rename(self, body):
-        ws = self._browse_write_ws(body)
-        rel = str(body.get("path", ""))
-        name = str(body.get("name", ""))
-        return {"workspace": ws, **rename_entry(ws["root"], ws.get("vcs", "none"), rel, name)}
 
-    def _browse_delete(self, body):
-        ws = self._browse_write_ws(body)
-        rel = str(body.get("path", ""))
-        return {"workspace": ws, **delete_entry(ws["root"], ws.get("vcs", "none"), rel)}
 
     def _index_ws(self, body):
         """暂存类接口的公共前置：先挡住别处来的写请求，再找登记的工作区。"""
@@ -2495,111 +1227,13 @@ class Handler(LspRoutes, WebHandler):
             raise ApiError(409, "这个工作副本正有一个操作在执行")
         return lock
 
-    def _stage(self, body):
-        ws = self._index_ws(body)
-        if ws.get("vcs") != "git":
-            raise ApiError(400, "这个工作区不是 Git 仓库")
-        root = ws["root"]
-        paths = body.get("paths") or []
-        lock = self._index_lock(ws)
-        try:
-            rc, _, err = git(git_stage_args(root, paths), cwd=root)
-            if rc != 0:
-                raise ApiError(400, err or "git add 失败")
-            return {"workspace": ws, **changes_payload(ws)}
-        finally:
-            lock.release()
 
-    def _unstage(self, body):
-        ws = self._index_ws(body)
-        if ws.get("vcs") != "git":
-            raise ApiError(400, "这个工作区不是 Git 仓库")
-        root = ws["root"]
-        paths = body.get("paths") or []
-        lock = self._index_lock(ws)
-        try:
-            # 先读 status 把重命名的原路径展开，再连原路径一起取消暂存。
-            rc, _, err = git(git_unstage_args(root, paths), cwd=root)
-            if rc != 0:
-                raise ApiError(400, err or "git restore 失败")
-            return {"workspace": ws, **changes_payload(ws)}
-        finally:
-            lock.release()
 
-    def _svn_add(self, body):
-        ws = self._index_ws(body)
-        if ws.get("vcs") != "svn":
-            raise ApiError(400, "这个工作区不是 SVN 工作副本")
-        root = ws["root"]
-        paths = body.get("paths") or []
-        lock = self._index_lock(ws)
-        try:
-            clean = clean_paths(root, paths)
-            state = svn_status_state(root)
-            rc, _, err = svn(svn_add_args(root, svn_add_paths(state, clean)), cwd=root)
-            if rc != 0:
-                raise ApiError(400, err or "svn add 失败")
-            return {"workspace": ws, **changes_payload(ws)}
-        finally:
-            lock.release()
 
-    def _svn_unadd(self, body):
-        ws = self._index_ws(body)
-        if ws.get("vcs") != "svn":
-            raise ApiError(400, "这个工作区不是 SVN 工作副本")
-        root = ws["root"]
-        paths = body.get("paths") or []
-        lock = self._index_lock(ws)
-        try:
-            clean = clean_paths(root, paths)
-            state = svn_status_state(root)
-            rc, _, err = svn(svn_unadd_args(root, svn_unadd_paths(state, clean)), cwd=root)
-            if rc != 0:
-                raise ApiError(400, err or "svn revert 失败")
-            return {"workspace": ws, **changes_payload(ws)}
-        finally:
-            lock.release()
 
-    def _search(self, query):
-        ws = self._ws(query)
-        rel = (query.get("path") or [""])[0]
-        text = (query.get("q") or [""])[0]
-        mode = (query.get("mode") or ["name"])[0]
-        ignore = (
-            self.settings.search_ignore()
-            if self.settings is not None
-            else list(SEARCH_IGNORE_DEFAULTS)
-        )
-        return {"workspace": ws, **browse_search(ws["root"], rel, text, mode, ignore)}
 
-    def _files(self, query):
-        ws = self._ws(query)
-        ignore = (
-            self.settings.search_ignore()
-            if self.settings is not None
-            else list(SEARCH_IGNORE_DEFAULTS)
-        )
-        files, truncated = browse_files(ws["root"], ignore)
-        return {"files": files, "truncated": truncated}
 
-    def _commit_detail(self, query):
-        ws = self._ws(query)
-        rev = (query.get("rev") or [""])[0]
-        if ws.get("vcs") == "git":
-            data = git_commit_detail(ws["root"], rev)
-        else:
-            data = svn_commit_detail(ws["root"], rev)
-        return {"workspace": ws, **data}
 
-    def _sync_info(self, query):
-        ws = self._ws(query)
-        if ws.get("vcs") == "git":
-            data = git_sync_info(ws["root"])
-        else:
-            data = svn_sync_info(ws["root"])
-        # 让页面提前知道能不能写，省得从别的机器点完按钮才吃到 403。
-        writable = self.allow_write or is_loopback(self.client_address[0])
-        return {"workspace": ws, **data, "writable": writable}
 
     def _start_operation(self, body):
         self._check_write()
