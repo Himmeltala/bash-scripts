@@ -236,7 +236,8 @@ onMounted(refresh)
 }
 
 .mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 0.78rem;
 }
 </style>

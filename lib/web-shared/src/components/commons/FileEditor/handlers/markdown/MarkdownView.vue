@@ -100,8 +100,8 @@ function onClick(event) {
   padding: 1px 4px;
   border-radius: 4px;
   background: rgba(var(--v-theme-on-surface), 0.08);
-  font-family: 'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Sarasa Mono SC',
-    'Cascadia Mono', Consolas, Menlo, 'Liberation Mono', monospace;
+  font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 0.92em;
 }
 .md-body :deep(pre) {

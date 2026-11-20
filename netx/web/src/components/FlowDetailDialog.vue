@@ -191,7 +191,8 @@ watch(
   overflow-wrap: anywhere;
 }
 .mono {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 0.86em;
 }
 .headers .value {
@@ -205,7 +206,8 @@ watch(
   overflow: auto;
   border-radius: 6px;
   background: rgb(var(--v-theme-surface-variant));
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 0.82rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

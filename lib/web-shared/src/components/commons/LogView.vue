@@ -85,7 +85,7 @@ onMounted(() => {
     disableStdin: true,
     cursorBlink: false,
     scrollback: 5000,
-    fontFamily: "'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Sarasa Mono SC', 'Cascadia Mono', Consolas, Menlo, monospace",
+    fontFamily: "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
     fontSize: 12,
     lineHeight: 1.3,
     theme: themeFor(props.dark),

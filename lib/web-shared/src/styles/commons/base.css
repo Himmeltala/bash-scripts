@@ -14,8 +14,8 @@ samp,
 pre,
 .hljs,
 .mono {
-  font-family: 'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Sarasa Mono SC',
-    'Cascadia Mono', Consolas, Menlo, 'Liberation Mono', monospace;
+  font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 /* 拖动分隔条时整页不选文字，拖出容器也不会带出一片选中。 */
