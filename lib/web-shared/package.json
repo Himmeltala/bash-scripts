@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "nodex、jvmx、dvcsx、llmx、netx 五个网页界面共用的组件、组合式函数与纯工具",
+  "description": "nodex、jvmx、idex、llmx、netx 五个网页界面共用的组件、组合式函数与纯工具",
   "files": [
     "dist",
     "vite-preset.js"

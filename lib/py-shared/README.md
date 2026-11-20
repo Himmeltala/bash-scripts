@@ -1,6 +1,6 @@
 # py-shared
 
-nodex、jvmx、dvcsx、llmx 四个网页进程共用的 Python 骨架。不是可执行工具：各工具的 `server.py`（llmx 是 `web/__init__.py`）按路径把它加进 `sys.path` 后直接 import，无需构建。只用标准库，保持 Python 3.7 可导入。
+nodex、jvmx、idex、llmx 四个网页进程共用的 Python 骨架。不是可执行工具：各工具的 `server.py`（llmx 是 `web/__init__.py`）按路径把它加进 `sys.path` 后直接 import，无需构建。只用标准库，保持 Python 3.7 可导入。
 
 ## 目录
 
@@ -54,5 +54,5 @@ test/                                     共享层自身的用例
 ## 放进来之前
 
 - 只放真正同构的东西：命令拼装、业务动作、状态列宽留在各工具。
-- dvcsx 的 SSE 写法不同，只共用 `WebHandler` 与 `sse` 小件；llmx 保留自己的 HEAD、静态缓存与扫描锁。
+- idex 的 SSE 写法不同，只共用 `WebHandler` 与 `sse` 小件；llmx 保留自己的 HEAD、静态缓存与扫描锁。
 - 业务不进共享层：价格表、来源解析、SQLite 账本、SVN/Git 命令与错误文案都留在原项目。

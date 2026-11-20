@@ -30,7 +30,7 @@ sudo apt install bpftrace
 
 ## 网页界面
 
-页面源码在 `netx/web`，与 nodex、jvmx、dvcsx、llmx 共用 `lib/web-shared` 的主题、提示与构建配置，Vite 打包到 `netx/lib/netx/static`。仓库里带着构建产物，改页面后重新构建：
+页面源码在 `netx/web`，与 nodex、jvmx、idex、llmx 共用 `lib/web-shared` 的主题、提示与构建配置，Vite 打包到 `netx/lib/netx/static`。仓库里带着构建产物，改页面后重新构建：
 
 ```bash
 npm --prefix netx/web ci

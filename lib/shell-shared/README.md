@@ -1,6 +1,6 @@
 # shell-shared
 
-nodex 用全部基础件，mvnx 用 `base.sh`、`ui-records.sh`、`command-table.sh`、`machine.sh`，gradlex 与 mvnx 相同但不接网页；dvcsx 用 `base.sh` 与 `web-command.sh`。不是工具，没有入口；各工具按顺序 `source`。
+nodex 用全部基础件，mvnx 用 `base.sh`、`ui-records.sh`、`command-table.sh`、`machine.sh`，gradlex 与 mvnx 相同但不接网页；idex 用 `base.sh` 与 `web-command.sh`。不是工具，没有入口；各工具按顺序 `source`。
 
 ```
 commons/                                  与工具无关的通用件
@@ -48,6 +48,6 @@ source lib/shell-shared/services/web-command.sh
 ```bash
 bash nodex/test/run.sh
 bash mvnx/test/run.sh
-bash dvcsx/test/run.sh      # 需要 svn
+bash idex/test/run.sh      # 需要 svn
 bash test/install-path.sh
 ```

@@ -175,7 +175,7 @@ class WebHandler(BaseHTTPRequestHandler):
         raise NotImplementedError
 
     def _error_log(self, msg):
-        """接口内部的异常写到哪里；dvcsx 要带时间戳，覆写这一条。"""
+        """接口内部的异常写到哪里；idex 要带时间戳，覆写这一条。"""
         log(msg)
 
     def _check_origin(self):
