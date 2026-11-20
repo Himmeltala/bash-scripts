@@ -16,12 +16,18 @@ export const COMMANDS = [
 
 export const RANGES = [
   { key: '1', name: '今天' },
+  { key: 'yesterday', name: '昨天' },
   { key: '7', name: '近 7 天' },
   { key: '14', name: '近 14 天' },
   { key: '30', name: '近 30 天' },
   { key: 'all', name: '全部历史' },
   { key: 'custom', name: '自定义' },
 ]
+
+function dayText(date) {
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
 
 function fromUrl() {
   const params = new URLSearchParams(location.search)
@@ -45,6 +51,12 @@ export function query(extra = {}) {
   if (view.range === 'custom') {
     if (view.since) params.set('since', view.since)
     if (view.until) params.set('until', view.until)
+  } else if (view.range === 'yesterday') {
+    const date = new Date()
+    date.setDate(date.getDate() - 1)
+    const day = dayText(date)
+    params.set('since', day)
+    params.set('until', day)
   } else if (view.range === 'all') {
     params.set('all', '1')
   } else {
