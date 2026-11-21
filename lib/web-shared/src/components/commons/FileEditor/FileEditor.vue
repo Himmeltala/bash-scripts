@@ -13,6 +13,7 @@
       :root-name="rootName"
       :path="path"
       :size="size"
+      :navigable="navigable"
       @navigate="emit('navigate', $event)"
     >
       <template #actions>
@@ -82,7 +83,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import FileHead from './widgets/FileHead.vue'
 import SaveLeaveDialog from './widgets/SaveLeaveDialog.vue'
 import EmptyState from '../../../layouts/commons/EmptyState.vue'
@@ -104,6 +105,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['navigate', 'saved', 'dirty', 'definition', 'menu', 'rename', 'caret', 'edit', 'hover', 'hover-end'])
+
+// 只有外层真的接了 navigate，面包屑才表现得可点；没人接就不做悬浮下划线。
+const instance = getCurrentInstance()
+const navigable = computed(() => Boolean(instance?.vnode.props?.onNavigate))
 
 const {
   path,

@@ -1,12 +1,12 @@
 <template>
   <div class="file-head">
     <nav class="crumbs">
-      <button class="seg" title="回到根目录" @click="emit('navigate', '')">{{ rootName }}</button>
+      <button class="seg" :class="{ link: navigable }" title="回到根目录" @click="emit('navigate', '')">{{ rootName }}</button>
       <template v-for="(seg, i) in crumbs" :key="seg.path">
         <span class="sep">/</span>
         <button
           class="seg"
-          :class="{ last: i === crumbs.length - 1 }"
+          :class="{ last: i === crumbs.length - 1, link: navigable && i !== crumbs.length - 1 }"
           :title="seg.path"
           @click="clickCrumb(seg, i)"
         >
@@ -26,6 +26,8 @@ const props = defineProps({
   rootName: { type: String, default: '/' },
   path: { type: String, default: '' },
   size: { type: Number, default: undefined },
+  // 外层有没有接 navigate；没有就别做得像能点。
+  navigable: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['navigate'])
