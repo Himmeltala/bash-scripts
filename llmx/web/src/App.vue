@@ -23,10 +23,9 @@
             <v-list-item
               v-for="item in PAGES"
               :key="item.key"
+              :to="item.path"
               :prepend-icon="item.icon"
               :title="item.title"
-              :active="page.key === item.key"
-              @click="go(item.key)"
             />
           </v-list>
         </div>
@@ -40,7 +39,7 @@
     </v-navigation-drawer>
 
     <v-main>
-      <component :is="current" />
+      <router-view />
     </v-main>
 
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
@@ -48,8 +47,8 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { PAGES, page, writePageUrl } from './composables/usePage'
+import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { PAGES } from './router'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
@@ -58,16 +57,6 @@ import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
 import { snack } from './composables/notice'
 import { rememberTheme } from './plugins/vuetify'
 
-const VIEWS = {
-  usage: defineAsyncComponent(() => import('./views/usage/index.vue')),
-  insights: defineAsyncComponent(() => import('./views/insights/index.vue')),
-  budget: defineAsyncComponent(() => import('./views/budget/index.vue')),
-  data: defineAsyncComponent(() => import('./views/data/index.vue')),
-  settings: defineAsyncComponent(() => import('./views/settings/index.vue')),
-  pricing: defineAsyncComponent(() => import('./views/pricing/index.vue')),
-}
-
-const current = computed(() => VIEWS[page.key] || VIEWS.usage)
 const drawer = ref(true)
 
 // 左侧菜单的宽度随分隔条拖动改变，双击还原；上限按整个窗口算，右侧至少留出正文的宽度。
@@ -99,12 +88,6 @@ onMounted(connectMetrics)
 onBeforeUnmount(() => {
   if (metricsSource) metricsSource.close()
 })
-
-function go(key) {
-  if (page.key === key) return
-  page.key = key
-  writePageUrl()
-}
 
 // 没手动切过深浅色时跟着系统走，系统换主题页面当场跟上。
 const { dark, toggle: flipTheme } = useThemeToggle({

@@ -24,9 +24,9 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import BrandIcon from '../../components/BrandIcon.vue'
-import { page, writePageUrl } from '../../composables/usePage'
 
 // 加一个工具就是加一项；未接入的先留禁用占位。
 const TABS = [
@@ -42,21 +42,18 @@ const TABS = [
 ]
 const tabs = TABS
 
-function initialTab() {
-  const value = new URLSearchParams(location.search).get('tab')
-  return TABS.find((item) => item.key === value && item.enabled)?.key || 'claude'
-}
+const route = useRoute()
+const router = useRouter()
 
-const tab = ref(initialTab())
+const tab = computed({
+  get: () => TABS.find((item) => item.key === route.query.tab && item.enabled)?.key || 'claude',
+  // 换工具页签就把分区参数清掉，回到新工具自己的默认分区。
+  set: (value) =>
+    router.replace({ query: { ...route.query, tab: value, section: undefined } }),
+})
 const active = computed(
   () => TABS.find((item) => item.key === tab.value && item.enabled)?.component || null,
 )
-
-watch(tab, (value) => {
-  if (page.key !== 'settings') return
-  // 换工具页签就把分区参数清掉，回到新工具自己的默认分区。
-  writePageUrl({ tab: value, section: null })
-})
 </script>
 
 <style scoped>

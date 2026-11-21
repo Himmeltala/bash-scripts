@@ -12,9 +12,9 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SectionNav from '../../../../components/SectionNav.vue'
-import { page, writePageUrl } from '../../../../composables/usePage'
 
 // 一个工具的功能分区都挂在这里；加功能就是加一项。
 const SECTIONS = [
@@ -39,19 +39,16 @@ const SECTIONS = [
 ]
 const sections = SECTIONS
 
-function initialSection() {
-  const value = new URLSearchParams(location.search).get('section')
-  return SECTIONS.find((item) => item.key === value)?.key || 'profiles'
-}
+const route = useRoute()
+const router = useRouter()
 
-const section = ref(initialSection())
+const section = computed({
+  get: () => SECTIONS.find((item) => item.key === route.query.section)?.key || 'profiles',
+  set: (value) => router.replace({ query: { ...route.query, section: value } }),
+})
 const active = computed(
   () => SECTIONS.find((item) => item.key === section.value)?.component || null,
 )
-
-watch(section, (value) => {
-  if (page.key === 'settings') writePageUrl({ section: value })
-})
 </script>
 
 <style scoped>

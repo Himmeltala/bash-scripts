@@ -67,7 +67,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { COMMANDS, RANGES, SOURCES, syncUrl, view } from './composables/useView'
+import { useRoute } from 'vue-router'
+import { COMMANDS, RANGES, SOURCES, applyQuery, syncUrl, view } from './composables/useView'
 import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import BrandIcon from '../../components/BrandIcon.vue'
 import SummaryCards from './components/SummaryCards.vue'
@@ -79,6 +80,10 @@ import BudgetPanel from './components/BudgetPanel.vue'
 import { VDateInput } from 'vuetify/labs/VDateInput'
 import { formatDate } from '@bash-scripts/web-shared/format'
 import { toast } from '../../composables/notice'
+
+// 路由懒加载的模块在导航完成前求值，初始筛选条件要在进入页面时从当前路由取。
+const route = useRoute()
+applyQuery(route.query)
 
 // 地址栏里存 YYYY-MM-DD，日期组件收发的是本地时区的 Date，两边在这里换。
 function dayToDate(text) {

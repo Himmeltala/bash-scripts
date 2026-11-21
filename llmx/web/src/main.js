@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import router from './router'
 import vuetify from './plugins/vuetify'
 // Roboto 只取拉丁字形，中文由公共样式里的系统字体接住。
 import '@fontsource/roboto/latin-400.css'
@@ -12,4 +13,4 @@ import '@fontsource/jetbrains-mono/latin-700.css'
 import '@bash-scripts/web-shared/style.css'
 import '@bash-scripts/web-shared/tailwind.css'
 
-createApp(App).use(vuetify).mount('#app')
+createApp(App).use(vuetify).use(router).mount('#app')
