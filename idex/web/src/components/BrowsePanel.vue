@@ -257,6 +257,8 @@
                   :size="tab.size"
                   :loader="loadFile"
                   :saver="saveFile"
+                  :code-view="cmCodeView"
+                  :view-props="editorViewProps"
                   @navigate="reveal"
                   @saved="onSaved"
                   @dirty="(on) => setDirty(tab.path, on)"
@@ -739,6 +741,8 @@ import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../utils/browseMenus'
 import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../utils/diagnostics'
 import { useDiagnostics } from '../composables/useDiagnostics'
 import { useCodeIndex } from '../composables/useCodeIndex'
+import { SERVER_BY_EXT } from '../utils/languageServers'
+import { cmCodeView } from '../editor/codeView'
 import { useBrowseSearch } from '../composables/useBrowseSearch'
 import { useBrowseEditors } from '../composables/useBrowseEditors'
 import { useBrowseFiles } from '../composables/useBrowseFiles'
@@ -832,6 +836,24 @@ const {
   reloadDir: (path) => treeRef.value?.reloadDir(dirName(path)),
   flash: (text) => flash(text),
 })
+
+// 代码编辑器的补全与格式化适配器：拿当前工作区、当前草稿全文去问服务端。
+function capabilitiesOf(path) {
+  const name = String(path || '').split('/').pop() || ''
+  const dot = name.lastIndexOf('.')
+  const ext = dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
+  const info = servers.value.find((item) => item.id === SERVER_BY_EXT[ext])
+  return (info && info.capabilities) || {}
+}
+
+const editorViewProps = {
+  complete: ({ path, text, line, character }) =>
+    api.completion(props.ws.id, path, text, line, character),
+  format: ({ path, text }) => api.format(props.ws.id, path, text, 4, true),
+  capabilities: capabilitiesOf,
+  notice: (text) => flash(text),
+}
+
 const quickAsk = reactive({ on: false, loading: false, error: '', files: [], filter: '', loaded: false })
 const lineAsk = reactive({ on: false, value: '', error: '' })
 // 诊断：当前文件的错误与警告，行号前的圆点与问题列表都用这份。

@@ -82,6 +82,7 @@
                 </v-chip>
               </div>
               <div class="mono lsp-cmd">{{ item.command }}</div>
+              <div v-if="capabilityText(item)" class="hint">{{ capabilityText(item) }}</div>
               <div v-if="!item.available" class="hint">{{ item.hint }}</div>
             </div>
           </div>
@@ -101,6 +102,7 @@
 import { computed, ref, watch } from 'vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { api } from '../utils/api'
+import { capabilityText } from '../utils/capabilities'
 import { toast } from '../utils/notice'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })

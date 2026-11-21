@@ -9,6 +9,8 @@ from .protocol import (
     LspError,
     LspUnavailable,
     lsp_hover_text,
+    normalize_completions,
+    normalize_format_edits,
     normalize_locations,
     normalize_symbols,
     normalize_workspace_edit,
@@ -66,6 +68,7 @@ class LspManager:
                         "supported": True,
                         "available": available,
                         "hint": entry["hint"],
+                        "capabilities": entry.get("capabilities", {}),
                     }
                 )
                 continue
@@ -79,6 +82,7 @@ class LspManager:
                     "supported": supported,
                     "available": supported and bool(shutil.which(command[0])),
                     "hint": hint,
+                    "capabilities": entry.get("capabilities", {}),
                 }
             )
         return rows
@@ -148,6 +152,39 @@ class LspManager:
             )
             instance.last_used = time.time()
         return {"server": key, "locations": normalize_locations(raw, root)}
+
+    def completion(self, ws, root, path, text, line, character):
+        key = self._ready(path)
+        if SERVERS[key].get("bridge_only"):
+            raise LspUnavailable("Vue 补全未接入：tsserver 桥还没有同步未保存文本")
+        instance = self._instance(ws, key, root)
+        if not instance.server.capabilities.get("completionProvider"):
+            raise LspUnavailable("%s 语言服务器不支持补全" % SERVERS[key]["title"])
+        full = os.path.join(root, path)
+        with instance.lock:
+            instance.last_used = time.time()
+            raw = instance.server.completion(
+                full, text, language_id(key, path), line, character
+            )
+            instance.last_used = time.time()
+        data = normalize_completions(raw)
+        return {"server": key, "items": data["items"], "incomplete": data["incomplete"]}
+
+    def formatting(self, ws, root, path, text, options):
+        key = self._ready(path)
+        if SERVERS[key].get("bridge_only"):
+            raise LspUnavailable("Vue 格式化未接入：tsserver 桥还没有同步未保存文本")
+        instance = self._instance(ws, key, root)
+        if not instance.server.capabilities.get("documentFormattingProvider"):
+            raise LspUnavailable("%s 语言服务器不支持格式化" % SERVERS[key]["title"])
+        full = os.path.join(root, path)
+        with instance.lock:
+            instance.last_used = time.time()
+            raw = instance.server.formatting(
+                full, text, language_id(key, path), options
+            )
+            instance.last_used = time.time()
+        return {"server": key, "edits": normalize_format_edits(raw)}
 
     def hover(self, ws, root, path, text, line, character):
         key = self._ready(path)

@@ -488,3 +488,129 @@ def apply_workspace_edit(root, plan):
                 except OSError:
                     pass
     return summary
+
+
+COMPLETION_KINDS = {
+    1: "text",
+    2: "method",
+    3: "function",
+    4: "constructor",
+    5: "field",
+    6: "variable",
+    7: "class",
+    8: "interface",
+    9: "module",
+    10: "property",
+    11: "unit",
+    12: "value",
+    13: "enum",
+    14: "keyword",
+    15: "snippet",
+    16: "color",
+    17: "file",
+    18: "reference",
+    19: "folder",
+    20: "enumMember",
+    21: "constant",
+    22: "struct",
+    23: "event",
+    24: "operator",
+    25: "typeParameter",
+}
+
+
+def _position(value):
+    if not isinstance(value, dict):
+        return None
+    line = value.get("line")
+    character = value.get("character")
+    if isinstance(line, bool) or isinstance(character, bool):
+        return None
+    if not isinstance(line, int) or not isinstance(character, int):
+        return None
+    if line < 0 or character < 0:
+        return None
+    return {"line": line, "character": character}
+
+
+def _text(value):
+    return value if isinstance(value, str) else ""
+
+
+def _documentation(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return _text(value.get("value"))
+    return ""
+
+
+def _text_edit(value):
+    if not isinstance(value, dict):
+        return None
+    range_ = value.get("range")
+    if not isinstance(range_, dict):
+        return None
+    start = _position(range_.get("start"))
+    end = _position(range_.get("end"))
+    new_text = value.get("newText")
+    if start is None or end is None or not isinstance(new_text, str):
+        return None
+    return {"start": start, "end": end, "newText": new_text}
+
+
+def normalize_completions(raw):
+    """LSP 的补全结果：接受数组或 CompletionList，最多 200 条。"""
+    if isinstance(raw, dict):
+        items = raw.get("items")
+        incomplete = bool(raw.get("isIncomplete"))
+    else:
+        items = raw
+        incomplete = False
+    if not isinstance(items, list):
+        items = []
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        if not isinstance(label, str) or not label:
+            continue
+        if item.get("additionalTextEdits"):
+            continue
+        kind = item.get("kind")
+        out.append(
+            {
+                "label": label,
+                "kind": COMPLETION_KINDS.get(kind, "") if isinstance(kind, int) else "",
+                "detail": _text(item.get("detail")),
+                "documentation": _documentation(item.get("documentation")),
+                "insertText": _text(item.get("insertText")),
+                "filterText": _text(item.get("filterText")),
+                "sortText": _text(item.get("sortText")),
+                "textEdit": _text_edit(item.get("textEdit")),
+            }
+        )
+        if len(out) >= 200:
+            break
+    return {"items": out, "incomplete": incomplete}
+
+
+def normalize_format_edits(raw):
+    """整份格式化的 TextEdit 列表，丢掉缺字段与负行列的条目。"""
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        range_ = item.get("range")
+        if not isinstance(range_, dict):
+            continue
+        start = _position(range_.get("start"))
+        end = _position(range_.get("end"))
+        new_text = item.get("newText")
+        if start is None or end is None or not isinstance(new_text, str):
+            continue
+        out.append({"start": start, "end": end, "newText": new_text})
+    return out

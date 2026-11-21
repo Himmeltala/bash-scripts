@@ -150,6 +150,18 @@ class LspSession(unittest.TestCase):
         finally:
             server.stop()
 
+    def test_initialize_declares_completion_format(self):
+        server = self.start()
+        try:
+            lines = [json.loads(line) for line in self.record.read_text("utf-8").splitlines()]
+            init = [item for item in lines if item["method"] == "initialize"][0]
+            completion = init["params"]["capabilities"]["textDocument"]["completion"]
+            item = completion["completionItem"]
+            self.assertFalse(item["snippetSupport"])
+            self.assertEqual(item["documentationFormat"], ["markdown", "plaintext"])
+        finally:
+            server.stop()
+
     def test_timeout_when_server_stays_silent(self):
         with FakeEnv(FAKE_LSP_IGNORE="definition"):
             server = self.start(init_timeout=3, request_timeout=0.5)
@@ -271,6 +283,21 @@ class VueBridgeManager(unittest.TestCase):
                 [(item["severity"], item["line"], item["message"]) for item in items],
                 [("error", 1, "假错误")],
             )
+        finally:
+            manager.stop_all()
+
+
+    def test_completion_is_not_wired(self):
+        manager = lspmod.LspManager(bridge_command=(sys.executable, str(FAKE_TS)))
+        try:
+            with self.assertRaises(lspmod.LspUnavailable) as caught:
+                manager.completion("ws", str(self.root), "Comp.vue", "x\n", 0, 0)
+            self.assertIn("Vue 补全未接入", str(caught.exception))
+            with self.assertRaises(lspmod.LspUnavailable) as caught:
+                manager.formatting(
+                    "ws", str(self.root), "Comp.vue", "x\n", {"tabSize": 4, "insertSpaces": True}
+                )
+            self.assertIn("Vue 格式化未接入", str(caught.exception))
         finally:
             manager.stop_all()
 
@@ -408,6 +435,74 @@ class RenameEdits(unittest.TestCase):
                 lspmod.normalize_workspace_edit(op, str(root))
 
 
+class CompletionResults(unittest.TestCase):
+    def test_completions_from_list_and_list_object(self):
+        raw = {
+            "isIncomplete": True,
+            "items": [
+                {
+                    "label": "alpha",
+                    "kind": 3,
+                    "detail": "def alpha()",
+                    "documentation": {"kind": "markdown", "value": "说明"},
+                    "insertText": "alpha()",
+                    "sortText": "0",
+                    "textEdit": {
+                        "range": {
+                            "start": {"line": 1, "character": 2},
+                            "end": {"line": 1, "character": 5},
+                        },
+                        "newText": "alpha",
+                    },
+                }
+            ],
+        }
+        data = lspmod.normalize_completions(raw)
+        self.assertTrue(data["incomplete"])
+        self.assertEqual(len(data["items"]), 1)
+        item = data["items"][0]
+        self.assertEqual(item["label"], "alpha")
+        self.assertEqual(item["kind"], "function")
+        self.assertEqual(item["documentation"], "说明")
+        self.assertEqual(item["insertText"], "alpha()")
+        self.assertEqual(item["sortText"], "0")
+        self.assertEqual(item["textEdit"]["start"], {"line": 1, "character": 2})
+        self.assertEqual(item["textEdit"]["end"], {"line": 1, "character": 5})
+        self.assertEqual(item["textEdit"]["newText"], "alpha")
+        self.assertFalse(lspmod.normalize_completions([{"label": "beta"}])["incomplete"])
+
+    def test_completions_drop_bad_items_and_cap(self):
+        items = [{"label": "keep"}, {"label": ""}, {"detail": "no label"}]
+        items += [{"label": "x%d" % index} for index in range(300)]
+        items.append({"label": "auto", "additionalTextEdits": [{"newText": "import"}]})
+        data = lspmod.normalize_completions(items)
+        self.assertEqual(data["items"][0]["label"], "keep")
+        self.assertEqual(len(data["items"]), 200)
+        self.assertNotIn("auto", [item["label"] for item in data["items"]])
+        self.assertEqual(lspmod.normalize_completions(None), {"items": [], "incomplete": False})
+
+    def test_format_edits_drop_invalid(self):
+        raw = [
+            {
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}},
+                "newText": "xyz",
+            },
+            {
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}},
+            },
+            {
+                "range": {"start": {"line": -1, "character": 0}, "end": {"line": 0, "character": 3}},
+                "newText": "bad",
+            },
+            {"newText": "no range"},
+        ]
+        self.assertEqual(
+            lspmod.normalize_format_edits(raw),
+            [{"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}, "newText": "xyz"}],
+        )
+        self.assertEqual(lspmod.normalize_format_edits(None), [])
+
+
 class LspManagers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="idex-lsp-")
@@ -488,6 +583,70 @@ class LspManagers(unittest.TestCase):
                 self.assertEqual(items[0]["line"], 0)
             finally:
                 manager.stop_all()
+
+    def test_completion_and_formatting(self):
+        manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=())
+        try:
+            data = manager.completion("ws1", str(self.root), "target.py", "alp\n", 0, 2)
+            self.assertEqual(data["server"], "python")
+            self.assertEqual([item["label"] for item in data["items"]], ["alpha"])
+            self.assertEqual(data["items"][0]["kind"], "function")
+            self.assertTrue(data["incomplete"])
+            formatted = manager.formatting(
+                "ws1", str(self.root), "target.py", "x\n", {"tabSize": 4, "insertSpaces": True}
+            )
+            self.assertEqual(
+                formatted["edits"],
+                [{"start": {"line": 0, "character": 0},
+                  "end": {"line": 0, "character": 1},
+                  "newText": "formatted"}],
+            )
+            rows = {row["id"]: row for row in manager.status()}
+            self.assertTrue(rows["python"]["capabilities"]["completion"])
+            self.assertFalse(rows["python"]["capabilities"]["formatting"])
+            self.assertFalse(rows["vue"]["capabilities"]["completion"])
+        finally:
+            manager.stop_all()
+
+    def test_completion_rejects_missing_capability(self):
+        with FakeEnv(FAKE_LSP_NO_CAPS="1"):
+            manager = lspmod.LspManager(
+                commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=()
+            )
+            try:
+                with self.assertRaises(lspmod.LspUnavailable) as caught:
+                    manager.completion("ws1", str(self.root), "target.py", "x\n", 0, 0)
+                self.assertIn("不支持", str(caught.exception))
+                with self.assertRaises(lspmod.LspUnavailable) as caught:
+                    manager.formatting(
+                        "ws1", str(self.root), "target.py", "x\n", {"tabSize": 4, "insertSpaces": True}
+                    )
+                self.assertIn("不支持", str(caught.exception))
+            finally:
+                manager.stop_all()
+
+    def test_completion_syncs_draft_text(self):
+        record = Path(self.tmp.name) / "record.jsonl"
+        with FakeEnv(FAKE_LSP_RECORD=str(record)):
+            manager = lspmod.LspManager(
+                commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=()
+            )
+            try:
+                manager.completion("ws1", str(self.root), "target.py", "draft text\n", 0, 2)
+            finally:
+                manager.stop_all()
+        entries = [json.loads(line) for line in record.read_text("utf-8").splitlines() if line]
+        syncs = [
+            item
+            for item in entries
+            if item["method"] in ("textDocument/didOpen", "textDocument/didChange")
+        ]
+        self.assertTrue(syncs)
+        params = syncs[-1]["params"]
+        text = (params.get("textDocument") or {}).get("text")
+        if text is None:
+            text = params["contentChanges"][0]["text"]
+        self.assertEqual(text, "draft text\n")
 
     def test_missing_and_unknown_servers(self):
         manager = lspmod.LspManager(commands={"python": ("no-such-lsp-cmd",)}, bridge_command=())
@@ -583,6 +742,70 @@ class LspApi(unittest.TestCase):
         self.assertEqual(code, 200, data)
         rows = {row["id"]: row for row in data["servers"]}
         self.assertTrue(rows["python"]["available"])
+
+    def test_completion_and_format_roundtrip(self):
+        code, data = self.call(
+            "/lsp/completion",
+            {"ws": self.ws, "path": "target.py", "text": "alp\n", "line": 0, "character": 2},
+        )
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["server"], "python")
+        self.assertEqual([item["label"] for item in data["items"]], ["alpha"])
+        self.assertTrue(data["incomplete"])
+
+        code, data = self.call(
+            "/lsp/format",
+            {"ws": self.ws, "path": "target.py", "text": "x\n", "tabSize": 4, "insertSpaces": True},
+        )
+        self.assertEqual(code, 200, data)
+        self.assertEqual(
+            data["edits"],
+            [{"start": {"line": 0, "character": 0},
+              "end": {"line": 0, "character": 1},
+              "newText": "formatted"}],
+        )
+
+    def test_completion_and_format_reject_bad_input(self):
+        code, data = self.call(
+            "/lsp/completion",
+            {"ws": self.ws, "path": "target.py", "text": "x\n", "line": -1, "character": 0},
+        )
+        self.assertEqual(code, 400, data)
+
+        code, data = self.call(
+            "/lsp/format",
+            {"ws": self.ws, "path": "target.py", "text": "x\n", "tabSize": 0},
+        )
+        self.assertEqual(code, 400, data)
+
+        code, data = self.call(
+            "/lsp/format",
+            {"ws": self.ws, "path": "../x.py", "text": "x\n", "tabSize": 4},
+        )
+        self.assertEqual(code, 400, data)
+
+        code, data = self.call(
+            "/lsp/completion",
+            {"ws": self.ws, "path": "note.txt", "text": "x\n", "line": 0, "character": 0},
+        )
+        self.assertEqual(code, 400, data)
+        self.assertIn("没有语言服务器", data.get("error", ""))
+
+    def test_completion_reports_missing_capability(self):
+        with FakeEnv(FAKE_LSP_NO_CAPS="1"):
+            manager = servermod.LspManager(
+                commands={"python": (sys.executable, str(FAKE))}, bridge_command=()
+            )
+            self.server.handler.lsp = manager
+            try:
+                code, data = self.call(
+                    "/lsp/completion",
+                    {"ws": self.ws, "path": "target.py", "text": "x\n", "line": 0, "character": 0},
+                )
+                self.assertEqual(code, 400, data)
+                self.assertIn("不支持", data.get("error", ""))
+            finally:
+                manager.stop_all()
 
     def test_files_listing_respects_ignore(self):
         ignored = self.root / "node_modules"

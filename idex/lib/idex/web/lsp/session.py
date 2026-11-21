@@ -46,6 +46,7 @@ class LspServer:
         self.texts = {}
         self.diagnostics = {}
         self.diag_lock = threading.Lock()
+        self.capabilities = {}
         self.stderr_tail = []
         env = os.environ.copy()
         extra = [path for path in STABLE_BIN if os.path.isdir(path)]
@@ -156,6 +157,13 @@ class LspServer:
                 "textDocument": {
                     "synchronization": {"dynamicRegistration": False, "didSave": False},
                     "definition": {"dynamicRegistration": False, "linkSupport": True},
+                    "completion": {
+                        "dynamicRegistration": False,
+                        "completionItem": {
+                            "snippetSupport": False,
+                            "documentationFormat": ["markdown", "plaintext"],
+                        },
+                    },
                 },
                 "workspace": {"configuration": True, "workspaceFolders": True},
             },
@@ -163,7 +171,9 @@ class LspServer:
         }
         if self.options:
             params["initializationOptions"] = self.options
-        self.request("initialize", params, timeout=self.init_timeout)
+        result = self.request("initialize", params, timeout=self.init_timeout)
+        if isinstance(result, dict):
+            self.capabilities = result.get("capabilities") or {}
         self.notify("initialized", {})
 
     def sync(self, path, text, language):
@@ -217,6 +227,22 @@ class LspServer:
     def snapshot(self, uri):
         with self.diag_lock:
             return list(self.diagnostics.get(uri) or [])
+
+    def completion(self, path, text, language, line, character):
+        return self.query(
+            "textDocument/completion", path, text, language, line, character
+        )
+
+    def formatting(self, path, text, language, options):
+        self.sync(path, text, language)
+        return self.request(
+            "textDocument/formatting",
+            {
+                "textDocument": {"uri": path_to_uri(path)},
+                "options": options,
+            },
+            timeout=self.request_timeout,
+        )
 
     def hover(self, path, text, language, line, character):
         self.sync(path, text, language)

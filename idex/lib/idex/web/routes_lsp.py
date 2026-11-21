@@ -76,6 +76,39 @@ class LspRoutes:
         except LspError as exc:
             raise ApiError(504, str(exc))
 
+    def _lsp_completion(self, body):
+        ws, rel, text, line, character = self._lsp_args(body)
+        try:
+            return self.lsp.completion(ws["id"], ws["root"], rel, text, line, character)
+        except LspUnavailable as exc:
+            raise ApiError(400, str(exc))
+        except LspError as exc:
+            raise ApiError(504, str(exc))
+
+    def _lsp_format(self, body):
+        ws, rel, text = self._lsp_file_args(body)
+        try:
+            tab_size = int(body.get("tabSize", 4))
+        except (TypeError, ValueError):
+            raise ApiError(400, "tabSize 要是整数")
+        if tab_size < 1 or tab_size > 16:
+            raise ApiError(400, "tabSize 要在 1 到 16 之间")
+        insert_spaces = body.get("insertSpaces", True)
+        if not isinstance(insert_spaces, bool):
+            raise ApiError(400, "insertSpaces 要是布尔值")
+        try:
+            return self.lsp.formatting(
+                ws["id"],
+                ws["root"],
+                rel,
+                text,
+                {"tabSize": tab_size, "insertSpaces": insert_spaces},
+            )
+        except LspUnavailable as exc:
+            raise ApiError(400, str(exc))
+        except LspError as exc:
+            raise ApiError(504, str(exc))
+
     def _lsp_diagnostics(self, body):
         ws, rel, text = self._lsp_file_args(body)
         try:

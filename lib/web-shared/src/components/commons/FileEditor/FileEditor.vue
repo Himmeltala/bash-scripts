@@ -64,6 +64,7 @@
         v-if="modeComp"
         ref="paneRef"
         v-model="state.draft"
+        v-bind="usesCodeView(path, codeView) ? viewProps : {}"
         :path="path"
         @symbol="onSymbol"
         @menu="onMenu"
@@ -91,6 +92,7 @@ import { useFileEditor } from './useFileEditor'
 import {
   modesOf,
   resolveMode,
+  usesCodeView,
   viewForOpen,
   viewLoadFailure,
 } from './handlers/registry.js'
@@ -99,6 +101,10 @@ const props = defineProps({
   rootName: { type: String, default: '/' },
   size: { type: Number, default: undefined },
   markers: { type: Object, default: () => ({}) },
+  // 可选：调用方自定义代码文件的处理器，不传时用内置的代码编辑器。
+  codeView: { type: Object, default: null },
+  // 透传给处理器组件的额外 props；共享包不认识这些内容。
+  viewProps: { type: Object, default: () => ({}) },
   // 取数与落盘由调用方给：打开哪个文件、存到哪里，组件不认。
   loader: { type: Function, required: true },
   saver: { type: Function, required: true },
@@ -129,7 +135,7 @@ watch(dirty, (on) => emit('dirty', on))
 
 // 文件类型处理器给出这类文件的渲染与编辑方式，具体组件按需加载。
 const mode = ref('source')
-const modes = computed(() => modesOf(path.value))
+const modes = computed(() => modesOf(path.value, props.codeView))
 const modeEntry = computed(() => modes.value.find((item) => item.id === mode.value) || null)
 const modeComp = shallowRef(null)
 const modeLoading = ref(false)

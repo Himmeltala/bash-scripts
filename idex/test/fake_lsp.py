@@ -79,11 +79,16 @@ def main():
         method = message.get("method")
         if "id" in message and method:
             if method == "initialize":
+                record({"method": method, "params": message.get("params")})
+                capabilities = {"definitionProvider": True}
+                if os.environ.get("FAKE_LSP_NO_CAPS") != "1":
+                    capabilities["completionProvider"] = {"triggerCharacters": ["."]}
+                    capabilities["documentFormattingProvider"] = True
                 send(
                     {
                         "jsonrpc": "2.0",
                         "id": message["id"],
-                        "result": {"capabilities": {"definitionProvider": True}},
+                        "result": {"capabilities": capabilities},
                     }
                 )
             elif method == "shutdown":
@@ -121,6 +126,61 @@ def main():
                                         "selectionRange": {"start": {"line": 1, "character": 2}},
                                     }
                                 ],
+                            }
+                        ],
+                    }
+                )
+            elif method == "textDocument/completion":
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": {
+                            "isIncomplete": True,
+                            "items": [
+                                {
+                                    "label": "alpha",
+                                    "kind": 3,
+                                    "detail": "def alpha()",
+                                    "documentation": {"kind": "markdown", "value": "假补全"},
+                                    "insertText": "alpha()",
+                                    "sortText": "0",
+                                    "textEdit": {
+                                        "range": {
+                                            "start": {"line": 0, "character": 0},
+                                            "end": {"line": 0, "character": 2},
+                                        },
+                                        "newText": "alpha",
+                                    },
+                                },
+                                {
+                                    "label": "auto",
+                                    "additionalTextEdits": [
+                                        {
+                                            "range": {
+                                                "start": {"line": 0, "character": 0},
+                                                "end": {"line": 0, "character": 0},
+                                            },
+                                            "newText": "import x\n",
+                                        }
+                                    ],
+                                },
+                            ],
+                        },
+                    }
+                )
+            elif method == "textDocument/formatting":
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": [
+                            {
+                                "range": {
+                                    "start": {"line": 0, "character": 0},
+                                    "end": {"line": 0, "character": 1},
+                                },
+                                "newText": "formatted",
                             }
                         ],
                     }

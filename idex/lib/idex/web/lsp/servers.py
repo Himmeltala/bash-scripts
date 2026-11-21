@@ -11,6 +11,7 @@ SERVERS = {
         "command": ("bash-language-server", "start"),
         "hint": "npm i -g bash-language-server",
         "suffixes": (".sh", ".bash", ".zsh"),
+        "capabilities": {"completion": True, "formatting": False},
     },
     "python": {
         "title": "Python",
@@ -18,6 +19,7 @@ SERVERS = {
         "command": ("pyright-langserver", "--stdio"),
         "hint": "npm i -g pyright",
         "suffixes": (".py", ".pyi"),
+        "capabilities": {"completion": True, "formatting": False},
     },
     "typescript": {
         "title": "JS / TS",
@@ -25,6 +27,7 @@ SERVERS = {
         "command": ("typescript-language-server", "--stdio"),
         "hint": "npm i -g typescript typescript-language-server",
         "suffixes": (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"),
+        "capabilities": {"completion": True, "formatting": True},
     },
     "vue": {
         "title": "Vue",
@@ -35,6 +38,7 @@ SERVERS = {
         "hint": "Vue 要 Node、TypeScript 5 与 @vue/typescript-plugin",
         "bridge_only": True,
         "suffixes": (".vue",),
+        "capabilities": {"completion": False, "formatting": False},
     },
     "java": {
         "title": "Java",
@@ -44,6 +48,7 @@ SERVERS = {
         "command": ("jdtls",),
         "hint": "装 Eclipse JDT LS，把 jdtls 放进 PATH",
         "suffixes": (".java",),
+        "capabilities": {"completion": True, "formatting": True},
     },
 }
 

@@ -416,6 +416,8 @@ WRITE_ROUTES = {
     "lsp/symbols": lambda h, m, q, b: h._lsp_symbols(b),
     "lsp/diagnostics": lambda h, m, q, b: h._lsp_diagnostics(b),
     "lsp/hover": lambda h, m, q, b: h._lsp_hover(b),
+    "lsp/completion": lambda h, m, q, b: h._lsp_completion(b),
+    "lsp/format": lambda h, m, q, b: h._lsp_format(b),
     "lsp/rename": lambda h, m, q, b: h._lsp_rename(b),
     "lsp/rename-apply": lambda h, m, q, b: h._lsp_rename(b, apply=True),
     "settings": lambda h, m, q, b: _save_settings(h, b),
