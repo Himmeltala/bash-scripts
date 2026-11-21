@@ -86,18 +86,46 @@ const headers = computed(() =>
 
 const cellProps = () => ({ class: 'text-end' })
 
-// 异常值标红：缓存命中低于 99%、请求数超过 1500、总 token 超过 3 亿、合计费用超过 30。
-// 只标明细行，合计行不着色。
-function alertCell(column, row) {
+// 缓存命中是固定口径；请求数、token 与费用随报表维度变化，按本报表内的分位取档：
+// 75% 以下绿，75% 到 90% 黄，90% 以上红。每张报表各算各的，不会拿小时行去比日行。
+const sourceRows = computed(() => data.value?.rows || [])
+
+function quantile(sorted, ratio) {
+  if (!sorted.length) return 0
+  return sorted[Math.floor((sorted.length - 1) * ratio)]
+}
+
+const thresholds = computed(() => {
+  const pair = (key) => {
+    const values = sourceRows.value
+      .map((row) => Number(row[key]))
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b)
+    return [quantile(values, 0.75), quantile(values, 0.9)]
+  }
+  return {
+    requests: pair('requests'),
+    total_tokens: pair('total_tokens'),
+    cost: pair('cost'),
+  }
+})
+
+// 明细行的颜色口径；合计行不着色。
+function cellTone(column, row) {
   const raw = row[column.key]
-  if (raw == null || raw === '') return false
+  if (raw == null || raw === '') return ''
   const value = Number(raw)
-  if (!Number.isFinite(value)) return false
-  if (column.key === 'cache_hit') return value < 0.99
-  if (column.key === 'requests') return value > 1500
-  if (column.key === 'total_tokens') return value > 300000000
-  if (column.key === 'cost') return value > 30
-  return false
+  if (!Number.isFinite(value)) return ''
+  if (column.key === 'cache_hit') {
+    if (value > 0.99) return 'cell-good'
+    if (value < 0.99) return 'cell-alert'
+    return ''
+  }
+  const range = thresholds.value[column.key]
+  if (!range) return ''
+  if (value <= range[0]) return 'cell-good'
+  if (value <= range[1]) return 'cell-warn'
+  return 'cell-alert'
 }
 
 const totalsRow = computed(() => data.value?.totals || {})
@@ -143,7 +171,7 @@ function rowProps({ item }) {
         </span>
         <span
           v-else
-          :class="{ mono: column.mono, strong: column.strong, 'cell-alert': alertCell(column, item) }"
+          :class="[cellTone(column, item), { mono: column.mono, strong: column.strong }]"
           :title="column.key === 'api' ? item.api : column.key === 'session' ? item.session : null"
         >
           {{ cell(column, item) }}
@@ -226,6 +254,14 @@ function rowProps({ item }) {
 
 .cell-alert {
   color: rgb(var(--v-theme-error));
+}
+
+.cell-warn {
+  color: rgb(var(--v-theme-peak));
+}
+
+.cell-good {
+  color: rgb(var(--v-theme-success));
 }
 
 /* 合计行按普通数据行的行高与字号排，避免吸底后比上面的行高出一截。 */
