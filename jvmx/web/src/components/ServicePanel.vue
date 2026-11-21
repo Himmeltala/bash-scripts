@@ -129,7 +129,7 @@ import { storeToRefs } from 'pinia'
 import SettingsDialog from './SettingsDialog.vue'
 import { usePreferencesStore } from '../stores/preferences'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
-import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
+import { ServiceTable, serviceIcon, useServiceActions } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import {
   KIND_TEXT,
@@ -138,6 +138,7 @@ import {
   STATUS_TEXT,
   TYPE_TEXT,
   ago,
+  baseName,
   moduleOf,
   runningCount,
 } from '../composables/format'
@@ -180,20 +181,32 @@ watch(
   { immediate: true },
 )
 const filter = ref('')
-const stopping = ref({})
-const starting = ref({})
-
-const settings = reactive({ on: false, svc: null })
 const custom = reactive({ on: false, path: '' })
-// 日志弹窗的文本、翻页与状态跟着当前运行走。
+// 启动、停止与设置弹窗走共享流程，启动载荷带本应用的方式与刷新选项。
 const {
-  text: logText,
-  more: logMore,
-  status: logStatus,
-  open: openLogRun,
-  close: closeLogRun,
-  loadMore: loadMoreLog,
-} = useRunLog({ api, ws: () => props.ws, statusText: STATUS_TEXT })
+  starting,
+  stopping,
+  settings,
+  logText,
+  logMore,
+  logStatus,
+  loadMoreLog,
+  start,
+  stop,
+  openSettings,
+  openLog,
+} = useServiceActions({
+  ws: () => props.ws,
+  api,
+  statusText: STATUS_TEXT,
+  startPayload: (row) => ({
+    svc: row.svc.id,
+    mode: row.svc.mode || 'auto',
+    refresh: !!row.svc.refresh,
+  }),
+  onStart: (payload) => emit('start', payload),
+  onStop: (runId) => emit('stop', runId),
+})
 
 const CUSTOM = '__jvmx_custom__'
 
@@ -228,11 +241,6 @@ function saveCustom() {
 }
 
 const running = computed(() => runningCount(props.ws))
-
-function baseName(full) {
-  const parts = String(full || '').split('/').filter(Boolean)
-  return parts.length ? parts[parts.length - 1] : full
-}
 
 function typeTab(type) {
   if (props.ws.kind === 'gradle') return type
@@ -279,7 +287,7 @@ const rows = computed(() => {
         blocked,
         statusText: run ? STATUS_TEXT[run.status] || run.status : '',
         color: run ? STATUS_COLOR[run.status] || 'grey' : 'grey',
-        icon: run ? iconOf(run.status) : 'mdi-circle-outline',
+        icon: run ? serviceIcon(run.status) : 'mdi-circle-outline',
         err: run && run.err,
         port: run && run.port,
         started: run && run.started,
@@ -289,56 +297,6 @@ const rows = computed(() => {
       }
     })
 })
-
-function iconOf(status) {
-  if (status === 'ready') return 'mdi-play-circle'
-  if (status === 'starting') return 'mdi-progress-clock'
-  if (status === 'failed') return 'mdi-alert-circle'
-  if (status === 'exited') return 'mdi-check-circle'
-  return 'mdi-stop-circle'
-}
-
-async function start(row) {
-  starting.value[row.svc.id] = true
-  // 启动方式与 Gradle 的刷新依赖跟着这一行走，保存过就按保存的来。
-  emit('start', {
-    svc: row.svc.id,
-    mode: row.svc.mode || 'auto',
-    refresh: !!row.svc.refresh,
-  })
-  setTimeout(() => {
-    starting.value[row.svc.id] = false
-  }, 1500)
-}
-
-async function stop(row) {
-  stopping.value[row.svc.id] = true
-  emit('stop', row.run.id)
-  setTimeout(() => {
-    stopping.value[row.svc.id] = false
-  }, 3000)
-}
-
-function openSettings(row) {
-  settings.svc = row.svc
-  settings.on = true
-  openLogRun(row.run, row.svc.id)
-}
-
-function openLog(row) {
-  if (!row.run) return
-  settings.svc = row.svc || null
-  settings.on = true
-  openLogRun(row.run, (row.svc || {}).id || '')
-}
-
-// 弹窗关掉就断开日志流，与以前的 watch(settings.on) 一致。
-watch(
-  () => settings.on,
-  (on) => {
-    if (!on) closeLogRun()
-  },
-)
 
 function onSave({ module, args, mode, refresh }) {
   emit('save', { svc: settings.svc.id, module, args, mode, refresh })

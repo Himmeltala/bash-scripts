@@ -1,13 +1,13 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { HeatmapChart } from 'echarts/charts'
 import { CalendarComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { fmtMoney } from '../composables/format'
-
-const FONT = 'Roboto, sans-serif'
+import { CHART_FONT, fadeColor } from '../composables/chartUtils'
+import { useChart } from '../composables/useChart'
 
 echarts.use([HeatmapChart, CalendarComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
 
@@ -19,22 +19,10 @@ const props = defineProps({
 })
 
 const box = ref(null)
-let chart = null
-let watcher = null
 
 const theme = useTheme()
 const colors = computed(() => theme.current.value.colors)
 const dark = computed(() => theme.current.value.dark)
-
-function fade(color, alpha) {
-  const text = String(color || '')
-  if (!text.startsWith('#')) return text
-  let hex = text.slice(1)
-  if (hex.length === 3) hex = hex.split('').map((ch) => ch + ch).join('')
-  const value = Number.parseInt(hex, 16)
-  if (Number.isNaN(value)) return text
-  return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${alpha})`
-}
 
 // 同一天可能有多行（不同来源），先按日期合计。
 const daily = computed(() => {
@@ -62,20 +50,20 @@ function option() {
   return {
     animationDuration: 240,
     notMerge: true,
-    textStyle: { fontFamily: FONT },
+    textStyle: { fontFamily: CHART_FONT },
     title: props.title
       ? {
           text: props.title,
           left: 12,
           top: 6,
-          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: FONT },
+          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: CHART_FONT },
         }
       : undefined,
     tooltip: {
       trigger: 'item',
       backgroundColor: skin.surface,
       borderColor: line,
-      textStyle: { color: skin['on-surface'], fontFamily: FONT },
+      textStyle: { color: skin['on-surface'], fontFamily: CHART_FONT },
       formatter: (item) => {
         const [date, value] = item.value || []
         return `${date}<br/>${item.marker}¥${fmtMoney(value)}`
@@ -90,9 +78,9 @@ function option() {
       bottom: 0,
       itemWidth: 10,
       itemHeight: 70,
-      textStyle: { color: text, fontSize: 11, fontFamily: FONT },
+      textStyle: { color: text, fontSize: 11, fontFamily: CHART_FONT },
       inRange: {
-        color: [fade(skin.primary, 0.08), fade(skin.primary, 0.4), skin.primary],
+        color: [fadeColor(skin.primary, 0.08), fadeColor(skin.primary, 0.4), skin.primary],
       },
     },
     calendar: {
@@ -104,8 +92,8 @@ function option() {
       cellSize: ['auto', 14],
       splitLine: { lineStyle: { color: line } },
       itemStyle: { color: 'transparent', borderColor: line, borderWidth: 1 },
-      dayLabel: { color: text, fontSize: 11, fontFamily: FONT, firstDay: 1 },
-      monthLabel: { color: text, fontSize: 11, fontFamily: FONT },
+      dayLabel: { color: text, fontSize: 11, fontFamily: CHART_FONT, firstDay: 1 },
+      monthLabel: { color: text, fontSize: 11, fontFamily: CHART_FONT },
       yearLabel: { show: false },
     },
     series: [
@@ -119,33 +107,9 @@ function option() {
   }
 }
 
-function draw() {
-  if (!chart) return
-  chart.setOption(option(), true)
-}
+const { render } = useChart(box, (chart) => chart.setOption(option(), true))
 
-function fit() {
-  chart?.resize()
-}
-
-onMounted(() => {
-  chart = echarts.init(box.value)
-  draw()
-  if (window.ResizeObserver) {
-    watcher = new ResizeObserver(fit)
-    watcher.observe(box.value)
-  }
-  window.addEventListener('resize', fit)
-})
-
-watch(() => [props.rows, theme.current.value], draw, { deep: true })
-
-onBeforeUnmount(() => {
-  watcher?.disconnect()
-  window.removeEventListener('resize', fit)
-  chart?.dispose()
-  chart = null
-})
+watch(() => [props.rows, theme.current.value], render, { deep: true })
 </script>
 
 <template>

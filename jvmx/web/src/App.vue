@@ -62,9 +62,9 @@ const listTexts = {
 }
 
 async function loadExtra(snapshot) {
-  const data = await api.jdks()
-  snapshot.jdks = data.jdks || []
-  snapshot.currentJdk = data.current || ''
+  const data1 = await api.jdks()
+  snapshot.jdks = data1.jdks || []
+  snapshot.currentJdk = data1.current || ''
 }
 
 async function setWorkspaceJdk({ ws, jdk }, act, toast) {

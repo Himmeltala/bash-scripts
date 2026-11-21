@@ -33,7 +33,3 @@ export const TYPE_TEXT = {
   install: '安装',
 }
 
-export function tailPath(full) {
-  const parts = String(full || '').split('/').filter(Boolean)
-  return parts.slice(-3).join('/') || full
-}

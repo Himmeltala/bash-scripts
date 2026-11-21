@@ -1,15 +1,16 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { BarChart, HeatmapChart, LineChart, PieChart } from 'echarts/charts'
 import { LegendComponent, GridComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { fmtTokens } from '../composables/format'
+import { CHART_FONT, fadeColor } from '../composables/chartUtils'
+import { useChart } from '../composables/useChart'
 
 const PEAK = '高峰'
 const OFF = '空闲'
-const FONT = 'Roboto, sans-serif'
 
 echarts.use([
   BarChart,
@@ -49,8 +50,6 @@ function money(value) {
 }
 
 const box = ref(null)
-let chart = null
-let watcher = null
 
 // 颜色全部取自 Vuetify 主题，页面切换深浅色时整张图跟着重画。
 const theme = useTheme()
@@ -63,17 +62,6 @@ const multi = computed(() => props.series.length > 0)
 const labels = computed(() =>
   multi.value ? props.categories : props.items.map((item) => item.short || item.label),
 )
-
-// 折线底下的面积：同色从 28% 透明度收到全透明。
-function fade(color, alpha) {
-  const text = String(color || '')
-  if (!text.startsWith('#')) return text
-  let hex = text.slice(1)
-  if (hex.length === 3) hex = hex.split('').map((ch) => ch + ch).join('')
-  const value = Number.parseInt(hex, 16)
-  if (Number.isNaN(value)) return text
-  return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${alpha})`
-}
 
 function lineOf(item) {
   return {
@@ -95,8 +83,8 @@ function lineOf(item) {
         x2: 0,
         y2: 1,
         colorStops: [
-          { offset: 0, color: fade(item.color, 0.28) },
-          { offset: 1, color: fade(item.color, 0) },
+          { offset: 0, color: fadeColor(item.color, 0.28) },
+          { offset: 1, color: fadeColor(item.color, 0) },
         ],
       },
     },
@@ -240,7 +228,7 @@ function option() {
     animationDuration: 240,
     // 两个并排的图各自管自己的残影，不清掉旧选项的话换数据后图例会重复叠上去。
     notMerge: true,
-    textStyle: { fontFamily: FONT },
+    textStyle: { fontFamily: CHART_FONT },
     grid: isDonut
       ? undefined
       : { left: 8, right: 8, top: 44, bottom: isHeat ? 48 : 22, containLabel: true },
@@ -249,7 +237,7 @@ function option() {
       trigger: isLine ? 'axis' : 'item',
       backgroundColor: skin.surface,
       borderColor: line,
-      textStyle: { color: skin['on-surface'], fontFamily: FONT },
+      textStyle: { color: skin['on-surface'], fontFamily: CHART_FONT },
       formatter: (payload) => {
         const items = Array.isArray(payload) ? payload : [payload]
         const first = items[0] || {}
@@ -286,9 +274,9 @@ function option() {
           bottom: 0,
           itemWidth: 10,
           itemHeight: 70,
-          textStyle: { color: text, fontSize: 11, fontFamily: FONT },
+          textStyle: { color: text, fontSize: 11, fontFamily: CHART_FONT },
           inRange: {
-            color: [fade(skin.primary, 0.08), fade(skin.primary, 0.4), skin.primary],
+            color: [fadeColor(skin.primary, 0.08), fadeColor(skin.primary, 0.4), skin.primary],
           },
         }
       : undefined,
@@ -297,7 +285,7 @@ function option() {
           text: props.title,
           left: 12,
           top: 6,
-          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: FONT },
+          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: CHART_FONT },
         }
       : undefined,
     legend:
@@ -309,7 +297,7 @@ function option() {
             icon: 'roundRect',
             itemWidth: 10,
             itemHeight: 10,
-            textStyle: { color: text, fontSize: 11, fontFamily: FONT },
+            textStyle: { color: text, fontSize: 11, fontFamily: CHART_FONT },
             // 图例只管说明颜色，点它不让柱子消失。
             selectedMode: false,
           }
@@ -325,7 +313,7 @@ function option() {
           axisLabel: {
             color: text,
             fontSize: 11,
-            fontFamily: FONT,
+            fontFamily: CHART_FONT,
             interval: 'auto',
             hideOverlap: true,
           },
@@ -338,7 +326,7 @@ function option() {
             data: rows.map((row) => row.name),
             axisLine: { lineStyle: { color: line } },
             axisTick: { show: false },
-            axisLabel: { color: text, fontSize: 11, fontFamily: FONT },
+            axisLabel: { color: text, fontSize: 11, fontFamily: CHART_FONT },
             splitLine: { show: false },
           }
         : {
@@ -346,7 +334,7 @@ function option() {
             axisLabel: {
               color: text,
               fontSize: 11,
-              fontFamily: FONT,
+              fontFamily: CHART_FONT,
               formatter: (value) => `¥${money(value)}`,
             },
             splitLine: { lineStyle: { color: line } },
@@ -355,35 +343,10 @@ function option() {
   }
 }
 
-function draw() {
-  if (!chart) return
-  chart.setOption(option(), true)
-}
+const { render } = useChart(box, (chart) => chart.setOption(option(), true))
 
-function fit() {
-  chart?.resize()
-}
-
-onMounted(() => {
-  chart = echarts.init(box.value)
-  draw()
-  // 卡片宽度只有布局完成才知道，用 ResizeObserver 跟着卡片走，比监听窗口变化准。
-  if (window.ResizeObserver) {
-    watcher = new ResizeObserver(fit)
-    watcher.observe(box.value)
-  }
-  window.addEventListener('resize', fit)
-})
-
-watch(() => [props.items, props.categories, props.series, props.mode], draw, { deep: true })
-watch(theme.current, draw, { deep: true })
-
-onBeforeUnmount(() => {
-  watcher?.disconnect()
-  window.removeEventListener('resize', fit)
-  chart?.dispose()
-  chart = null
-})
+watch(() => [props.items, props.categories, props.series, props.mode], render, { deep: true })
+watch(theme.current, render, { deep: true })
 </script>
 
 <template>

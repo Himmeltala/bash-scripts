@@ -1,13 +1,13 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { SankeyChart } from 'echarts/charts'
 import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { SOURCE_LIST, fmtMoney } from '../composables/format'
-
-const FONT = 'Roboto, sans-serif'
+import { CHART_FONT } from '../composables/chartUtils'
+import { useChart } from '../composables/useChart'
 
 echarts.use([SankeyChart, TooltipComponent, CanvasRenderer])
 
@@ -21,8 +21,6 @@ const props = defineProps({
 })
 
 const box = ref(null)
-let chart = null
-let watcher = null
 
 const theme = useTheme()
 const colors = computed(() => theme.current.value.colors)
@@ -114,20 +112,20 @@ function option() {
   return {
     animationDuration: 240,
     notMerge: true,
-    textStyle: { fontFamily: FONT },
+    textStyle: { fontFamily: CHART_FONT },
     title: props.title
       ? {
           text: props.title,
           left: 12,
           top: 6,
-          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: FONT },
+          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: CHART_FONT },
         }
       : undefined,
     tooltip: {
       trigger: 'item',
       backgroundColor: skin.surface,
       borderColor: skin['on-surface-variant'],
-      textStyle: { color: skin['on-surface'], fontFamily: FONT },
+      textStyle: { color: skin['on-surface'], fontFamily: CHART_FONT },
       formatter: (item) => {
         if (item.dataType === 'edge') {
           const fromNode = nodes.find((node) => node.name === item.data.source) || {}
@@ -151,7 +149,7 @@ function option() {
         label: {
           color: skin['on-surface'],
           fontSize: 11,
-          fontFamily: FONT,
+          fontFamily: CHART_FONT,
           width: 96,
           overflow: 'truncate',
           ellipsis: '…',
@@ -165,33 +163,9 @@ function option() {
   }
 }
 
-function draw() {
-  if (!chart) return
-  chart.setOption(option(), true)
-}
+const { render } = useChart(box, (chart) => chart.setOption(option(), true))
 
-function fit() {
-  chart?.resize()
-}
-
-onMounted(() => {
-  chart = echarts.init(box.value)
-  draw()
-  if (window.ResizeObserver) {
-    watcher = new ResizeObserver(fit)
-    watcher.observe(box.value)
-  }
-  window.addEventListener('resize', fit)
-})
-
-watch(() => [props.rows, props.targetKey, theme.current.value], draw, { deep: true })
-
-onBeforeUnmount(() => {
-  watcher?.disconnect()
-  window.removeEventListener('resize', fit)
-  chart?.dispose()
-  chart = null
-})
+watch(() => [props.rows, props.targetKey, theme.current.value], render, { deep: true })
 </script>
 
 <template>

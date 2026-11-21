@@ -3,6 +3,7 @@
 import { LIVE_STATUSES } from '@bash-scripts/web-shared'
 import { formatAgo } from '@bash-scripts/web-shared/format'
 
+export { baseName } from '@bash-scripts/web-shared/format'
 export { runningCount } from '@bash-scripts/web-shared'
 export const ago = formatAgo
 
@@ -57,7 +58,3 @@ export function moduleOf(rel) {
   return String(rel || '').replace(/^(\.\/)+/, '')
 }
 
-export function tailPath(full) {
-  const parts = String(full || '').split('/').filter(Boolean)
-  return parts.slice(-3).join('/') || full
-}

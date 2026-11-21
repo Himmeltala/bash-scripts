@@ -179,7 +179,7 @@ import SettingsDialog from './SettingsDialog.vue'
 import { usePreferencesStore } from '../stores/preferences'
 import ZipPanel from './ZipPanel.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
-import { ServiceTable, useRunLog } from '@bash-scripts/web-shared'
+import { ServiceTable, serviceIcon, useServiceActions } from '@bash-scripts/web-shared'
 import { api } from '../composables/useApi'
 import {
   LIVE,
@@ -187,6 +187,7 @@ import {
   STATUS_TEXT,
   TYPE_TEXT,
   ago,
+  baseName,
   runningCount,
 } from '../composables/format'
 
@@ -207,21 +208,29 @@ const tabs = [
 // 栏目选择记在全局偏好里，换工作区、刷新页面都停在原处。
 const { activeTab: tab } = storeToRefs(usePreferencesStore())
 const filter = ref('')
-const stopping = ref({})
-const starting = ref({})
-
-const settings = reactive({ on: false, svc: null })
 const custom = reactive({ on: false, path: '' })
 const add = reactive({ on: false, saving: false, error: '', type: 'dev', tag: '', rel: '.', args: '' })
-// 日志弹窗的文本、翻页与状态跟着当前运行走。
+// 启动、停止与设置弹窗走共享流程，只有启动载荷是本应用自己的。
 const {
-  text: logText,
-  more: logMore,
-  status: logStatus,
-  open: openLogRun,
-  close: closeLogRun,
-  loadMore: loadMoreLog,
-} = useRunLog({ api, ws: () => props.ws, statusText: STATUS_TEXT })
+  starting,
+  stopping,
+  settings,
+  logText,
+  logMore,
+  logStatus,
+  loadMoreLog,
+  start,
+  stop,
+  openSettings,
+  openLog,
+} = useServiceActions({
+  ws: () => props.ws,
+  api,
+  statusText: STATUS_TEXT,
+  startPayload: (row) => ({ svc: row.svc.id }),
+  onStart: (payload) => emit('start', payload),
+  onStop: (runId) => emit('stop', runId),
+})
 
 // 类型下拉与命令提示按同一组顺序排，添加时自己选类型，不再跟着当前栏走。
 const TYPE_ORDER = Object.keys(TYPE_TEXT)
@@ -268,11 +277,6 @@ function saveCustom() {
 
 const running = computed(() => runningCount(props.ws))
 
-function baseName(full) {
-  const parts = String(full || '').split('/').filter(Boolean)
-  return parts.length ? parts[parts.length - 1] : full
-}
-
 // 超过两屏才给筛选，三五行的时候多一排按钮反而添乱。
 const filterable = computed(() => props.ws.services.length > 8)
 
@@ -311,7 +315,7 @@ const rows = computed(() => {
         live,
         statusText: run ? STATUS_TEXT[run.status] || run.status : '',
         color: run ? STATUS_COLOR[run.status] || 'grey' : 'grey',
-        icon: run ? iconOf(run.status) : 'mdi-circle-outline',
+        icon: run ? serviceIcon(run.status) : 'mdi-circle-outline',
         err: run && run.err,
         port: run && run.port,
         started: run && run.started,
@@ -321,30 +325,6 @@ const rows = computed(() => {
       }
     })
 })
-
-function iconOf(status) {
-  if (status === 'ready') return 'mdi-play-circle'
-  if (status === 'starting') return 'mdi-progress-clock'
-  if (status === 'failed') return 'mdi-alert-circle'
-  if (status === 'exited') return 'mdi-check-circle'
-  return 'mdi-stop-circle'
-}
-
-async function start(row) {
-  starting.value[row.svc.id] = true
-  emit('start', { svc: row.svc.id })
-  setTimeout(() => {
-    starting.value[row.svc.id] = false
-  }, 1500)
-}
-
-async function stop(row) {
-  stopping.value[row.svc.id] = true
-  emit('stop', row.run.id)
-  setTimeout(() => {
-    stopping.value[row.svc.id] = false
-  }, 3000)
-}
 
 function openAdd() {
   add.on = true
@@ -386,32 +366,11 @@ async function dropCommand(row) {
   }
 }
 
-function openSettings(row) {
-  settings.svc = row.svc
-  settings.on = true
-  openLogRun(row.run, row.svc.id)
-}
-
-function openLog(row) {
-  if (!row.run) return
-  settings.svc = row.svc || null
-  settings.on = true
-  openLogRun(row.run, (row.svc || {}).id || '')
-}
-
 // 换工作区时筛选回到全部，否则表里只剩空行，看着像脚本丢了。
 watch(
   () => props.ws.id,
   () => {
     filter.value = ''
-  },
-)
-
-// 弹窗关掉就断开日志流，与以前的 watch(settings.on) 一致。
-watch(
-  () => settings.on,
-  (on) => {
-    if (!on) closeLogRun()
   },
 )
 
