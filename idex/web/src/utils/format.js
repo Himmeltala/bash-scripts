@@ -1,7 +1,5 @@
 // 页面上反复用到的小格式化：路径与时间走共享的 /format，这里只留状态与动作词汇。
 
-import { formatDateTime } from '@bash-scripts/web-shared/format'
-
 export {
   baseName,
   dirName,
@@ -9,9 +7,6 @@ export {
   shortPath,
   shortenPath,
 } from '@bash-scripts/web-shared/format'
-
-// SVN 给 UTC（带 Z），Git 给带偏移的时间；按浏览器时区显示到分钟。
-export const when = formatDateTime
 
 const STATUS = {
   modified: { letter: 'M', text: '改动', color: 'modified' },

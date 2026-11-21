@@ -1,10 +1,4 @@
-// 出网记录的展示格式：时间、时长与目标地址。
-
-export function formatTime(ts) {
-  const sec = Number(ts)
-  if (!sec) return '—'
-  return new Date(sec * 1000).toLocaleString('zh-CN', { hour12: false })
-}
+// 出网记录的展示格式：时长与目标地址。
 
 export function formatDuration(sec) {
   const value = Math.max(0, Math.round(Number(sec) || 0))

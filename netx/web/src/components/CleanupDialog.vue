@@ -31,9 +31,6 @@
     <v-alert v-if="preview" type="info" variant="tonal" density="compact" class="result">
       {{ previewText }}
     </v-alert>
-    <v-alert v-if="error" type="error" variant="tonal" density="compact" class="result">
-      {{ error }}
-    </v-alert>
 
     <template #actions>
       <v-spacer />
@@ -54,7 +51,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { FloatingDialog, useToast } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { clean as cleanRecords, summary } from '../composables/useApi'
 
@@ -74,6 +71,10 @@ const info = ref(null)
 const scope = ref(7)
 const preview = ref(null)
 const error = ref('')
+const { toast } = useToast()
+watch(error, (text) => {
+  if (text) toast(text, 'error')
+})
 const busy = ref(false)
 
 const size = computed(() =>

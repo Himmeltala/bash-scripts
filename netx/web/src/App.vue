@@ -101,24 +101,6 @@
 
     <v-main>
       <div class="page">
-        <v-alert
-          v-if="status.error"
-          type="error"
-          variant="tonal"
-          density="compact"
-          class="notice"
-        >
-          {{ status.error }}
-        </v-alert>
-        <v-alert
-          v-else-if="streamError"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="notice"
-        >
-          {{ streamError }}
-        </v-alert>
         <FlowsTable
           :rows="filtered"
           :total="rows.length"
@@ -140,7 +122,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import FlowsTable from './components/FlowsTable.vue'
 import FlowDetailDialog from './components/FlowDetailDialog.vue'
@@ -153,7 +135,7 @@ import { ToastHost, useToast } from '@bash-scripts/web-shared/feedbacks'
 import { useFlows } from './composables/useFlows'
 import { summary as fetchSummary } from './composables/useApi'
 import { rememberTheme } from './plugins/vuetify'
-import { formatTime } from './utils/format'
+import { formatTimestamp } from '@bash-scripts/web-shared/format'
 
 const RANGES = [
   { label: '最近 15 分钟', value: 15 },
@@ -235,6 +217,16 @@ const { dark, toggle: toggleTheme } = useThemeToggle({
 
 const { rows, status, loading, connected, error: streamError } = useFlows(minutes)
 
+watch(
+  () => status.value?.error,
+  (text) => {
+    if (text) toast(text, 'error')
+  }
+)
+watch(streamError, (text) => {
+  if (text) toast(text, 'warning')
+})
+
 const state = computed(() => {
   const item = STATES[status.value.state]
   if (item) return item
@@ -245,7 +237,9 @@ const state = computed(() => {
   }
 })
 
-const lastEvent = computed(() => formatTime(status.value.last_event_at))
+const lastEvent = computed(() =>
+  formatTimestamp(status.value.last_event_at, { unit: 's', fallback: '—' })
+)
 const streamText = computed(() => {
   if (streamError.value) return '已断开'
   return connected.value ? '已连接' : '连接中'

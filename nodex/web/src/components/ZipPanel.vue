@@ -85,7 +85,6 @@
         </v-btn>
         <span v-if="copied" class="meta">已复制</span>
       </div>
-      <p v-if="error" class="hint bad">{{ error }}</p>
       <div class="log">
         <LogView v-if="log" :text="log" :dark="dark" :colorize="colorize" />
         <p v-else class="hint">还没有打过包。勾选左边的文件或目录，点「打包」。</p>
@@ -97,6 +96,7 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { FileTree, copyText } from '@bash-scripts/web-shared'
+import { useToast } from '@bash-scripts/web-shared/feedbacks'
 import { api } from '../composables/useApi'
 import { colorize } from '../composables/logColor'
 import { baseName, sizeText } from '../composables/format'
@@ -111,7 +111,7 @@ const treeRef = ref(null)
 // 勾中的条目按相对路径存；父目录也在里面时，后端提交前会去掉多余的那条。
 const picked = ref([])
 const name = ref(`${baseName(props.ws.root)}.zip`)
-const error = ref('')
+const { toast } = useToast()
 const log = ref('')
 const running = ref(false)
 const status = ref(null)
@@ -162,7 +162,6 @@ function reload() {
 function reset() {
   picked.value = []
   name.value = `${baseName(props.ws.root)}.zip`
-  error.value = ''
   log.value = ''
   status.value = null
   saved.value = null
@@ -179,14 +178,13 @@ watch(
 
 async function start() {
   if (running.value || !picked.value.length) return
-  error.value = ''
   const payload = { ws: props.ws.id, name: name.value.trim(), entries: [...picked.value] }
   try {
     await submit(payload)
   } catch (err) {
     running.value = false
     status.value = null
-    error.value = err.message
+    toast(err.message, 'error')
   }
 }
 
@@ -232,10 +230,10 @@ async function finish(run) {
       }
     } else {
       status.value = { text: '失败', color: 'failed', icon: 'mdi-alert-circle' }
-      error.value = `zipx 退出码 ${data.code}，看下面的日志`
+      toast(`zipx 退出码 ${data.code}，看下面的日志`, 'error')
     }
   } catch (err) {
-    error.value = err.message
+    toast(err.message, 'error')
   }
   // 进程刚退出时最后几行可能还没推到页面上，稍等一下再断开。
   setTimeout(closeLog, 600)

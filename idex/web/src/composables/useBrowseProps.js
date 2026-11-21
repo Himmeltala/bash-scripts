@@ -7,17 +7,10 @@
  * @Description: 浏览页的右键属性：文件或目录的类型、大小、修改时间、权限与所有者。
  */
 import { computed, reactive } from 'vue'
-import { formatBytes } from '@bash-scripts/web-shared/format'
+import { formatBytes, formatTimestamp } from '@bash-scripts/web-shared/format'
 import { api } from '../utils/api.js'
 
 const TYPE_TEXT = { file: '文件', dir: '目录', link: '符号链接' }
-
-function formatTime(seconds) {
-  if (!seconds) return '—'
-  const d = new Date(seconds * 1000)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}
 
 export function useBrowseProps({ wsId }) {
   // 只有看的份：打开、读完就摆出来，不改磁盘上的东西。
@@ -35,7 +28,7 @@ export function useBrowseProps({ wsId }) {
     rows.push(
       { label: '类型', value: TYPE_TEXT[data.type] || data.type },
       { label: '大小', value: data.size == null ? '—' : formatBytes(data.size) },
-      { label: '修改时间', value: formatTime(data.mtime) },
+      { label: '修改时间', value: formatTimestamp(data.mtime, { unit: 's', fallback: '—' }) },
       { label: '权限', value: `${data.mode_text}（${data.mode}）` },
       { label: '所有者', value: `${data.owner}:${data.group}` }
     )

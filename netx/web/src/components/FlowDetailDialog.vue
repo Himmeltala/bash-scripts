@@ -16,13 +16,6 @@
       <span>正在读取…</span>
     </div>
 
-    <v-alert v-else-if="error" type="error" variant="tonal" density="compact" class="notice">
-      {{ error }}
-      <template #append>
-        <v-btn size="small" variant="text" @click="load">重试</v-btn>
-      </template>
-    </v-alert>
-
     <template v-else-if="data">
       <div class="chips">
         <v-chip size="small" variant="tonal">{{ kindLabel(data.kind) }}</v-chip>
@@ -38,7 +31,10 @@
       </v-tabs>
 
       <div v-if="tab === 'overview'" class="overview">
-        <div class="row"><span>开始</span><b>{{ formatTime(flow && flow.started) }}</b></div>
+        <div class="row">
+          <span>开始</span>
+          <b>{{ formatTimestamp(flow && flow.started, { unit: 's', fallback: '—' }) }}</b>
+        </div>
         <div class="row"><span>进程</span><b>{{ (flow && flow.comm) || '-' }} ({{ flow && flow.pid }})</b></div>
         <div class="row"><span>可执行文件</span><b class="mono">{{ (flow && flow.exe) || '-' }}</b></div>
         <div class="row"><span>目标</span><b class="mono">{{ dest }}</b></div>
@@ -91,10 +87,11 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { FloatingDialog, useToast } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { flowDetail } from '../composables/useApi'
-import { formatTime, kindLabel } from '../utils/format'
+import { formatTimestamp } from '@bash-scripts/web-shared/format'
+import { kindLabel } from '../utils/format'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -106,6 +103,10 @@ defineEmits(['update:modelValue'])
 const data = ref(null)
 const loading = ref(false)
 const error = ref('')
+const { toast } = useToast()
+watch(error, (text) => {
+  if (text) toast(text, 'error')
+})
 const tab = ref('overview')
 
 const flow = computed(() => (data.value && data.value.flow) || null)

@@ -14,7 +14,7 @@ import { init, use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { formatBytes } from '../../../../utils/commons/format.js'
+import { formatBytes, formatClock } from '../../../../utils/commons/format.js'
 import { METRIC_COLORS } from '../palette.js'
 
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
@@ -102,10 +102,6 @@ function build() {
   chart.setOption(option())
 }
 
-function clock(seconds) {
-  return new Date(seconds * 1000).toLocaleTimeString('zh-CN', { hour12: false })
-}
-
 watch(
   () => [props.time, props.value],
   ([time, value]) => {
@@ -118,7 +114,7 @@ watch(
     now.value = value
     text.value = textOf(value)
     data.push(value)
-    labels.push(clock(time))
+    labels.push(formatClock(time, { fallback: '' }))
     if (data.length > props.points) {
       data.shift()
       labels.shift()

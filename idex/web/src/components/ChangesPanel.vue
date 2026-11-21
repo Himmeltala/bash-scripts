@@ -53,8 +53,6 @@
       </div>
     </div>
 
-    <p v-if="error" class="hint bad">{{ error }}</p>
-
     <div ref="splitRef" class="split" :class="{ resizing }">
       <aside class="files" :style="{ '--list-width': `${listWidth}px` }">
         <p v-if="!loading && !files.length" class="none">工作副本是干净的，没有未提交的变更。</p>
@@ -149,7 +147,6 @@
       <SplitHandle axis="x" :active="resizing" @start="startSplit" @reset="resetSplit" />
 
       <section class="view">
-        <p v-if="saveError" class="hint bad">{{ saveError }}</p>
         <EmptyState
           v-if="awaitingLoad"
           icon="mdi-file-hidden"
@@ -223,6 +220,7 @@ import { baseName, dirName, statusOf } from '../utils/format'
 import { groupsFor, keyOf, rowActionOf, scopeOf } from '../utils/changesView'
 import { useLeaveGuard } from '../composables/useLeaveGuard'
 import { isDeferred } from '../utils/deferred'
+import { toast } from '../utils/notice'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree } from '@bash-scripts/web-shared'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -254,6 +252,13 @@ const saveError = ref('')
 let pendingRefresh = false
 let pickSeq = 0
 let revertingScope = false
+
+watch(error, (text) => {
+  if (text) toast(text, 'error')
+})
+watch(saveError, (text) => {
+  if (text) toast(text, 'error')
+})
 
 // 查看方式来自全局偏好，所有工作区共用；树形默认全部展开。
 const preferences = usePreferencesStore()

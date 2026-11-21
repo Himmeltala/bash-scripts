@@ -45,7 +45,6 @@
       </div>
     </div>
 
-    <p v-if="error" class="hint bad">{{ error }}</p>
     <p v-if="info.writable === false" class="hint warn">
       当前页面不是从本机打开的，拉取、推送、切换分支、更新与提交已禁用；要放开给其他机器，用 --allow-write 启动。
     </p>
@@ -249,7 +248,6 @@
         <h3>输出</h3>
         <LogView :text="output" :dark="dark" height="320px" />
       </section>
-      <p v-if="lastError" class="hint bad">{{ lastError }}</p>
     </div>
 
     <FloatingDialog
@@ -290,6 +288,7 @@ import {
   missingOf,
 } from '../utils/syncView'
 import { useSyncJob } from '../composables/useSyncJob'
+import { toast } from '../utils/notice'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -337,6 +336,13 @@ const {
   wsId: () => props.ws.id,
   bodyFor,
   onFinish,
+})
+
+watch(error, (text) => {
+  if (text) toast(text, 'error')
+})
+watch(lastError, (text) => {
+  if (text) toast(text, 'error')
 })
 
 const busy = computed(() => !!running.value)

@@ -71,7 +71,6 @@
       </div>
     </div>
 
-    <p v-if="error" class="hint bad">{{ error }}</p>
     <p v-if="remote && remote.error" class="hint warn">
       远端没同步上：{{ remote.error }}，下面是上次同步到的记录。
     </p>
@@ -112,7 +111,7 @@
             <div class="line1">
               <span class="rev mono">{{ revLabel(entry.revision) }}</span>
               <span class="author">{{ entry.author || '（无作者）' }}</span>
-              <span class="date">{{ when(entry.date) }}</span>
+              <span class="date">{{ formatDateTime(entry.date) }}</span>
             </div>
             <div class="msg">{{ firstLine(entry.message) }}</div>
             <div v-if="refsOf(entry).length || stateOf(entry)" class="refs">
@@ -168,7 +167,7 @@
                 <v-icon size="11">{{ stateOf(current).icon }}</v-icon>{{ stateOf(current).text }}
               </span>
               <span class="author">{{ current.author || '（无作者）' }}</span>
-              <span class="date">{{ when(current.date) }}</span>
+              <span class="date">{{ formatDateTime(current.date) }}</span>
               <v-spacer />
               <v-btn size="x-small" variant="text" color="primary" @click="wholeCommit">
                 整次提交的差异
@@ -329,7 +328,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStorage } from '@vueuse/core'
 import { useTheme } from 'vuetify'
@@ -337,7 +336,8 @@ import DiffView from '@bash-scripts/web-shared/diff'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { buildGraph, DOT_Y } from '../utils/gitGraph'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
-import { firstLine, shortenPath, shortPath, when } from '../utils/format'
+import { formatDateTime } from '@bash-scripts/web-shared/format'
+import { firstLine, shortenPath, shortPath } from '../utils/format'
 import {
   LANE_COLORS,
   refsOf as marksOfEntry,
@@ -346,6 +346,7 @@ import {
   tone,
 } from '../utils/logView'
 import { useCommitLog } from '../composables/useCommitLog'
+import { toast } from '../utils/notice'
 import { usePreferencesStore } from '../stores/preferences'
 import { useFileTree, useSplitPane } from '@bash-scripts/web-shared'
 
@@ -394,6 +395,10 @@ const {
   allBranches: logAllBranches,
   diffScope: logDiffScope,
   isGit: () => isGit.value,
+})
+
+watch(error, (text) => {
+  if (text) toast(text, 'error')
 })
 
 const bodyRef = ref(null)

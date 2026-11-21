@@ -85,9 +85,7 @@
               <div v-if="!item.available" class="hint">{{ item.hint }}</div>
             </div>
           </div>
-          <p v-if="lspError" class="err">{{ lspError }}</p>
         </template>
-        <p v-if="error" class="err">{{ error }}</p>
       </section>
     </div>
 
@@ -103,6 +101,7 @@
 import { computed, ref, watch } from 'vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { api } from '../utils/api'
+import { toast } from '../utils/notice'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })
 const emit = defineEmits(['update:modelValue', 'saved'])
@@ -122,10 +121,18 @@ const open = computed({
 const text = ref('')
 const defaults = ref([])
 const error = ref('')
+
+watch(error, (text) => {
+  if (text) toast(text, 'error')
+})
 const busy = ref(false)
 // 语言服务器：各语言可用性与缺的时候的安装命令。
 const servers = ref([])
 const lspError = ref('')
+
+watch(lspError, (text) => {
+  if (text) toast(text, 'error')
+})
 const lspBusy = ref(false)
 
 async function loadServers() {

@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { formatBytes } from '@bash-scripts/web-shared/format'
-import { formatDuration, formatTarget, formatTime, kindLabel } from '../utils/format'
+import { formatTimestamp } from '@bash-scripts/web-shared/format'
+import { formatDuration, formatTarget, kindLabel } from '../utils/format'
 
 const emit = defineEmits(['open'])
 
@@ -64,7 +65,9 @@ const bytes = (value) =>
       :row-props="rowProps"
       class="table"
     >
-      <template #[`item.started`]="{ item }">{{ formatTime(item.started) }}</template>
+      <template #[`item.started`]="{ item }">
+        {{ formatTimestamp(item.started, { unit: 's', fallback: '—' }) }}
+      </template>
       <template #[`item.comm`]="{ item }">
         <span class="comm" :title="item.exe || item.comm">{{ item.comm || '-' }}</span>
       </template>
