@@ -34,6 +34,9 @@
             <v-chip v-if="item.applied" size="x-small" color="primary" variant="flat" class="ml-2">
               生效
             </v-chip>
+            <v-chip v-if="item.active" size="x-small" color="success" variant="tonal" class="ml-2">
+              同步
+            </v-chip>
           </v-list-item-title>
           <v-list-item-subtitle>{{ item.updated.replace('T', ' ') }}</v-list-item-subtitle>
           <template #append>
@@ -66,6 +69,9 @@
           当前生效
         </v-chip>
         <v-chip v-else-if="selected" size="x-small" variant="tonal">未应用</v-chip>
+        <v-chip v-if="selected?.active" size="x-small" color="success" variant="tonal">
+          自动同步
+        </v-chip>
         <v-chip v-if="changed" size="x-small" variant="tonal" color="warning">已改动</v-chip>
         <span v-if="notice" class="hint">{{ notice }}</span>
         <v-spacer />

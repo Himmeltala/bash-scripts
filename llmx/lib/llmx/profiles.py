@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -27,6 +28,10 @@ from .config import Paths
 BACKUP_KEEP = 20
 NAME_MAX = 64
 _BAD_CHARS = set('/\\:*?"<>|')
+# 激活档标记与实际配置的检查间隔。
+SYNC_INTERVAL = 5.0
+_SYNC_LOCK = threading.Lock()
+_SYNC_STARTED = set()
 
 
 class ProfileError(Exception):
@@ -71,6 +76,37 @@ def _check_name(name: object) -> str:
 
 def _profile_file(paths: Paths, name: object) -> Path:
     return profile_dir(paths) / f"{_check_name(name)}.json"
+
+
+def _active_file(paths: Paths) -> Path:
+    """记住哪个配置档在跟着实际 settings.json 走；点都不开头，不会被当成配置档。"""
+    return profile_dir(paths) / ".active"
+
+
+def active_name(paths: Paths) -> str:
+    try:
+        name = _active_file(paths).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    if not name:
+        return ""
+    try:
+        return name if _profile_file(paths, name).is_file() else ""
+    except ProfileError:
+        return ""
+
+
+def _set_active(paths: Paths, name: str) -> None:
+    _ensure_dir(profile_dir(paths))
+    try:
+        _active_file(paths).write_text(name, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _clear_active(paths: Paths) -> None:
+    with suppress(OSError):
+        _active_file(paths).unlink()
 
 
 def _ensure_dir(path: Path) -> None:
@@ -137,6 +173,7 @@ def _iso(seconds: float) -> str:
 def list_profiles(paths: Paths) -> dict:
     directory = profile_dir(paths)
     target = settings_path(paths)
+    active = active_name(paths)
     target_text = ""
     if target.is_file():
         with suppress(OSError, UnicodeDecodeError):
@@ -159,12 +196,14 @@ def list_profiles(paths: Paths) -> dict:
                 "size": stat.st_size,
                 "updated": _iso(stat.st_mtime),
                 "applied": bool(target_text) and _normal(text) == target_text,
+                "active": path.stem == active,
             }
         )
     profiles.sort(key=lambda item: (item["updated"], item["name"]), reverse=True)
     return {
         "dir": str(directory),
         "target": {"path": str(target), "exists": target.is_file()},
+        "active": active,
         "profiles": profiles,
     }
 
@@ -214,10 +253,13 @@ def rename_profile(paths: Paths, old: object, new: object) -> dict:
         raise ProfileError(f"没有配置档 {old}")
     if dst.exists():
         raise ProfileError(f"配置档 {new} 已经存在")
+    was_active = active_name(paths) == old
     try:
         src.rename(dst)
     except OSError as exc:
         raise ProfileError(f"改名失败：{exc}") from exc
+    if was_active:
+        _set_active(paths, str(new))
     return {"name": new, "path": str(dst)}
 
 
@@ -225,10 +267,13 @@ def delete_profile(paths: Paths, name: object) -> dict:
     path = _profile_file(paths, name)
     if not path.is_file():
         raise ProfileError(f"没有配置档 {name}")
+    was_active = active_name(paths) == name
     try:
         path.unlink()
     except OSError as exc:
         raise ProfileError(f"删不掉 {path}: {exc}") from exc
+    if was_active:
+        _clear_active(paths)
     return {"name": name}
 
 
@@ -276,7 +321,94 @@ def apply_profile(paths: Paths, name: object) -> dict:
     if target.is_file():
         backup = backup_settings(paths, target)
     size = _write(target, profile["text"])
+    _set_active(paths, str(name))
     return {"name": name, "target": str(target), "backup": backup, "size": size}
+
+
+def _infer_active(paths: Paths) -> str:
+    """没有激活标记时，只有一个配置档与实际配置完全一致就认它。"""
+    target = settings_path(paths)
+    try:
+        current = _normal(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return ""
+    matches = []
+    for path in profile_dir(paths).glob("*.json"):
+        try:
+            if _normal(path.read_text(encoding="utf-8")) == current:
+                matches.append(path.stem)
+        except (OSError, UnicodeDecodeError):
+            continue
+    return matches[0] if len(matches) == 1 else ""
+
+
+def sync_active(paths: Paths) -> dict | None:
+    """把实际 settings.json 覆盖到激活档；只动这一个配置档，别的配置档不碰。"""
+    with _SYNC_LOCK:
+        name = active_name(paths)
+        if not name:
+            name = _infer_active(paths)
+            if not name:
+                return None
+            _set_active(paths, name)
+        target = settings_path(paths)
+        if not target.is_file():
+            return None
+        try:
+            text = target.read_text(encoding="utf-8")
+            check_settings(text)
+        except (OSError, UnicodeDecodeError, ProfileError):
+            return None
+        path = _profile_file(paths, name)
+        try:
+            old = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            _clear_active(paths)
+            return None
+        if _normal(old) == _normal(text):
+            return None
+        try:
+            size = _write(path, text)
+        except ProfileError:
+            return None
+        return {"name": name, "size": size}
+
+
+def start_sync(paths: Paths, interval: float = SYNC_INTERVAL):
+    """后台看着实际 settings.json；变了就同步到激活档。同一份目录只起一条线程。"""
+    key = str(profile_dir(paths))
+    with _SYNC_LOCK:
+        if key in _SYNC_STARTED:
+            return None
+        _SYNC_STARTED.add(key)
+    stop = threading.Event()
+
+    def signature():
+        try:
+            stat = settings_path(paths).stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def run():
+        # 启动时先对一次，界面上看到的激活档立刻跟上实际配置。
+        try:
+            sync_active(paths)
+        except Exception:
+            pass
+        last = signature()
+        while not stop.wait(interval):
+            current = signature()
+            if current is None or current == last:
+                continue
+            last = current
+            try:
+                sync_active(paths)
+            except Exception:
+                pass
+
+    threading.Thread(target=run, name="llmx-profile-sync", daemon=True).start()
+    return stop
 
 
 def settings_diff(paths: Paths, name: object) -> dict:

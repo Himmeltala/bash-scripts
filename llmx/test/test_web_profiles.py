@@ -181,6 +181,53 @@ class ProfileApiTest(Base):
         status, body = self.call("GET", "/profiles/claude")
         self.assertTrue(body["profiles"][0]["applied"])
 
+    def test_active_profile_follows_settings(self):
+        self.claude_dir.mkdir(parents=True)
+        target = self.claude_dir / "settings.json"
+        target.write_text(SETTINGS, encoding="utf-8")
+        self.assertEqual(self.create("默认")[0], 200)
+        self.assertEqual(
+            self.call("POST", "/profiles/claude/save", {"name": "默认", "text": OTHER})[0],
+            200,
+        )
+        self.assertEqual(self.create("别的")[0], 200)
+        keep = '{\n  "theme": "light"\n}\n'
+        self.assertEqual(
+            self.call("POST", "/profiles/claude/save", {"name": "别的", "text": keep})[0],
+            200,
+        )
+        self.assertEqual(self.call("POST", "/profiles/claude/apply", {"name": "默认"})[0], 200)
+
+        status, body = self.call("GET", "/profiles/claude")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["active"], "默认")
+        active = [item for item in body["profiles"] if item["name"] == "默认"][0]
+        self.assertTrue(active["active"])
+
+        # 实际配置被外部改掉，后台同步只覆盖激活档，另一份保持原样。
+        target.write_text(SETTINGS, encoding="utf-8")
+        result = llmx_profiles.sync_active(self.config.paths)
+        self.assertEqual(result["name"], "默认")
+        self.assertEqual((self.profile_dir / "默认.json").read_text(encoding="utf-8"), SETTINGS)
+        self.assertEqual((self.profile_dir / "别的.json").read_text(encoding="utf-8"), keep)
+
+    def test_sync_picks_the_only_matching_profile_without_marker(self):
+        self.claude_dir.mkdir(parents=True)
+        target = self.claude_dir / "settings.json"
+        target.write_text(SETTINGS, encoding="utf-8")
+        self.assertEqual(self.create("默认")[0], 200)
+        self.assertEqual(
+            self.call("POST", "/profiles/claude/save", {"name": "默认", "text": SETTINGS})[0],
+            200,
+        )
+        self.assertEqual(
+            self.call("POST", "/profiles/claude/save", {"name": "别的", "text": OTHER})[0],
+            200,
+        )
+        self.assertEqual(llmx_profiles.active_name(self.config.paths), "")
+        llmx_profiles.sync_active(self.config.paths)
+        self.assertEqual(llmx_profiles.active_name(self.config.paths), "默认")
+
     def test_backups_rotate(self):
         self.claude_dir.mkdir(parents=True)
         target = self.claude_dir / "settings.json"

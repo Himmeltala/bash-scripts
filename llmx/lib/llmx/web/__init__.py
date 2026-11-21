@@ -474,6 +474,9 @@ def serve(
             print("按 Ctrl+C 退出。", file=sys.stderr)
         sys.stdout.flush()
 
+    # 配置档跟着实际 settings.json 走：后台只同步当前激活的那一份。
+    profiles.start_sync(config.paths)
+
     return serve_web(
         _make_handler(config, allow_write=allow_write),
         host,
