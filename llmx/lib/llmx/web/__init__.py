@@ -31,7 +31,7 @@ from runtime import serve as serve_web
 from sse import MetricsStream, SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
 from web import ApiError, WebHandler
 
-from .. import cli, profiles, sessions
+from .. import budget, cli, profiles, sessions
 from ..config import Config, ConfigError, config_path, load, render, validate_text
 from ..sources import SOURCE_ORDER
 
@@ -169,6 +169,14 @@ def _manage(build):
         raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
 
 
+def _budget(build):
+    """预算校验失败翻成 400，消息原样给页面。"""
+    try:
+        return build()
+    except budget.BudgetError as exc:
+        raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+
+
 def _guarded(build):
     """采集一次并翻成 ApiError：UsageError 是 400，其余异常按 500 带回类型名。"""
     with LOCK:
@@ -214,6 +222,11 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                 return _guarded(lambda: _payload(config, query))
             if route == "session":
                 return _guarded(lambda: _session_payload(config, query))
+            if route == "budget":
+                if method == "POST":
+                    self._require_local("写预算")
+                    return _budget(lambda: budget.save(config.paths.state, body))
+                return _budget(lambda: budget.load(config.paths.state))
             if route == "store":
                 if method == "POST":
                     self._require_local("写账本")

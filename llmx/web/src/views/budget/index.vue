@@ -1,12 +1,18 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
-import { budgets, refreshSpend } from '../usage/composables/useBudgets'
+import {
+  alerts,
+  budgets,
+  loadBudgets,
+  refreshSpend,
+  saveBudgets,
+  spend,
+} from '../usage/composables/useBudgets'
 import { fmtMoney } from '../usage/composables/format'
 import { toast } from '../../composables/notice'
 
 const loading = ref(false)
-const rows = ref([])
+const saving = ref(false)
 const draft = ref({ daily: 0, weekly: 0, monthly: 0, items: [] })
 
 const KIND_ITEMS = [
@@ -24,47 +30,31 @@ function cloneBudgets() {
   }
 }
 
-async function load() {
+async function refresh(force = false) {
   loading.value = true
   try {
-    const today = new Date()
-    const params = new URLSearchParams({
-      command: 'daily',
-      since: formatDate(new Date(today.getFullYear(), today.getMonth(), 1)),
-      until: formatDate(today),
-    })
-    const response = await fetch(`/api/usage?${params.toString()}`, { cache: 'no-store' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error || `请求失败（${response.status}）`)
-    rows.value = body.rows || []
-  } catch (err) {
-    toast(err.message, 'error')
-    rows.value = []
+    await refreshSpend(force)
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    await loadBudgets()
+    // 没设预算时加载过程不会去取日报，预算页仍要拿到名称候选。
+    if (!spend.value.loaded) await refreshSpend(true)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
   draft.value = cloneBudgets()
-  load()
 })
 
-const totals = computed(() => {
-  const today = formatDate(new Date())
-  const weekStart = formatDate(startOfWeek(new Date()))
-  let daily = 0
-  let weekly = 0
-  let monthly = 0
-  for (const row of rows.value) {
-    const cost = Number(row.cost) || 0
-    const date = String(row.date || '')
-    monthly += cost
-    if (date >= weekStart) weekly += cost
-    if (date === today) daily += cost
-  }
-  return { daily, weekly, monthly }
-})
+const totals = computed(() => ({
+  daily: Number(spend.value.daily) || 0,
+  weekly: Number(spend.value.weekly) || 0,
+  monthly: Number(spend.value.monthly) || 0,
+}))
 
 const totalRows = computed(() => [
   { key: 'daily', name: '每日', spent: totals.value.daily, limit: Number(draft.value.daily) || 0 },
@@ -72,34 +62,16 @@ const totalRows = computed(() => [
   { key: 'monthly', name: '每月', spent: totals.value.monthly, limit: Number(draft.value.monthly) || 0 },
 ])
 
-function kindKey(kind) {
-  if (kind === 'model') return 'model'
-  if (kind === 'project') return 'project'
-  return 'api'
-}
-
 function itemSpend(item) {
-  const key = kindKey(item.kind)
-  const wanted = String(item.name || '')
-  let sum = 0
-  for (const row of rows.value) {
-    const value = String(row[key] || (item.kind === 'project' ? '未记录' : ''))
-    if (value === wanted) sum += Number(row.cost) || 0
-  }
-  return sum
+  return Number(spend.value.items?.[item.kind]?.[item.name]) || 0
 }
 
 const nameOptions = computed(() => {
-  const out = { model: new Set(), project: new Set(), api: new Set() }
-  for (const row of rows.value) {
-    if (row.model) out.model.add(row.model)
-    if (row.project) out.project.add(row.project)
-    if (row.api) out.api.add(row.api)
-  }
+  const items = spend.value.items || {}
   return {
-    model: [...out.model].sort(),
-    project: [...out.project].sort(),
-    api: [...out.api].sort(),
+    model: Object.keys(items.model || {}).sort(),
+    project: Object.keys(items.project || {}).sort(),
+    api: Object.keys(items.api || {}).sort(),
   }
 })
 
@@ -111,21 +83,27 @@ function removeItem(index) {
   draft.value.items.splice(index, 1)
 }
 
-function save() {
-  budgets.value = {
-    daily: Math.max(0, Number(draft.value.daily) || 0),
-    weekly: Math.max(0, Number(draft.value.weekly) || 0),
-    monthly: Math.max(0, Number(draft.value.monthly) || 0),
-    items: draft.value.items
-      .map((item) => ({
-        kind: item.kind,
-        name: String(item.name || '').trim(),
-        limit: Math.max(0, Number(item.limit) || 0),
-      }))
-      .filter((item) => item.name && item.limit > 0),
+async function save() {
+  saving.value = true
+  try {
+    await saveBudgets({
+      daily: Math.max(0, Number(draft.value.daily) || 0),
+      weekly: Math.max(0, Number(draft.value.weekly) || 0),
+      monthly: Math.max(0, Number(draft.value.monthly) || 0),
+      items: draft.value.items
+        .map((item) => ({
+          kind: item.kind,
+          name: String(item.name || '').trim(),
+          limit: Math.max(0, Number(item.limit) || 0),
+        }))
+        .filter((item) => item.name && item.limit > 0),
+    })
+    toast('预算已保存', 'primary')
+  } catch (err) {
+    toast(err.message, 'error')
+  } finally {
+    saving.value = false
   }
-  toast('预算已保存', 'primary')
-  refreshSpend()
 }
 
 function tone(spent, limit) {
@@ -139,7 +117,18 @@ function tone(spent, limit) {
 
 <template>
   <v-container fluid class="pa-2 page">
-    <p class="hint">预算存在浏览器里，花费按本月日报聚合。0 表示不设上限。</p>
+    <p class="hint">预算存在服务端，所有设备共用；花费按本月日报聚合。0 表示不设上限。</p>
+
+    <v-alert
+      v-for="item in alerts"
+      :key="item.text"
+      :type="item.level === 'bad' ? 'error' : 'warning'"
+      variant="tonal"
+      density="compact"
+      class="block"
+    >
+      {{ item.text }}
+    </v-alert>
 
     <v-card variant="flat" class="block">
       <v-card-title>总预算</v-card-title>
@@ -243,12 +232,12 @@ function tone(spent, limit) {
       <v-btn
         color="primary"
         variant="flat"
-        :loading="loading"
+        :loading="saving"
         @click="save"
       >
         保存
       </v-btn>
-      <v-btn variant="text" :loading="loading" @click="load">刷新花费</v-btn>
+      <v-btn variant="text" :loading="loading" @click="refresh()">刷新花费</v-btn>
     </div>
   </v-container>
 </template>
