@@ -122,13 +122,15 @@ export const api = {
   hover: (ws, path, text, line, character) =>
     call('POST', '/lsp/hover', { ws, path, text, line, character }),
   // 补全：带当前草稿全文与光标位置。
-  completion: (ws, path, text, line, character) =>
-    call('POST', '/lsp/completion', { ws, path, text, line, character }),
+  completion: (ws, path, text, line, character, trigger = '') =>
+    call('POST', '/lsp/completion', { ws, path, text, line, character, trigger }),
   // 整份格式化：返回要替换的文本区间，由编辑器落进草稿。
   format: (ws, path, text, tabSize = 4, insertSpaces = true) =>
     call('POST', '/lsp/format', { ws, path, text, tabSize, insertSpaces }),
   // 诊断：把当前文本交给服务器，取它推回来的错误与警告。
   diagnostics: (ws, path, text) => call('POST', '/lsp/diagnostics', { ws, path, text }),
+  // 还原一块未暂存的改动：只认与当前工作区差异一字不差的块。
+  restoreHunk: (ws, path, hunk) => call('POST', '/restore-hunk', { ws, path, hunk }),
   // 快速打开用的整份文件清单。
   files: (ws) => call('GET', `/files?ws=${encodeParam(ws)}`),
 }

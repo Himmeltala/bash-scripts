@@ -33,6 +33,7 @@ from .protocol import (
 from .servers import SERVERS, language_id, server_key, typescript_lib, which_node
 from .session import LspServer, stop_instance
 from .tsserver import TsserverBridge
+from .vue import TsslsBridge, merge_diagnostics, vue_block
 from .manager import LspManager
 
 __all__ = [
@@ -44,12 +45,14 @@ __all__ = [
     "LspServer",
     "SERVERS",
     "TsserverBridge",
+    "TsslsBridge",
     "apply_text_edits",
     "apply_workspace_edit",
     "encode_message",
     "inside",
     "language_id",
     "lsp_hover_text",
+    "merge_diagnostics",
     "normalize_completions",
     "normalize_diagnostics",
     "normalize_format_edits",
@@ -68,5 +71,6 @@ __all__ = [
     "tsserver_symbols",
     "typescript_lib",
     "uri_to_path",
+    "vue_block",
     "which_node",
 ]

@@ -429,6 +429,7 @@ WRITE_ROUTES = {
     "delete": lambda h, m, q, b: h._browse_delete(b),
     "stage": lambda h, m, q, b: h._stage(b),
     "unstage": lambda h, m, q, b: h._unstage(b),
+    "restore-hunk": lambda h, m, q, b: h._restore_hunk(b),
     "svn-add": lambda h, m, q, b: h._svn_add(b),
     "svn-unadd": lambda h, m, q, b: h._svn_unadd(b),
     "operations": lambda h, m, q, b: h._start_operation(b),

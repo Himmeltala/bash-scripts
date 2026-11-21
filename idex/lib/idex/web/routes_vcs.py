@@ -35,6 +35,7 @@ from vcs_summary import (
     workspace_paths,
     changes_payload,
 )
+from vcs_hunks import find_hunk, reverse_patch
 
 
 class VcsRoutes:
@@ -169,6 +170,35 @@ class VcsRoutes:
             if rc != 0:
                 raise ApiError(400, err or "git add 失败")
             return {"workspace": ws, **changes_payload(ws)}
+        finally:
+            lock.release()
+
+    def _restore_hunk(self, body):
+        """把编辑器里选中的一块改动还原成暂存区里的样子；只认未暂存的那段差异。"""
+        ws = self._index_ws(body)
+        if ws.get("vcs") != "git":
+            raise ApiError(400, "这个工作区不是 Git 仓库")
+        root = ws["root"]
+        rel = safe_rel(body.get("path") or "")
+        raw = body.get("hunk")
+        if not isinstance(raw, str) or not raw.strip():
+            raise ApiError(400, "没有指定要还原的改动块")
+        if len(raw) > 200000:
+            raise ApiError(400, "改动块太大，不处理")
+        lock = self._index_lock(ws)
+        try:
+            # 用工作区对暂存区的差异核对：暂存过的块不能在这里还原。
+            text = git_change_diff(root, rel, scope="worktree")["text"]
+            hunk = find_hunk(text, raw)
+            if hunk is None:
+                raise ApiError(409, "这块改动已经变了、已经暂存，或者文件不在仓库里，刷新后再试")
+            patch = reverse_patch(rel, hunk).encode("utf-8")
+            rc, _, err = git(
+                ["apply", "-R", "--whitespace=nowarn", "-"], cwd=root, data=patch
+            )
+            if rc != 0:
+                raise ApiError(400, err or "git apply 失败")
+            return {"workspace": ws, "path": rel, **changes_payload(ws)}
         finally:
             lock.release()
 

@@ -64,6 +64,8 @@ function applyTextEdit(item, snapshot) {
 
 // 光标前的词从哪里开始：成员访问与参数前缀只取最后一段，触发符本身也给一个空锚点。
 const WORD_BEFORE = /[\p{L}\p{N}_$@.-]*$/u
+// 打这些字符后立刻补全：模板里的标签、指令、属性都要靠触发符。
+const TRIGGER_CHARS = new Set(['.', '-', ':', '@', '<', '=', '"', "'", '/'])
 
 export function completionAnchor(text, pos) {
   const source = String(text ?? '')
@@ -73,10 +75,14 @@ export function completionAnchor(text, pos) {
   const cut = Math.max(word.lastIndexOf('.'), word.lastIndexOf('-'))
   const from = at - word.length + cut + 1
   const previous = before[at - 1]
+  const triggered = from === at && TRIGGER_CHARS.has(previous)
+  // 已经打上字（<di、:ms）也算触发过，告诉服务器前一个字符是什么。
+  const lead = before[from - 1]
   return {
     from,
     empty: from === at,
-    trigger: from === at && (previous === '.' || previous === '-'),
+    trigger: triggered,
+    triggerChar: TRIGGER_CHARS.has(lead) ? lead : triggered ? previous : '',
   }
 }
 

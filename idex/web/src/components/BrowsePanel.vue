@@ -259,7 +259,6 @@
                   :saver="saveFile"
                   :code-view="cmCodeView"
                   :view-props="editorViewProps"
-                  @navigate="reveal"
                   @saved="onSaved"
                   @dirty="(on) => setDirty(tab.path, on)"
                   @definition="onDefinition"
@@ -269,6 +268,7 @@
                   @edit="onEdit"
                   @hover="onHover"
                   @hover-end="onHoverEnd"
+                  @diffhunk="openDiffHunk"
                   :markers="markers"
                 />
               </template>
@@ -721,6 +721,27 @@
         </button>
       </template>
     </div>
+
+    <div
+      v-if="diffMenu.on"
+      class="sym-menu diff-menu"
+      :style="{ left: `${diffMenu.x}px`, top: `${diffMenu.y}px` }"
+    >
+      <p class="diff-menu-title">这一块的原文</p>
+      <pre class="diff-menu-text mono">{{ diffMenu.original }}</pre>
+      <div class="diff-menu-actions">
+        <v-btn size="small" variant="text" @click="diffMenu.on = false">关闭</v-btn>
+        <v-btn
+          size="small"
+          color="primary"
+          variant="flat"
+          :loading="diffMenu.busy"
+          @click="restoreHunk"
+        >
+          还原此块
+        </v-btn>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -752,6 +773,7 @@ import { saveSession, sessionOf } from '../utils/browseSessions'
 import { filterPaths } from '../utils/fuzzyMatch'
 import { toast } from '../utils/notice'
 import { dirName } from '../utils/format'
+import { diffMarks, hunkOriginal, parseDiffHunks } from '../utils/diffLines'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
 
@@ -847,13 +869,24 @@ function capabilitiesOf(path) {
 }
 
 const editorViewProps = computed(() => ({
-  complete: ({ path, text, line, character }) =>
-    api.completion(props.ws.id, path, text, line, character),
+  complete: ({ path, text, line, character, trigger }) =>
+    api.completion(props.ws.id, path, text, line, character, trigger),
   format: ({ path, text }) => api.format(props.ws.id, path, text, 4, true),
   capabilities: capabilitiesOf,
   notice: (text) => flash(text),
   theme: preferences.editorTheme,
+  diff: diffCache.value,
 }))
+
+// 打开文件、换工作区时取一次尚未提交的差异，给编辑器画行级标记。
+watch(activePath, (path) => loadDiff(path), { immediate: true })
+watch(
+  () => props.ws.id,
+  () => {
+    diffCache.value = {}
+    loadDiff()
+  }
+)
 
 const quickAsk = reactive({ on: false, loading: false, error: '', files: [], filter: '', loaded: false })
 const lineAsk = reactive({ on: false, value: '', error: '' })
@@ -880,6 +913,68 @@ const quickRows = computed(() => filterPaths(quickAsk.files, quickAsk.filter))
 const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 0, word: '' })
 // 标签页右键菜单。
 const tabMenu = reactive({ on: false, x: 0, y: 0, path: '' })
+// 编辑器行级改动的菜单：显示这一块原文，可以还原。
+const diffMenu = reactive({ on: false, x: 0, y: 0, path: '', hunk: null, original: '', busy: false })
+// 各文件的 Git 行级标记，按路径分开存；换页签时编辑器各取各的。
+const diffCache = ref({})
+let diffSeq = 0
+
+async function loadDiff(path = activePath.value) {
+  if (!path) return
+  if (props.ws.vcs !== 'git') {
+    diffCache.value = { ...diffCache.value, [path]: null }
+    return
+  }
+  const mine = ++diffSeq
+  try {
+    const data = await api.diff(props.ws.id, path, '', false, 'head')
+    if (mine !== diffSeq) return
+    const hunks = parseDiffHunks(data.text || '')
+    diffCache.value = {
+      ...diffCache.value,
+      [path]: hunks.length ? { hunks, marks: diffMarks(hunks) } : null,
+    }
+  } catch (err) {
+    if (mine === diffSeq) diffCache.value = { ...diffCache.value, [path]: null }
+  }
+}
+
+function openDiffHunk(payload) {
+  if (!payload || !payload.hunk) return
+  diffMenu.x = Math.max(0, Math.min(payload.x, window.innerWidth - 340))
+  diffMenu.y = Math.max(0, Math.min(payload.y, window.innerHeight - 260))
+  diffMenu.path = payload.path
+  diffMenu.hunk = payload.hunk
+  diffMenu.original = hunkOriginal(payload.hunk)
+  diffMenu.busy = false
+  diffMenu.on = true
+}
+
+async function restoreHunk() {
+  if (!diffMenu.path || !diffMenu.hunk || diffMenu.busy) return
+  diffMenu.busy = true
+  try {
+    await api.restoreHunk(props.ws.id, diffMenu.path, diffMenu.hunk.text)
+    diffMenu.on = false
+    const editor = editorOf(diffMenu.path)
+    if (editor && editor.dirty) {
+      // 草稿里还有没保存的改动，不能拿磁盘内容盖掉它。
+      flash('已还原磁盘上的这块改动；编辑器里的草稿没保存，未重新载入')
+    } else {
+      flash('已还原这块改动')
+      if (editor) {
+        await editor.reload()
+        diskSync.markSynced(diffMenu.path)
+      }
+    }
+    await loadDiff(diffMenu.path)
+    refreshDiagnostics(diffMenu.path)
+  } catch (err) {
+    flash(`还原失败：${err && err.message ? err.message : '服务端没有响应'}`)
+  } finally {
+    diffMenu.busy = false
+  }
+}
 // 左侧目录树的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
 const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
@@ -933,10 +1028,6 @@ async function locate(path) {
   if (activePath.value !== path) return
   await nextTick()
   treeRef.value?.scrollTo(path)
-}
-
-async function reveal(dirPath) {
-  await treeRef.value?.reveal(dirPath)
 }
 
 // 一键收起左树：只合上当前展开的目录，根那层留着，读过的目录还在缓存里。
@@ -999,11 +1090,16 @@ function closeSymbolMenu() {
 function closeMenus() {
   symMenu.on = false
   tabMenu.on = false
+  diffMenu.on = false
 }
 
 function onMenuOutside(event) {
   const target = event.target
-  if (target && target.closest && (target.closest('.sym-menu') || target.closest('.tab-menu'))) {
+  if (
+    target &&
+    target.closest &&
+    (target.closest('.sym-menu') || target.closest('.tab-menu') || target.closest('.diff-menu'))
+  ) {
     return
   }
   closeMenus()
@@ -1014,7 +1110,7 @@ function onMenuKey(event) {
 }
 
 watch(
-  () => symMenu.on || tabMenu.on,
+  () => symMenu.on || tabMenu.on || diffMenu.on,
   (on) => {
     if (on) {
       window.addEventListener('mousedown', onMenuOutside, true)
@@ -1267,6 +1363,7 @@ function onSaved({ path, data }) {
   if (tabOf(tabs.value, path)) tabs.value = updateTab(tabs.value, path, { size: data.size })
   treeRef.value?.reloadDir(dirName(path))
   refreshDiagnostics(path)
+  loadDiff(path)
 }
 
 function iconOf(hit) {
@@ -1623,6 +1720,29 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.24);
+}
+.diff-menu {
+  width: 320px;
+  padding: 10px;
+}
+.diff-menu-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.diff-menu-text {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.diff-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 .sym-item {
   display: flex;

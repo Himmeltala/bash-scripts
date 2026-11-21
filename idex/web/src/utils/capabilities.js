@@ -2,7 +2,6 @@
 
 export function capabilityText(item) {
   if (!item) return ''
-  if (item.id === 'vue') return '补全与格式化一期未接入'
   const caps = item.capabilities
   if (!caps) return ''
   return [

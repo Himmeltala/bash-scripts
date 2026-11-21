@@ -2,10 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { capabilityText } from '../src/utils/capabilities.js'
 
-test('Vue 明确说明一期未接入', () => {
+test('Vue 接上补全与格式化后按能力说明', () => {
   assert.equal(
-    capabilityText({ id: 'vue', capabilities: { completion: false, formatting: false } }),
-    '补全与格式化一期未接入',
+    capabilityText({ id: 'vue', capabilities: { completion: true, formatting: true } }),
+    '支持补全；支持格式化',
   )
 })
 

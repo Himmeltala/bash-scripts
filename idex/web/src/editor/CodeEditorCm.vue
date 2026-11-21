@@ -5,8 +5,8 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { basicSetup } from 'codemirror'
-import { Compartment, EditorState } from '@codemirror/state'
-import { EditorView, keymap } from '@codemirror/view'
+import { Compartment, EditorState, StateEffect } from '@codemirror/state'
+import { EditorView, GutterMarker, gutter, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
 import { autocompletion, startCompletion } from '@codemirror/autocomplete'
@@ -31,9 +31,21 @@ const props = defineProps({
   capabilities: { type: [Function, Object], default: () => ({}) },
   notice: { type: Function, default: null },
   theme: { type: String, default: 'auto' },
+  // 各文件的 Git 行级标记：{ 路径: { marks: { 行号: { kind, hunk } }, hunks: [] } }。
+  diff: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit', 'hover', 'hover-end'])
+const emit = defineEmits([
+  'update:modelValue',
+  'symbol',
+  'menu',
+  'rename',
+  'caret',
+  'edit',
+  'hover',
+  'hover-end',
+  'diffhunk',
+])
 
 const host = ref(null)
 const language = new Compartment()
@@ -162,6 +174,7 @@ async function completionSource(context) {
     text,
     line: at.line,
     character: at.character,
+    trigger: anchor.triggerChar,
   })
   if (!data || !Array.isArray(data.items) || !data.items.length) return null
   return {
@@ -271,6 +284,59 @@ function pushDiagnostics() {
   view.dispatch(setDiagnostics(view.state, items))
 }
 
+class DiffMarker extends GutterMarker {
+  constructor(kind) {
+    super()
+    this.kind = kind
+  }
+
+  toDOM() {
+    const el = document.createElement('span')
+    el.className = `cm-diff-mark ${this.kind}`
+    return el
+  }
+}
+
+const DIFF_MARKERS = {
+  add: new DiffMarker('add'),
+  modify: new DiffMarker('modify'),
+  delete: new DiffMarker('delete'),
+}
+
+function diffEntry() {
+  return (props.diff && props.diff[props.path]) || null
+}
+
+function diffGutter() {
+  return gutter({
+    class: 'cm-diff-gutter',
+    lineMarker(editor, block) {
+      const entry = diffEntry()
+      if (!entry || !entry.marks) return null
+      const number = editor.state.doc.lineAt(block.from).number
+      const mark = entry.marks[number]
+      return mark ? DIFF_MARKERS[mark.kind] || null : null
+    },
+    domEventHandlers: {
+      mousedown(editor, block, event) {
+        const entry = diffEntry()
+        if (!entry || !entry.marks) return false
+        const number = editor.state.doc.lineAt(block.from).number
+        const mark = entry.marks[number]
+        if (!mark) return false
+        event.preventDefault()
+        emit('diffhunk', {
+          line: number,
+          hunk: (entry.hunks || [])[mark.hunk] || null,
+          x: event.clientX,
+          y: event.clientY,
+        })
+        return true
+      },
+    },
+  })
+}
+
 function buildExtensions() {
   return [
     basicSetup,
@@ -278,6 +344,7 @@ function buildExtensions() {
     indentUnit.of('    '),
     keymap.of(keys),
     lintGutter(),
+    diffGutter(),
     language.of(languageExtension(cmLanguageOf(props.path))),
     autocompletion({ override: [completionSource], activateOnTyping: true }),
     domEvents,
@@ -333,6 +400,15 @@ watch(
 
 watch(() => props.markers, pushDiagnostics, { deep: true })
 
+// 换文件或重新取到差异后，让边栏按新标记重画一次。
+const refreshDiff = StateEffect.define()
+watch(
+  () => props.diff,
+  () => {
+    if (view) view.dispatch({ effects: refreshDiff.of(null) })
+  }
+)
+
 function locate(line) {
   if (!view) return
   const number = Math.min(Math.max(Number(line) || 1, 1), view.state.doc.lines)
@@ -358,5 +434,30 @@ defineExpose({ locate, resetScroll })
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+
+:deep(.cm-diff-gutter) {
+  width: 7px;
+  cursor: pointer;
+}
+
+:deep(.cm-diff-mark) {
+  display: block;
+  width: 4px;
+  height: 100%;
+  margin: 0 auto;
+  border-radius: 1px;
+}
+
+:deep(.cm-diff-mark.add) {
+  background: #2e7d32;
+}
+
+:deep(.cm-diff-mark.modify) {
+  background: #1565c0;
+}
+
+:deep(.cm-diff-mark.delete) {
+  background: #c62828;
 }
 </style>

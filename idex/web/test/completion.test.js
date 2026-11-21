@@ -47,10 +47,48 @@ test('文档在补全请求后变过时退回当前词替换', () => {
 })
 
 test('补全锚点跳过成员访问与参数前缀', () => {
-  assert.deepEqual(completionAnchor('obj.p', 5), { from: 4, empty: false, trigger: false })
-  assert.deepEqual(completionAnchor('obj.', 4), { from: 4, empty: true, trigger: true })
-  assert.deepEqual(completionAnchor('--fo', 4), { from: 2, empty: false, trigger: false })
-  assert.deepEqual(completionAnchor('', 0), { from: 0, empty: true, trigger: false })
+  assert.deepEqual(completionAnchor('obj.p', 5), {
+    from: 4,
+    empty: false,
+    trigger: false,
+    triggerChar: '.',
+  })
+  assert.deepEqual(completionAnchor('obj.', 4), {
+    from: 4,
+    empty: true,
+    trigger: true,
+    triggerChar: '.',
+  })
+  assert.deepEqual(completionAnchor('--fo', 4), {
+    from: 2,
+    empty: false,
+    trigger: false,
+    triggerChar: '-',
+  })
+  assert.deepEqual(completionAnchor('', 0), {
+    from: 0,
+    empty: true,
+    trigger: false,
+    triggerChar: '',
+  })
+  assert.deepEqual(completionAnchor('<', 1), {
+    from: 1,
+    empty: true,
+    trigger: true,
+    triggerChar: '<',
+  })
+  assert.deepEqual(completionAnchor('<di', 3), {
+    from: 1,
+    empty: false,
+    trigger: false,
+    triggerChar: '<',
+  })
+  assert.deepEqual(completionAnchor(':ms', 3), {
+    from: 1,
+    empty: false,
+    trigger: false,
+    triggerChar: ':',
+  })
 })
 
 test('textEdit 变更拒绝旧文档与反区间', () => {

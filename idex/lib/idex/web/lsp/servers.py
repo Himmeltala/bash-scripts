@@ -32,13 +32,13 @@ SERVERS = {
     "vue": {
         "title": "Vue",
         "language": "vue",
-        # 不用单独的服务器：带 @vue/typescript-plugin 的 tsserver 直接认得 .vue，
-        # 脚本与模板里的定义、引用、重命名都从它那里拿。
-        "command": (),
-        "hint": "Vue 要 Node、TypeScript 5 与 @vue/typescript-plugin",
-        "bridge_only": True,
+        # 模板分析在 vue-language-server 里做；它反过来问的 tsserver 命令由
+        # 带 @vue/typescript-plugin 的桥回答。
+        "command": ("vue-language-server", "--stdio"),
+        "hint": "Vue 要 Node、TypeScript 5、@vue/typescript-plugin、@vue/language-server 与 typescript-language-server",
+        "uses_bridge": True,
         "suffixes": (".vue",),
-        "capabilities": {"completion": False, "formatting": False},
+        "capabilities": {"completion": True, "formatting": True},
     },
     "java": {
         "title": "Java",

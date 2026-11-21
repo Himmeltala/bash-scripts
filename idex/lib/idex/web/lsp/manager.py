@@ -6,7 +6,6 @@ import threading
 import time
 
 from .protocol import (
-    LspError,
     LspUnavailable,
     lsp_hover_text,
     normalize_completions,
@@ -15,15 +14,10 @@ from .protocol import (
     normalize_symbols,
     normalize_workspace_edit,
     path_to_uri,
-    tsserver_diagnostics,
-    tsserver_hover_text,
-    tsserver_locations,
-    tsserver_rename_plan,
-    tsserver_symbols,
 )
-from .servers import SERVERS, language_id, server_key, typescript_lib, which_node
+from .servers import SERVERS, STABLE_BIN, language_id, server_key, typescript_lib, which_node
 from .session import LspServer, _Instance, stop_instance
-from .tsserver import TsserverBridge
+from .vue import TsslsBridge, merge_diagnostics, vue_block
 
 
 class LspManager:
@@ -57,65 +51,49 @@ class LspManager:
         rows = []
         for key, entry in SERVERS.items():
             command = self.commands[key]
-            if entry.get("bridge_only"):
-                # Vue 没有单独的服务进程，靠带插件的那份 tsserver。
-                available = bool(self._bridge_command())
-                rows.append(
-                    {
-                        "id": key,
-                        "title": entry["title"],
-                        "command": "tsserver + @vue/typescript-plugin",
-                        "supported": True,
-                        "available": available,
-                        "hint": entry["hint"],
-                        "capabilities": entry.get("capabilities", {}),
-                    }
+            if entry.get("uses_bridge"):
+                # Vue 除了自己那个语言服务器，还要起带插件的那份 tsserver。
+                script = self.commands["typescript"]
+                available = (
+                    self._bridge_ready()
+                    and self._which(command[0])
+                    and self._which(script[0])
                 )
-                continue
-            supported = True
-            hint = entry["hint"]
+                label = " ".join(command) + " + " + " ".join(script)
+            else:
+                available = self._which(command[0])
+                label = " ".join(command)
             rows.append(
                 {
                     "id": key,
                     "title": entry["title"],
-                    "command": " ".join(command),
-                    "supported": supported,
-                    "available": supported and bool(shutil.which(command[0])),
-                    "hint": hint,
+                    "command": label,
+                    "supported": True,
+                    "available": bool(available),
+                    "hint": entry["hint"],
                     "capabilities": entry.get("capabilities", {}),
                 }
             )
         return rows
 
-    def _bridge_command(self):
-        """带 Vue 插件的 tsserver 的启动命令；缺 node、TypeScript 5 或插件时返回空。"""
+    def _which(self, name):
+        """按页面进程的 PATH 找命令；STABLE_BIN 里那份也算。"""
+        extra = [path for path in STABLE_BIN if os.path.isdir(path)]
+        path = os.pathsep.join(extra + [os.environ.get("PATH", "")])
+        return shutil.which(name, path=path)
+
+    def _bridge_ready(self):
+        """Vue 的脚本插件能不能用：要看 node、带 tsserver.js 的 TypeScript 与 @vue/typescript-plugin。"""
         if self.bridge_command is not None:
-            return self.bridge_command or None
+            return bool(self.bridge_command)
         lib = typescript_lib()
         node = which_node()
         if not lib or not node:
-            return None
+            return False
         tsserver = os.path.join(lib, "tsserver.js")
         probe = os.path.dirname(os.path.dirname(lib))
         plugin = os.path.join(probe, "@vue", "typescript-plugin")
-        if not os.path.isfile(tsserver) or not os.path.isdir(plugin):
-            return None
-        return [
-            node,
-            tsserver,
-            "--globalPlugins",
-            "@vue/typescript-plugin",
-            "--pluginProbeLocations",
-            probe,
-        ]
-
-    # Vue 走 tsserver 时，动作对应的 tsserver 命令名。
-    TSSERVER_COMMANDS = {
-        "definition": "definition",
-        "typeDefinition": "typeDefinition",
-        "implementation": "implementation",
-        "references": "references",
-    }
+        return os.path.isfile(tsserver) and os.path.isdir(plugin)
 
     # 右键菜单里的动作与 LSP 方法的对应关系。
     ACTIONS = {
@@ -135,36 +113,27 @@ class LspManager:
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
-        if SERVERS[key].get("bridge_only"):
-            with instance.lock:
-                instance.last_used = time.time()
-                raw = instance.bridge.forward(
-                    self.TSSERVER_COMMANDS[action],
-                    {"file": full, "line": line + 1, "offset": character + 1},
-                )
-                instance.last_used = time.time()
-            return {"server": key, "locations": tsserver_locations(raw, root, action)}
         extra = {"context": {"includeDeclaration": True}} if action == "references" else None
         with instance.lock:
             instance.last_used = time.time()
-            raw = instance.server.query(
+            server = self._server_for(instance, text, line)
+            raw = server.query(
                 method, full, text, language_id(key, path), line, character, extra
             )
             instance.last_used = time.time()
         return {"server": key, "locations": normalize_locations(raw, root)}
 
-    def completion(self, ws, root, path, text, line, character):
+    def completion(self, ws, root, path, text, line, character, trigger=None):
         key = self._ready(path)
-        if SERVERS[key].get("bridge_only"):
-            raise LspUnavailable("Vue 补全未接入：tsserver 桥还没有同步未保存文本")
         instance = self._instance(ws, key, root)
-        if not instance.server.capabilities.get("completionProvider"):
+        server = self._server_for(instance, text, line)
+        if not server.capabilities.get("completionProvider"):
             raise LspUnavailable("%s 语言服务器不支持补全" % SERVERS[key]["title"])
         full = os.path.join(root, path)
         with instance.lock:
             instance.last_used = time.time()
-            raw = instance.server.completion(
-                full, text, language_id(key, path), line, character
+            raw = server.completion(
+                full, text, language_id(key, path), line, character, trigger
             )
             instance.last_used = time.time()
         data = normalize_completions(raw)
@@ -172,15 +141,15 @@ class LspManager:
 
     def formatting(self, ws, root, path, text, options):
         key = self._ready(path)
-        if SERVERS[key].get("bridge_only"):
-            raise LspUnavailable("Vue 格式化未接入：tsserver 桥还没有同步未保存文本")
         instance = self._instance(ws, key, root)
-        if not instance.server.capabilities.get("documentFormattingProvider"):
+        # Vue 的格式化要整份单文件组件一起改，只能交给 Vue 语言服务器。
+        server = instance.server
+        if not server.capabilities.get("documentFormattingProvider"):
             raise LspUnavailable("%s 语言服务器不支持格式化" % SERVERS[key]["title"])
         full = os.path.join(root, path)
         with instance.lock:
             instance.last_used = time.time()
-            raw = instance.server.formatting(
+            raw = server.formatting(
                 full, text, language_id(key, path), options
             )
             instance.last_used = time.time()
@@ -190,17 +159,10 @@ class LspManager:
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
-        if SERVERS[key].get("bridge_only"):
-            with instance.lock:
-                instance.last_used = time.time()
-                raw = instance.bridge.forward(
-                    "quickinfo", {"file": full, "line": line + 1, "offset": character + 1}
-                )
-                instance.last_used = time.time()
-            return {"server": key, "hover": {"text": tsserver_hover_text(raw)}}
         with instance.lock:
             instance.last_used = time.time()
-            raw = instance.server.hover(full, text, language_id(key, path), line, character)
+            server = self._server_for(instance, text, line)
+            raw = server.hover(full, text, language_id(key, path), line, character)
             instance.last_used = time.time()
         return {"server": key, "hover": {"text": lsp_hover_text(raw)}}
 
@@ -209,40 +171,28 @@ class LspManager:
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
-        if SERVERS[key].get("bridge_only"):
-            items = []
-            with instance.lock:
-                instance.last_used = time.time()
-                instance.bridge.open(full)
-                for command in ("syntacticDiagnosticsSync", "semanticDiagnosticsSync"):
-                    try:
-                        raw = instance.bridge.request(command, {"file": full}, timeout=15)
-                    except LspError:
-                        continue
-                    items.extend(tsserver_diagnostics(raw))
-                instance.last_used = time.time()
-            return {"server": key, "diagnostics": items[:200]}
+        language = language_id(key, path)
         with instance.lock:
             instance.last_used = time.time()
-            instance.server.sync(full, text, language_id(key, path))
+            instance.server.sync(full, text, language)
+            templ = instance.server.snapshot(path_to_uri(full))
+            script = []
+            if instance.script is not None:
+                instance.script.sync(full, text, language)
+                script = instance.script.snapshot(path_to_uri(full))
             instance.last_used = time.time()
-            items = instance.server.snapshot(path_to_uri(full))
+        items = merge_diagnostics(templ, script)
         return {"server": key, "diagnostics": items}
 
     def symbols(self, ws, root, path, text):
-        """整份文件的符号大纲：普通服务器问 documentSymbol，Vue 走 tsserver 的 navtree。"""
+        """整份文件的符号大纲；Vue 由语言服务器给出模板结构。"""
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
-        if SERVERS[key].get("bridge_only"):
-            with instance.lock:
-                instance.last_used = time.time()
-                raw = instance.bridge.forward("navtree", {"file": full})
-                instance.last_used = time.time()
-            return {"server": key, "symbols": tsserver_symbols(raw)}
+        server = instance.server
         with instance.lock:
             instance.last_used = time.time()
-            raw = instance.server.documentsymbol(full, text, language_id(key, path))
+            raw = server.documentsymbol(full, text, language_id(key, path))
             instance.last_used = time.time()
         return {"server": key, "symbols": normalize_symbols(raw)}
 
@@ -254,23 +204,16 @@ class LspManager:
         key = self._ready(path)
         instance = self._instance(ws, key, root)
         full = os.path.join(root, path)
-        if SERVERS[key].get("bridge_only"):
-            with instance.lock:
-                instance.last_used = time.time()
-                raw = instance.bridge.forward(
-                    "rename", {"file": full, "line": line + 1, "offset": character + 1}
-                )
-                instance.last_used = time.time()
-            return {"server": key, "plan": tsserver_rename_plan(raw, root, name)}
         language = language_id(key, path)
         with instance.lock:
             instance.last_used = time.time()
-            first = instance.server.rename(full, text, language, line, character, name)
+            server = self._server_for(instance, text, line)
+            first = server.rename(full, text, language, line, character, name)
             second = first
             if self.rename_warm:
                 # 第一次请求会让服务器把项目分析起来，稍等再问一次拿完整结果。
                 time.sleep(self.rename_warm)
-                second = instance.server.rename(full, text, language, line, character, name)
+                second = server.rename(full, text, language, line, character, name)
             instance.last_used = time.time()
         plans = [normalize_workspace_edit(first, root), normalize_workspace_edit(second, root)]
         plan = max(plans, key=lambda item: sum(len(entry["edits"]) for entry in item))
@@ -281,13 +224,11 @@ class LspManager:
         key = server_key(path)
         if not key:
             raise LspUnavailable("这种文件没有语言服务器：%s" % path)
-        if SERVERS[key].get("bridge_only"):
-            if not self._bridge_command():
-                raise LspUnavailable(SERVERS[key]["hint"])
-            return key
+        entry = SERVERS[key]
         command = self.commands[key]
-        if not shutil.which(command[0]):
-            entry = SERVERS[key]
+        if entry.get("uses_bridge") and not self._bridge_ready():
+            raise LspUnavailable(entry["hint"])
+        if not self._which(command[0]):
             raise LspUnavailable("%s 语言服务器没装：%s" % (entry["title"], entry["hint"]))
         return key
 
@@ -308,18 +249,29 @@ class LspManager:
                 if found is not None:
                     return found
                 self._evict(ws)
-            if SERVERS[key].get("bridge_only"):
-                bridge_command = self._bridge_command()
-                if not bridge_command:
+            script = None
+            bridge = None
+            if SERVERS[key].get("uses_bridge"):
+                if not self._bridge_ready():
                     with self.lock:
                         self.starting.pop(mark, None)
                     raise LspUnavailable(SERVERS[key]["hint"])
-                bridge = TsserverBridge(bridge_command, root, "Vue tsserver")
-                instance = _Instance(ws, key, None, bridge)
-                with self.lock:
-                    self.instances[mark] = instance
-                    self.starting.pop(mark, None)
-                return instance
+                # 脚本那半由 typescript-language-server 加 Vue 插件处理；
+                # Vue 语言服务器问的 tsserver 命令也转给它。
+                try:
+                    script = LspServer(
+                        list(self.commands["typescript"]),
+                        root,
+                        "Vue TypeScript",
+                        init_timeout=SERVERS["typescript"].get("init_timeout", 30.0),
+                        request_timeout=SERVERS["typescript"].get("timeout", 10.0),
+                        options=self._vue_script_options(),
+                    )
+                except Exception:
+                    with self.lock:
+                        self.starting.pop(mark, None)
+                    raise
+                bridge = TsslsBridge(script)
             command = list(self.commands[key])
             try:
                 server = LspServer(
@@ -329,12 +281,15 @@ class LspManager:
                     init_timeout=SERVERS[key].get("init_timeout", 30.0),
                     request_timeout=SERVERS[key].get("timeout", 10.0),
                     options=self._options(key),
+                    bridge=bridge,
                 )
             except Exception:
+                if script is not None:
+                    script.stop()
                 with self.lock:
                     self.starting.pop(mark, None)
                 raise
-            instance = _Instance(ws, key, server)
+            instance = _Instance(ws, key, server, bridge, script)
             with self.lock:
                 self.instances[mark] = instance
                 self.starting.pop(mark, None)
@@ -346,6 +301,25 @@ class LspManager:
             return {}
         lib = typescript_lib()
         return {"tsserver": {"path": lib}} if lib else {}
+
+    def _vue_script_options(self):
+        """Vue 的脚本服务器：同一份 typescript-language-server，加上 Vue 插件。"""
+        options = self._options("typescript")
+        lib = typescript_lib()
+        if lib:
+            plugin = os.path.join(os.path.dirname(os.path.dirname(lib)), "@vue", "typescript-plugin")
+            options["plugins"] = [
+                {"name": "@vue/typescript-plugin", "location": plugin, "languages": ["vue"]}
+            ]
+        return options
+
+    def _server_for(self, instance, text, line):
+        """Vue 按块分工：脚本走 TypeScript 服务器，模板与样式走 Vue 服务器。"""
+        if instance.script is None:
+            return instance.server
+        if vue_block(text, line) == "script":
+            return instance.script
+        return instance.server
 
     def _evict(self, ws):
         mine = [(mark, item) for mark, item in self.instances.items() if mark[0] == ws]

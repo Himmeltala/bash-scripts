@@ -78,8 +78,13 @@ class LspRoutes:
 
     def _lsp_completion(self, body):
         ws, rel, text, line, character = self._lsp_args(body)
+        trigger = body.get("trigger") or None
+        if trigger is not None and (not isinstance(trigger, str) or len(trigger) != 1):
+            raise ApiError(400, "trigger 要是单个字符")
         try:
-            return self.lsp.completion(ws["id"], ws["root"], rel, text, line, character)
+            return self.lsp.completion(
+                ws["id"], ws["root"], rel, text, line, character, trigger
+            )
         except LspUnavailable as exc:
             raise ApiError(400, str(exc))
         except LspError as exc:

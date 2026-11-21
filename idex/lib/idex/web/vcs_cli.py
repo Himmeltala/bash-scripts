@@ -25,12 +25,13 @@ def svn(args, cwd=None, timeout=SVN_TIMEOUT):
     return cp.returncode, cp.stdout, cp.stderr.decode("utf-8", "replace").strip()
 
 
-def git(args, cwd=None, timeout=GIT_TIMEOUT, env=None):
+def git(args, cwd=None, timeout=GIT_TIMEOUT, env=None, data=None):
     """跑一条 git 命令，返回标准输出与错误文本。找不到 git 与超时都按接口错误报出去。"""
     try:
         cp = subprocess.run(
             ["git", "--no-pager", *args],
             cwd=cwd,
+            input=data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,

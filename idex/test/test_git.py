@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 gitmod = load_module("idex_server", SERVER_PY)
+hunksmod = load_module("idex_vcs_hunks", HERE.parent / "lib" / "idex" / "web" / "vcs_hunks.py")
 
 # 临时仓库里的提交要作者信息，本机的全局配置不一定有。
 ENV = dict(
@@ -399,6 +400,51 @@ class GitWorkspace(unittest.TestCase):
         status, data = self.call("/diff?ws=%s&path=../x&item=modified" % wid)
         self.assertEqual(status, 400)
         self.call("/forget", {"ws": wid})
+
+    def test_hunks_parse_and_find(self):
+        text = (
+            "diff --git a/x.txt b/x.txt\n"
+            "--- a/x.txt\n"
+            "+++ b/x.txt\n"
+            "@@ -1,3 +1,3 @@ title\n"
+            " one\n"
+            "-two\n"
+            "+TWO\n"
+            " three\n"
+            "@@ -9,2 +9,3 @@\n"
+            " nine\n"
+            "+ten\n"
+            " eleven\n"
+        )
+        hunks = hunksmod.parse_hunks(text)
+        self.assertEqual(len(hunks), 2)
+        self.assertEqual(hunks[0]["old_start"], 1)
+        self.assertEqual(hunks[1]["new_lines"], 3)
+        self.assertEqual(hunksmod.find_hunk(text, hunks[1]["text"]), hunks[1])
+        self.assertIsNone(hunksmod.find_hunk(text, "@@ -1,1 +1,1 @@\n-x\n+y\n"))
+        self.assertEqual(
+            hunksmod.reverse_patch("x.txt", hunks[0]).splitlines()[0], "--- a/x.txt"
+        )
+
+    def test_api_restore_hunk_only_unstaged(self):
+        wid = self.add()
+        notes = self.repo / "notes.txt"
+        notes.write_text("note\nmore\n", "utf-8")
+        status, data = self.call("/diff?ws=%s&path=notes.txt" % wid)
+        self.assertEqual(status, 200, data)
+        hunk = hunksmod.parse_hunks(data["text"])[0]
+        status, result = self.call(
+            "/restore-hunk", {"ws": wid, "path": "notes.txt", "hunk": hunk["text"]}
+        )
+        self.assertEqual(status, 200, result)
+        self.assertEqual(notes.read_text("utf-8"), "note\n")
+
+        # 暂存过的改动不在工作区差异里，不能从这里还原。
+        status, result = self.call(
+            "/restore-hunk", {"ws": wid, "path": "sub/a.txt", "hunk": hunk["text"]}
+        )
+        self.assertEqual(status, 409, result)
+        self.assertEqual((self.repo / "sub" / "a.txt").read_text("utf-8"), "hello\nworld\n")
 
     def test_api_changes_status_groups(self):
         wid = self.add()

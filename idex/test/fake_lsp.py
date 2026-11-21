@@ -45,6 +45,7 @@ def send(payload):
 ROOT = os.environ.get("FAKE_LSP_ROOT") or os.getcwd()
 IGNORE = os.environ.get("FAKE_LSP_IGNORE") or ""
 RECORD = os.environ.get("FAKE_LSP_RECORD") or ""
+BRIDGE = os.environ.get("FAKE_LSP_BRIDGE") == "1"
 
 
 def record(event):
@@ -71,6 +72,25 @@ def locations():
     ]
 
 
+def bridge_roundtrip():
+    """学 Vue 语言服务器：发 tsserver/request，等客户端把结果送回来。"""
+    send(
+        {
+            "jsonrpc": "2.0",
+            "method": "tsserver/request",
+            "params": [[900, "_vue:echo", ["hi"]]],
+        }
+    )
+    while True:
+        message = read_message(sys.stdin.buffer)
+        if message is None:
+            return None
+        if message.get("method") == "tsserver/response":
+            params = message.get("params") or []
+            payload = params[0] if len(params) == 1 and isinstance(params[0], list) else params
+            return payload[1] if len(payload) > 1 else None
+
+
 def main():
     while True:
         message = read_message(sys.stdin.buffer)
@@ -94,12 +114,16 @@ def main():
             elif method == "shutdown":
                 send({"jsonrpc": "2.0", "id": message["id"], "result": None})
             elif method == "textDocument/hover":
+                text = "`alpha()` 假悬停"
+                if BRIDGE:
+                    raw = bridge_roundtrip()
+                    text = "bridge:%s" % json.dumps(raw, ensure_ascii=False)
                 send(
                     {
                         "jsonrpc": "2.0",
                         "id": message["id"],
                         "result": {
-                            "contents": {"kind": "markdown", "value": "`alpha()` 假悬停"},
+                            "contents": {"kind": "markdown", "value": text},
                             "range": {
                                 "start": {"line": 0, "character": 0},
                                 "end": {"line": 0, "character": 5},
@@ -183,6 +207,23 @@ def main():
                                 "newText": "formatted",
                             }
                         ],
+                    }
+                )
+            elif method == "workspace/executeCommand":
+                params = message.get("params") or {}
+                arguments = params.get("arguments") or []
+                body = None
+                if params.get("command") == "typescript.tsserverRequest" and len(arguments) >= 2:
+                    command = arguments[0]
+                    if command == "_vue:echo":
+                        body = {"echo": arguments[1]}
+                    elif command == "_vue:projectInfo":
+                        body = {"configFileName": os.path.join(ROOT, "tsconfig.json")}
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": {"seq": 0, "type": "response", "success": body is not None, "body": body},
                     }
                 )
             elif method == "textDocument/definition":

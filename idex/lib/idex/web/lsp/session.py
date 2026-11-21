@@ -30,6 +30,7 @@ class LspServer:
         init_timeout=30.0,
         request_timeout=10.0,
         options=None,
+        bridge=None,
     ):
         self.name = name
         self.root = os.path.abspath(root)
@@ -37,6 +38,8 @@ class LspServer:
         self.init_timeout = init_timeout
         self.request_timeout = request_timeout
         self.options = options or {}
+        # Vue 语言服务器把模板分析交给 tsserver 插件，靠 tsserver/request 反向问客户端。
+        self.bridge = bridge
         self.pending = {}
         self.next_id = 0
         self.lock = threading.Lock()
@@ -84,6 +87,14 @@ class LspServer:
                     with self.diag_lock:
                         self.diagnostics[uri] = normalize_diagnostics(params.get("diagnostics") or [])
                 continue
+            if message.get("method") == "tsserver/request" and "id" not in message:
+                # 转发要等 tsserver 回话，放到线程里，读循环不能停。
+                threading.Thread(
+                    target=self._bridge_request,
+                    args=(message.get("params"),),
+                    daemon=True,
+                ).start()
+                continue
             if "id" in message and ("result" in message or "error" in message):
                 with self.lock:
                     slot = self.pending.pop(message["id"], None)
@@ -105,6 +116,34 @@ class LspServer:
                 continue
             self.stderr_tail.append(text)
             del self.stderr_tail[:-40]
+
+    def _bridge_request(self, params):
+        """把服务器的 tsserver/request 转给桥，再把桥的回答发回去。"""
+        if not isinstance(params, (list, tuple)):
+            return
+        # vscode-languageserver 把 sendNotification 的参数再包一层，实际是 [[id, 命令, 参数]]。
+        payload = params[0] if len(params) == 1 and isinstance(params[0], (list, tuple)) else params
+        if len(payload) < 3:
+            return
+        request_id, command, arguments = payload[0], payload[1], payload[2]
+        result = None
+        if self.bridge is not None:
+            try:
+                result = self.bridge.forward(str(command), arguments)
+            except LspError:
+                result = None
+            except Exception:
+                result = None
+        try:
+            self._send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "tsserver/response",
+                    "params": [[request_id, result]],
+                }
+            )
+        except LspError:
+            pass
 
     def _answer(self, message):
         """服务器反向发过来的请求：能回的都回，免得它等在那儿不动。"""
@@ -228,10 +267,16 @@ class LspServer:
         with self.diag_lock:
             return list(self.diagnostics.get(uri) or [])
 
-    def completion(self, path, text, language, line, character):
-        return self.query(
-            "textDocument/completion", path, text, language, line, character
-        )
+    def completion(self, path, text, language, line, character, trigger=None):
+        self.sync(path, text, language)
+        params = {
+            "textDocument": {"uri": path_to_uri(path)},
+            "position": {"line": line, "character": character},
+        }
+        if trigger:
+            # 模板里打 <、:、@ 时，服务器要靠触发符才给标签与指令。
+            params["context"] = {"triggerKind": 2, "triggerCharacter": str(trigger)[:1]}
+        return self.request("textDocument/completion", params, timeout=self.request_timeout)
 
     def formatting(self, path, text, language, options):
         self.sync(path, text, language)
@@ -312,16 +357,22 @@ class LspServer:
 def stop_instance(item):
     if item.server is not None:
         item.server.stop()
-    if item.bridge is not None:
-        item.bridge.stop()
+    if item.script is not None:
+        item.script.stop()
+    # 桥只是转发器时没有 stop；带自己的进程时（旧路径）要收掉。
+    stop = getattr(item.bridge, "stop", None)
+    if callable(stop):
+        stop()
 
 
 class _Instance:
-    def __init__(self, ws, key, server, bridge=None):
+    def __init__(self, ws, key, server, bridge=None, script=None):
         self.ws = ws
         self.key = key
         self.server = server
         self.bridge = bridge
+        # Vue 专用：脚本那半的服务进程。
+        self.script = script
         self.last_used = time.time()
         self.lock = threading.Lock()
 

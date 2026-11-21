@@ -245,59 +245,89 @@ class TsserverResults(unittest.TestCase):
 
 
 class VueBridgeManager(unittest.TestCase):
-    """Vue 走 tsserver 桥：查询与重命名都换成相对路径。"""
+    """Vue 走语言服务器，它反向问的 tsserver 命令交给桥。"""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="idex-vue-")
         self.root = Path(self.tmp.name)
         self.vue = self.root / "Comp.vue"
         self.vue.write_text("x\n", "utf-8")
-        self.env = FakeEnv(FAKE_TS_FILE=str(self.vue))
+        (self.root / "target.py").write_text("def target():\n    return 1\n", "utf-8")
+        (self.root / "sub").mkdir()
+        (self.root / "sub" / "other.py").write_text("value = 1\n", "utf-8")
+        self.env = FakeEnv(
+            FAKE_TS_FILE=str(self.vue),
+            FAKE_LSP_ROOT=str(self.root),
+            FAKE_LSP_BRIDGE="1",
+            FAKE_LSP_DIAGNOSTICS="1",
+        )
         self.env.__enter__()
 
     def tearDown(self):
         self.env.__exit__(None, None, None)
         self.tmp.cleanup()
 
-    def test_query_and_rename(self):
-        manager = lspmod.LspManager(bridge_command=(sys.executable, str(FAKE_TS)))
+    def manager(self, bridge=True):
+        return lspmod.LspManager(
+            commands={
+                "vue": (sys.executable, str(FAKE)),
+                "typescript": (sys.executable, str(FAKE)),
+            },
+            rename_warm=0,
+            bridge_command=(sys.executable, str(FAKE_TS)) if bridge else (),
+        )
+
+    def test_query_rename_and_bridge(self):
+        manager = self.manager()
         try:
             data = manager.query("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "definition")
             self.assertEqual(
-                data["locations"], [{"path": "Comp.vue", "line": 1, "character": 2}]
+                [item["path"] for item in data["locations"]],
+                ["target.py", "sub/other.py"],
             )
             refs = manager.query("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "references")
-            self.assertEqual([item["line"] for item in refs["locations"]], [1, 4])
+            self.assertIn({"path": "target.py", "line": 5, "character": 0}, refs["locations"])
             plan = manager.rename_plan("ws", str(self.root), "Comp.vue", "x\n", 0, 0, "helper")
             self.assertEqual([item["path"] for item in plan["plan"]], ["Comp.vue"])
             self.assertEqual(len(plan["plan"][0]["edits"]), 1)
             outline = manager.symbols("ws", str(self.root), "Comp.vue", "x\n")
             self.assertEqual(
                 [(item["name"], item["depth"]) for item in outline["symbols"]],
-                [("App", 0), ("main", 1)],
+                [("alpha", 0), ("beta", 1)],
             )
             hover = manager.hover("ws", str(self.root), "Comp.vue", "x\n", 0, 0)
-            self.assertEqual(hover["hover"]["text"], "function local(value: string): string\n\n假悬停")
+            # 悬停经服务器反向问桥，桥的返回要原样送到服务器。
+            self.assertEqual(hover["hover"]["text"], 'bridge:{"echo": ["hi"]}')
             items = manager.diagnostics("ws", str(self.root), "Comp.vue", "x\n")["diagnostics"]
             self.assertEqual(
                 [(item["severity"], item["line"], item["message"]) for item in items],
-                [("error", 1, "假错误")],
+                [("error", 0, "假错误")],
             )
         finally:
             manager.stop_all()
 
+    def test_completion_and_formatting(self):
+        manager = self.manager()
+        try:
+            data = manager.completion("ws", str(self.root), "Comp.vue", "alp\n", 0, 2)
+            self.assertEqual([item["label"] for item in data["items"]], ["alpha"])
+            formatted = manager.formatting(
+                "ws", str(self.root), "Comp.vue", "x\n", {"tabSize": 4, "insertSpaces": True}
+            )
+            self.assertEqual(formatted["edits"][0]["newText"], "formatted")
+            rows = {row["id"]: row for row in manager.status()}
+            self.assertTrue(rows["vue"]["available"])
+            self.assertTrue(rows["vue"]["capabilities"]["completion"])
+            self.assertTrue(rows["vue"]["capabilities"]["formatting"])
+        finally:
+            manager.stop_all()
 
-    def test_completion_is_not_wired(self):
-        manager = lspmod.LspManager(bridge_command=(sys.executable, str(FAKE_TS)))
+    def test_without_bridge_reports_hint(self):
+        manager = self.manager(bridge=False)
         try:
             with self.assertRaises(lspmod.LspUnavailable) as caught:
                 manager.completion("ws", str(self.root), "Comp.vue", "x\n", 0, 0)
-            self.assertIn("Vue 补全未接入", str(caught.exception))
-            with self.assertRaises(lspmod.LspUnavailable) as caught:
-                manager.formatting(
-                    "ws", str(self.root), "Comp.vue", "x\n", {"tabSize": 4, "insertSpaces": True}
-                )
-            self.assertIn("Vue 格式化未接入", str(caught.exception))
+            self.assertIn("@vue/typescript-plugin", str(caught.exception))
         finally:
             manager.stop_all()
 
@@ -503,6 +533,71 @@ class CompletionResults(unittest.TestCase):
         self.assertEqual(lspmod.normalize_format_edits(None), [])
 
 
+class VueSplit(unittest.TestCase):
+    def test_block_by_line(self):
+        text = (
+            "<template>\n"
+            "  <div>\n"
+            "    <template v-if=\"ok\">x</template>\n"
+            "  </div>\n"
+            "</template>\n"
+            "\n"
+            "<script setup>\n"
+            "const x = 1\n"
+            "</script>\n"
+            "<style scoped>\n"
+            ".a {}\n"
+            "</style>\n"
+        )
+        self.assertEqual(lspmod.vue_block(text, 0), "template")
+        self.assertEqual(lspmod.vue_block(text, 2), "template")
+        self.assertEqual(lspmod.vue_block(text, 5), "")
+        self.assertEqual(lspmod.vue_block(text, 7), "script")
+        self.assertEqual(lspmod.vue_block(text, 10), "style")
+        self.assertEqual(lspmod.vue_block(text, 99), "")
+        self.assertEqual(lspmod.vue_block("", 0), "")
+        nested = (
+            "<template>\n"
+            "  <template v-if=\"x\">\n"
+            "  </template>\n"
+            "</template>\n"
+            "  <script setup>\n"
+            "const x = 1\n"
+            "  </script>\n"
+        )
+        self.assertEqual(lspmod.vue_block(nested, 2), "template")
+        self.assertEqual(lspmod.vue_block(nested, 5), "script")
+
+    def test_merge_diagnostics_dedupes_and_sorts(self):
+        first = [
+            {"line": 2, "character": 0, "severity": "error", "message": "模板"},
+            {"line": 1, "character": 3, "severity": "warning", "message": "两边都有"},
+        ]
+        second = [
+            {"line": 1, "character": 3, "severity": "warning", "message": "两边都有"},
+            {"line": 0, "character": 1, "severity": "error", "message": "脚本"},
+        ]
+        self.assertEqual(
+            [(item["line"], item["message"]) for item in lspmod.merge_diagnostics(first, second)],
+            [(0, "脚本"), (1, "两边都有"), (2, "模板")],
+        )
+
+    def test_tsls_bridge_unwraps_body(self):
+        calls = []
+
+        class Fake:
+            def request(self, method, params, timeout=None):
+                calls.append((method, params))
+                return {"seq": 0, "type": "response", "success": True, "body": {"ok": True}}
+
+        bridge = lspmod.TsslsBridge(Fake())
+        self.assertEqual(bridge.forward("_vue:echo", ["hi"]), {"ok": True})
+        method, params = calls[0]
+        self.assertEqual(method, "workspace/executeCommand")
+        self.assertEqual(params["command"], "typescript.tsserverRequest")
+        self.assertEqual(params["arguments"][0], "_vue:echo")
+
+
 class LspManagers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="idex-lsp-")
@@ -604,7 +699,8 @@ class LspManagers(unittest.TestCase):
             rows = {row["id"]: row for row in manager.status()}
             self.assertTrue(rows["python"]["capabilities"]["completion"])
             self.assertFalse(rows["python"]["capabilities"]["formatting"])
-            self.assertFalse(rows["vue"]["capabilities"]["completion"])
+            self.assertTrue(rows["vue"]["capabilities"]["completion"])
+            self.assertTrue(rows["vue"]["capabilities"]["formatting"])
         finally:
             manager.stop_all()
 
