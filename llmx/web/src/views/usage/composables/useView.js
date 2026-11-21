@@ -17,6 +17,8 @@ export const COMMANDS = [
 export const RANGES = [
   { key: '1', name: '今天' },
   { key: 'yesterday', name: '昨天' },
+  { key: 'week', name: '本周' },
+  { key: 'month', name: '本月' },
   { key: '7', name: '近 7 天' },
   { key: '14', name: '近 14 天' },
   { key: '30', name: '近 30 天' },
@@ -57,6 +59,17 @@ export function query(extra = {}) {
     const day = dayText(date)
     params.set('since', day)
     params.set('until', day)
+  } else if (view.range === 'week' || view.range === 'month') {
+    const today = new Date()
+    const start = new Date(today)
+    if (view.range === 'week') {
+      // 周一算一周的第一天。
+      start.setDate(today.getDate() - ((today.getDay() + 6) % 7))
+    } else {
+      start.setDate(1)
+    }
+    params.set('since', dayText(start))
+    params.set('until', dayText(today))
   } else if (view.range === 'all') {
     params.set('all', '1')
   } else {
