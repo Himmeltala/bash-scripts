@@ -60,6 +60,9 @@ import { rememberTheme } from './plugins/vuetify'
 
 const VIEWS = {
   usage: defineAsyncComponent(() => import('./views/usage/index.vue')),
+  insights: defineAsyncComponent(() => import('./views/insights/index.vue')),
+  budget: defineAsyncComponent(() => import('./views/budget/index.vue')),
+  data: defineAsyncComponent(() => import('./views/data/index.vue')),
   settings: defineAsyncComponent(() => import('./views/settings/index.vue')),
   pricing: defineAsyncComponent(() => import('./views/pricing/index.vue')),
 }

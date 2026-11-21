@@ -312,8 +312,8 @@ class Store:
             ).fetchone()
             newest = self.con.execute("select max(seen_at) from request").fetchone()[0]
             by_source = self.con.execute(
-                "select source, count(*), count(distinct session) from request"
-                " group by source order by source"
+                "select source, count(*), count(distinct session), max(seen_at)"
+                " from request group by source order by source"
             ).fetchall()
             span = self.con.execute("select min(at), max(at) from request").fetchone()
         except sqlite3.Error as exc:
@@ -326,10 +326,23 @@ class Store:
             "last_at": _iso(span[1]),
             "seen_at": int(newest) if newest is not None else None,
             "sources": [
-                {"source": str(row[0]), "requests": int(row[1]), "sessions": int(row[2])}
+                {
+                    "source": str(row[0]),
+                    "requests": int(row[1]),
+                    "sessions": int(row[2]),
+                    "seen_at": int(row[3]) if row[3] is not None else None,
+                }
                 for row in by_source
             ],
         }
+
+    def models(self) -> list[str]:
+        """账本里出现过的模型名，用来看还有哪些没配价格。"""
+        try:
+            rows = self.con.execute("select distinct model from request").fetchall()
+        except sqlite3.Error as exc:
+            raise StoreError(f"读账本失败: {exc}") from exc
+        return sorted(str(row[0]) for row in rows if row[0])
 
 
 def _iso(ms: object) -> str | None:

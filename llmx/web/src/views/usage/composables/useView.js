@@ -1,6 +1,7 @@
 // 视图状态：报表、范围、来源与排序同步到地址栏，刷新页面或分享链接都能还原。
 
 import { reactive, watch } from 'vue'
+import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
 import { page, replaceParams } from '../../../composables/usePage'
 import { SOURCE_LIST } from './format'
 
@@ -25,11 +26,6 @@ export const RANGES = [
   { key: 'all', name: '全部历史' },
   { key: 'custom', name: '自定义' },
 ]
-
-function dayText(date) {
-  const pad = (value) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
 
 function fromUrl() {
   const params = new URLSearchParams(location.search)
@@ -56,20 +52,17 @@ export function query(extra = {}) {
   } else if (view.range === 'yesterday') {
     const date = new Date()
     date.setDate(date.getDate() - 1)
-    const day = dayText(date)
+    const day = formatDate(date)
     params.set('since', day)
     params.set('until', day)
   } else if (view.range === 'week' || view.range === 'month') {
     const today = new Date()
-    const start = new Date(today)
-    if (view.range === 'week') {
-      // 周一算一周的第一天。
-      start.setDate(today.getDate() - ((today.getDay() + 6) % 7))
-    } else {
-      start.setDate(1)
-    }
-    params.set('since', dayText(start))
-    params.set('until', dayText(today))
+    const start =
+      view.range === 'week'
+        ? startOfWeek(today)
+        : new Date(today.getFullYear(), today.getMonth(), 1)
+    params.set('since', formatDate(start))
+    params.set('until', formatDate(today))
   } else if (view.range === 'all') {
     params.set('all', '1')
   } else {

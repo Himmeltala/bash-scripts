@@ -249,6 +249,24 @@ def _web_command(args: argparse.Namespace, config: Config) -> int:
     )
 
 
+def _range_records(config: Config, since: date | None, until: date | None, sources=None):
+    """本次范围的记录，账本优先；现扫只负责入库，出表统一用这一份。"""
+    sources = _pick_sources(sources)
+    records, batches, snapshots = _scan(config, sources)
+    use_store = _remember(config, batches, snapshots)
+    if use_store:
+        stored = _stored(config, sources, batches, since, until)
+        if stored is not None:
+            records = stored
+    records = [record for record in records if _in_range(record.at, config.book, since, until)]
+    # 老账本里的记录没有存地址，读出来时按当前配置补一次；新记录一律用入库时那份。
+    for record in records:
+        if not record.api:
+            record.api = config.api.address(record.source, record.provider, record.project)
+    records.sort(key=lambda record: record.at)
+    return records
+
+
 def _collect(
     command: str,
     args: argparse.Namespace,
@@ -257,22 +275,7 @@ def _collect(
     until: date | None,
 ) -> dict:
     """一次出表要的全部数据：本次范围的记录、聚合行与合计、未计价模型；--json 与网页共用。"""
-    sources = _pick_sources(getattr(args, "source", None))
-
-    records, batches, snapshots = _scan(config, sources)
-    use_store = _remember(config, batches, snapshots)
-    # 统计以账本为准：现扫只负责入库，出表统一读 sqlite，文件还在不在都不影响数字。
-    if use_store:
-        stored = _stored(config, sources, batches, since, until)
-        if stored is not None:
-            records = stored
-
-    records = [record for record in records if _in_range(record.at, config.book, since, until)]
-    # 老账本里的记录没有存地址，读出来时按当前配置补一次；新记录一律用入库时那份。
-    for record in records:
-        if not record.api:
-            record.api = config.api.address(record.source, record.provider, record.project)
-    records.sort(key=lambda record: record.at)
+    records = _range_records(config, since, until, getattr(args, "source", None))
 
     book = config.book
     unpriced = _unpriced_models(records, book)
@@ -295,6 +298,53 @@ def _collect(
         "unpriced_models": unpriced,
         "rows": rows,
         "totals": total,
+    }
+
+
+def session_detail(
+    config: Config,
+    source: str,
+    session: str,
+    since: date | None,
+    until: date | None,
+) -> dict:
+    """一个会话里的每条请求：时间、模型、token 与费用，用来钻取贵在哪一轮。"""
+    book = config.book
+    records = _range_records(config, since, until, [source])
+    picked = [record for record in records if record.session == session]
+    rows = []
+    total = report.Bucket()
+    for record in picked:
+        total.add(record, book)
+        usage = record.usage
+        cached_inputs = usage.input + usage.cache_read
+        cost = book.cost(record.model, usage, record.at)
+        rows.append(
+            {
+                "at": record.at.astimezone(book.tz).strftime("%m-%d %H:%M:%S"),
+                "model": report._model_name(record, book),
+                "project": record.project,
+                "api": record.api,
+                "input": usage.input,
+                "cache_read": usage.cache_read,
+                "cache_write": usage.cache_write,
+                "output": usage.output,
+                "total_tokens": usage.total,
+                "cache_hit": usage.cache_read / cached_inputs if cached_inputs else None,
+                "cost": round(cost, 8) if cost is not None else None,
+                "origin": "缓存" if getattr(record, "origin", report.ORIGIN_LIVE) != report.ORIGIN_LIVE else "现扫",
+            }
+        )
+    totals = report._row("", source, total, "", "")
+    totals.update(source=source, session=session)
+    return {
+        "source": source,
+        "session": session,
+        "since": since.isoformat() if since else None,
+        "until": until.isoformat() if until else None,
+        "rows": rows,
+        "totals": totals,
+        "unpriced_models": _unpriced_models(picked, book),
     }
 
 
@@ -545,6 +595,41 @@ def _db_status(config: Config, as_json: bool) -> int:
         lines.append(f"  {label}：{item['requests']:,} 条，{item['sessions']} 个会话")
     print("\n".join(lines))
     return 0
+
+
+def store_health(config: Config) -> dict:
+    """账本概况与数据健康：来源最近采集时间、没配价格的模型、库文件大小。"""
+    path = config.store.db
+    if not config.store.enabled:
+        return {"enabled": False, "path": str(path), "size": 0}
+    with Store(path, config.book.tz) as store:
+        stats = store.stats()
+        models = store.models()
+    stats["enabled"] = True
+    stats["size"] = path.stat().st_size if path.is_file() else 0
+    stats["unpriced_models"] = sorted(
+        {config.book.resolve(name) or name for name in models if config.book.price_for(name) is None}
+    )
+    return stats
+
+
+def store_gc(config: Config, keep_days: int | None) -> dict:
+    days = keep_days if keep_days is not None else config.store.keep_days
+    if days < 1:
+        raise UsageError("keep_days 至少为 1")
+    with Store(config.store.db, config.book.tz) as store:
+        stale = store.stale(list(SOURCE_ORDER), days)
+        removed = store.forget(stale)
+    return {"keep_days": days, "sessions": len(stale), "removed": removed}
+
+
+def store_import(config: Config) -> dict:
+    records, batches, snapshots = _scan(config, list(SOURCE_ORDER))
+    for snapshot in snapshots.values():
+        snapshot.save()
+    with Store(config.store.db, config.book.tz) as store:
+        added = store.insert(batches)
+    return {"records": len(records), "added": added}
 
 
 def _watching(args: argparse.Namespace) -> bool:

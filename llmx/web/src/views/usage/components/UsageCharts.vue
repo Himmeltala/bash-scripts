@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
+import { useTheme } from 'vuetify'
 import { data } from '../composables/useUsage'
 import { SOURCE_LIST } from '../composables/format'
 import BarChart from './BarChart.vue'
@@ -17,6 +18,7 @@ const MODE_ITEMS = [
   { value: 'line', label: '折线图', icon: 'mdi-chart-line' },
   { value: 'donut', label: '环形图', icon: 'mdi-chart-donut' },
   { value: 'heatmap', label: '热力图', icon: 'mdi-grid' },
+  { value: 'unit', label: '单位成本', icon: 'mdi-currency-usd' },
   { value: 'calendar', label: '日历', icon: 'mdi-calendar' },
   { value: 'sankey', label: '桑基图', icon: 'mdi-transit-connection-variant' },
 ]
@@ -130,6 +132,60 @@ const projectChart = computed(() => {
   return split(top, (row) => row.project || '未记录')
 })
 
+// 单位成本：每千 token 花多少钱。按当前报表的横轴刻度聚合，不区分来源。
+const theme = useTheme()
+
+function shortSession(value) {
+  const text = value || '未记录'
+  return text.length > 12 ? `${text.slice(0, 10)}..` : text
+}
+
+const unitChart = computed(() => {
+  let categories = []
+  let keyOf = () => ''
+  let labelOf = (value) => value
+  if (command.value === 'daily') {
+    categories = days.value.categories
+    keyOf = (row) => row.date
+    labelOf = (value) => value.slice(5)
+  } else if (command.value === 'hour') {
+    categories = clock.value.map((item) => item.label)
+    keyOf = (row) => `${String(row.hour).padStart(2, '0')}:00`
+  } else if (command.value === 'session') {
+    categories = sessionChart.value.categories
+    keyOf = (row) => row.session || '未记录'
+    labelOf = shortSession
+  } else if (command.value === 'project') {
+    categories = projectChart.value.categories
+    keyOf = (row) => row.project || '未记录'
+  } else {
+    categories = apiChart.value.categories
+    keyOf = (row) => row.api || '未记录'
+  }
+  const cost = new Map()
+  const tokens = new Map()
+  for (const row of rows.value) {
+    const key = keyOf(row)
+    cost.set(key, (cost.get(key) || 0) + (Number(row.cost) || 0))
+    tokens.set(key, (tokens.get(key) || 0) + (Number(row.total_tokens) || 0))
+  }
+  const data = categories.map((key) => {
+    const total = tokens.get(key) || 0
+    if (!total) return null
+    return Number((((cost.get(key) || 0) / total) * 1000).toFixed(6))
+  })
+  return {
+    categories: categories.map(labelOf),
+    series: [
+      {
+        name: '每千 token 费用',
+        color: theme.current.value.colors.primary,
+        data,
+      },
+    ],
+  }
+})
+
 // 按 API 报表的图：取费用最高的前 12 个接口地址，各来源分别花了多少。
 const apiChart = computed(() => {
   const money = new Map()
@@ -194,6 +250,15 @@ const apiChart = computed(() => {
           :series="shortDays.series"
           :mode="chartMode"
           title="每天各来源的费用（元）"
+          legend
+        />
+      </v-col>
+      <v-col v-if="chartMode === 'unit'" cols="12">
+        <BarChart
+          :categories="unitChart.categories"
+          :series="unitChart.series"
+          :digits="4"
+          title="每千 token 费用（元）"
           legend
         />
       </v-col>

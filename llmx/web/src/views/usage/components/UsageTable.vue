@@ -4,6 +4,8 @@ import BrandIcon from '../../../components/BrandIcon.vue'
 import { data } from '../composables/useUsage'
 import { formatNumber } from '@bash-scripts/web-shared/format'
 import { COLUMNS, SOURCE_LIST, cellValue } from '../composables/format'
+import { tagOf } from '../composables/useSessionTags'
+import SessionDetailDialog from './SessionDetailDialog.vue'
 
 // 排序记在本地：刷新或切走再回来时保持上次排的列与方向，每张报表各记一份。
 const SORT_PREFIX = 'llmx.table-sort.'
@@ -42,8 +44,14 @@ watch([sortKey, sortDesc], () => saveSort(command.value, sortKey.value, sortDesc
 
 const columns = computed(() => COLUMNS[command.value] || COLUMNS.daily)
 
+// 会话可以标为忽略，默认不占表格；要看时勾一下上面的开关。
+const showIgnored = ref(false)
+
 const rows = computed(() => {
-  const list = [...(data.value?.rows || [])]
+  let list = [...(data.value?.rows || [])]
+  if (command.value === 'session' && !showIgnored.value) {
+    list = list.filter((row) => !tagOf(row).ignored)
+  }
   const key = sortKey.value
   const column = columns.value.find((item) => item.key === key)
   if (!column) return list
@@ -138,13 +146,37 @@ const cell = (column, row, blankMissing = false) => {
   return column.num ? formatNumber(row[column.key]) : text
 }
 
+// 会话报表点一行看这个会话的逐条请求；其他报表行没有这层明细。
+const detailOn = ref(false)
+const detailRow = ref(null)
+
+function openDetail(item) {
+  if (!item?.session) return
+  detailRow.value = item
+  detailOn.value = true
+}
+
 function rowProps({ item }) {
-  return item.origin === 'cache' ? { class: 'cached-row' } : {}
+  const base = item.origin === 'cache' ? { class: 'cached-row' } : {}
+  if (command.value !== 'session' || !item?.session) return base
+  return {
+    ...base,
+    class: [base.class, 'click-row'],
+    onClick: () => openDetail(item),
+  }
 }
 </script>
 
 <template>
   <v-card variant="flat" class="table-card">
+    <div v-if="command === 'session'" class="table-tools">
+      <v-checkbox
+        v-model="showIgnored"
+        density="compact"
+        hide-details
+        label="显示已忽略的会话"
+      />
+    </div>
     <v-data-table
       :headers="headers"
       :items="rows"
@@ -167,6 +199,10 @@ function rowProps({ item }) {
           </span>{{ cell(column, item) }}
         </span>
         <span v-else-if="column.key === 'origin'" :class="{ cached: item.origin === 'cache' }">
+          {{ cell(column, item) }}
+        </span>
+        <span v-else-if="column.key === 'session'" class="session-cell">
+          <v-icon v-if="tagOf(item).star" size="14" color="primary" title="已收藏">mdi-star</v-icon>
           {{ cell(column, item) }}
         </span>
         <span
@@ -192,6 +228,7 @@ function rowProps({ item }) {
         </tr>
       </template>
     </v-data-table>
+    <SessionDetailDialog v-model="detailOn" :row="detailRow" />
   </v-card>
 </template>
 
@@ -202,6 +239,15 @@ function rowProps({ item }) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.table-tools {
+  flex: none;
+  padding: 4px 12px 0;
+}
+
+.table-card :deep(.click-row) {
+  cursor: pointer;
 }
 
 .table-card :deep(.v-data-table) {
@@ -219,6 +265,12 @@ function rowProps({ item }) {
 .table-card :deep(.v-data-table td) {
   vertical-align: middle;
   white-space: nowrap;
+}
+
+.session-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .source {

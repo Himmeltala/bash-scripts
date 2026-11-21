@@ -17,7 +17,6 @@
         </v-btn>
       </div>
 
-      <p v-if="profiles.error" class="hint bad">{{ profiles.error }}</p>
       <div v-if="!profiles.loaded" class="hint">正在读取配置档…</div>
       <div v-else-if="!profiles.items.length" class="hint">
         还没有配置档。新建一份，或从当前 settings.json 复制。
@@ -73,7 +72,6 @@
           自动同步
         </v-chip>
         <v-chip v-if="changed" size="x-small" variant="tonal" color="warning">已改动</v-chip>
-        <span v-if="notice" class="hint">{{ notice }}</span>
         <v-spacer />
         <span v-if="applyHint" class="hint">{{ applyHint }}</span>
         <v-btn
@@ -123,8 +121,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { FileEditor } from '@bash-scripts/web-shared'
+import { toast } from '../../../../../composables/notice'
 import { useClaudeProfiles } from '../../../composables/ClaudeCodeConfig/useClaudeProfiles'
 import NewProfileDialog from '../../../modals/ClaudeCodeConfig/NewProfileDialog.vue'
 import RenameProfileDialog from '../../../modals/ClaudeCodeConfig/RenameProfileDialog.vue'
@@ -135,6 +134,18 @@ const profiles = useClaudeProfiles()
 const editorRef = ref(null)
 const selected = ref(null)
 const notice = ref('')
+
+watch(notice, (text) => {
+  if (!text) return
+  toast(text, 'primary')
+  notice.value = ''
+})
+watch(
+  () => profiles.error,
+  (text) => {
+    if (text) toast(text, 'error')
+  }
+)
 
 const newOpen = ref(false)
 const preset = ref(null)

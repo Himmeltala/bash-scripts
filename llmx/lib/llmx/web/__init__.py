@@ -125,6 +125,16 @@ def _payload(config: Config, query: dict[str, list[str]]) -> dict:
     return cli._collect(args.command, args, config, since, until)
 
 
+def _session_payload(config: Config, query: dict[str, list[str]]) -> dict:
+    config = _current(config)
+    source = (query.get("source") or [""])[0]
+    session = (query.get("session") or [""])[0]
+    if not source or not session:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "没给来源或会话")
+    args, since, until = _args(config, query)
+    return cli.session_detail(config, source, session, since, until)
+
+
 def _static_file(path: str) -> Path | None:
     """请求路径对应的打包文件；找不到或跑出目录时回 None，交给 index.html。"""
     # llmx 没有子目录首页：目录不补 index，交给 _asset 回落到根 index.html。
@@ -202,6 +212,20 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                 return self._config_get()
             if route == "usage":
                 return _guarded(lambda: _payload(config, query))
+            if route == "session":
+                return _guarded(lambda: _session_payload(config, query))
+            if route == "store":
+                if method == "POST":
+                    self._require_local("写账本")
+                    action = str(body.get("action", ""))
+                    current = _current(config)
+                    if action == "gc":
+                        keep = body.get("keep_days")
+                        return _guarded(lambda: cli.store_gc(current, int(keep) if keep else None))
+                    if action == "import":
+                        return _guarded(lambda: cli.store_import(current))
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "不认识的账本动作：%s" % action)
+                return _guarded(lambda: cli.store_health(_current(config)))
             if route == "prices":
                 return _guarded(lambda: cli._price_data(_current(config).book))
             parts = [part for part in route.split("/") if part]

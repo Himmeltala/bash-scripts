@@ -39,7 +39,6 @@
       </v-btn>
     </div>
 
-    <p v-if="sessions.error" class="hint bad">{{ sessions.error }}</p>
     <div class="table">
       <v-data-table
         v-model="selected"
@@ -102,6 +101,12 @@ const search = ref('')
 const selected = ref([])
 const notice = ref('')
 watch(notice, (text) => text && toast(text, 'success'))
+watch(
+  () => sessions.error,
+  (text) => {
+    if (text) toast(text, 'error')
+  }
+)
 const deleteOpen = ref(false)
 const detailId = ref('')
 

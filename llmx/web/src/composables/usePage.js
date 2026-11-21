@@ -4,6 +4,9 @@ import { reactive } from 'vue'
 
 export const PAGES = [
   { key: 'usage', title: '用量统计', icon: 'mdi-chart-box-outline' },
+  { key: 'insights', title: '洞察', icon: 'mdi-lightbulb-on-outline' },
+  { key: 'budget', title: '预算', icon: 'mdi-wallet-outline' },
+  { key: 'data', title: '数据', icon: 'mdi-database-cog-outline' },
   { key: 'settings', title: '配置管理', icon: 'mdi-cog-outline' },
   { key: 'pricing', title: '价格与配置', icon: 'mdi-tune-variant' },
 ]

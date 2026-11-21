@@ -1,5 +1,6 @@
 <template>
   <v-container fluid class="pa-2 page">
+    <BudgetPanel />
     <v-sheet rounded class="filters pa-3 mb-2">
       <div class="filters-row">
         <v-select
@@ -53,11 +54,13 @@
     </v-sheet>
 
     <SummaryCards v-if="data" class="mb-2" />
+    <CompareCards v-if="data" />
 
     <UsageCharts v-if="hasRows" class="mb-2" />
     <div v-if="hasRows" class="table-area">
       <UsageTable />
     </div>
+    <CacheAdvice v-if="hasRows" />
     <p v-else-if="data && !error" class="hint">没有找到用量记录。</p>
   </v-container>
 </template>
@@ -68,9 +71,13 @@ import { COMMANDS, RANGES, SOURCES, syncUrl, view } from './composables/useView'
 import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import BrandIcon from '../../components/BrandIcon.vue'
 import SummaryCards from './components/SummaryCards.vue'
+import CompareCards from './components/CompareCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
+import CacheAdvice from './components/CacheAdvice.vue'
+import BudgetPanel from './components/BudgetPanel.vue'
 import { VDateInput } from 'vuetify/labs/VDateInput'
+import { formatDate } from '@bash-scripts/web-shared/format'
 import { toast } from '../../composables/notice'
 
 // 地址栏里存 YYYY-MM-DD，日期组件收发的是本地时区的 Date，两边在这里换。
@@ -81,12 +88,6 @@ function dayToDate(text) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-function dateToDay(value) {
-  if (!value) return ''
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${value.getFullYear()}-${month}-${day}`
-}
 
 // Vuetify 没有独立的日期范围组件，VDateInput 的 multiple="range" 就是范围选择：
 // 选满两个端点后模型里是整段日期，这里只留首尾，对应地址栏的 since 与 until。
@@ -94,8 +95,8 @@ const rangeDates = computed({
   get: () => [dayToDate(view.since), dayToDate(view.until)].filter(Boolean),
   set: (value) => {
     const list = Array.isArray(value) ? value.filter(Boolean) : []
-    view.since = dateToDay(list[0])
-    view.until = dateToDay(list[list.length - 1])
+    view.since = formatDate(list[0])
+    view.until = formatDate(list[list.length - 1])
   },
 })
 

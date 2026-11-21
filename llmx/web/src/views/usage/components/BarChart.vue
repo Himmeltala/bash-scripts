@@ -5,7 +5,7 @@ import { BarChart, HeatmapChart, LineChart, PieChart } from 'echarts/charts'
 import { LegendComponent, GridComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
-import { fmtMoney, fmtTokens } from '../composables/format'
+import { fmtTokens } from '../composables/format'
 
 const PEAK = '高峰'
 const OFF = '空闲'
@@ -37,7 +37,16 @@ const props = defineProps({
   height: { type: Number, default: 260 },
   // bar 柱状，stacked 堆叠，line 平滑折线加渐隐面积，heatmap 色块矩阵，donut 环形占比。
   mode: { type: String, default: 'bar' },
+  // 金额小数位，默认与全站一致取 4 位。
+  digits: { type: Number, default: 4 },
 })
+
+function money(value) {
+  return (Number(value) || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: props.digits,
+    maximumFractionDigits: props.digits,
+  })
+}
 
 const box = ref(null)
 let chart = null
@@ -246,25 +255,25 @@ function option() {
         const first = items[0] || {}
         if (isDonut) {
           const share = first.percent == null ? '' : `（${first.percent}%）`
-          return `${first.name}<br/>${first.marker}¥${fmtMoney(first.value)}${share}`
+          return `${first.name}<br/>${first.marker}¥${money(first.value)}${share}`
         }
         if (isHeat) {
           const [x, y, value] = first.value || []
           const name = rows[y] ? rows[y].name : ''
-          return `${labels.value[x] ?? ''}<br/>${first.marker}${name} ¥${fmtMoney(value)}`
+          return `${labels.value[x] ?? ''}<br/>${first.marker}${name} ¥${money(value)}`
         }
         const index = first.dataIndex
         if (multi.value) {
           const label = labels.value[index] ?? ''
           const lines = items
             .filter((entry) => entry.value != null)
-            .map((entry) => `${entry.marker}${entry.seriesName} ¥${fmtMoney(entry.value)}`)
+            .map((entry) => `${entry.marker}${entry.seriesName} ¥${money(entry.value)}`)
           return `${label}<br/>${lines.join('<br/>')}`
         }
         const picked = props.items[index]
         if (!picked) return ''
         const tokens = picked.tokens == null ? '' : `<br/>${fmtTokens(picked.tokens)} token`
-        return `${picked.label}<br/>¥${fmtMoney(picked.value)}${tokens}`
+        return `${picked.label}<br/>¥${money(picked.value)}${tokens}`
       },
     },
     visualMap: isHeat
@@ -338,7 +347,7 @@ function option() {
               color: text,
               fontSize: 11,
               fontFamily: FONT,
-              formatter: (value) => `¥${value}`,
+              formatter: (value) => `¥${money(value)}`,
             },
             splitLine: { lineStyle: { color: line } },
           },
