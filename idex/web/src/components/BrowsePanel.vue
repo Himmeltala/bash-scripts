@@ -846,13 +846,14 @@ function capabilitiesOf(path) {
   return (info && info.capabilities) || {}
 }
 
-const editorViewProps = {
+const editorViewProps = computed(() => ({
   complete: ({ path, text, line, character }) =>
     api.completion(props.ws.id, path, text, line, character),
   format: ({ path, text }) => api.format(props.ws.id, path, text, 4, true),
   capabilities: capabilitiesOf,
   notice: (text) => flash(text),
-}
+  theme: preferences.editorTheme,
+}))
 
 const quickAsk = reactive({ on: false, loading: false, error: '', files: [], filter: '', loaded: false })
 const lineAsk = reactive({ on: false, value: '', error: '' })

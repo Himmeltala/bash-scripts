@@ -1,14 +1,60 @@
 # 编辑器与系统杂物
 .idea/
 .vscode/
+.history/
 .DS_Store
+Thumbs.db
+desktop.ini
 *.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 *~
 
 # 安装脚本跑到一半留下的东西
 *.bak
 *.bak.*
+*.orig
+*.rej
+*.tmp
+*.part
 
 # Python 缓存
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Node 依赖、日志与构建缓存
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+.vite/
+coverage/
+
+# Java / Gradle / Maven
+target/
+build/
+.gradle/
+
+# 运行产物与本地配置
+*.log
+logs/
+*.pid
+.env
+.env.*
+!.env.example
+
+# AI 工具本地状态
+.serena/
+.superpowers/

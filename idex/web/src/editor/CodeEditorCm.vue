@@ -13,6 +13,7 @@ import { autocompletion, startCompletion } from '@codemirror/autocomplete'
 import { lintGutter, setDiagnostics } from '@codemirror/lint'
 import { symbolAt } from '@bash-scripts/web-shared'
 import { cmLanguageOf, languageExtension } from './languages.js'
+import { editorThemeExtensions } from './themes.js'
 import {
   completionAnchor,
   completionOptions,
@@ -29,20 +30,20 @@ const props = defineProps({
   format: { type: Function, default: null },
   capabilities: { type: [Function, Object], default: () => ({}) },
   notice: { type: Function, default: null },
+  theme: { type: String, default: 'auto' },
 })
 
 const emit = defineEmits(['update:modelValue', 'symbol', 'menu', 'rename', 'caret', 'edit', 'hover', 'hover-end'])
 
 const host = ref(null)
 const language = new Compartment()
+const appearance = new Compartment()
 const requests = latestRequests()
 let view = null
 let debounceTimer = 0
 let pendingResolve = null
 let hoverTimer = 0
 let hoverKey = ''
-
-const CODE_FONT = "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', monospace"
 
 function capabilitiesOf() {
   const value = props.capabilities
@@ -226,34 +227,6 @@ const keys = [
   },
 ]
 
-const theme = EditorView.theme({
-  '&': {
-    height: '100%',
-    color: 'rgb(var(--v-theme-on-surface))',
-    backgroundColor: 'rgb(var(--v-theme-surface))',
-  },
-  '.cm-scroller': {
-    fontFamily: CODE_FONT,
-    fontSize: '0.86rem',
-    lineHeight: '1.6',
-  },
-  '.cm-content': { caretColor: 'rgb(var(--v-theme-on-surface))' },
-  '.cm-gutters': {
-    backgroundColor: 'rgb(var(--v-theme-surface))',
-    color: 'rgb(var(--v-theme-on-surface-variant))',
-    borderRight: '1px solid rgba(var(--v-theme-on-surface), 0.08)',
-  },
-  '.cm-activeLine': { backgroundColor: 'rgba(var(--v-theme-primary), 0.1)' },
-  '.cm-activeLineGutter': { backgroundColor: 'rgba(var(--v-theme-primary), 0.06)' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-    backgroundColor: 'rgba(var(--v-theme-primary), 0.28)',
-  },
-  '.cm-tooltip': {
-    border: '1px solid rgba(var(--v-theme-on-surface), 0.12)',
-    backgroundColor: 'rgb(var(--v-theme-surface))',
-  },
-})
-
 const phrases = EditorState.phrases.of({
   Find: '查找',
   Replace: '替换',
@@ -301,7 +274,7 @@ function pushDiagnostics() {
 function buildExtensions() {
   return [
     basicSetup,
-    theme,
+    appearance.of(editorThemeExtensions(props.theme)),
     indentUnit.of('    '),
     keymap.of(keys),
     lintGutter(),
@@ -337,6 +310,14 @@ watch(
     const text = String(value ?? '')
     if (text === view.state.doc.toString()) return
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } })
+  }
+)
+
+watch(
+  () => props.theme,
+  () => {
+    if (!view) return
+    view.dispatch({ effects: appearance.reconfigure(editorThemeExtensions(props.theme)) })
   }
 )
 

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
+import { useStoredChoice } from '@bash-scripts/web-shared'
 import { useTheme } from 'vuetify'
 import { data } from '../composables/useUsage'
 import { SOURCE_LIST } from '../composables/format'
@@ -33,7 +33,11 @@ const availableItems = computed(() =>
 )
 
 // 选择记在浏览器里；换到没有这种图的报表时按柱状图显示。
-const savedMode = useLocalStorage('llmx.chart-mode', 'bar', { writeDefaults: false })
+const savedMode = useStoredChoice(
+  'llmx.chart-mode',
+  MODE_ITEMS.map((item) => item.value),
+  'bar',
+)
 const chartMode = computed({
   get: () =>
     availableItems.value.some((item) => item.value === savedMode.value) ? savedMode.value : 'bar',

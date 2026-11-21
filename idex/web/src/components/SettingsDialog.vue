@@ -59,6 +59,23 @@
             <p v-if="defaults.length" class="hint">默认：{{ defaults.join('、') }}</p>
           </div>
         </template>
+        <template v-else-if="section === 'editor'">
+          <h3 class="pane-title">编辑器</h3>
+          <div class="field">
+            <span class="field-label">代码配色</span>
+            <v-select
+              :model-value="preferences.editorTheme"
+              :items="themeItems"
+              item-title="title"
+              item-value="value"
+              density="compact"
+              variant="outlined"
+              hide-details
+              @update:model-value="preferences.editorTheme = $event"
+            />
+            <p class="hint">只保存在当前浏览器，与界面深浅色互不影响。</p>
+          </div>
+        </template>
         <template v-else-if="section === 'lsp'">
           <div class="field-head">
             <h3 class="pane-title">语言服务器</h3>
@@ -103,6 +120,8 @@ import { computed, ref, watch } from 'vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { api } from '../utils/api'
 import { capabilityText } from '../utils/capabilities'
+import { EDITOR_THEME_OPTIONS } from '../editor/themeOptions'
+import { usePreferencesStore } from '../stores/preferences'
 import { toast } from '../utils/notice'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })
@@ -111,9 +130,12 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 // 设置分类：以后加项就加一条，右边按 id 出对应的块。
 const sections = [
   { id: 'search', title: '搜索', icon: 'mdi-magnify' },
+  { id: 'editor', title: '编辑器', icon: 'mdi-palette-outline' },
   { id: 'lsp', title: '语言服务器', icon: 'mdi-server-network' },
 ]
 const section = ref('search')
+const preferences = usePreferencesStore()
+const themeItems = EDITOR_THEME_OPTIONS.map((item) => ({ title: item.title, value: item.id }))
 
 const open = computed({
   get: () => props.modelValue,

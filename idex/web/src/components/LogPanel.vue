@@ -330,8 +330,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useStorage } from '@vueuse/core'
+
 import { useTheme } from 'vuetify'
+import { useStoredChoice } from '@bash-scripts/web-shared'
 import DiffView from '@bash-scripts/web-shared/diff'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { buildGraph, DOT_Y } from '../utils/gitGraph'
@@ -362,7 +363,7 @@ const { logDiffScope, logFilesMode } = storeToRefs(preferences)
 const theme = useTheme()
 const dark = computed(() => theme.global.current.value.dark)
 // 时间线默认连所有分支与标签一起列；关掉就只看当前分支与它的上游。
-const logAllBranches = useStorage('idex.log.all-branches', true)
+const logAllBranches = useStoredChoice('idex.log.all-branches', [true, false], true)
 
 const isGit = computed(() => props.ws.vcs === 'git')
 
