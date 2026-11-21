@@ -10,14 +10,6 @@ export const PAGES = [
   { key: 'pricing', path: '/pricing', title: '价格与配置', icon: 'mdi-tune-variant' },
 ]
 
-// 旧地址是 /?page=xxx，跳到新路径时带上其余参数。
-function fromLegacy(to, fallback) {
-  const hit = PAGES.find((item) => item.key === to.query.page)
-  const query = { ...to.query }
-  delete query.page
-  return { path: hit ? hit.path : fallback, query }
-}
-
 const VIEWS = {
   usage: () => import('./views/usage/index.vue'),
   insights: () => import('./views/insights/index.vue'),
@@ -28,9 +20,9 @@ const VIEWS = {
 }
 
 const routes = [
-  { path: '/', redirect: (to) => fromLegacy(to, '/usage') },
+  { path: '/', redirect: '/usage' },
   ...PAGES.map((item) => ({ path: item.path, name: item.key, component: VIEWS[item.key] })),
-  { path: '/:pathMatch(.*)*', redirect: (to) => fromLegacy(to, '/usage') },
+  { path: '/:pathMatch(.*)*', redirect: '/usage' },
 ]
 
 export default createRouter({

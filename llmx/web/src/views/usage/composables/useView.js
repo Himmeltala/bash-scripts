@@ -1,8 +1,7 @@
-// 视图状态：报表、范围、来源与排序同步到地址栏，刷新页面、分享链接与前后退都能还原。
+// 视图状态：报表、范围、来源与自定义日期存在浏览器里，刷新与来回切页都保持原样。
 
-import { reactive, watch } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
-import router from '../../../router'
 import { SOURCE_LIST } from './format'
 
 export const SOURCES = SOURCE_LIST
@@ -27,86 +26,41 @@ export const RANGES = [
   { key: 'custom', name: '自定义' },
 ]
 
-export const view = reactive({
-  command: 'daily',
-  range: '14',
-  since: '',
-  until: '',
-  sources: SOURCE_LIST.map((item) => item.key),
-})
+const ALL_SOURCES = SOURCE_LIST.map((item) => item.key)
 
-function pick(list, value, fallback) {
-  return list.some((item) => item.key === value) ? value : fallback
-}
-
-export function applyQuery(query) {
-  const picked = String(query.source || '').split(',').filter(Boolean)
-  view.command = pick(COMMANDS, query.command, 'daily')
-  view.range = pick(RANGES, query.range || query.days, '14')
-  view.since = query.since || ''
-  view.until = query.until || ''
-  view.sources = SOURCE_LIST.filter((item) =>
-    picked.length ? picked.includes(item.key) : true,
-  ).map((item) => item.key)
-}
-
-applyQuery(router.currentRoute.value.query)
+export const view = useLocalStorage(
+  'llmx.usage-view',
+  { command: 'daily', range: '14', since: '', until: '', sources: ALL_SOURCES.slice() },
+  { mergeDefaults: true, writeDefaults: false }
+)
 
 // 请求参数：没选满来源时只带选中的那几个，命令行的 -s 语义。
 export function query(extra = {}) {
+  const state = view.value
   const params = new URLSearchParams(extra)
-  params.set('command', view.command)
-  if (view.range === 'custom') {
-    if (view.since) params.set('since', view.since)
-    if (view.until) params.set('until', view.until)
-  } else if (view.range === 'yesterday') {
+  params.set('command', state.command)
+  if (state.range === 'custom') {
+    if (state.since) params.set('since', state.since)
+    if (state.until) params.set('until', state.until)
+  } else if (state.range === 'yesterday') {
     const date = new Date()
     date.setDate(date.getDate() - 1)
     const day = formatDate(date)
     params.set('since', day)
     params.set('until', day)
-  } else if (view.range === 'week' || view.range === 'month') {
+  } else if (state.range === 'week' || state.range === 'month') {
     const today = new Date()
     const start =
-      view.range === 'week'
+      state.range === 'week'
         ? startOfWeek(today)
         : new Date(today.getFullYear(), today.getMonth(), 1)
     params.set('since', formatDate(start))
     params.set('until', formatDate(today))
-  } else if (view.range === 'all') {
+  } else if (state.range === 'all') {
     params.set('all', '1')
   } else {
-    params.set('days', view.range)
+    params.set('days', state.range)
   }
-  if (view.sources.length < SOURCES.length) params.set('source', view.sources.join(','))
+  if (state.sources.length < SOURCES.length) params.set('source', state.sources.join(','))
   return params
 }
-
-// 当前筛选条件对应的地址栏参数，页面切换与首次进入时都由它写回。
-export function urlParams() {
-  const params = query()
-  params.set('range', view.range)
-  params.delete('command')
-  if (view.command !== 'daily') params.set('command', view.command)
-  return Object.fromEntries(params)
-}
-
-// 筛选条件只替换当前记录，不新增历史；回退键仍按页面前进后退。
-export function syncUrl() {
-  router.replace({ name: 'usage', query: urlParams() })
-}
-
-watch(
-  () => [view.command, view.range, view.since, view.until, view.sources.join(',')],
-  () => {
-    if (router.currentRoute.value.name === 'usage') syncUrl()
-  },
-)
-
-// 地址栏变化（手动改、前后退）反过来落到筛选条件上。
-watch(
-  () => router.currentRoute.value.query,
-  (value) => {
-    if (router.currentRoute.value.name === 'usage') applyQuery(value)
-  },
-)

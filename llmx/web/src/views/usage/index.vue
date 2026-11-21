@@ -67,8 +67,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { COMMANDS, RANGES, SOURCES, applyQuery, syncUrl, view } from './composables/useView'
+import { COMMANDS, RANGES, SOURCES, view } from './composables/useView'
 import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import BrandIcon from '../../components/BrandIcon.vue'
 import SummaryCards from './components/SummaryCards.vue'
@@ -81,11 +80,7 @@ import { VDateInput } from 'vuetify/labs/VDateInput'
 import { formatDate } from '@bash-scripts/web-shared/format'
 import { toast } from '../../composables/notice'
 
-// 路由懒加载的模块在导航完成前求值，初始筛选条件要在进入页面时从当前路由取。
-const route = useRoute()
-applyQuery(route.query)
-
-// 地址栏里存 YYYY-MM-DD，日期组件收发的是本地时区的 Date，两边在这里换。
+// 筛选状态里存 YYYY-MM-DD，日期组件收发的是本地时区的 Date，两边在这里换。
 function dayToDate(text) {
   const hit = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text || '')
   if (!hit) return null
@@ -95,13 +90,13 @@ function dayToDate(text) {
 
 
 // Vuetify 没有独立的日期范围组件，VDateInput 的 multiple="range" 就是范围选择：
-// 选满两个端点后模型里是整段日期，这里只留首尾，对应地址栏的 since 与 until。
+// 选满两个端点后模型里是整段日期，这里只留首尾，存进筛选状态的 since 与 until。
 const rangeDates = computed({
-  get: () => [dayToDate(view.since), dayToDate(view.until)].filter(Boolean),
+  get: () => [dayToDate(view.value.since), dayToDate(view.value.until)].filter(Boolean),
   set: (value) => {
     const list = Array.isArray(value) ? value.filter(Boolean) : []
-    view.since = formatDate(list[0])
-    view.until = formatDate(list[list.length - 1])
+    view.value.since = formatDate(list[0])
+    view.value.until = formatDate(list[list.length - 1])
   },
 })
 
@@ -120,7 +115,16 @@ function reload() {
   subscribe()
 }
 
-watch(() => [view.command, view.range, view.since, view.until, view.sources.join(',')], reload)
+watch(
+  () => [
+    view.value.command,
+    view.value.range,
+    view.value.since,
+    view.value.until,
+    view.value.sources.join(','),
+  ],
+  reload
+)
 
 function onVisible() {
   if (document.hidden) closeStream()
@@ -128,8 +132,6 @@ function onVisible() {
 }
 
 onMounted(() => {
-  // 从别的页面切回来时把筛选条件写回地址栏。
-  syncUrl()
   document.addEventListener('visibilitychange', onVisible)
   subscribe()
 })
