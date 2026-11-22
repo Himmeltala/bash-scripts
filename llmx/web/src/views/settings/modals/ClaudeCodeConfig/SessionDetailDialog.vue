@@ -29,7 +29,7 @@
         </v-chip>
       </v-chip-group>
       <p v-if="info.unpriced_models.length" class="text-body-2 text-medium-emphasis my-2">
-        这些模型没有价格，只算 token 不算钱：{{ info.unpriced_models.join('、') }}
+        {{ unpricedText(info.unpriced_models) }}
       </p>
 
       <v-table density="compact" class="rows">
@@ -68,6 +68,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { toast } from '../../../../composables/notice'
+import { unpricedText } from '../../../../composables/useWarnings.js'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes, formatCompact, formatMoney } from '@bash-scripts/web-shared/format'
 

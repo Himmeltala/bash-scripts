@@ -1,9 +1,8 @@
 // 预算存在服务端，所有设备共用；花费从日报接口按日聚合，超支与接近上限时给出提醒。
 
 import { computed, ref } from 'vue'
-import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
-import { call } from '../../../composables/useApi'
-import { fmtMoney } from './format'
+import { formatDate, formatMoney, startOfWeek } from '@bash-scripts/web-shared/format'
+import { call } from './useApi.js'
 
 const EMPTY = { daily: 0, weekly: 0, monthly: 0, items: [] }
 const KIND_NAMES = { model: '模型', project: '项目', api: 'API' }
@@ -11,19 +10,12 @@ const PERIOD_NAMES = { daily: '每日', weekly: '每周', monthly: '每月' }
 
 export const budgets = ref({ ...EMPTY })
 export const spend = ref({ daily: 0, weekly: 0, monthly: 0, items: {}, loaded: false })
+// 最近一次本月日报里没有价格的模型，顶栏警示用。
+export const unpricedModels = ref([])
 
 let loading = null
 let loaded = false
 let spending = false
-
-function hasLimit(value) {
-  return Boolean(
-    Number(value?.daily) ||
-      Number(value?.weekly) ||
-      Number(value?.monthly) ||
-      (value?.items || []).length
-  )
-}
 
 // 多处同时进入页面时只读一次，后来的等同一个结果；读成功后不再重复请求。
 export function loadBudgets() {
@@ -51,12 +43,8 @@ export async function saveBudgets(value) {
 }
 
 // 本月日报一次取回，总额与分项都从这张表聚合。
-export async function refreshSpend(force = false) {
+export async function refreshSpend() {
   if (spending) return
-  if (!force && !hasLimit(budgets.value)) {
-    spend.value = { daily: 0, weekly: 0, monthly: 0, items: {}, loaded: false }
-    return
-  }
   spending = true
   try {
     const today = new Date()
@@ -68,6 +56,7 @@ export async function refreshSpend(force = false) {
       until: formatDate(today),
     })
     const body = await call('GET', `/usage?${params.toString()}`)
+    unpricedModels.value = body.unpriced_models || []
     const daily = new Map()
     const items = { model: {}, project: {}, api: {} }
     for (const row of body.rows || []) {
@@ -113,7 +102,7 @@ function alertOf(label, used, limit) {
   const level = toneOf(used, limit)
   if (!level) return null
   const detail = level === 'bad' ? '已超' : `已用 ${ratioText(used / limit)}`
-  return { level, text: `${label}预算${detail}：¥${fmtMoney(used)} / ¥${fmtMoney(limit)}` }
+  return { level, text: `${label}预算${detail}：¥${formatMoney(used)} / ¥${formatMoney(limit)}` }
 }
 
 // 超支或达到八成时给一条提醒；总额按日、周、月，分项只有月度上限。

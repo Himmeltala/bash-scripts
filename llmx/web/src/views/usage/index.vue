@@ -1,6 +1,5 @@
 <template>
   <v-container fluid class="pa-2 page">
-    <BudgetPanel />
     <v-sheet rounded class="filters pa-3 mb-2">
       <div class="filters-row">
         <v-select
@@ -60,7 +59,6 @@
     <div v-if="hasRows" class="table-area">
       <UsageTable />
     </div>
-    <CacheAdvice v-if="hasRows" />
     <p v-else-if="data && !error" class="hint">没有找到用量记录。</p>
   </v-container>
 </template>
@@ -74,8 +72,6 @@ import SummaryCards from './components/SummaryCards.vue'
 import CompareCards from './components/CompareCards.vue'
 import UsageCharts from './components/UsageCharts.vue'
 import UsageTable from './components/UsageTable.vue'
-import CacheAdvice from './components/CacheAdvice.vue'
-import BudgetPanel from './components/BudgetPanel.vue'
 import { VDateInput } from 'vuetify/labs/VDateInput'
 import { formatDate } from '@bash-scripts/web-shared/format'
 import { toast } from '../../composables/notice'
@@ -100,15 +96,9 @@ const rangeDates = computed({
   },
 })
 
-const notice = computed(() => {
-  const models = data.value?.unpriced_models || []
-  return models.length ? `这些模型没有价格，只算 token 不算钱：${models.join('、')}` : ''
-})
-
 const hasRows = computed(() => !!data.value?.rows.length)
 
-// 提示与错误走全局 snackbar，页面不再为一条消息让出布局。
-watch(notice, (text) => text && toast(text, 'warning'))
+// 错误走全局 snackbar，页面不再为一条消息让出布局。
 watch(error, (text) => text && toast(text, 'error'))
 
 function reload() {

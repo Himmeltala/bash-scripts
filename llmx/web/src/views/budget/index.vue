@@ -8,7 +8,7 @@ import {
   saveBudgets,
   spend,
   toneOf,
-} from '../usage/composables/useBudgets'
+} from '../../composables/useBudgets.js'
 import { fmtMoney } from '../usage/composables/format'
 import { toast } from '../../composables/notice'
 
@@ -31,10 +31,10 @@ function cloneBudgets() {
   }
 }
 
-async function refresh(force = false) {
+async function refresh() {
   loading.value = true
   try {
-    await refreshSpend(force)
+    await refreshSpend()
   } finally {
     loading.value = false
   }
@@ -43,8 +43,8 @@ async function refresh(force = false) {
 onMounted(async () => {
   try {
     await loadBudgets()
-    // 没设预算时加载过程不会去取日报，预算页仍要拿到名称候选。
-    if (!spend.value.loaded) await refreshSpend(true)
+    // 加载预算时会顺带取一次日报；上一次失败时这里再补一次。
+    if (!spend.value.loaded) await refreshSpend()
   } catch (err) {
     toast(err.message, 'error')
   }

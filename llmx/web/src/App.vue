@@ -6,6 +6,7 @@
         <span class="title">llmx</span>
       </v-app-bar-title>
       <template #append>
+        <AlertBell />
         <Metrics :dark="dark" :metrics="metrics" />
         <v-btn
           :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
@@ -49,6 +50,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { PAGES } from './router'
+import AlertBell from './components/AlertBell.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
