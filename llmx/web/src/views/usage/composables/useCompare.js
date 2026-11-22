@@ -2,6 +2,7 @@
 
 import { ref, watch } from 'vue'
 import { formatDate } from '@bash-scripts/web-shared/format'
+import { get } from '../../../composables/useApi'
 import { data } from './useUsage'
 import { query } from './useView'
 
@@ -32,9 +33,7 @@ async function refresh() {
     return
   }
   try {
-    const response = await fetch(`/api/usage?${params.toString()}`, { cache: 'no-store' })
-    const body = await response.json()
-    previous.value = response.ok ? body : null
+    previous.value = await get(`/usage?${params.toString()}`)
   } catch (err) {
     previous.value = null
   }

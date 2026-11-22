@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 import math
-import os
-import tempfile
 import threading
 from pathlib import Path
+
+from fileio import atomic_write_text
 
 KINDS = ("model", "project", "api")
 PERIODS = ("daily", "weekly", "monthly")
@@ -98,20 +98,10 @@ def load(state: Path) -> dict:
 def save(state: Path, data: object) -> dict:
     value = normalize(data)
     path = budget_path(state)
+
+    def fail(exc):
+        raise BudgetError(f"写不了预算文件 {path}: {exc}") from exc
+
     with LOCK:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temp = tempfile.mkstemp(prefix=".budgets-", suffix=".json", dir=path.parent)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    json.dump(value, handle, ensure_ascii=False, indent=2)
-                    handle.write("\n")
-                os.replace(temp, path)
-            except OSError:
-                # 写一半失败时别把临时文件留下。
-                if os.path.exists(temp):
-                    os.unlink(temp)
-                raise
-        except OSError as exc:
-            raise BudgetError(f"写不了预算文件 {path}: {exc}") from exc
+        atomic_write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n", on_error=fail)
     return value

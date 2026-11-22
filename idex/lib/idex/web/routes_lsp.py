@@ -7,6 +7,16 @@ from lsp_client import LspError, LspUnavailable, apply_workspace_edit
 from server_common import MAX_FILE, inside, safe_rel, workspace_lock
 
 
+def _lsp_call(fn, *args):
+    """语言服务器不可用回 400，请求失败回 504；所有接口共用这套映射。"""
+    try:
+        return fn(*args)
+    except LspUnavailable as exc:
+        raise ApiError(400, str(exc))
+    except LspError as exc:
+        raise ApiError(504, str(exc))
+
+
 class LspRoutes:
     """路由表里 lsp/* 那几条的实现，靠 MRO 混进 Handler。"""
 
@@ -51,44 +61,24 @@ class LspRoutes:
 
     def _lsp_query(self, body, action="definition"):
         ws, rel, text, line, character = self._lsp_args(body)
-        try:
-            return self.lsp.query(ws["id"], ws["root"], rel, text, line, character, action)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        return _lsp_call(self.lsp.query, ws["id"], ws["root"], rel, text, line, character, action)
 
     def _lsp_symbols(self, body):
         ws, rel, text = self._lsp_file_args(body)
-        try:
-            return self.lsp.symbols(ws["id"], ws["root"], rel, text)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        return _lsp_call(self.lsp.symbols, ws["id"], ws["root"], rel, text)
 
     def _lsp_hover(self, body):
         ws, rel, text, line, character = self._lsp_args(body)
-        try:
-            return self.lsp.hover(ws["id"], ws["root"], rel, text, line, character)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        return _lsp_call(self.lsp.hover, ws["id"], ws["root"], rel, text, line, character)
 
     def _lsp_completion(self, body):
         ws, rel, text, line, character = self._lsp_args(body)
         trigger = body.get("trigger") or None
         if trigger is not None and (not isinstance(trigger, str) or len(trigger) != 1):
             raise ApiError(400, "trigger 要是单个字符")
-        try:
-            return self.lsp.completion(
-                ws["id"], ws["root"], rel, text, line, character, trigger
-            )
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        return _lsp_call(
+            self.lsp.completion, ws["id"], ws["root"], rel, text, line, character, trigger
+        )
 
     def _lsp_format(self, body):
         ws, rel, text = self._lsp_file_args(body)
@@ -101,41 +91,27 @@ class LspRoutes:
         insert_spaces = body.get("insertSpaces", True)
         if not isinstance(insert_spaces, bool):
             raise ApiError(400, "insertSpaces 要是布尔值")
-        try:
-            return self.lsp.formatting(
-                ws["id"],
-                ws["root"],
-                rel,
-                text,
-                {"tabSize": tab_size, "insertSpaces": insert_spaces},
-            )
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        return _lsp_call(
+            self.lsp.formatting,
+            ws["id"],
+            ws["root"],
+            rel,
+            text,
+            {"tabSize": tab_size, "insertSpaces": insert_spaces},
+        )
 
     def _lsp_diagnostics(self, body):
         ws, rel, text = self._lsp_file_args(body)
-        try:
-            return self.lsp.diagnostics(ws["id"], ws["root"], rel, text)
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        return _lsp_call(self.lsp.diagnostics, ws["id"], ws["root"], rel, text)
 
     def _lsp_rename(self, body, apply=False):
         ws, rel, text, line, character = self._lsp_args(body)
         name = body.get("newName")
         if not isinstance(name, str):
             raise ApiError(400, "要给新名字")
-        try:
-            data = self.lsp.rename_plan(
-                ws["id"], ws["root"], rel, text, line, character, name
-            )
-        except LspUnavailable as exc:
-            raise ApiError(400, str(exc))
-        except LspError as exc:
-            raise ApiError(504, str(exc))
+        data = _lsp_call(
+            self.lsp.rename_plan, ws["id"], ws["root"], rel, text, line, character, name
+        )
         plan = data["plan"]
         summary = {
             "server": data["server"],

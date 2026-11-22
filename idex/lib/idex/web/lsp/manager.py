@@ -110,9 +110,7 @@ class LspManager:
         method = self.ACTIONS.get(action)
         if not method:
             raise LspUnavailable("不认识的动作：%s" % action)
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
-        full = os.path.join(root, path)
+        key, instance, full = self._target(ws, root, path)
         extra = {"context": {"includeDeclaration": True}} if action == "references" else None
         with instance.lock:
             instance.last_used = time.time()
@@ -124,12 +122,10 @@ class LspManager:
         return {"server": key, "locations": normalize_locations(raw, root)}
 
     def completion(self, ws, root, path, text, line, character, trigger=None):
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
+        key, instance, full = self._target(ws, root, path)
         server = self._server_for(instance, text, line)
         if not server.capabilities.get("completionProvider"):
             raise LspUnavailable("%s 语言服务器不支持补全" % SERVERS[key]["title"])
-        full = os.path.join(root, path)
         with instance.lock:
             instance.last_used = time.time()
             raw = server.completion(
@@ -140,13 +136,11 @@ class LspManager:
         return {"server": key, "items": data["items"], "incomplete": data["incomplete"]}
 
     def formatting(self, ws, root, path, text, options):
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
+        key, instance, full = self._target(ws, root, path)
         # Vue 的格式化要整份单文件组件一起改，只能交给 Vue 语言服务器。
         server = instance.server
         if not server.capabilities.get("documentFormattingProvider"):
             raise LspUnavailable("%s 语言服务器不支持格式化" % SERVERS[key]["title"])
-        full = os.path.join(root, path)
         with instance.lock:
             instance.last_used = time.time()
             raw = server.formatting(
@@ -156,9 +150,7 @@ class LspManager:
         return {"server": key, "edits": normalize_format_edits(raw)}
 
     def hover(self, ws, root, path, text, line, character):
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
-        full = os.path.join(root, path)
+        key, instance, full = self._target(ws, root, path)
         with instance.lock:
             instance.last_used = time.time()
             server = self._server_for(instance, text, line)
@@ -168,9 +160,7 @@ class LspManager:
 
     def diagnostics(self, ws, root, path, text):
         """把文件交给服务器，返回当前攒下的诊断；服务器是异步推的，前端隔一会儿再取。"""
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
-        full = os.path.join(root, path)
+        key, instance, full = self._target(ws, root, path)
         language = language_id(key, path)
         with instance.lock:
             instance.last_used = time.time()
@@ -186,9 +176,7 @@ class LspManager:
 
     def symbols(self, ws, root, path, text):
         """整份文件的符号大纲；Vue 由语言服务器给出模板结构。"""
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
-        full = os.path.join(root, path)
+        key, instance, full = self._target(ws, root, path)
         server = instance.server
         with instance.lock:
             instance.last_used = time.time()
@@ -201,9 +189,7 @@ class LspManager:
         name = str(new_name or "").strip()
         if not name or len(name) > 200 or "\n" in name:
             raise LspUnavailable("新名字不能为空，也不能换行")
-        key = self._ready(path)
-        instance = self._instance(ws, key, root)
-        full = os.path.join(root, path)
+        key, instance, full = self._target(ws, root, path)
         language = language_id(key, path)
         with instance.lock:
             instance.last_used = time.time()
@@ -218,6 +204,11 @@ class LspManager:
         plans = [normalize_workspace_edit(first, root), normalize_workspace_edit(second, root)]
         plan = max(plans, key=lambda item: sum(len(entry["edits"]) for entry in item))
         return {"server": key, "plan": plan}
+
+    def _target(self, ws, root, path):
+        """一次拿齐实例、语言键与文件全路径；六个操作都从这里起手。"""
+        key = self._ready(path)
+        return key, self._instance(ws, key, root), os.path.join(root, path)
 
     def _ready(self, path):
         """这个文件能不能查：有对应的语言、服务器受支持且装好了。"""

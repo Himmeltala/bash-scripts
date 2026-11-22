@@ -22,27 +22,20 @@ const pricedRequests = computed(() =>
 )
 
 const money = (value) => (value == null ? '--' : `¥${fmtMoney(value)}`)
-const money4 = (value) =>
-  value == null
-    ? '--'
-    : `¥${Number(value).toLocaleString('zh-CN', {
-        minimumFractionDigits: 4,
-        maximumFractionDigits: 4,
-      })}`
 const tokens = (value) => (value == null ? '--' : fmtTokens(value))
 const perRequest = (value, base) => (base > 0 && value != null ? Number(value) / base : null)
 
 const averages = computed(() => {
   const t = totals.value
   return [
-    { label: '费用', value: money4(perRequest(t.cost, pricedRequests.value)) },
+    { label: '费用', value: money(perRequest(t.cost, pricedRequests.value)) },
     { label: '总 token', value: tokens(perRequest(t.total_tokens, requests.value)) },
     { label: '输入', value: tokens(perRequest(t.input, requests.value)) },
     { label: '缓存读', value: tokens(perRequest(t.cache_read, requests.value)) },
     { label: '缓存写', value: tokens(perRequest(t.cache_write, requests.value)) },
     { label: '输出', value: tokens(perRequest(t.output, requests.value)) },
-    { label: '高峰费用', value: money4(perRequest(t.cost_peak, pricedRequests.value)) },
-    { label: '空闲费用', value: money4(perRequest(t.cost_off, pricedRequests.value)) },
+    { label: '高峰费用', value: money(perRequest(t.cost_peak, pricedRequests.value)) },
+    { label: '空闲费用', value: money(perRequest(t.cost_off, pricedRequests.value)) },
   ]
 })
 

@@ -20,10 +20,7 @@ const items = computed(() => {
     { title: '总 token', value: fmtTokens(totals.total_tokens), icon: 'mdi-vector-triangle' },
     {
       title: '平均每请求费用',
-      value: average == null ? '--' : `¥${average.toLocaleString('zh-CN', {
-        minimumFractionDigits: 4,
-        maximumFractionDigits: 4,
-      })}`,
+      value: average == null ? '--' : `¥${fmtMoney(average)}`,
       icon: 'mdi-scale-balance',
     },
     { title: '合计', value: `¥${fmtMoney(totals.cost || 0)}`, icon: 'mdi-sigma', strong: true },

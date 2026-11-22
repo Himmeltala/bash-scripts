@@ -7,6 +7,7 @@ import {
   refreshSpend,
   saveBudgets,
   spend,
+  toneOf,
 } from '../usage/composables/useBudgets'
 import { fmtMoney } from '../usage/composables/format'
 import { toast } from '../../composables/notice'
@@ -107,11 +108,7 @@ async function save() {
 }
 
 function tone(spent, limit) {
-  if (!limit) return ''
-  const ratio = spent / limit
-  if (ratio >= 1) return 'bad'
-  if (ratio >= 0.8) return 'warn'
-  return ''
+  return toneOf(spent, limit)
 }
 </script>
 

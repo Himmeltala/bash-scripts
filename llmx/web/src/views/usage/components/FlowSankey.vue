@@ -6,7 +6,7 @@ import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { SOURCE_LIST, fmtMoney } from '../composables/format'
-import { CHART_FONT } from '../composables/chartUtils'
+import { CHART_FONT, chartTitle } from '../composables/chartUtils'
 import { useChart } from '../composables/useChart'
 
 echarts.use([SankeyChart, TooltipComponent, CanvasRenderer])
@@ -111,16 +111,8 @@ function option() {
   const { nodes, links } = flow.value
   return {
     animationDuration: 240,
-    notMerge: true,
     textStyle: { fontFamily: CHART_FONT },
-    title: props.title
-      ? {
-          text: props.title,
-          left: 12,
-          top: 6,
-          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: CHART_FONT },
-        }
-      : undefined,
+    title: chartTitle(props.title, skin),
     tooltip: {
       trigger: 'item',
       backgroundColor: skin.surface,

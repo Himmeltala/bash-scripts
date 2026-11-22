@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { data } from '../composables/useUsage'
 import { fmtMoney, fmtNum, fmtTokens } from '../composables/format'
 import { setTag, tagOf } from '../composables/useSessionTags'
+import { get } from '../../../composables/useApi'
 import { toast } from '../../../composables/notice'
 
 const props = defineProps({
@@ -58,10 +59,7 @@ async function load() {
     })
     if (data.value?.since) params.set('since', data.value.since)
     if (data.value?.until) params.set('until', data.value.until)
-    const response = await fetch(`/api/session?${params.toString()}`, { cache: 'no-store' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error || `请求失败（${response.status}）`)
-    detail.value = body
+    detail.value = await get(`/session?${params.toString()}`)
   } catch (err) {
     toast(err.message, 'error')
   } finally {

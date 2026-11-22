@@ -6,7 +6,7 @@ import { LegendComponent, GridComponent, TooltipComponent, VisualMapComponent } 
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { fmtTokens } from '../composables/format'
-import { CHART_FONT, fadeColor } from '../composables/chartUtils'
+import { CHART_FONT, chartTitle, fadeColor } from '../composables/chartUtils'
 import { useChart } from '../composables/useChart'
 
 const PEAK = '高峰'
@@ -226,8 +226,6 @@ function option() {
     : series.map((item) => item.name)
   return {
     animationDuration: 240,
-    // 两个并排的图各自管自己的残影，不清掉旧选项的话换数据后图例会重复叠上去。
-    notMerge: true,
     textStyle: { fontFamily: CHART_FONT },
     grid: isDonut
       ? undefined
@@ -280,14 +278,7 @@ function option() {
           },
         }
       : undefined,
-    title: props.title
-      ? {
-          text: props.title,
-          left: 12,
-          top: 6,
-          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: CHART_FONT },
-        }
-      : undefined,
+    title: chartTitle(props.title, skin),
     legend:
       props.legend && !isHeat
         ? {

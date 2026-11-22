@@ -2,6 +2,7 @@
 
 import { computed, ref } from 'vue'
 import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
+import { call } from '../../../composables/useApi'
 import { fmtMoney } from './format'
 
 const EMPTY = { daily: 0, weekly: 0, monthly: 0, items: [] }
@@ -24,25 +25,13 @@ function hasLimit(value) {
   )
 }
 
-async function request(method = 'GET', data) {
-  const response = await fetch('/api/budget', {
-    method,
-    headers: data ? { 'Content-Type': 'application/json' } : undefined,
-    body: data ? JSON.stringify(data) : undefined,
-    cache: 'no-store',
-  })
-  const body = await response.json()
-  if (!response.ok) throw new Error(body.error || `请求失败（${response.status}）`)
-  return body
-}
-
 // 多处同时进入页面时只读一次，后来的等同一个结果；读成功后不再重复请求。
 export function loadBudgets() {
   if (loaded) return Promise.resolve(budgets.value)
   if (!loading) {
     loading = (async () => {
       try {
-        budgets.value = await request()
+        budgets.value = await call('GET', '/budget')
         loaded = true
         await refreshSpend()
         return budgets.value
@@ -55,7 +44,7 @@ export function loadBudgets() {
 }
 
 export async function saveBudgets(value) {
-  const saved = await request('POST', value)
+  const saved = await call('POST', '/budget', value)
   budgets.value = saved
   await refreshSpend()
   return saved
@@ -78,9 +67,7 @@ export async function refreshSpend(force = false) {
       since: monthStart,
       until: formatDate(today),
     })
-    const response = await fetch(`/api/usage?${params.toString()}`, { cache: 'no-store' })
-    const body = await response.json()
-    if (!response.ok) return
+    const body = await call('GET', `/usage?${params.toString()}`)
     const daily = new Map()
     const items = { model: {}, project: {}, api: {} }
     for (const row of body.rows || []) {
@@ -113,6 +100,22 @@ function ratioText(ratio) {
   return `${(ratio * 100).toFixed(1)}%`
 }
 
+// 花掉八成算接近上限，超了算超支；0 表示不设上限。
+export function toneOf(spent, limit) {
+  if (!limit) return ''
+  const ratio = spent / limit
+  if (ratio >= 1) return 'bad'
+  if (ratio >= 0.8) return 'warn'
+  return ''
+}
+
+function alertOf(label, used, limit) {
+  const level = toneOf(used, limit)
+  if (!level) return null
+  const detail = level === 'bad' ? '已超' : `已用 ${ratioText(used / limit)}`
+  return { level, text: `${label}预算${detail}：¥${fmtMoney(used)} / ¥${fmtMoney(limit)}` }
+}
+
 // 超支或达到八成时给一条提醒；总额按日、周、月，分项只有月度上限。
 export const alerts = computed(() => {
   const values = budgets.value || EMPTY
@@ -120,31 +123,16 @@ export const alerts = computed(() => {
   for (const key of ['daily', 'weekly', 'monthly']) {
     const limit = Number(values[key]) || 0
     if (!limit) continue
-    const used = Number(spend.value[key]) || 0
-    const ratio = used / limit
-    if (ratio >= 1) {
-      out.push({ level: 'bad', text: `${PERIOD_NAMES[key]}预算已超：¥${fmtMoney(used)} / ¥${fmtMoney(limit)}` })
-    } else if (ratio >= 0.8) {
-      out.push({
-        level: 'warn',
-        text: `${PERIOD_NAMES[key]}预算已用 ${ratioText(ratio)}：¥${fmtMoney(used)} / ¥${fmtMoney(limit)}`,
-      })
-    }
+    const alert = alertOf(PERIOD_NAMES[key], Number(spend.value[key]) || 0, limit)
+    if (alert) out.push(alert)
   }
   for (const item of values.items || []) {
     const limit = Number(item.limit) || 0
     if (!limit) continue
     const used = Number(spend.value.items?.[item.kind]?.[item.name]) || 0
-    const ratio = used / limit
     const label = `${KIND_NAMES[item.kind] || item.kind} ${item.name} 的月度`
-    if (ratio >= 1) {
-      out.push({ level: 'bad', text: `${label}预算已超：¥${fmtMoney(used)} / ¥${fmtMoney(limit)}` })
-    } else if (ratio >= 0.8) {
-      out.push({
-        level: 'warn',
-        text: `${label}预算已用 ${ratioText(ratio)}：¥${fmtMoney(used)} / ¥${fmtMoney(limit)}`,
-      })
-    }
+    const alert = alertOf(label, used, limit)
+    if (alert) out.push(alert)
   }
   return out
 })

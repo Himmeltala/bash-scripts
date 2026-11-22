@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { formatBytes, formatDateTime, formatTimestamp } from '@bash-scripts/web-shared/format'
+import { formatBytes, formatDateTime, formatNumber, formatTimestamp } from '@bash-scripts/web-shared/format'
+import { get, post } from '../../composables/useApi'
 import { toast } from '../../composables/notice'
 
 const status = ref(null)
@@ -13,10 +14,7 @@ const keepDays = ref(180)
 async function load() {
   loading.value = true
   try {
-    const response = await fetch('/api/store', { cache: 'no-store' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error || `请求失败（${response.status}）`)
-    status.value = body
+    status.value = await get('/store')
   } catch (err) {
     toast(err.message, 'error')
   } finally {
@@ -27,13 +25,7 @@ async function load() {
 async function act(action, extra = {}) {
   busy.value = action
   try {
-    const response = await fetch('/api/store', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...extra }),
-    })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error || `请求失败（${response.status}）`)
+    const body = await post('/store', { action, ...extra })
     toast(
       action === 'gc'
         ? `清理完成：删除 ${body.removed} 行，${body.sessions} 个会话过期`
@@ -96,8 +88,8 @@ const warnings = computed(() => {
         <v-card-text class="grid">
           <div class="wide"><span class="label">位置</span><span class="value mono">{{ status.path }}</span></div>
           <div><span class="label">大小</span><span class="value">{{ formatBytes(status.size || 0) }}</span></div>
-          <div><span class="label">请求</span><span class="value">{{ (status.requests || 0).toLocaleString('zh-CN') }}</span></div>
-          <div><span class="label">会话</span><span class="value">{{ (status.sessions || 0).toLocaleString('zh-CN') }}</span></div>
+          <div><span class="label">请求</span><span class="value">{{ formatNumber(status.requests) }}</span></div>
+          <div><span class="label">会话</span><span class="value">{{ formatNumber(status.sessions) }}</span></div>
           <div>
             <span class="label">最近采集</span>
             <span class="value">{{ formatTimestamp(status.seen_at, { fallback: '还没有采集记录' }) }}</span>
@@ -133,8 +125,8 @@ const warnings = computed(() => {
           <tbody>
             <tr v-for="item in status.sources || []" :key="item.source">
               <td>{{ item.source }}</td>
-              <td class="num">{{ item.requests.toLocaleString('zh-CN') }}</td>
-              <td class="num">{{ item.sessions.toLocaleString('zh-CN') }}</td>
+              <td class="num">{{ formatNumber(item.requests) }}</td>
+              <td class="num">{{ formatNumber(item.sessions) }}</td>
               <td>{{ formatTimestamp(item.seen_at, { fallback: '还没有采集记录' }) }}</td>
             </tr>
           </tbody>

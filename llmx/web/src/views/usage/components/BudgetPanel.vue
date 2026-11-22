@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { alerts, budgets, loadBudgets, refreshSpend, saveBudgets, spend } from '../composables/useBudgets'
+import { alerts, budgets, loadBudgets, refreshSpend, saveBudgets, spend, toneOf } from '../composables/useBudgets'
 import { fmtMoney } from '../composables/format'
 import { toast } from '../../../composables/notice'
 
@@ -17,11 +17,7 @@ const periods = computed(() => [
 const configured = computed(() => periods.value.filter((item) => item.limit > 0))
 
 function tone(item) {
-  if (!item.limit) return ''
-  const ratio = item.spent / item.limit
-  if (ratio >= 1) return 'bad'
-  if (ratio >= 0.8) return 'warn'
-  return ''
+  return toneOf(item.spent, item.limit)
 }
 
 async function startEdit() {

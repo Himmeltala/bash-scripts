@@ -8,146 +8,33 @@
 """
 
 import argparse
-import hashlib
-import json
-import os
-import queue
 import re
-import shlex
 import shutil
-import subprocess
 import sys
-import time
-import uuid
-import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "services"))
 # 同目录下的 LSP 桥接；按文件加载本模块时也能找到。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lsp_client import LspError, LspManager, LspUnavailable, apply_workspace_edit
-from fileio import PreviewError, read_json, read_text_preview, write_json, write_text_preserve_newlines
+from lsp_client import LspManager
 from metrics import Metrics
 from netutil import is_loopback_address as is_loopback
-from pathutil import PathError, safe_relative, within
 from runtime import check_static, serve as serve_web, start_streams
 from sse import MetricsStream
 from stores import LayoutStore
 from routes_lsp import LspRoutes
-from web import ApiError, STREAMED, WebHandler, zip_dir
-from server_common import MAX_FILE, inside, log, safe_rel, workspace_lock
-from vcs_cli import GIT_TIMEOUT, SVN_TIMEOUT, git, svn
-from browse_fs import browse_file, browse_files, browse_list, browse_rel, browse_search, delete_entry, make_entry, read_unversioned, rename_entry, save_file, save_upload
+from web import ApiError, WebHandler
+from server_common import log
 from routes_browse import BrowseRoutes
-from vcs_query import (
-    svn_revision,
-    svn_log,
-    FETCH_TIMEOUT,
-    LOG_DEFAULT,
-    LOG_FMT,
-    LOG_MAX,
-    LOG_SKIP_MAX,
-    MAX_TEXT,
-    STATUS_ORDER,
-    UNVERSIONED_MAX,
-    UNVERSIONED_SKIP,
-    WIDE_LINE,
-    change_diff,
-    clean_paths,
-    clip,
-    column_item,
-    diff_of,
-    expand_unversioned,
-    git_ahead_behind,
-    git_branch,
-    git_branches,
-    git_change_diff,
-    git_changes,
-    git_commit_detail,
-    git_diff_of,
-    git_head,
-    git_info,
-    git_item,
-    git_log,
-    git_op_env,
-    git_ref_exists,
-    git_ref_labels,
-    git_remote_sync,
-    git_remotes,
-    git_revision_diff,
-    git_stage_args,
-    git_sync_info,
-    git_unstage_args,
-    git_upstream,
-    is_wide,
-    node_text,
-    parse_git_log,
-    parse_git_status,
-    parse_log,
-    parse_name_status,
-    parse_status,
-    revision_diff,
-    split_status,
-    svn_add_args,
-    svn_add_paths,
-    svn_commit_detail,
-    svn_entry_local,
-    svn_info,
-    svn_log_meta,
-    svn_status_state,
-    svn_sync_info,
-    svn_unadd_args,
-    svn_unadd_paths,
-    svn_working_revisions,
-    unversioned_files,
-    xml_of,
-)
-from vcs_ops import (
-    COMMIT_MESSAGE_MAX,
-    git_checkout_args,
-    git_commit_commands,
-    git_pull_args,
-    git_push_args,
-    operation_plan,
-    svn_commit_args,
-    svn_update_args,
-    git_op,
-    git_pull,
-    git_push,
-    svn_op,
-    svn_update,
-    svn_commit,
-)
-from vcs_summary import (
-    changes_signature,
-    changes_payload,
-    workspace_paths,
-    detect_vcs,
-)
 from routes_vcs import VcsRoutes
 from routes_stream import StreamRoutes
 from routes_jobs import JobRoutes
 from routes_workspaces import WorkspacesRoutes, _add_workspace, _forget_workspace, _save_groups, _save_settings, _set_alias, list_dirs
-from server_stores import SEARCH_IGNORE_DEFAULTS, SEARCH_IGNORE_MAX, SEARCH_IGNORE_LEN, Settings, Workspaces, clean_search_ignore
-from event_hub import HUB, SSE_HEARTBEAT, WATCH_INTERVAL, EventHub, StateStream
+from server_stores import Settings, Workspaces
+from event_hub import StateStream
 
-# 一次回给页面的文本上限：大文件的整份差异撑不住页面，截断后照样能看开头。
-# 单行超过这个宽度按大文件处理：压缩过的 JS/CSS 一行几十万字符，页面渲染不动。
-# 未纳入版本控制的文件没有差异可算，直接读内容预览，超过这个大小就不给。
-SVN_TIMEOUT = 30
-GIT_TIMEOUT = 30
-# fetch 是取日志前顺手同步远端，等太久就把页面拖住了，超时先按本地记录出。
-# 浏览目录时一层最多回这么多项，再多的目录列出来也翻不动。
-# 快速打开要一次列出工作副本里的文件，到上限就停。
-# 浏览目录的搜索：命中与扫过的文件都设上限，大工作副本不至于把页面拖住。
-# 搜索默认跳过的目录名，按名字在工作副本里任何一层匹配；设置页可以改。
-# 拉取、推送、更新与提交都要连远端，超时比查询宽松。
-# 任务跑完之后还留一段时间，页面晚连上来也能看到完整输出。
-# SSE 心跳与工作副本状态检查的间隔。
-# 登记表很小，变了就推，稍快一点页面也不觉得有延迟。
 # 页面头部的性能指标只采一份给所有页面。
 METRICS = Metrics()
 

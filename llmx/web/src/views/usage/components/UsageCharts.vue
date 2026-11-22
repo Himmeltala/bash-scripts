@@ -108,33 +108,25 @@ const shortDays = computed(() => ({
   series: days.value.series,
 }))
 
-// 按会话报表的图：取费用最高的前 12 个会话，各来源分别花了多少。
-const sessionChart = computed(() => {
-  const money = new Map()
-  for (const row of rows.value) {
-    const name = row.session || '未记录'
-    money.set(name, (money.get(name) || 0) + (Number(row.cost) || 0))
-  }
-  const top = [...money.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([name]) => name)
-  return split(top, (row) => row.session || '未记录')
-})
+// 按会话、项目、API 报表的图：取费用最高的前 12 项，各来源分别花了多少。
+function topChart(field) {
+  return computed(() => {
+    const money = new Map()
+    for (const row of rows.value) {
+      const name = row[field] || '未记录'
+      money.set(name, (money.get(name) || 0) + (Number(row.cost) || 0))
+    }
+    const top = [...money.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([name]) => name)
+    return split(top, (row) => row[field] || '未记录')
+  })
+}
 
-// 按项目报表的图：取费用最高的前 12 个项目，各来源分别花了多少。
-const projectChart = computed(() => {
-  const money = new Map()
-  for (const row of rows.value) {
-    const name = row.project || '未记录'
-    money.set(name, (money.get(name) || 0) + (Number(row.cost) || 0))
-  }
-  const top = [...money.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([name]) => name)
-  return split(top, (row) => row.project || '未记录')
-})
+const sessionChart = topChart('session')
+const projectChart = topChart('project')
+const apiChart = topChart('api')
 
 // 单位成本：每千 token 花多少钱。按当前报表的横轴刻度聚合，不区分来源。
 const theme = useTheme()
@@ -188,20 +180,6 @@ const unitChart = computed(() => {
       },
     ],
   }
-})
-
-// 按 API 报表的图：取费用最高的前 12 个接口地址，各来源分别花了多少。
-const apiChart = computed(() => {
-  const money = new Map()
-  for (const row of rows.value) {
-    const name = row.api || '未记录'
-    money.set(name, (money.get(name) || 0) + (Number(row.cost) || 0))
-  }
-  const top = [...money.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([name]) => name)
-  return split(top, (row) => row.api || '未记录')
 })
 </script>
 

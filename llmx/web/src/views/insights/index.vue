@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { fmtMoney, fmtNum, fmtTokens } from '../usage/composables/format'
+import { get } from '../../composables/useApi'
 import { toast } from '../../composables/notice'
 
 const range = ref('30')
@@ -13,9 +14,7 @@ async function load() {
     const params = new URLSearchParams({ command: 'daily' })
     if (range.value === 'all') params.set('all', '1')
     else params.set('days', range.value)
-    const response = await fetch(`/api/usage?${params.toString()}`, { cache: 'no-store' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error || `请求失败（${response.status}）`)
+    const body = await get(`/usage?${params.toString()}`)
     rows.value = body.rows || []
   } catch (err) {
     toast(err.message, 'error')

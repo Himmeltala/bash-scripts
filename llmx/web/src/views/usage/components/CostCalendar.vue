@@ -6,7 +6,7 @@ import { CalendarComponent, TooltipComponent, VisualMapComponent } from 'echarts
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { fmtMoney } from '../composables/format'
-import { CHART_FONT, fadeColor } from '../composables/chartUtils'
+import { CHART_FONT, chartTitle, fadeColor } from '../composables/chartUtils'
 import { useChart } from '../composables/useChart'
 
 echarts.use([HeatmapChart, CalendarComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
@@ -49,16 +49,8 @@ function option() {
   const range = dates.length ? [dates[0], dates[dates.length - 1]] : undefined
   return {
     animationDuration: 240,
-    notMerge: true,
     textStyle: { fontFamily: CHART_FONT },
-    title: props.title
-      ? {
-          text: props.title,
-          left: 12,
-          top: 6,
-          textStyle: { color: skin['on-surface'], fontSize: 13, fontWeight: 600, fontFamily: CHART_FONT },
-        }
-      : undefined,
+    title: chartTitle(props.title, skin),
     tooltip: {
       trigger: 'item',
       backgroundColor: skin.surface,
