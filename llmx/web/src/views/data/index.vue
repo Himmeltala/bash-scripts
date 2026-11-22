@@ -223,7 +223,6 @@ const warnings = computed(() => {
   color: rgb(var(--v-theme-success));
 }
 .num {
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 </style>

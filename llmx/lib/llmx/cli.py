@@ -278,6 +278,21 @@ def _collect(
     records = _range_records(config, since, until, getattr(args, "source", None))
 
     book = config.book
+    # 每个原始模型名只解析一次；选项按收窄前的记录算，选了一个模型后别的模型仍留在下拉里。
+    names = {}
+    projects = set()
+    for record in records:
+        if record.model not in names:
+            names[record.model] = report._model_name(record, book)
+        if record.project:
+            projects.add(record.project)
+    facets = {"models": sorted(set(names.values())), "projects": sorted(projects)}
+    records = _narrow_records(
+        records,
+        getattr(args, "model", None),
+        getattr(args, "project", None),
+        names,
+    )
     unpriced = _unpriced_models(records, book)
     if command == "session":
         rows, total = report.sessions(records, book)
@@ -296,6 +311,7 @@ def _collect(
         "timezone": str(book.tz),
         "currency": "CNY",
         "unpriced_models": unpriced,
+        "facets": facets,
         "rows": rows,
         "totals": total,
     }
@@ -885,6 +901,18 @@ def _day(text: str | None) -> date | None:
         return date.fromisoformat(text)
     except ValueError as exc:
         raise UsageError(f"日期 {text} 不是 YYYY-MM-DD") from exc
+
+
+def _narrow_records(records, models=None, projects=None, names=None):
+    """按模型与项目收窄；模型用 names（原始名到显示名）匹配，和页面下拉的选项一致。"""
+    model_set = set(models or ())
+    project_set = set(projects or ())
+    return [
+        record
+        for record in records
+        if (not model_set or (names or {}).get(record.model) in model_set)
+        and (not project_set or record.project in project_set)
+    ]
 
 
 def _in_range(at: datetime, book: PriceBook, since: date | None, until: date | None) -> bool:

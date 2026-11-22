@@ -10,6 +10,7 @@ import {
   toneOf,
 } from '../../composables/useBudgets.js'
 import { fmtMoney } from '../usage/composables/format'
+import { warningTone } from '../../composables/useWarnings.js'
 import { toast } from '../../composables/notice'
 
 const loading = ref(false)
@@ -116,16 +117,17 @@ function tone(spent, limit) {
   <v-container fluid class="pa-2 page">
     <p class="hint">预算存在服务端，所有设备共用；花费按本月日报聚合。0 表示不设上限。</p>
 
-    <v-alert
-      v-for="item in alerts"
-      :key="item.text"
-      :type="item.level === 'bad' ? 'error' : 'warning'"
-      variant="tonal"
-      density="compact"
-      class="block"
-    >
-      {{ item.text }}
-    </v-alert>
+    <div v-if="alerts.length" class="alerts">
+      <v-alert
+        v-for="item in alerts"
+        :key="item.text"
+        :type="warningTone([item])"
+        variant="tonal"
+        density="compact"
+      >
+        {{ item.text }}
+      </v-alert>
+    </div>
 
     <v-card variant="flat" class="block">
       <v-card-title>总预算</v-card-title>
@@ -244,6 +246,14 @@ function tone(spent, limit) {
   height: calc(100vh - var(--v-layout-top));
   overflow: auto;
 }
+/* 多个告警并排一行；放不下时再换行，不各自占一整行。 */
+.alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .block {
   margin-bottom: 10px;
 }
@@ -296,10 +306,14 @@ function tone(spent, limit) {
   color: rgb(var(--v-theme-success));
 }
 .num {
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .table {
   background: transparent;
+}
+
+/* v-table 默认按内容收窄，撑满所在卡片。 */
+.table :deep(.v-table__wrapper > table) {
+  width: 100%;
 }
 </style>

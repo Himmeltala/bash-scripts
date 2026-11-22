@@ -71,18 +71,28 @@ def _args(config: Config, query: dict[str, list[str]]) -> tuple[argparse.Namespa
         values = query.get(name) or []
         return values[0] if values else None
 
+    def csv(name: str) -> list[str]:
+        return [item.strip() for item in (first(name) or "").split(",") if item.strip()]
+
     args = argparse.Namespace()
     command = first("command") or "daily"
     if command not in COMMANDS:
         raise cli.UsageError(f"未知报表 {command}，可选 {'、'.join(COMMANDS)}")
     args.command = command
 
-    sources = [item for item in (first("source") or "").split(",") if item]
+    sources = csv("source")
     for name in sources:
         if name not in SOURCE_ORDER:
             raise cli.UsageError(f"未知来源 {name}，可选 {'、'.join(SOURCE_ORDER)}")
     if sources:
         args.source = sources
+
+    models = csv("model")
+    if models:
+        args.model = models
+    projects = csv("project")
+    if projects:
+        args.project = projects
 
     # 页面选「全部历史」时不带 days，另外带一个 all=1；range=all 也兼容手拼的地址。
     if first("all") or first("range") == "all":

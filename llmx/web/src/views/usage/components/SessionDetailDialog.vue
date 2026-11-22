@@ -31,11 +31,11 @@ const headers = [
   { title: '时间', key: 'at', width: 140 },
   { title: '模型', key: 'model', width: 180 },
   { title: '项目', key: 'project', width: 140 },
-  { title: '输入', key: 'input', align: 'end', width: 100 },
-  { title: '缓存读', key: 'cache_read', align: 'end', width: 100 },
-  { title: '输出', key: 'output', align: 'end', width: 100 },
-  { title: '命中', key: 'cache_hit', align: 'end', width: 84 },
-  { title: '费用', key: 'cost', align: 'end', width: 100 },
+  { title: '输入', key: 'input', width: 100 },
+  { title: '缓存读', key: 'cache_read', width: 100 },
+  { title: '输出', key: 'output', width: 100 },
+  { title: '命中', key: 'cache_hit', width: 84 },
+  { title: '费用', key: 'cost', width: 100 },
 ]
 
 function cell(item, key) {

@@ -12,5 +12,6 @@ import '@fontsource/jetbrains-mono/latin-500.css'
 import '@fontsource/jetbrains-mono/latin-700.css'
 import '@bash-scripts/web-shared/style.css'
 import '@bash-scripts/web-shared/tailwind.css'
+import './table.css'
 
 createApp(App).use(vuetify).use(router).mount('#app')

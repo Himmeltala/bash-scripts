@@ -115,10 +115,6 @@ watch(
   margin-top: 0.5rem;
 }
 
-.num {
-  text-align: right;
-}
-
 .mono {
   font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
     'PingFang SC', 'Microsoft YaHei', sans-serif;

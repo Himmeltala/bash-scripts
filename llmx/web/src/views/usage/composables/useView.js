@@ -1,4 +1,4 @@
-// 视图状态：报表、范围、来源与自定义日期存在浏览器里，刷新与来回切页都保持原样。
+// 视图状态：报表、范围、来源、模型、项目与自定义日期存在浏览器里，刷新与来回切页都保持原样。
 
 import { useLocalStorage } from '@vueuse/core'
 import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
@@ -30,7 +30,15 @@ const ALL_SOURCES = SOURCE_LIST.map((item) => item.key)
 
 export const view = useLocalStorage(
   'llmx.usage-view',
-  { command: 'daily', range: '14', since: '', until: '', sources: ALL_SOURCES.slice() },
+  {
+    command: 'daily',
+    range: '14',
+    since: '',
+    until: '',
+    sources: ALL_SOURCES.slice(),
+    models: [],
+    projects: [],
+  },
   { mergeDefaults: true, writeDefaults: false }
 )
 
@@ -62,5 +70,7 @@ export function query(extra = {}) {
     params.set('days', state.range)
   }
   if (state.sources.length < SOURCES.length) params.set('source', state.sources.join(','))
+  if (state.models.length) params.set('model', state.models.join(','))
+  if (state.projects.length) params.set('project', state.projects.join(','))
   return params
 }

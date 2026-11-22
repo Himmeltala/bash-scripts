@@ -44,13 +44,17 @@ watch([sortKey, sortDesc], () => saveSort(command.value, sortKey.value, sortDesc
 
 const columns = computed(() => COLUMNS[command.value] || COLUMNS.daily)
 
-// 会话可以标为忽略，默认不占表格；要看时勾一下上面的开关。
+// 会话可以标为收藏或忽略；默认隐藏忽略的，也可以只看收藏的。
 const showIgnored = ref(false)
+const onlyStarred = ref(false)
 
 const rows = computed(() => {
   let list = [...(data.value?.rows || [])]
-  if (command.value === 'session' && !showIgnored.value) {
-    list = list.filter((row) => !tagOf(row).ignored)
+  if (command.value === 'session') {
+    list = list.filter((row) => {
+      const tag = tagOf(row)
+      return (!onlyStarred.value || tag.star) && (showIgnored.value || !tag.ignored)
+    })
   }
   const key = sortKey.value
   const column = columns.value.find((item) => item.key === key)
@@ -80,19 +84,16 @@ const WIDTH = {
   cache_saved: 104,
 }
 
-// 表头一律居中；正文单元格用 cell-props 统一靠右，标题和数值都贴着右边界。
+// 表头与正文的居中统一由全局 table.css 负责，这里只管列与宽度。
 const headers = computed(() =>
   columns.value.map((column) => ({
     title: column.label,
     key: column.key,
-    align: 'center',
     sortable: true,
     width: WIDTH[column.key],
     nowrap: true,
   })),
 )
-
-const cellProps = () => ({ class: 'text-end' })
 
 // 缓存命中是固定口径；请求数、token 与费用随报表维度变化，按本报表内的分位取档：
 // 75% 以下绿，75% 到 90% 黄，90% 以上红。每张报表各算各的，不会拿小时行去比日行。
@@ -140,7 +141,7 @@ const totalsRow = computed(() => data.value?.totals || {})
 
 const sourceOf = (key) => SOURCE_LIST.find((item) => item.key === key)
 
-// 表里的数字带千分位，跟卡片一致；合计行是右对齐的千分位串，宽度有限就留空让标题提示。
+// 表里的数字带千分位，跟卡片一致；合计行是居中的千分位串，宽度有限就留空让标题提示。
 const cell = (column, row, blankMissing = false) => {
   const text = cellValue(column, row, blankMissing)
   return column.num ? formatNumber(row[column.key]) : text
@@ -171,6 +172,12 @@ function rowProps({ item }) {
   <v-card variant="flat" class="table-card">
     <div v-if="command === 'session'" class="table-tools">
       <v-checkbox
+        v-model="onlyStarred"
+        density="compact"
+        hide-details
+        label="只看收藏的会话"
+      />
+      <v-checkbox
         v-model="showIgnored"
         density="compact"
         hide-details
@@ -189,7 +196,6 @@ function rowProps({ item }) {
       hide-default-footer
       :sort-by="[{ key: sortKey, order: sortDesc ? 'desc' : 'asc' }]"
       :row-props="rowProps"
-      :cell-props="cellProps"
       @update:sort-by="(value) => { sortKey = value?.[0]?.key || ''; sortDesc = value?.[0]?.order === 'desc' }"
     >
       <template v-for="column in columns" :key="column.key" #[`item.${column.key}`]="{ item }">
@@ -216,7 +222,7 @@ function rowProps({ item }) {
 
       <template #tfoot>
         <tr class="total-row">
-          <td v-for="(column, index) in columns" :key="column.key" class="text-end">
+          <td v-for="(column, index) in columns" :key="column.key">
             {{
               index === 0
                 ? '合计'
@@ -243,6 +249,8 @@ function rowProps({ item }) {
 
 .table-tools {
   flex: none;
+  display: flex;
+  gap: 1rem;
   padding: 4px 12px 0;
 }
 

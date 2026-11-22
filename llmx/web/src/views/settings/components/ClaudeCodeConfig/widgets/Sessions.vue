@@ -122,11 +122,11 @@ const headers = [
   { title: '项目', key: 'project' },
   { title: '开始', key: 'started', width: 130 },
   { title: '最后活动', key: 'ended', width: 130 },
-  { title: '请求', key: 'requests', align: 'end', width: 80 },
-  { title: 'token', key: 'tokensText', align: 'end', width: 100 },
-  { title: '费用', key: 'costText', align: 'end', width: 100 },
-  { title: '大小', key: 'sizeText', align: 'end', width: 90 },
-  { title: '', key: 'actions', sortable: false, align: 'end', width: 80 },
+  { title: '请求', key: 'requests', width: 80 },
+  { title: 'token', key: 'tokensText', width: 100 },
+  { title: '费用', key: 'costText', width: 100 },
+  { title: '大小', key: 'sizeText', width: 90 },
+  { title: '', key: 'actions', sortable: false, width: 80 },
 ]
 
 const projects = computed(() =>

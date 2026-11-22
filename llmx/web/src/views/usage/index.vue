@@ -35,20 +35,46 @@
           multiple="range"
           class="range-pick"
         />
-        <v-chip-group v-model="view.sources" multiple filter selected-class="text-primary">
-          <v-chip
-            v-for="item in SOURCES"
-            :key="item.key"
-            :value="item.key"
-            variant="tonal"
-            size="small"
-          >
-            <template #prepend>
-              <BrandIcon :name="item.key" :size="16" />
-            </template>
-            {{ item.name }}
-          </v-chip>
-        </v-chip-group>
+        <v-select
+          v-model="view.sources"
+          :items="SOURCES"
+          item-title="name"
+          item-value="key"
+          label="来源"
+          multiple
+          density="compact"
+          variant="outlined"
+          hide-details
+          class="source-pick"
+        >
+          <template #item="{ props: itemProps, item }">
+            <v-list-item v-bind="itemProps">
+              <template #prepend>
+                <BrandIcon :name="item.raw.key" :size="16" />
+              </template>
+            </v-list-item>
+          </template>
+        </v-select>
+        <v-select
+          v-model="view.models"
+          :items="modelOptions"
+          label="模型"
+          multiple
+          density="compact"
+          variant="outlined"
+          hide-details
+          class="narrow-pick"
+        />
+        <v-select
+          v-model="view.projects"
+          :items="projectOptions"
+          label="项目"
+          multiple
+          density="compact"
+          variant="outlined"
+          hide-details
+          class="narrow-pick"
+        />
       </div>
     </v-sheet>
 
@@ -65,7 +91,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { COMMANDS, RANGES, SOURCES, view } from './composables/useView'
+import { COMMANDS, RANGES, SOURCES, query, view } from './composables/useView'
 import { close as closeStream, data, error, subscribe } from './composables/useUsage'
 import BrandIcon from '../../components/BrandIcon.vue'
 import SummaryCards from './components/SummaryCards.vue'
@@ -97,6 +123,8 @@ const rangeDates = computed({
 })
 
 const hasRows = computed(() => !!data.value?.rows.length)
+const modelOptions = computed(() => data.value?.facets?.models || [])
+const projectOptions = computed(() => data.value?.facets?.projects || [])
 
 // 错误走全局 snackbar，页面不再为一条消息让出布局。
 watch(error, (text) => text && toast(text, 'error'))
@@ -105,16 +133,8 @@ function reload() {
   subscribe()
 }
 
-watch(
-  () => [
-    view.value.command,
-    view.value.range,
-    view.value.since,
-    view.value.until,
-    view.value.sources.join(','),
-  ],
-  reload
-)
+// 查询串是唯一的参数来源：新增筛选项只改 useView.query()，这里不用跟着列字段。
+watch(() => query().toString(), reload)
 
 function onVisible() {
   if (document.hidden) closeStream()
@@ -172,6 +192,22 @@ onBeforeUnmount(() => {
 
 .pick {
   flex: 0 0 9.5rem;
+}
+
+.source-pick {
+  flex: 0 1 16rem;
+  min-width: 11rem;
+}
+
+.narrow-pick {
+  flex: 0 1 12rem;
+  min-width: 9rem;
+}
+
+/* 多个来源在同一条里用逗号连起来，超出宽度省略，不换行撑高。 */
+.source-pick :deep(.v-field__input) {
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 /* 范围输入要放下两个日期和清除按钮，比单个下拉宽一些。 */
