@@ -3,6 +3,8 @@
 readonly SKIP_ARGS='-Dmaven.main.skip=true -Dmaven.test.skip=true'
 # 启动方式。auto 由脚本判定，其余三个由命令行指定，见 usage。
 readonly MODE_AUTO='auto' MODE_COMPILE='compile' MODE_NO_COMPILE='no-compile' MODE_REBUILD='rebuild'
+# 启动前装依赖：-pl 只编当前模块，兄弟模块从本地仓库取 jar，源码改了没装就会「找不到符号」。
+PREP_DEPS=0
 # 模块目录下最新的 class 文件路径，供 find -newer 参照；一次 find 加排序取头部，不为每个 class 派生 stat。
 newest_class_file() {
   local classes=$1/target/classes
@@ -53,6 +55,96 @@ count_classless_sources() {
   printf '%s\n' "$n"
 }
 
+# 装依赖的标记目录：按工作区分开，文件 mtime 就是上次装成功的时刻。
+install_stamp_dir() {
+  printf '%s/install-stamps/%s\n' "$CACHE_DIR" "$(printf '%s' "$1" | md5sum | cut -c1-16)"
+}
+
+# 启动模块在本工程里直接与间接依赖的模块目录，不含启动模块自身。走 pom 里的依赖图，
+# 本工程没有的依赖（第三方 jar）跳过。
+dep_module_dirs() {
+  local app=$1 pom id dep
+  local -a queue=() seen=()
+  id=$(project_artifact_id "$app/pom.xml")
+  [[ -n "$id" ]] || return 0
+  seen=("$id")
+  queue=("$id")
+  while ((${#queue[@]})); do
+    id=${queue[0]}
+    queue=("${queue[@]:1}")
+    pom=${ARTIFACT_POM_VAL[$id]:-}
+    [[ -n "$pom" ]] || continue
+    while IFS= read -r dep; do
+      [[ -n "$dep" ]] || continue
+      [[ " ${seen[*]} " == *" $dep "* ]] && continue
+      seen+=("$dep")
+      queue+=("$dep")
+    done <<< "${POM_DEPS_VAL[$pom]:-}"
+  done
+  for id in "${seen[@]:1}"; do
+    pom=${ARTIFACT_POM_VAL[$id]:-}
+    [[ -n "$pom" ]] && parent_dir "$pom"
+  done
+}
+
+# 依赖模块要不要重新装：没装过、源码比 class 新、class 或 pom 比上次装新，任一条成立就装。
+# 源码比 class 新是改了还没编；class 比标记新是别处编过但未必装过；pom 比标记新说明依赖变了。
+module_needs_install() {
+  local dir=$1 stamp=$2 newest r d depth=0
+  local -a roots=()
+  for r in "$dir/src/main/java" "$dir/src/main/kotlin" "$dir/src/main/groovy" "$dir/src/main/scala"; do
+    [[ -d "$r" ]] && roots+=("$r")
+  done
+  ((${#roots[@]})) || return 1
+  [[ -f "$stamp" ]] || return 0
+  newest=$(newest_class_file "$dir") || return 0
+  [[ -n $(find "${roots[@]}" -type f -newer "$newest" -print -quit 2>/dev/null) ]] && return 0
+  [[ "$newest" -nt "$stamp" ]] && return 0
+  d=$dir
+  while [[ -f "$d/pom.xml" && $depth -lt 8 ]]; do
+    [[ "$d/pom.xml" -nt "$stamp" ]] && return 0
+    d=$(parent_dir "$d")
+    [[ -z "$d" || "$d" == '/' ]] && break
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
+# 本次启动要补装的依赖模块，一行一个目录；没有要装的返回 1。
+stale_dep_modules() {
+  local workdir=$1 plpath=$2 base dir
+  base=$(install_stamp_dir "$workdir")
+  local -a dirs=()
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    module_needs_install "$dir" "$base/${dir#"$workdir"/}" && dirs+=("$dir")
+  done < <(dep_module_dirs "$workdir/$plpath")
+  ((${#dirs[@]})) || return 1
+  printf '%s\n' "${dirs[@]}"
+}
+
+# 启动前只装真正过期的依赖模块，不碰没改的模块与无关模块；装失败就退出，不带着旧 jar 硬起。
+prep_dependencies() {
+  local workdir=$1 plpath=$2 base dir rel list
+  base=$(install_stamp_dir "$workdir")
+  local -a dirs=() rels=()
+  if [[ -n "$plpath" ]]; then
+    mapfile -t dirs < <(stale_dep_modules "$workdir" "$plpath")
+  fi
+  ((${#dirs[@]})) || return 0
+  for dir in "${dirs[@]}"; do
+    rel="${dir#"$workdir"/}"
+    rels+=("$rel")
+  done
+  list=$(IFS=,; printf '%s' "${rels[*]}")
+  printf '启动前安装改动的依赖模块：%s\n' "$list"
+  mvn -pl "$list" install -Dmaven.test.skip=true -Dspring-boot.repackage.skip=true || return 1
+  for rel in "${rels[@]}"; do
+    mkdir -p "$(dirname "$base/$rel")"
+    touch "$base/$rel"
+  done
+}
+
 # 按启动方式替换记录里传给 mvn 的参数，其余列原样带回；参数变了同步改展示命令，让提示行印出的就是真正要执行的。
 apply_start_mode() {
   local allow_skip=$1 rec tag workdir plpath mvnargs display cmdtext dir n before
@@ -77,6 +169,9 @@ apply_start_mode() {
             else
               printf '编译「%s」：源码、生成源、构建入口或 pom 有更新\n' "$tag" >&2
             fi
+          elif ((PREP_DEPS)) && [[ -n "$plpath" ]] && stale_dep_modules "$workdir" "$plpath" >/dev/null; then
+            # 依赖模块换了 jar，当前模块的 class 是按旧依赖编的，一起重编。
+            printf '编译「%s」：依赖模块有更新\n' "$tag" >&2
           else
             mvnargs+=" $SKIP_ARGS"
             n=$(count_classless_sources "$dir")
@@ -103,6 +198,10 @@ apply_start_mode() {
 launch_one() {
   local workdir=$1 plpath=$2 mvnargs=$3
   cd "$workdir" || return 1
+
+  if ((PREP_DEPS)) && [[ -n "$plpath" ]]; then
+    prep_dependencies "$workdir" "$plpath" || return 1
+  fi
 
   local -a argv=()
   [[ -n "$plpath" ]] && argv+=(-pl "$plpath")

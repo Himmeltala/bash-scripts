@@ -46,6 +46,10 @@ machine_exec() {
   if [[ $allow_skip -eq 0 && $START_MODE != "$MODE_AUTO" && $START_MODE != "$MODE_COMPILE" ]]; then
     usage_error "「$cmd」命令不支持 $MODE_FLAG"
   fi
+  if [[ -n "$DEPS_FLAG" ]]; then
+    [[ $allow_skip -eq 1 ]] || usage_error "「$cmd」命令不支持 $DEPS_FLAG"
+    [[ $START_MODE != "$MODE_NO_COMPILE" ]] || usage_error "$DEPS_FLAG 不能与 $MODE_FLAG 同用"
+  fi
   if [[ -n "$NO_AM_FLAG" && "$cmd" != "$PACKAGE_COMMAND" && "$cmd" != "$INSTALL_COMMAND" ]]; then
     usage_error "「$cmd」命令不支持 $NO_AM_FLAG"
   fi

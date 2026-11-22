@@ -64,6 +64,17 @@ BEGIN { open = 0; inparent = 0; inmodules = 0; idval = "" }
     }
     if (line ~ /<\/modules>/) inmodules = 0
   }
+
+  # 直接依赖的 artifactId：dependencyManagement 里的不算直接依赖，exclusions 里的不是依赖。
+  if (line ~ /<dependencyManagement>/) indm = 1
+  else if (line ~ /<\/dependencyManagement>/) indm = 0
+  else if (line ~ /<exclusions>/) inex = 1
+  else if (line ~ /<\/exclusions>/) inex = 0
+  else if (line ~ /<dependencies>/) indeps = 1
+  else if (line ~ /<\/dependencies>/) indeps = 0
+  else if (indeps && !indm && !inex &&
+           match(line, /<artifactId>[^<]*<\/artifactId>/))
+    print "DEP " substr(line, RSTART + 12, RLENGTH - 25)
 }
 END { print "ID " idval }
 '
@@ -80,6 +91,10 @@ declare -a POM_LIST=()
 
 declare -A POM_MODULES_VAL=()
 declare -A POM_ARTIFACT_VAL=()
+# 直接依赖的 artifactId（换行分隔），启动前补装依赖模块时用。
+declare -A POM_DEPS_VAL=()
+# artifactId 反查 pom，便于沿依赖往下走。
+declare -A ARTIFACT_POM_VAL=()
 declare -A POM_PKG_VAL=()
 declare -A POM_SB_VAL=()
 declare -A POM_JETTY_VAL=()
@@ -93,11 +108,13 @@ declare -A HAS_WEBAPP=()
 declare -A WEBRUN_GOAL=()
 
 prepare_scan() {
-  local root=$1 pom dump line mods
+  local root=$1 pom dump line mods deps aid
   mapfile -t POM_LIST < <(scan_poms "$root" | sort)
 
   POM_MODULES_VAL=()
   POM_ARTIFACT_VAL=()
+  POM_DEPS_VAL=()
+  ARTIFACT_POM_VAL=()
   POM_PKG_VAL=()
   POM_SB_VAL=()
   POM_JETTY_VAL=()
@@ -112,9 +129,11 @@ prepare_scan() {
   for pom in "${POM_LIST[@]}"; do
     dump=$(awk "$POM_AWK" "$pom")
     mods=''
+    deps=''
     while IFS= read -r line; do
       case "$line" in
         'ID '*) POM_ARTIFACT_VAL[$pom]="${line#ID }" ;;
+        'DEP '*) deps+="${line#DEP }"$'\n' ;;
         'MOD '*) mods+="${line#MOD }"$'\n' ;;
         'PKG '*) POM_PKG_VAL[$pom]=1 ;;
         'SB '*) POM_SB_VAL[$pom]=1 ;;
@@ -126,6 +145,10 @@ prepare_scan() {
       esac
     done <<< "$dump"
     POM_MODULES_VAL[$pom]="${mods%$'\n'}"
+    POM_DEPS_VAL[$pom]="${deps%$'\n'}"
+    # 同 artifactId 只认第一个 pom，重名时不做猜测。
+    aid=${POM_ARTIFACT_VAL[$pom]:-}
+    [[ -n "$aid" && -z "${ARTIFACT_POM_VAL[$aid]:-}" ]] && ARTIFACT_POM_VAL[$aid]="$pom"
   done
 
   # 入口类检查只在模块各自的源码目录里执行，并且只对已通过前两道检查的 pom 执行。

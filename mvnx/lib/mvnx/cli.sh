@@ -41,6 +41,10 @@ EOF
   -c, --compile  正常编译：不加跳过参数，是否重编由 Maven 自己判断
       --no-compile  跳过编译直接跑已有的 class，模块没有 class 时以退出码 2 拒绝
       --rebuild  先 clean 再执行，等于 mvn clean <目标>
+      --deps     启动前把源码有更新的兄弟模块装进本地仓库，避免「找不到符号」
+
+--deps 只对 run 与 war 有效，且不能与 --no-compile 同用。Maven 用 -pl 只编当前模块，
+兄弟模块读本地仓库里的 jar；改了兄弟模块的源码却没 install，启动时就会报找不到符号。
 
 跳过编译省下整个模块的重编时间：任一源码没有 class，Maven 就全量重编。
 
@@ -71,6 +75,8 @@ EXTRA_ARGS=''
 # --no-am 由 package 与 install 共用，NO_AM_FLAG 只在报错时回显用户写的那个参数。
 NO_AM=0
 NO_AM_FLAG=''
+# --deps 只在启动类命令上有意义；DEPS_FLAG 用于报错时回显。
+DEPS_FLAG=''
 declare -a POSITIONAL=()
 declare -a UI_ACTION_ITEMS=()
 
@@ -109,6 +115,7 @@ parse_args() {
         esac
         i=$((i + 1))
         ;;
+      --deps) DEPS_FLAG=$a; PREP_DEPS=1 ;;
       --no-am) NO_AM=1; NO_AM_FLAG=$a ;;
       --no-clean) PACK_NO_CLEAN=1; PACK_NO_CLEAN_FLAG=$a ;;
       --json) JSON_ONLY=1 ;;
@@ -142,6 +149,12 @@ run_action() {
   # 跳过编译与 clean 只对能直接启动的命令有意义，install 与 package 必须真编译。
   if [[ $allow_skip -eq 0 && $START_MODE != "$MODE_AUTO" && $START_MODE != "$MODE_COMPILE" ]]; then
     usage_error "「$cmd」命令不支持 $MODE_FLAG"
+  fi
+
+  # --deps 只在能直接启动的命令上有意义；跳过编译时不装依赖，免得违背「不编译」。
+  if [[ -n "$DEPS_FLAG" ]]; then
+    [[ $allow_skip -eq 1 ]] || usage_error "「$cmd」命令不支持 $DEPS_FLAG"
+    [[ $START_MODE != "$MODE_NO_COMPILE" ]] || usage_error "$DEPS_FLAG 不能与 $MODE_FLAG 同用"
   fi
 
   # --no-am 只对 package 与 install 按模块安装有意义，--no-clean 只属于 package。

@@ -11,4 +11,5 @@ export const api = {
   ...base,
   jdks: () => call('GET', '/jdks'),
   setJdk: (ws, jdk) => call('POST', '/jdk', { ws, jdk }),
+  restart: (run) => call('POST', '/restart', { run }),
 }

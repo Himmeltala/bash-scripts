@@ -19,7 +19,7 @@ from toolchain import effective_home, iter_home_dirs, prepend_bin
 from toolweb import NOT_HANDLED, ToolHandler
 from web import ApiError, log
 
-from .runs import RunRegistry
+from .runs import LIVE, RunRegistry
 from .store import KIND_GRADLE, Store, clean_targets, detect_project, service_id
 from .targets import ScanError, default_tools, scan_workspace
 
@@ -361,6 +361,10 @@ class App:
             if mode not in MVN_MODES:
                 raise ApiError(400, "启动方式不认识：%s" % mode)
             argv = list(self.tools["mvn"]) + ["exec", "--id", target_id, "--mode", mode]
+            # 启动类命令先补装改动过的兄弟模块，否则改了兄弟模块的源码会报找不到符号；
+            # 跳过编译时不加，免得违背「不编译」。
+            if target.get("command") in ("run", "war") and mode != "no-compile":
+                argv.append("--deps")
             if body.get("no_am"):
                 argv.append("--no-am")
             if body.get("no_clean"):
@@ -391,6 +395,15 @@ class App:
 
     def stop_service(self, runid):
         self.runs.stop(str(runid or ""))
+
+    def restart_service(self, body):
+        """停掉再按原参数起一份：stop 会等进程组退干净，随后 start 才能占回端口。"""
+        runid = str(body.get("run") or "")
+        run = self.runs.find(runid)
+        if run is None or run.get("status") not in LIVE:
+            raise ApiError(409, "这个服务没有在跑")
+        self.runs.stop(runid)
+        return self.start_service({"svc": run.get("svc", "")})
 
     def update_service(self, body):
         svc_id = str(body.get("svc", "")).strip()
@@ -493,6 +506,8 @@ class App:
                 return NOT_HANDLED
 
             def _tool_post(self, route, body):
+                if route == "restart":
+                    return app.restart_service(body)
                 if route == "jdk":
                     app.set_jdk(str(body.get("ws", "")).strip(), body.get("jdk"))
                     return {"ok": True}

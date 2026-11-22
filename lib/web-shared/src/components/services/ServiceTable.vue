@@ -48,9 +48,19 @@
           </div>
         </td>
         <td class="ops">
+          <div class="flex items-center justify-end gap-2 whitespace-nowrap">
           <template v-if="row.live">
             <v-btn size="small" variant="text" prepend-icon="mdi-text-box-outline" @click="$emit('log', row)">
               日志
+            </v-btn>
+            <v-btn
+              v-if="showRestart"
+              size="small"
+              variant="tonal"
+              :loading="row.restarting"
+              @click="$emit('restart', row)"
+            >
+              重启
             </v-btn>
             <v-btn size="small" color="error" variant="tonal" :loading="row.stopping" @click="$emit('stop', row)">
               停止
@@ -75,6 +85,7 @@
             </v-btn>
           </template>
           <slot name="row-extra" :row="row" />
+          </div>
         </td>
       </tr>
     </tbody>
@@ -88,9 +99,11 @@ defineProps({
   nameTitle: { type: String, required: true },
   // 名字下那行路径：nodex 的服务都跑在工作区根上，只有一个点，调用方可以关掉。
   showPath: { type: Boolean, default: true },
+  // 运行中的行要不要给重启按钮；只有实现 restart 接口的工具打开它。
+  showRestart: { type: Boolean, default: false },
 })
 
-defineEmits(['start', 'stop', 'settings', 'log'])
+defineEmits(['start', 'stop', 'restart', 'settings', 'log'])
 </script>
 
 <style scoped>
@@ -149,6 +162,5 @@ defineEmits(['start', 'stop', 'settings', 'log'])
 }
 .ops {
   text-align: right;
-  white-space: nowrap;
 }
 </style>

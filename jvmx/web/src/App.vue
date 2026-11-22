@@ -32,6 +32,7 @@
         :current-jdk="state.currentJdk"
         @start="startService"
         @stop="stopService"
+        @restart="restartService($event.run, act, toast)"
         @save="saveService"
         @setjdk="setWorkspaceJdk($event, act, toast)"
         @scan="rescan"
@@ -65,6 +66,11 @@ async function loadExtra(snapshot) {
   const data1 = await api.jdks()
   snapshot.jdks = data1.jdks || []
   snapshot.currentJdk = data1.current || ''
+}
+
+async function restartService(run, act, toast) {
+  const ok = await act('重启', () => api.restart(run))
+  if (ok) toast('已发出重启', 'primary')
 }
 
 async function setWorkspaceJdk({ ws, jdk }, act, toast) {

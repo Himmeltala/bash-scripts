@@ -34,6 +34,8 @@ mvnx --refresh        清掉当前命令的勾选记录
 
 不写时自动判断要不要编译；`-c`、`--no-compile`、`--rebuild` 只对 `run`、`war` 有效。判定看时间戳：源文件比最新 class 新就编译，没有 `target/classes` 或里面没有 class 也按需要编译处理。删掉源文件后旧 class 会留着，需要 `--rebuild`。
 
+`--deps` 只在 `run`、`war` 上有效，且不能与 `--no-compile` 同用。启动前先看兄弟模块的源码有没有比已编译的 class 新，有就 `mvn -pl <模块> -am install` 补进本地仓库。`-pl` 只编当前模块，兄弟模块一律读本地仓库的 jar；改了兄弟模块源码却没装，启动就会报找不到符号。jvmx 的启动按钮默认带它。
+
 `run` 的目标要同时满足：pom 引了 `spring-boot-maven-plugin`、不是 `pom` 打包、`src/main/java` 下有 `@SpringBootApplication`。`war` 要引 jetty、tomcat、tomcat7 或 cargo 插件，并且存在 `src/main/webapp`。
 
 ## 退出码

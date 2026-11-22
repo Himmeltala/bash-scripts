@@ -77,8 +77,10 @@
       v-else
       :rows="rows"
       name-title="模块"
+      show-restart
       @start="start"
       @stop="stop"
+      @restart="restart"
       @settings="openSettings"
       @log="openLog"
     />
@@ -149,7 +151,16 @@ const props = defineProps({
   jdks: { type: Array, default: () => [] },
   currentJdk: { type: String, default: '' },
 })
-const emit = defineEmits(['start', 'stop', 'save', 'setjdk', 'scan', 'forget', 'notice'])
+const emit = defineEmits(['start', 'stop', 'restart', 'save', 'setjdk', 'scan', 'forget', 'notice'])
+// 重启按钮的短暂忙碌态；真正的停止与重新启动在 App.vue 里发请求。
+const restarting = ref({})
+function restart(row) {
+  restarting.value[row.svc.id] = true
+  emit('restart', { run: row.run.id, svc: row.svc.id })
+  setTimeout(() => {
+    restarting.value[row.svc.id] = false
+  }, 3000)
+}
 
 // Maven 与 Gradle 的命令不同，页签跟着工作区类型走。
 const tabs = computed(() =>
@@ -294,6 +305,7 @@ const rows = computed(() => {
         ago: run ? ago(run.started) : '',
         stopping: !!stopping.value[svc.id],
         starting: !!starting.value[svc.id],
+        restarting: !!restarting.value[svc.id],
       }
     })
 })
