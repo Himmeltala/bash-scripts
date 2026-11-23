@@ -28,35 +28,17 @@
       </div>
     </header>
 
-    <div v-if="error && !registered" class="state">
-      <v-icon size="28" color="error">mdi-server-off</v-icon>
-      <div class="state-text">
-        <strong>Node 引擎不可用</strong>
-        <p>{{ error }}</p>
-      </div>
-      <v-btn variant="tonal" prepend-icon="mdi-refresh" @click="retry">重试</v-btn>
-    </div>
-
-    <div v-else-if="loading && !registered" class="state">
-      <v-progress-circular indeterminate size="20" />
-      <div class="state-text">
-        <strong>正在连接 Node 引擎</strong>
-        <p>取到引擎状态后就会列出这个工作区的脚本。</p>
-      </div>
-    </div>
-
-    <div v-else-if="!registered" class="state">
-      <v-icon size="28">mdi-power-plug-off-outline</v-icon>
-      <div class="state-text">
-        <strong>引擎里还没有这个工作区</strong>
-        <p>idex 已经识别出 Node 工程，但引擎的状态文件里还没有登记。启用后会登记并扫描脚本。</p>
-        <p v-if="waiting" class="state-wait">已发出启用，扫描完成后这里会自动列出脚本。</p>
-        <p v-if="enableError" class="state-error">{{ enableError }}</p>
-      </div>
-      <v-btn color="primary" variant="flat" :loading="enabling" :disabled="waiting" @click="enable">
-        {{ waiting ? '扫描中' : '启用并扫描' }}
-      </v-btn>
-    </div>
+    <EngineRegisterState
+      v-if="!registered"
+      :loading="loading"
+      :error="error"
+      :waiting="waiting"
+      :enabling="enabling"
+      :enable-error="enableError"
+      :labels="ENGINE_LABELS"
+      @retry="retry"
+      @enable="enable"
+    />
 
     <template v-else>
       <div v-if="error" class="banner">
@@ -207,7 +189,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import EngineRegisterState from './EngineRegisterState.vue'
 import NodeSettingsDialog from './NodeSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import {
@@ -219,9 +202,10 @@ import {
 } from '@bash-scripts/web-shared'
 import { formatAgo as ago } from '@bash-scripts/web-shared/format'
 import { baseName } from '../../utils/format'
+import { STATUS_COLOR, STATUS_TEXT } from '../../utils/serviceStatus'
 import { nodeApi, toolsApi } from '../../utils/toolApi'
 import { useToolWorkspace } from '../../composables/useToolWorkspace'
-import { createScanWait } from '../../utils/scanWait'
+import { useEngineEnable } from '../../composables/useEngineEnable'
 import { toast } from '../../utils/notice'
 
 const props = defineProps({
@@ -235,21 +219,15 @@ const TYPE_TEXT = {
   build: '打包',
   install: '安装',
 }
-const STATUS_TEXT = {
-  starting: '启动中',
-  ready: '运行中',
-  exited: '已结束',
-  failed: '失败',
-  stopped: '已停止',
-}
-const STATUS_COLOR = {
-  starting: 'warning',
-  ready: 'ready',
-  exited: 'grey',
-  failed: 'failed',
-  stopped: 'grey',
-}
 const LIVE = LIVE_STATUSES
+
+const ENGINE_LABELS = {
+  engine: 'Node',
+  listHint: '取到引擎状态后就会列出这个工作区的脚本。',
+  project: 'Node 工程',
+  scanHint: '启用后会登记并扫描脚本。',
+  waitHint: '已发出启用，扫描完成后这里会自动列出脚本。',
+}
 
 // 引擎工作区由 idex 探测结果里的 id 定位，状态走 Node 引擎自己的推送。
 const engineId = computed(() => {
@@ -274,11 +252,19 @@ const scripts = computed(() => (engineWs.value && engineWs.value.scripts) || [])
 const services = computed(() => (engineWs.value && engineWs.value.services) || [])
 const running = computed(() => (engineWs.value ? runningCount(engineWs.value) : 0))
 
+// 引擎登记、扫描等待与重试走共享流程，只有超时文案是本页签自己的。
+const { enabling, waiting, enableError, enable, retry } = useEngineEnable({
+  toolsApi,
+  engineApi: nodeApi,
+  wsId: () => props.ws.id,
+  registered,
+  error,
+  reload,
+  timeoutText: '扫描超过两分钟还没回来；检查 Node 引擎后重试。',
+})
+
 const filter = ref('')
 const scanning = ref(false)
-const enabling = ref(false)
-const waiting = ref(false)
-const enableError = ref('')
 const custom = reactive({ on: false, path: '' })
 const add = reactive({ on: false, saving: false, error: '', type: 'dev', tag: '', rel: '.', args: '' })
 const nodes = ref([])
@@ -374,62 +360,6 @@ async function saveCustom() {
   await setNode(custom.path.trim())
   custom.on = false
 }
-
-// 扫描结果靠状态推送回来；等太久就把按钮放开，别一直卡在「扫描中」。
-const wait = createScanWait({
-  onTimeout: () => {
-    waiting.value = false
-    enableError.value = '扫描超过两分钟还没回来；检查 Node 引擎后重试。'
-  },
-})
-let enableToken = 0
-let alive = true
-
-function stopWait(clearError = false) {
-  wait.stop()
-  waiting.value = false
-  if (clearError) enableError.value = ''
-}
-
-// 「启用并扫描」：idex 再探测一次能力，引擎按根目录登记并扫描；结果由状态推送补上。
-// 只调 tools 的探测不会往引擎状态里写工作区行，所以两条都要走；串行避免引擎刚重扫又撞 409。
-async function enable() {
-  const token = ++enableToken
-  const id = props.ws.id
-  enabling.value = true
-  stopWait(true)
-  try {
-    await toolsApi.rescan(id)
-    await nodeApi.rescan(id)
-    if (!alive || token !== enableToken || props.ws.id !== id) return
-    if (!registered.value) {
-      waiting.value = true
-      wait.start()
-    }
-    await reload()
-  } catch (err) {
-    if (!alive || token !== enableToken || props.ws.id !== id) return
-    stopWait()
-    enableError.value = err.message
-  } finally {
-    if (alive && token === enableToken && props.ws.id === id) enabling.value = false
-  }
-}
-
-function retry() {
-  stopWait(true)
-  reload()
-}
-
-// 扫描结果由状态推送带回来：工作区一出现就不用再等。
-watch(registered, (on) => {
-  if (on) stopWait(true)
-})
-
-// 引擎一报错就放开等待，错误块里给重试；恢复后可以再点启用。
-watch(error, (text) => {
-  if (text) stopWait()
-})
 
 async function rescan() {
   scanning.value = true
@@ -565,24 +495,16 @@ async function onSave({ args }) {
 }
 
 // 换工作区时筛选回到全部，否则表里只剩空行，看着像脚本丢了；
-// 上一个工作区的启用请求与等待也一并作废，不能带着「扫描中」的禁用态过去。
+// 启用请求与等待由共享流程按工作区作废。
 watch(
   () => props.ws.id,
   () => {
-    enableToken += 1
-    stopWait(true)
-    enabling.value = false
     filter.value = ''
     custom.on = false
   },
 )
 
 onMounted(loadNodes)
-onBeforeUnmount(() => {
-  alive = false
-  enableToken += 1
-  stopWait()
-})
 </script>
 
 <style scoped>
@@ -642,32 +564,6 @@ onBeforeUnmount(() => {
 .filter-count {
   margin-left: 6px;
   color: rgb(var(--v-theme-on-surface-variant));
-}
-.state {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 24px 8px;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.state-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.state-text strong {
-  color: rgb(var(--v-theme-on-surface));
-  font-size: 0.95rem;
-}
-.state-text p {
-  margin: 4px 0 0;
-  font-size: 0.82rem;
-}
-.state-error {
-  color: rgb(var(--v-theme-error));
-}
-.state-wait {
-  color: rgb(var(--v-theme-primary));
 }
 .banner {
   display: flex;

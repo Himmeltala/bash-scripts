@@ -7,22 +7,6 @@
  * @Description: JVM 页签与参数弹窗共用的动作、状态与启动方式词汇。
  */
 
-export const STATUS_TEXT = {
-  starting: '启动中',
-  ready: '运行中',
-  exited: '已结束',
-  failed: '失败',
-  stopped: '已停止',
-}
-
-export const STATUS_COLOR = {
-  starting: 'warning',
-  ready: 'ready',
-  exited: 'grey',
-  failed: 'failed',
-  stopped: 'grey',
-}
-
 // 打包与安装跑完就结束，运行记录留在列表里，点开日志能看到结果。
 export const TYPE_TEXT = {
   run: '启动',

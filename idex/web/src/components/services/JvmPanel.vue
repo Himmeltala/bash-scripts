@@ -33,35 +33,17 @@
       </div>
     </header>
 
-    <div v-if="error && !registered" class="state">
-      <v-icon size="28" color="error">mdi-server-off</v-icon>
-      <div class="state-text">
-        <strong>JVM 引擎不可用</strong>
-        <p>{{ error }}</p>
-      </div>
-      <v-btn variant="tonal" prepend-icon="mdi-refresh" @click="retry">重试</v-btn>
-    </div>
-
-    <div v-else-if="loading && !registered" class="state">
-      <v-progress-circular indeterminate size="20" />
-      <div class="state-text">
-        <strong>正在连接 JVM 引擎</strong>
-        <p>取到引擎状态后就会列出这个工作区的模块与目标。</p>
-      </div>
-    </div>
-
-    <div v-else-if="!registered" class="state">
-      <v-icon size="28">mdi-power-plug-off-outline</v-icon>
-      <div class="state-text">
-        <strong>引擎里还没有这个工作区</strong>
-        <p>idex 已经识别出 Maven 或 Gradle 工程，但引擎的状态文件里还没有登记。启用后会登记并扫描模块。</p>
-        <p v-if="waiting" class="state-wait">已发出启用，扫描完成后这里会自动列出模块。</p>
-        <p v-if="enableError" class="state-error">{{ enableError }}</p>
-      </div>
-      <v-btn color="primary" variant="flat" :loading="enabling" :disabled="waiting" @click="enable">
-        {{ waiting ? '扫描中' : '启用并扫描' }}
-      </v-btn>
-    </div>
+    <EngineRegisterState
+      v-if="!registered"
+      :loading="loading"
+      :error="error"
+      :waiting="waiting"
+      :enabling="enabling"
+      :enable-error="enableError"
+      :labels="ENGINE_LABELS"
+      @retry="retry"
+      @enable="enable"
+    />
 
     <template v-else>
       <div v-if="error" class="banner">
@@ -166,7 +148,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import EngineRegisterState from './EngineRegisterState.vue'
 import JvmSettingsDialog from './JvmSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import {
@@ -178,16 +161,12 @@ import {
 } from '@bash-scripts/web-shared'
 import { formatAgo as ago } from '@bash-scripts/web-shared/format'
 import { baseName } from '../../utils/format'
-import {
-  STATUS_COLOR,
-  STATUS_TEXT,
-  TYPE_TEXT,
-  moduleOf,
-} from '../../utils/jvmFormat'
+import { TYPE_TEXT, moduleOf } from '../../utils/jvmFormat'
+import { STATUS_COLOR, STATUS_TEXT } from '../../utils/serviceStatus'
 import { jvmKindLabel } from '../../utils/workspaceTabs'
 import { jvmApi, toolsApi } from '../../utils/toolApi'
 import { useToolWorkspace } from '../../composables/useToolWorkspace'
-import { createScanWait } from '../../utils/scanWait'
+import { useEngineEnable } from '../../composables/useEngineEnable'
 import { toast } from '../../utils/notice'
 
 const props = defineProps({
@@ -196,6 +175,14 @@ const props = defineProps({
 })
 
 const LIVE = LIVE_STATUSES
+
+const ENGINE_LABELS = {
+  engine: 'JVM',
+  listHint: '取到引擎状态后就会列出这个工作区的模块与目标。',
+  project: 'Maven 或 Gradle 工程',
+  scanHint: '启用后会登记并扫描模块。',
+  waitHint: '已发出启用，扫描完成后这里会自动列出模块。',
+}
 
 // 引擎工作区由 idex 探测结果里的 id 定位，状态走 JVM 引擎自己的推送。
 const engineId = computed(() => {
@@ -225,10 +212,18 @@ const poms = computed(() => (engineWs.value && engineWs.value.poms) || [])
 const services = computed(() => (engineWs.value && engineWs.value.services) || [])
 const running = computed(() => (engineWs.value ? runningCount(engineWs.value) : 0))
 
+// 引擎登记、扫描等待与重试走共享流程，只有超时文案是本页签自己的。
+const { enabling, waiting, enableError, enable, retry } = useEngineEnable({
+  toolsApi,
+  engineApi: jvmApi,
+  wsId: () => props.ws.id,
+  registered,
+  error,
+  reload,
+  timeoutText: '扫描超过两分钟还没回来；检查 JVM 引擎后重试。',
+})
+
 const scanning = ref(false)
-const enabling = ref(false)
-const waiting = ref(false)
-const enableError = ref('')
 const filter = ref('')
 const tab = ref('service')
 const custom = reactive({ on: false, path: '' })
@@ -339,62 +334,6 @@ async function saveCustom() {
   await setJdk(custom.path.trim())
   custom.on = false
 }
-
-// 扫描结果靠状态推送回来；等太久就把按钮放开，别一直卡在「扫描中」。
-const wait = createScanWait({
-  onTimeout: () => {
-    waiting.value = false
-    enableError.value = '扫描超过两分钟还没回来；检查 JVM 引擎后重试。'
-  },
-})
-let enableToken = 0
-let alive = true
-
-function stopWait(clearError = false) {
-  wait.stop()
-  waiting.value = false
-  if (clearError) enableError.value = ''
-}
-
-// 「启用并扫描」：idex 再探测一次能力，引擎按根目录登记并扫描；结果由状态推送补上。
-// 只调 tools 的探测不会往引擎状态里写工作区行，所以两条都要走；串行避免引擎刚重扫又撞 409。
-async function enable() {
-  const token = ++enableToken
-  const id = props.ws.id
-  enabling.value = true
-  stopWait(true)
-  try {
-    await toolsApi.rescan(id)
-    await jvmApi.rescan(id)
-    if (!alive || token !== enableToken || props.ws.id !== id) return
-    if (!registered.value) {
-      waiting.value = true
-      wait.start()
-    }
-    await reload()
-  } catch (err) {
-    if (!alive || token !== enableToken || props.ws.id !== id) return
-    stopWait()
-    enableError.value = err.message
-  } finally {
-    if (alive && token === enableToken && props.ws.id === id) enabling.value = false
-  }
-}
-
-function retry() {
-  stopWait(true)
-  reload()
-}
-
-// 扫描结果由状态推送带回来：工作区一出现就不用再等。
-watch(registered, (on) => {
-  if (on) stopWait(true)
-})
-
-// 引擎一报错就放开等待，错误块里给重试；恢复后可以再点启用。
-watch(error, (text) => {
-  if (text) stopWait()
-})
 
 // 引擎扫描失败的原因放在工作区行上，扫不到目标时也至少说明为什么。
 watch(
@@ -531,24 +470,16 @@ async function onSave({ module, args, mode, refresh: refreshDeps }) {
 }
 
 // 换工作区时筛选回到全部，否则表里只剩空行，看着像模块丢了；
-// 上一个工作区的启用请求与等待也一并作废，不能带着「扫描中」的禁用态过去。
+// 启用请求与等待由共享流程按工作区作废。
 watch(
   () => props.ws.id,
   () => {
-    enableToken += 1
-    stopWait(true)
-    enabling.value = false
     filter.value = ''
     custom.on = false
   },
 )
 
 onMounted(loadJdks)
-onBeforeUnmount(() => {
-  alive = false
-  enableToken += 1
-  stopWait()
-})
 </script>
 
 <style scoped>
@@ -618,32 +549,6 @@ onBeforeUnmount(() => {
 .svc-path {
   font-size: 0.75rem;
   color: rgb(var(--v-theme-on-surface-variant));
-}
-.state {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 24px 8px;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.state-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.state-text strong {
-  color: rgb(var(--v-theme-on-surface));
-  font-size: 0.95rem;
-}
-.state-text p {
-  margin: 4px 0 0;
-  font-size: 0.82rem;
-}
-.state-error {
-  color: rgb(var(--v-theme-error));
-}
-.state-wait {
-  color: rgb(var(--v-theme-primary));
 }
 .banner {
   display: flex;
