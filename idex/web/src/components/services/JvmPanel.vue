@@ -2,16 +2,16 @@
   <div class="panel">
     <header class="head">
       <div class="titles">
-        <h2>{{ baseName(ws.root) }}</h2>
-        <p class="root" :title="ws.root">{{ ws.root }}</p>
+        <h2>{{ baseName(root) }}</h2>
+        <p class="root" :title="root">{{ root }}</p>
       </div>
-      <div class="actions">
-        <v-chip size="small" variant="tonal" :prepend-icon="ws.kind === 'gradle' ? 'mdi-elephant' : 'mdi-language-java'">
-          {{ KIND_TEXT[ws.kind] || ws.kind }}
+      <div v-if="registered" class="actions">
+        <v-chip size="small" variant="tonal" :prepend-icon="kind === 'gradle' ? 'mdi-elephant' : 'mdi-language-java'">
+          {{ jvmKindLabel(kind) || kind }}
         </v-chip>
         <v-select
-          v-if="ws.kind !== 'gradle'"
-          :model-value="ws.jdk || ''"
+          v-if="kind !== 'gradle'"
+          :model-value="engineWs.jdk || ''"
           :items="jdkItems"
           item-title="label"
           item-value="path"
@@ -20,75 +20,115 @@
           variant="outlined"
           hide-details
           class="jdk"
-          :prepend-inner-icon="ws.jdk_missing ? 'mdi-alert' : 'mdi-language-java'"
+          :prepend-inner-icon="engineWs.jdk_missing ? 'mdi-alert' : 'mdi-language-java'"
           :title="jdkTitle"
           @update:model-value="pickJdk"
         />
-        <v-chip v-if="ws.kind === 'mvn'" size="small" variant="tonal">{{ ws.poms.length }} 个模块</v-chip>
-        <v-chip v-else size="small" variant="tonal">{{ ws.services.length }} 个目标</v-chip>
+        <v-chip v-if="kind === 'mvn'" size="small" variant="tonal">{{ poms.length }} 个模块</v-chip>
+        <v-chip v-else size="small" variant="tonal">{{ services.length }} 个目标</v-chip>
         <v-chip v-if="running" size="small" color="ready" variant="tonal">{{ running }} 个在跑</v-chip>
-        <v-btn size="small" variant="text" prepend-icon="mdi-refresh" @click="$emit('scan')">重新扫描</v-btn>
-        <v-btn size="small" variant="text" color="error" @click="$emit('forget', ws.id)">移出</v-btn>
+        <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="scanning" @click="rescan">
+          重新扫描
+        </v-btn>
       </div>
     </header>
 
-    <div class="tabs">
-      <v-tabs v-model="tab" density="compact" color="primary" mandatory show-arrows class="tab-row">
-        <v-tab v-for="t in tabs" :key="t.value" :value="t.value">
-          {{ t.title }}
-          <v-chip v-if="count(t.value)" size="x-small" class="count" variant="text">{{ count(t.value) }}</v-chip>
-        </v-tab>
-      </v-tabs>
-      <v-spacer />
-      <v-text-field
-        v-model="filter"
-        density="compact"
-        variant="solo"
-        flat
-        hide-details
-        placeholder="按模块名筛"
-        prepend-inner-icon="mdi-magnify"
-        clearable
-        class="filter"
+    <div v-if="error && !registered" class="state">
+      <v-icon size="28" color="error">mdi-server-off</v-icon>
+      <div class="state-text">
+        <strong>JVM 引擎不可用</strong>
+        <p>{{ error }}</p>
+      </div>
+      <v-btn variant="tonal" prepend-icon="mdi-refresh" @click="retry">重试</v-btn>
+    </div>
+
+    <div v-else-if="loading && !registered" class="state">
+      <v-progress-circular indeterminate size="20" />
+      <div class="state-text">
+        <strong>正在连接 JVM 引擎</strong>
+        <p>取到引擎状态后就会列出这个工作区的模块与目标。</p>
+      </div>
+    </div>
+
+    <div v-else-if="!registered" class="state">
+      <v-icon size="28">mdi-power-plug-off-outline</v-icon>
+      <div class="state-text">
+        <strong>引擎里还没有这个工作区</strong>
+        <p>idex 已经识别出 Maven 或 Gradle 工程，但引擎的状态文件里还没有登记。启用后会登记并扫描模块。</p>
+        <p v-if="waiting" class="state-wait">已发出启用，扫描完成后这里会自动列出模块。</p>
+        <p v-if="enableError" class="state-error">{{ enableError }}</p>
+      </div>
+      <v-btn color="primary" variant="flat" :loading="enabling" :disabled="waiting" @click="enable">
+        {{ waiting ? '扫描中' : '启用并扫描' }}
+      </v-btn>
+    </div>
+
+    <template v-else>
+      <div v-if="error" class="banner">
+        <v-icon size="18" color="warning">mdi-alert</v-icon>
+        <span>{{ error }}</span>
+        <v-spacer />
+        <v-btn size="small" variant="text" @click="retry">重试</v-btn>
+      </div>
+
+      <div class="tabs">
+        <v-tabs v-model="tab" density="compact" color="primary" mandatory show-arrows class="tab-row">
+          <v-tab v-for="t in tabs" :key="t.value" :value="t.value">
+            {{ t.title }}
+            <v-chip v-if="count(t.value)" size="x-small" class="count" variant="text">{{ count(t.value) }}</v-chip>
+          </v-tab>
+        </v-tabs>
+        <v-spacer />
+        <v-text-field
+          v-model="filter"
+          density="compact"
+          variant="solo"
+          flat
+          hide-details
+          placeholder="按模块名筛"
+          prepend-inner-icon="mdi-magnify"
+          clearable
+          class="filter"
+        />
+      </div>
+
+      <div v-if="!rows.length" class="none">
+        <template v-if="tab === 'poms'">没扫到 pom</template>
+        <template v-else>这一栏没有可执行的模块，换个栏目看看，或点重新扫描。</template>
+      </div>
+
+      <v-table v-else-if="tab === 'poms'" density="compact" class="table">
+        <thead>
+          <tr>
+            <th>模块</th>
+            <th>路径</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in rows" :key="row.key">
+            <td class="svc-name">{{ row.title }}</td>
+            <td class="svc-path" :title="row.path">{{ row.path }}</td>
+          </tr>
+        </tbody>
+      </v-table>
+
+      <ServiceTable
+        v-else
+        :rows="rows"
+        name-title="模块"
+        show-restart
+        @start="start"
+        @stop="stop"
+        @restart="restart"
+        @settings="openSettings"
+        @log="openLog"
       />
-    </div>
+    </template>
 
-    <div v-if="!rows.length" class="none">
-      <template v-if="tab === 'poms'">没扫到 pom</template>
-      <template v-else>这一栏没有可执行的模块，换个栏目看看，或点重新扫描。</template>
-    </div>
-
-    <v-table v-else-if="tab === 'poms'" density="compact" class="table">
-      <thead>
-        <tr>
-          <th>模块</th>
-          <th>路径</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.key">
-          <td class="svc-name">{{ row.title }}</td>
-          <td class="svc-path" :title="row.path">{{ row.path }}</td>
-        </tr>
-      </tbody>
-    </v-table>
-
-    <ServiceTable
-      v-else
-      :rows="rows"
-      name-title="模块"
-      show-restart
-      @start="start"
-      @stop="stop"
-      @restart="restart"
-      @settings="openSettings"
-      @log="openLog"
-    />
-
-    <SettingsDialog
+    <JvmSettingsDialog
       v-model="settings.on"
       :svc="settings.svc"
-      :kind="ws.kind"
+      :kind="kind"
       :log-text="logText"
       :log-more="logMore"
       :log-status="logStatus"
@@ -126,45 +166,78 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
-import SettingsDialog from './SettingsDialog.vue'
-import { usePreferencesStore } from '../stores/preferences'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import JvmSettingsDialog from './JvmSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
-import { ServiceTable, serviceIcon, useServiceActions } from '@bash-scripts/web-shared'
-import { api } from '../composables/useApi'
 import {
-  KIND_TEXT,
-  LIVE,
+  LIVE_STATUSES,
+  ServiceTable,
+  runningCount,
+  serviceIcon,
+  useServiceActions,
+} from '@bash-scripts/web-shared'
+import { formatAgo as ago } from '@bash-scripts/web-shared/format'
+import { baseName } from '../../utils/format'
+import {
   STATUS_COLOR,
   STATUS_TEXT,
   TYPE_TEXT,
-  ago,
-  baseName,
   moduleOf,
-  runningCount,
-} from '../composables/format'
+} from '../../utils/jvmFormat'
+import { jvmKindLabel } from '../../utils/workspaceTabs'
+import { jvmApi, toolsApi } from '../../utils/toolApi'
+import { useToolWorkspace } from '../../composables/useToolWorkspace'
+import { createScanWait } from '../../utils/scanWait'
+import { toast } from '../../utils/notice'
 
 const props = defineProps({
   ws: { type: Object, required: true },
   dark: { type: Boolean, default: false },
-  jdks: { type: Array, default: () => [] },
-  currentJdk: { type: String, default: '' },
 })
-const emit = defineEmits(['start', 'stop', 'restart', 'save', 'setjdk', 'scan', 'forget', 'notice'])
-// 重启按钮的短暂忙碌态；真正的停止与重新启动在 App.vue 里发请求。
-const restarting = ref({})
-function restart(row) {
-  restarting.value[row.svc.id] = true
-  emit('restart', { run: row.run.id, svc: row.svc.id })
-  setTimeout(() => {
-    restarting.value[row.svc.id] = false
-  }, 3000)
-}
+
+const LIVE = LIVE_STATUSES
+
+// 引擎工作区由 idex 探测结果里的 id 定位，状态走 JVM 引擎自己的推送。
+const engineId = computed(() => {
+  const tools = props.ws.tools
+  const jvm = tools && typeof tools === 'object' ? tools.jvm : null
+  return (jvm && jvm.id) || ''
+})
+
+const { ws: engineWs, registered, loading, error, refresh, reload } = useToolWorkspace({
+  api: jvmApi,
+  engineId: () => engineId.value,
+  localApi: toolsApi,
+  localId: () => props.ws.id,
+})
+
+const root = computed(() => {
+  if (engineWs.value && engineWs.value.root) return engineWs.value.root
+  const jvm = props.ws.tools && props.ws.tools.jvm
+  return (jvm && jvm.root) || props.ws.root
+})
+const kind = computed(() => {
+  if (engineWs.value && engineWs.value.kind) return engineWs.value.kind
+  const jvm = props.ws.tools && props.ws.tools.jvm
+  return (jvm && jvm.kind) || ''
+})
+const poms = computed(() => (engineWs.value && engineWs.value.poms) || [])
+const services = computed(() => (engineWs.value && engineWs.value.services) || [])
+const running = computed(() => (engineWs.value ? runningCount(engineWs.value) : 0))
+
+const scanning = ref(false)
+const enabling = ref(false)
+const waiting = ref(false)
+const enableError = ref('')
+const filter = ref('')
+const tab = ref('service')
+const custom = reactive({ on: false, path: '' })
+const jdks = ref([])
+const currentJdk = ref('')
 
 // Maven 与 Gradle 的命令不同，页签跟着工作区类型走。
 const tabs = computed(() =>
-  props.ws.kind === 'gradle'
+  kind.value === 'gradle'
     ? [
         { value: 'run', title: '启动' },
         { value: 'build', title: '构建' },
@@ -176,24 +249,17 @@ const tabs = computed(() =>
         { value: 'poms', title: '模块清单' },
       ],
 )
-// 栏目选择记在全局偏好里，换工作区、刷新页面都停在原处；换类型时回到第一条。
-const { activeTab: tab } = storeToRefs(usePreferencesStore())
+
+// 换类型时如果当前栏不存在，回到第一条；同一个工作区内切来切去则保持原处。
 watch(
-  () => props.ws && props.ws.scan_error,
-  (text) => {
-    if (text) emit('notice', { text, color: 'warning' })
-  },
-)
-watch(
-  () => props.ws.kind,
+  kind,
   () => {
     if (!tabs.value.some((item) => item.value === tab.value)) tab.value = tabs.value[0].value
   },
   { immediate: true },
 )
-const filter = ref('')
-const custom = reactive({ on: false, path: '' })
-// 启动、停止与设置弹窗走共享流程，启动载荷带本应用的方式与刷新选项。
+
+// 启动、停止与设置弹窗走共享流程，启动载荷带本应用的启动方式与刷新选项。
 const {
   starting,
   stopping,
@@ -207,54 +273,190 @@ const {
   openSettings,
   openLog,
 } = useServiceActions({
-  ws: () => props.ws,
-  api,
+  ws: () => engineWs.value,
+  api: jvmApi,
   statusText: STATUS_TEXT,
   startPayload: (row) => ({
     svc: row.svc.id,
     mode: row.svc.mode || 'auto',
     refresh: !!row.svc.refresh,
   }),
-  onStart: (payload) => emit('start', payload),
-  onStop: (runId) => emit('stop', runId),
+  onStart: (payload) => startService(payload),
+  onStop: (runId) => stopService(runId),
 })
 
-const CUSTOM = '__jvmx_custom__'
+const CUSTOM = '__idex_jvm_custom__'
 
 const jdkItems = computed(() => {
   const items = [{ label: '跟随当前环境', path: '' }]
-  for (const item of props.jdks) items.push({ label: item.label, path: item.path })
+  for (const item of jdks.value) items.push({ label: item.label, path: item.path })
   // 存着但没扫到的路径也要列出来，否则下拉里看不到当前值。
-  const cur = props.ws.jdk || ''
-  if (cur && !props.jdks.some((item) => item.path === cur)) items.push({ label: cur, path: cur })
+  const cur = (engineWs.value && engineWs.value.jdk) || ''
+  if (cur && !jdks.value.some((item) => item.path === cur)) items.push({ label: cur, path: cur })
   items.push({ label: '自定义路径…', path: CUSTOM })
   return items
 })
 
 const jdkTitle = computed(() => {
-  if (props.ws.jdk_missing) return `选中的 JDK 已不存在，启动时回退到当前环境：${props.ws.jdk}`
-  if (props.ws.jdk) return props.ws.jdk
-  return props.currentJdk ? `跟随当前环境：${props.currentJdk}` : '跟随启动服务时的环境'
+  const cur = engineWs.value ? engineWs.value.jdk : ''
+  if (engineWs.value && engineWs.value.jdk_missing) {
+    return `选中的 JDK 已不存在，启动时回退到当前环境：${cur}`
+  }
+  if (cur) return cur
+  return currentJdk.value ? `跟随当前环境：${currentJdk.value}` : '跟随启动服务时的环境'
 })
 
-function pickJdk(value) {
+async function loadJdks() {
+  try {
+    const data = await jvmApi.jdks()
+    jdks.value = data.jdks || []
+    currentJdk.value = data.current || ''
+  } catch (err) {
+    // 取不到只是下拉里没有候选，手动填路径仍然可用。
+  }
+}
+
+async function pickJdk(value) {
   if (value === CUSTOM) {
-    custom.path = props.ws.jdk || ''
+    custom.path = (engineWs.value && engineWs.value.jdk) || ''
     custom.on = true
     return
   }
-  emit('setjdk', { ws: props.ws.id, jdk: value })
+  await setJdk(value)
 }
 
-function saveCustom() {
-  emit('setjdk', { ws: props.ws.id, jdk: custom.path.trim() })
+async function setJdk(jdk) {
+  try {
+    await jvmApi.setJdk(props.ws.id, jdk)
+    toast(jdk ? 'JDK 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`设置 JDK 失败：${err.message}`, 'error')
+  }
+}
+
+async function saveCustom() {
+  await setJdk(custom.path.trim())
   custom.on = false
 }
 
-const running = computed(() => runningCount(props.ws))
+// 扫描结果靠状态推送回来；等太久就把按钮放开，别一直卡在「扫描中」。
+const wait = createScanWait({
+  onTimeout: () => {
+    waiting.value = false
+    enableError.value = '扫描超过两分钟还没回来；检查 JVM 引擎后重试。'
+  },
+})
+let enableToken = 0
+let alive = true
+
+function stopWait(clearError = false) {
+  wait.stop()
+  waiting.value = false
+  if (clearError) enableError.value = ''
+}
+
+// 「启用并扫描」：idex 再探测一次能力，引擎按根目录登记并扫描；结果由状态推送补上。
+// 只调 tools 的探测不会往引擎状态里写工作区行，所以两条都要走；串行避免引擎刚重扫又撞 409。
+async function enable() {
+  const token = ++enableToken
+  const id = props.ws.id
+  enabling.value = true
+  stopWait(true)
+  try {
+    await toolsApi.rescan(id)
+    await jvmApi.rescan(id)
+    if (!alive || token !== enableToken || props.ws.id !== id) return
+    if (!registered.value) {
+      waiting.value = true
+      wait.start()
+    }
+    await reload()
+  } catch (err) {
+    if (!alive || token !== enableToken || props.ws.id !== id) return
+    stopWait()
+    enableError.value = err.message
+  } finally {
+    if (alive && token === enableToken && props.ws.id === id) enabling.value = false
+  }
+}
+
+function retry() {
+  stopWait(true)
+  reload()
+}
+
+// 扫描结果由状态推送带回来：工作区一出现就不用再等。
+watch(registered, (on) => {
+  if (on) stopWait(true)
+})
+
+// 引擎一报错就放开等待，错误块里给重试；恢复后可以再点启用。
+watch(error, (text) => {
+  if (text) stopWait()
+})
+
+// 引擎扫描失败的原因放在工作区行上，扫不到目标时也至少说明为什么。
+watch(
+  () => engineWs.value && engineWs.value.scan_error,
+  (text) => {
+    if (text) toast(text, 'warning')
+  },
+)
+
+async function rescan() {
+  scanning.value = true
+  try {
+    await jvmApi.rescan(props.ws.id)
+    toast('已开始重新扫描', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`重新扫描失败：${err.message}`, 'error')
+  } finally {
+    scanning.value = false
+  }
+}
+
+async function startService(payload) {
+  try {
+    await jvmApi.start(payload)
+    toast('已发出启动', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`启动失败：${err.message}`, 'error')
+  }
+}
+
+async function stopService(runId) {
+  try {
+    await jvmApi.stop(runId)
+    toast('已停止', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`停止失败：${err.message}`, 'error')
+  }
+}
+
+// 重启按钮的短暂忙碌态；真正的停止与重新启动在引擎里完成，状态由推送补上。
+const restarting = ref({})
+
+async function restart(row) {
+  restarting.value[row.svc.id] = true
+  try {
+    await jvmApi.restart(row.run.id)
+    toast('已发出重启', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`重启失败：${err.message}`, 'error')
+  } finally {
+    setTimeout(() => {
+      delete restarting.value[row.svc.id]
+    }, 3000)
+  }
+}
 
 function typeTab(type) {
-  if (props.ws.kind === 'gradle') return type
+  if (kind.value === 'gradle') return type
   return type === 'run' || type === 'war' ? 'service' : type
 }
 
@@ -265,25 +467,25 @@ function matches(text) {
 
 function count(value) {
   if (value === 'poms') return 0
-  return props.ws.services.filter((s) => typeTab(s.type) === value && matches(s.tag)).length
+  return services.value.filter((s) => typeTab(s.type) === value && matches(s.tag)).length
 }
 
 // 列表按栏目拼：每个动作只看自己的模块，日志也从这一行打开。
 const rows = computed(() => {
   if (tab.value === 'poms') {
-    return props.ws.poms
+    return poms.value
       .filter(matches)
       .map((rel) => ({ key: rel, title: moduleOf(rel), path: rel }))
   }
 
-  return props.ws.services
+  return services.value
     .filter((s) => typeTab(s.type) === tab.value)
     .filter((s) => matches(s.tag) || matches(s.display))
     .map((svc) => {
       const run = svc.run
       const live = !!run && LIVE.includes(run.status)
       // 同一模块上的另一个动作在跑时不能起：打包与启动抢同一个 target；同工作区的别的模块不受影响。
-      const blocked = props.ws.services.some(
+      const blocked = services.value.some(
         (o) => o !== svc && o.run && LIVE.includes(o.run.status) && o.tag === svc.tag,
       )
       return {
@@ -310,9 +512,43 @@ const rows = computed(() => {
     })
 })
 
-function onSave({ module, args, mode, refresh }) {
-  emit('save', { svc: settings.svc.id, module, args, mode, refresh })
+// 弹窗给的是整份参数，模块与启动方式一起存回这一行。
+async function onSave({ module, args, mode, refresh: refreshDeps }) {
+  if (!settings.svc) return
+  try {
+    await jvmApi.update({
+      svc: settings.svc.id,
+      module,
+      args,
+      mode,
+      refresh: refreshDeps,
+    })
+    toast('参数已保存', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`保存参数失败：${err.message}`, 'error')
+  }
 }
+
+// 换工作区时筛选回到全部，否则表里只剩空行，看着像模块丢了；
+// 上一个工作区的启用请求与等待也一并作废，不能带着「扫描中」的禁用态过去。
+watch(
+  () => props.ws.id,
+  () => {
+    enableToken += 1
+    stopWait(true)
+    enabling.value = false
+    filter.value = ''
+    custom.on = false
+  },
+)
+
+onMounted(loadJdks)
+onBeforeUnmount(() => {
+  alive = false
+  enableToken += 1
+  stopWait()
+})
 </script>
 
 <style scoped>
@@ -382,6 +618,42 @@ function onSave({ module, args, mode, refresh }) {
 .svc-path {
   font-size: 0.75rem;
   color: rgb(var(--v-theme-on-surface-variant));
+}
+.state {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px 8px;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.state-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.state-text strong {
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 0.95rem;
+}
+.state-text p {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+}
+.state-error {
+  color: rgb(var(--v-theme-error));
+}
+.state-wait {
+  color: rgb(var(--v-theme-primary));
+}
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  background: rgba(var(--v-theme-warning), 0.12);
 }
 .none {
   padding: 28px 8px;

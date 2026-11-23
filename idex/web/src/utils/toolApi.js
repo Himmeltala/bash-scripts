@@ -16,5 +16,12 @@ export const nodeApi = {
   addCommand: (payload) => nodeClient.call('POST', '/addcmd', payload),
   removeCommand: (svc) => nodeClient.call('POST', '/delcmd', { svc }),
 }
-export const jvmApi = toolApi('/__idex/api/jvm')
+const jvmClient = createToolApi('/__idex/api/jvm')
+
+export const jvmApi = {
+  ...jvmClient.api,
+  jdks: () => jvmClient.call('GET', '/jdks'),
+  setJdk: (ws, jdk) => jvmClient.call('POST', '/jdk', { ws, jdk }),
+  restart: (run) => jvmClient.call('POST', '/restart', { run }),
+}
 export const toolsApi = toolApi('/__idex/api/tools')
