@@ -4,6 +4,7 @@
 另有一条走 ``engine.sh --engine`` 的协议测试，验证搬迁后的状态文件与扫描。
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -406,6 +407,77 @@ class EngineProtocolTest(unittest.TestCase):
         self.eng.stop(runid)
         self.assertEqual(self.sessions.killed, [str(fake.pid)])
         self.assertEqual(dev_run()["status"], "stopped")
+
+    def write_package(self, root, name, scripts=None, extra=None):
+        pkg = {"name": name}
+        if scripts:
+            pkg["scripts"] = scripts
+        if extra:
+            pkg.update(extra)
+        path = Path(root) / "package.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(pkg), encoding="utf-8")
+
+    def test_pnpm_workspace_scan_honours_excludes(self):
+        """pnpm 工作区按 pnpm-workspace.yaml 圈成员，排除项与 node_modules 都不进扫描。"""
+        root = Path(self.tmp.name) / "pnpm-ws"
+        self.write_package(root, "demo-root", {"dev": "vite"})
+        (root / "pnpm-workspace.yaml").write_text(
+            "packages:\n  - 'packages/*'\n  - '!packages/skip'\n", encoding="utf-8"
+        )
+        (root / "pnpm-lock.yaml").write_text("", encoding="utf-8")
+        self.write_package(root / "packages" / "app", "@demo/app",
+                           {"dev": "vite", "build": "vite build"})
+        self.write_package(root / "packages" / "skip", "@demo/skip", {"dev": "nope"})
+        self.write_package(root / "node_modules" / "fake", "fake", {"dev": "nope"})
+
+        self.eng.add_workspace(str(root))
+
+        snap = self.state.snapshot()
+        ws = snap["workspaces"][0]
+        self.assertEqual([item["rel"] for item in ws["scripts"]], [".", "packages/app"])
+        ids = [item["id"] for item in ws["services"]]
+        self.assertIn(ws["id"] + ".dev.@demo/app", ids)
+        self.assertIn(ws["id"] + ".build.@demo/app", ids)
+        self.assertFalse(any("skip" in ident or "fake" in ident for ident in ids))
+
+        app_dev = next(item for item in ws["services"] if item["id"] == ws["id"] + ".dev.@demo/app")
+        self.assertEqual(app_dev["pm"], "pnpm")
+        self.assertEqual(app_dev["cmd"], "pnpm run dev")
+        root_dev = next(item for item in ws["services"] if item["id"] == ws["id"] + ".dev.demo-root")
+        self.assertEqual(root_dev["pm"], "pnpm")
+        self.assertEqual(root_dev["cmd"], "pnpm run dev")
+        # 安装命令按 npm 的工作区选择器拼，与包管理器声明无关（原 nodex 口径）。
+        app_install = next(
+            item for item in ws["services"] if item["id"] == ws["id"] + ".install.@demo/app"
+        )
+        self.assertEqual(app_install["pm"], "pnpm")
+        self.assertEqual(app_install["cmd"], "npm install --workspace @demo/app")
+
+    def test_package_manager_field_beats_lockfile_and_install_trace(self):
+        """packageManager 字段优先于锁文件与 node_modules 里的安装痕迹。"""
+        root = Path(self.tmp.name) / "field"
+        self.write_package(root, "field", {"dev": "serve", "build": "tsc"},
+                           extra={"packageManager": "pnpm@9.0.0"})
+        # 锁文件与安装痕迹都指向 yarn，字段仍应胜出。
+        (root / "yarn.lock").write_text("", encoding="utf-8")
+        (root / "package-lock.json").write_text("", encoding="utf-8")
+        (root / "node_modules").mkdir()
+        (root / "node_modules" / ".yarn-integrity").write_text("", encoding="utf-8")
+
+        self.eng.add_workspace(str(root))
+
+        snap = self.state.snapshot()
+        ws = snap["workspaces"][0]
+        dev = next(item for item in ws["services"] if item["type"] == "dev")
+        build = next(item for item in ws["services"] if item["type"] == "build")
+        self.assertEqual(dev["cmd"], "pnpm run dev")
+        self.assertEqual(build["cmd"], "pnpm run build")
+
+        raw = (self.home / "state.tsv").read_text(encoding="utf-8").splitlines()
+        dev_row = next(line for line in raw if line.startswith("svc" + FS + ws["id"] + ".dev."))
+        self.assertEqual(dev_row.split(FS)[9], "pnpm")
+        self.assertEqual(dev_row.split(FS)[8], "pnpm run dev")
 
     def test_custom_commands_are_added_and_removed(self):
         self.eng.add_workspace(str(self.root))
