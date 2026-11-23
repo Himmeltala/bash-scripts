@@ -7,6 +7,7 @@ from web import ApiError
 
 from server_common import inside
 from server_stores import SEARCH_IGNORE_DEFAULTS
+from tool_detect import detect_tools
 
 
 def list_dirs(raw):
@@ -38,16 +39,25 @@ def _add_workspace(handler, body):
     root = str(body.get("root", "")).strip()
     if not root:
         raise ApiError(400, "没给目录")
-    item = handler.store.add(root)
+    item = handler.store.add(root, tools=detect_tools(root))
     return {"ok": True, "workspace": item}
 
 
 def _forget_workspace(handler, body):
     wid = str(body.get("ws", ""))
-    handler.store.remove(wid)
+    item = handler.store.remove(wid)
     if handler.lsp is not None:
         handler.lsp.stop_workspace(wid)
-    return {"ok": True}
+    return {"ok": True, "removed": item}
+
+
+def _rescan_tools(handler, body):
+    ws = handler.store.find(str(body.get("ws", "")))
+    if ws is None:
+        raise ApiError(404, "没有这个工作区")
+    tools = detect_tools(ws["root"])
+    handler.store.set_tools(ws["id"], tools)
+    return {"ok": True, "tools": tools}
 
 
 def _set_alias(handler, body):
