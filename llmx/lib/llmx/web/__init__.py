@@ -12,6 +12,8 @@ import argparse
 import json
 import mimetypes
 import os
+import select
+import socket
 import sys
 import threading
 import time
@@ -41,6 +43,53 @@ INDEX = STATIC / "index.html"
 COMMANDS = ("daily", "session", "hour", "project", "api")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
 LOCK = threading.Lock()
+
+
+class _PayloadCache:
+    """同一条查询在窗口内只算一次；并发请求共用一次计算，算完一起拿结果。"""
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._entries = {}
+        self._key_locks = {}
+
+    def get(self, key, ttl, build):
+        now = self._clock()
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None and entry[0] > now:
+                return entry[1]
+            lock = self._key_locks.setdefault(key, threading.Lock())
+        with lock:
+            now = self._clock()
+            with self._lock:
+                entry = self._entries.get(key)
+                if entry is not None and entry[0] > now:
+                    return entry[1]
+            value = build()
+            with self._lock:
+                self._entries[key] = (self._clock() + ttl, value)
+            return value
+
+
+# 页面推送按查询串共用这份缓存；条数受实际筛选组合限制。
+PAYLOAD_CACHE = _PayloadCache()
+
+
+def _peer_closed(conn) -> bool:
+    """对端已经断开时返回 True。只窥探不消费，浏览器在 GET 上不会发数据。"""
+    try:
+        ready, _, _ = select.select([conn], [], [], 0)
+    except (OSError, ValueError):
+        return True
+    if not ready:
+        return False
+    try:
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except OSError:
+        return True
+
 # 页面头部的性能指标只采一份给所有页面。
 METRICS_STREAM = MetricsStream(metrics_mod.Metrics())
 _METRICS_LOCK = threading.Lock()
@@ -133,6 +182,22 @@ def _payload(config: Config, query: dict[str, list[str]]) -> dict:
     args, since, until = _args(config, query)
     # 页面只用 rows 与 totals；不加时间戳，数据没变时这一份才好拿去和上一份比对。
     return cli._collect(args.command, args, config, since, until)
+
+
+def _cache_key(query: dict[str, list[str]]) -> tuple:
+    """查询串就是缓存键；every 只影响推送间隔，同一个查询换了间隔仍共用结果。"""
+    return tuple(
+        sorted((name, tuple(values)) for name, values in query.items() if name != "every")
+    )
+
+
+def _cached_payload(config: Config, query: dict[str, list[str]], ttl: float) -> dict:
+    """同一查询在 ttl 秒内只算一次，刷新、多标签页与重连共用；计算仍走全局 LOCK。"""
+    def build() -> dict:
+        with LOCK:
+            return _payload(config, query)
+
+    return PAYLOAD_CACHE.get(_cache_key(query), ttl, build)
 
 
 def _session_payload(config: Config, query: dict[str, list[str]]) -> dict:
@@ -408,8 +473,7 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
             """一条长连接按间隔推用量：连上先推当前值，之后每轮重算并重读配置。"""
             try:
                 every = _stream_seconds(query)
-                with LOCK:
-                    payload = _payload(config, query)
+                payload = _cached_payload(config, query, every)
             except cli.UsageError as exc:
                 raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
             except Exception as exc:  # noqa: BLE001 - 首次采集失败按普通接口报错
@@ -423,9 +487,11 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                 self.wfile.flush()
                 while True:
                     time.sleep(every)
+                    # 页面已经关掉就别再扫；否则要等下一次写失败才发现，白烧十几秒 CPU。
+                    if _peer_closed(self.connection):
+                        break
                     try:
-                        with LOCK:
-                            payload = _payload(config, query)
+                        payload = _cached_payload(config, query, every)
                     except Exception as exc:  # noqa: BLE001 - 单轮失败不掐断流
                         self._sse_send({"error": f"{type(exc).__name__}: {exc}"}, "failure")
                         last_write = time.time()
