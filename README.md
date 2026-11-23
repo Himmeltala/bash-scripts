@@ -40,6 +40,16 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/uninstall.sh
 
 clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-path` 保留 PATH 设置。
 
+## 开发模式
+
+改前端不用每次安装，跑：
+
+```bash
+./dev.sh idex      # 可选 llmx、netx
+```
+
+后端直接跑仓库里的源码，Vite 起在 5173 并把接口代理到后端；改前端与 `lib/web-shared` 即时热更新，改 Python 自动重启后端。`DEV_VITE_PORT` 可换前端端口。首次运行会装依赖，缺静态产物时补构建一次。
+
 ## 外部依赖
 
 `mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`，Node 引擎需要 `node` 与 `npm`（默认安装命令是 `npm install`，用 pnpm 或 yarn 的要在页面里改这一行命令），JVM 引擎需要 `mvnx` 或 `gradlex`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。
