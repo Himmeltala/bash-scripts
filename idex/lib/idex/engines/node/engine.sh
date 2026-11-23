@@ -655,14 +655,14 @@ web_tag() {
 main() {
   local root
   if [[ "${1:-}" == '--detect' ]]; then
-    root=$(find_workspace_root "${2:-}") || die "$2 及其上级都没有 package.json，不是 Node 项目" 4
+    root=$(find_workspace_root "${2:-}") || die "${2:-} 及其上级都没有 package.json，不是 Node 项目" 4
     printf '%s\n' "$root"
     exit 0
   fi
   case "${1:-}" in
     --engine) web_engine ;;
     -h|--help)
-      printf '用法: engine.sh --engine\n\nidex 的 Node 引擎，由服务端以 --engine 常驻启动，通过管道收发请求。\n'
+      printf '用法: engine.sh --engine | --detect <目录>\n\nidex 的 Node 引擎，由服务端以 --engine 常驻启动，通过管道收发请求；--detect 只读探测工作区根。\n'
       ;;
     *)
       printf 'idex: 未知参数：%s；见 engine.sh --help\n' "${1:-}" >&2

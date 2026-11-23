@@ -19,6 +19,8 @@ class DetectTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             done = subprocess.run(["bash", str(ENGINE), "--detect", tmp], capture_output=True, text=True)
             self.assertEqual(done.returncode, 4)
+            self.assertIn("package.json", done.stderr)
+            self.assertEqual(done.stdout, "")
 
 
 if __name__ == "__main__":
