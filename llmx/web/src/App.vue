@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \llmx\web\src\App.vue
+ * @Description: llmx 网页看板的外壳：顶栏、左侧菜单与页面路由。
+-->
+
 <template>
   <v-app>
     <v-app-bar density="comfortable" flat border>

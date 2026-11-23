@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\stores\preferences.js
+ * @Description: idex 的界面偏好：变更、差异、搜索、页签与编辑器配色的本地选择。
+*/
+
 import { defineStore } from 'pinia'
 import { useStoredChoice } from '@bash-scripts/web-shared'
 import { EDITOR_THEME_IDS } from '../editor/themeOptions'

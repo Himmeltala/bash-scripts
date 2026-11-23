@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\utils\toolApi.js
+ * @Description: Node 与 JVM 引擎的接口表，以及工作区工具能力的探测接口。
+*/
+
 // Node 与 JVM 引擎的接口表，以及只负责重新探测工作区能力的 tools 接口。
 
 import { createToolApi } from '@bash-scripts/web-shared/tool-api'

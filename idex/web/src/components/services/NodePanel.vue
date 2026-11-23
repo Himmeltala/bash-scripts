@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\components\services\NodePanel.vue
+ * @Description: Node 页签：扫描 package.json 脚本，启动、停止服务并管理自定义命令。
+-->
+
 <template>
   <div class="panel">
     <header class="head">

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 21:40:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 21:40:00
+ * @LastEditTime: 2026-11-23 23:09:19
  * @FilePath: \idex\web\src\utils\engineEnable.js
  * @Description: 引擎页签共用的启用流程：先让 idex 探测能力，再让引擎登记并扫描，结果由状态推送补上。
  */

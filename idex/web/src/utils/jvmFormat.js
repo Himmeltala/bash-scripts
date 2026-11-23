@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 21:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 21:00:00
+ * @LastEditTime: 2026-11-23 23:09:19
  * @FilePath: \idex\web\src\utils\jvmFormat.js
  * @Description: JVM 页签与参数弹窗共用的动作、状态与启动方式词汇。
  */

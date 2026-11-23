@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \lib\web-shared\src\components\services\ServiceTable.vue
+ * @Description: 服务清单表格：模块、命令、状态，以及启动、停止、重启与日志等行操作。
+-->
+
 <template>
   <v-table density="compact" class="table">
     <thead>

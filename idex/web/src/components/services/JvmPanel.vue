@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\components\services\JvmPanel.vue
+ * @Description: JVM 页签：扫描 Maven 或 Gradle 工作区的模块与目标，启动、停止与重启服务。
+-->
+
 <template>
   <div class="panel">
     <header class="head">

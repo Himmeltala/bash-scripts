@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\utils\api.js
+ * @Description: idex 的接口封装与 SSE 地址，所有请求都走 /__idex/api。
+*/
+
 // 接口封装：所有请求都走 /__idex/api，出错时把后端给的那句话抛出来。
 
 import { createJsonClient, encodeParam } from '@bash-scripts/web-shared/http'

@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\test\engineEnable.test.js
+ * @Description: 引擎启用与扫描等待的回归测试。
+*/
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createEngineEnable } from '../src/utils/engineEnable.js'

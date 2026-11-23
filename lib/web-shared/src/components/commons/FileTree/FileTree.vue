@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \lib\web-shared\src\components\commons\FileTree\FileTree.vue
+ * @Description: 通用文件树：按节点渲染目录与文件，展开、选择与懒加载交给调用方。
+-->
+
 <template>
   <div ref="rootRef" class="file-tree">
     <template v-if="root">

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-19 00:10:49
+ * @LastEditTime: 2026-11-23 23:09:19
  * @FilePath: \idex\web\src\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->

@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\lib\idex\engines\node\scan.js
+ * @Description: 扫描 Node 工作区，输出包管理器与脚本清单供 bash 读取。
+*/
+
 // 扫描 Node 工作区：包管理器和工作区里的脚本，按行输出给 bash 读。
 // 输出用 \x1f 分列：meta<FS>包管理器，script<FS>相对路径<FS>脚本名<FS>启动脚本<FS>构建脚本。
 // 脚本列可以是空格分隔的多个名字，表示这个目录有多个同义脚本；为空表示没有，不参与那一类动作。

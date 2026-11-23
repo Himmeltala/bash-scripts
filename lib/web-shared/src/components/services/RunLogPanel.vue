@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \lib\web-shared\src\components\services\RunLogPanel.vue
+ * @Description: 运行日志面板：标题、更早按钮与终端视图，空日志时给占位文案。
+-->
+
 <template>
   <div class="log-head">
     <span class="label">日志</span>

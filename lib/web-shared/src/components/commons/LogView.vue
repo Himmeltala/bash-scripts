@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \lib\web-shared\src\components\commons\LogView.vue
+ * @Description: 终端风格的日志视图：用 xterm 显示整段文本，按行着色由调用方给。
+-->
+
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'

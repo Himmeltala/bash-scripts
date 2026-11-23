@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 20:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 20:00:00
+ * @LastEditTime: 2026-11-23 23:09:19
  * @FilePath: \idex\web\src\components\services\NodeSettingsDialog.vue
  * @Description: Node 服务的参数与运行日志弹窗：改一个动作的命令，顺手看这次运行的输出。
  *               JVM 的弹窗契约不同（kind、module、mode、refresh），Task 11 另建 JvmSettingsDialog，不要复用这个。

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 20:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 20:00:00
+ * @LastEditTime: 2026-11-23 23:09:19
  * @FilePath: \idex\web\src\composables\useToolWorkspace.js
  * @Description: 引擎页签的公共状态：按引擎工作区 id 从推送里取对应工作区，引擎断开时留下原因供重试。
  */

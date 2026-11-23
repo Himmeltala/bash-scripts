@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\test\toolApi.test.js
+ * @Description: 引擎接口表的回归测试。
+*/
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 

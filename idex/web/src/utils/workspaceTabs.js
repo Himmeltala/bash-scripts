@@ -1,3 +1,12 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\utils\workspaceTabs.js
+ * @Description: 工作区页签的生成规则：按版本库类型与探测到的引擎能力决定显示哪些页签。
+*/
+
 // 工作区页签：仓库有变更、日志与同步，普通目录只有浏览；
 // 两者都按探测到的能力追加 Node 与 JVM 页签。
 
