@@ -757,6 +757,7 @@ import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, isHeldNode } from '../utils/browseOps'
+import { compressiblePath } from '../utils/browseCompress'
 import { SOURCE_LABELS, previewKindOf } from '../utils/previewTypes'
 import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../utils/browseMenus'
 import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../utils/diagnostics'
@@ -1354,11 +1355,12 @@ function onTreeAction(payload) {
 
 // 压缩目录：包落在同级，成功后提示包路径并重读父目录，让新包出现在树里。
 async function compressDir(node) {
-  if (!node || !node.path) return
+  const path = compressiblePath(node)
+  if (!path) return
   try {
-    const data = await api.compress(props.ws.id, node.path)
+    const data = await api.compress(props.ws.id, path)
     flash(`已生成 ${data.path}`)
-    treeRef.value?.reloadDir(dirName(node.path))
+    treeRef.value?.reloadDir(dirName(path))
   } catch (err) {
     flash(err && err.message ? err.message : '压缩失败')
   }
