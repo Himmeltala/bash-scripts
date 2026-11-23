@@ -21,11 +21,12 @@ from browse_fs import (
 )
 from server_common import inside
 from stores import LayoutStore  # noqa: F401  只为了让类型提示与依赖关系看得出来
-from vcs_summary import workspace_paths
 
 SEARCH_IGNORE_DEFAULTS = (".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target")
 # 每个工作区最近一次搜索的代次；新请求换了代，旧的那个扫到一半就停。
 SEARCH_TOKENS = {}
+# 大目录打包可能很久，给个上限；超时当失败回给页面。
+COMPRESS_TIMEOUT = 600
 
 
 def zipx_command():
@@ -45,13 +46,16 @@ def _browse_compress(handler, body):
     ws = handler.store.find(str(body.get("ws", "")))
     if ws is None:
         raise ApiError(404, "没有这个工作区")
-    rel = browse_rel(str(body.get("path", "")))
-    if not rel:
+    # 与浏览接口同一套根：登记目录本身；尾斜杠去掉，"." 与根目录一样不能压。
+    root = ws["root"]
+    rel = browse_rel(str(body.get("path", ""))).rstrip("/")
+    if not rel or rel == ".":
         raise ApiError(400, "工作区根目录不能压缩：包会落到工作区外")
-    root = workspace_paths(ws)
     target = os.path.join(root, rel)
     if not inside(root, target):
         raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if os.path.realpath(target) == os.path.realpath(root):
+        raise ApiError(400, "工作区根目录不能压缩：包会落到工作区外")
     if not os.path.isdir(target):
         raise ApiError(400, "只能压缩目录：%s" % rel)
     parent = os.path.dirname(target)
@@ -62,20 +66,25 @@ def _browse_compress(handler, body):
     if not zipx:
         raise ApiError(503, "找不到 zipx 命令，装好 zipx 或用同级检出的再试")
     # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
-    proc = subprocess.run(
-        [zipx, "pack", os.path.basename(target), "-o", archive],
-        cwd=parent,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            [zipx, "pack", os.path.basename(target), "-o", archive],
+            cwd=parent,
+            capture_output=True,
+            text=True,
+            timeout=COMPRESS_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        raise ApiError(504, "压缩超时：%s" % rel)
     if proc.returncode != 0:
         message = (proc.stderr or proc.stdout or "").strip()
         raise ApiError(400, message or "zipx 打包失败")
-    size = os.path.getsize(archive) if os.path.isfile(archive) else 0
+    if not os.path.isfile(archive):
+        raise ApiError(400, "zipx 没有生成包文件")
     return {
         "ok": True,
         "path": os.path.relpath(archive, root).replace(os.sep, "/"),
-        "size": size,
+        "size": os.path.getsize(archive),
     }
 
 

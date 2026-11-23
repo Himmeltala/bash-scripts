@@ -20,25 +20,82 @@ class CompressTest(unittest.TestCase):
         self.handler._check_write = lambda: None
         self.handler.store = type("S", (), {"find": lambda self_, wid: {"id": wid, "root": str(self.root)}})()
 
-    def test_packs_sibling_zip(self):
+    def make_zipx(self, body='touch "$4"'):
+        """假 zipx：记下 PWD 与 argv，再按给定脚本动作。"""
         fake = Path(self.tmp.name) / "zipx"
-        fake.write_text(f"#!/bin/sh\ntouch \"$4\"\n", encoding="utf-8"); fake.chmod(0o755)
-        with mock.patch("routes_browse.zipx_command", return_value=str(fake)):
+        recorder = Path(self.tmp.name) / "rec"
+        recorder.mkdir()
+        script = (
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$PWD\" > '{recorder}/cwd'\n"
+            f"printf '%s\\n' \"$@\" > '{recorder}/argv'\n"
+            f"{body}\n"
+        )
+        fake.write_text(script, encoding="utf-8"); fake.chmod(0o755)
+        return str(fake), recorder
+
+    def test_packs_sibling_zip(self):
+        fake, recorder = self.make_zipx()
+        with mock.patch("routes_browse.zipx_command", return_value=fake):
             out = _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
+        self.assertEqual(out["path"], "pkg.zip")
+        self.assertEqual(out["size"], 0)
+        self.assertTrue((self.root / "pkg.zip").exists())
+        self.assertEqual((recorder / "cwd").read_text().strip(), str(self.root))
+        self.assertEqual(
+            (recorder / "argv").read_text().splitlines(),
+            ["pack", "pkg", "-o", str(self.root / "pkg.zip")],
+        )
+
+    def test_trailing_slash_is_normalized(self):
+        fake, _ = self.make_zipx()
+        with mock.patch("routes_browse.zipx_command", return_value=fake):
+            out = _browse_compress(self.handler, {"ws": "i1", "path": "pkg/"})
         self.assertEqual(out["path"], "pkg.zip")
         self.assertTrue((self.root / "pkg.zip").exists())
 
     def test_existing_archive_is_409(self):
         (self.root / "pkg.zip").write_text("old")
-        with self.assertRaises(ApiError) as ctx:
-            _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
+        with mock.patch("routes_browse.zipx_command") as cmd:
+            with self.assertRaises(ApiError) as ctx:
+                _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
         self.assertEqual(ctx.exception.status, 409)
+        cmd.assert_not_called()
 
     def test_rejects_file_and_outside_path(self):
         (self.root / "a.txt").write_text("x")
         for path in ("a.txt", "../outside"):
             with self.assertRaises(ApiError):
                 _browse_compress(self.handler, {"ws": "i1", "path": path})
+
+    def test_rejects_empty_and_dot(self):
+        for path in ("", ".", "./"):
+            with self.assertRaises(ApiError) as ctx:
+                _browse_compress(self.handler, {"ws": "i1", "path": path})
+            self.assertEqual(ctx.exception.status, 400)
+
+    def test_missing_zipx_is_503(self):
+        with mock.patch("routes_browse.zipx_command", return_value=None):
+            with self.assertRaises(ApiError) as ctx:
+                _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
+        self.assertEqual(ctx.exception.status, 503)
+        self.assertIn("zipx", ctx.exception.message)
+
+    def test_zipx_failure_is_400_with_stderr(self):
+        fake, _ = self.make_zipx('echo "boom" >&2; exit 1')
+        with mock.patch("routes_browse.zipx_command", return_value=fake):
+            with self.assertRaises(ApiError) as ctx:
+                _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
+        self.assertEqual(ctx.exception.status, 400)
+        self.assertIn("boom", ctx.exception.message)
+
+    def test_zipx_success_without_archive_is_400(self):
+        fake, _ = self.make_zipx("exit 0")
+        with mock.patch("routes_browse.zipx_command", return_value=fake):
+            with self.assertRaises(ApiError) as ctx:
+                _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
+        self.assertEqual(ctx.exception.status, 400)
+        self.assertIn("没有生成包文件", ctx.exception.message)
 
 
 if __name__ == "__main__":
