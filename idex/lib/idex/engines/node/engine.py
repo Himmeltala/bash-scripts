@@ -15,21 +15,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "lib" / "py-shared" / "services"))
 from browse import inside
+from metrics import Metrics
 from runner import (
     LIVE,
     RUN_KIND,
     RUN_PREFIX_RE,
     RUN_STATUS,
+    Sessions,
     StateRows,
     ToolEngine,
     latest_runs,
     parse_fixed_rows,
     run_info,
     run_log_path,
+    sh_shell_argv,
 )
+from sse import MetricsStream, StateStream, log_page
 from stores import (
     FS,
+    AliasStore,
     HomeStore,
+    LayoutStore,
     LineStore,
     attach_alias_rel,
     attach_home,
@@ -55,6 +61,11 @@ WIDTHS = {WS_KIND: WS_WIDTH, SVC_KIND: SVC_WIDTH, SCRIPT_KIND: SCRIPT_WIDTH, RUN
 
 def parse_rows(text):
     return parse_fixed_rows(text, WIDTHS)
+
+
+def one_line(value):
+    """命令与名称都压成一行：引擎按行收请求，换行会把协议打断。"""
+    return " ".join(str(value or "").split())
 
 
 # 按工作区选 Node
@@ -258,7 +269,116 @@ class Engine(ToolEngine):
         return {"run": runid}
 
 
-# 路径
+# 服务层
+
+
+class NodeService:
+    """Node 引擎在 idex 里的服务层：状态、执行端、会话与状态推送装成一份。
+
+    原来 nodex 网页进程里的装配搬到这里，HTTP 路由只做参数、映射与权限。
+    """
+
+    def __init__(self, nodex, home, custom=None):
+        self.home = Path(home)
+        self.home.mkdir(parents=True, exist_ok=True)
+        self.logs = self.home / "logs"
+        self.state = State(self.home / "state.tsv")
+        self.sessions = Sessions(fallback=sh_shell_argv)
+        self.nodes = NodeStore(self.home / "node.tsv")
+        self.aliases = AliasStore(self.home / "alias.tsv")
+        self.layout = LayoutStore(self.home / "groups.json")
+        self.custom = CustomStore(custom) if custom else None
+        self.engine = Engine(str(nodex), self.state, self.sessions, self.logs, self.nodes)
+        self.metrics = Metrics()
+        # 状态与指标各一条后台线程，页面开几个都共用这一份。
+        watched = [
+            self.home / "state.tsv",
+            self.home / "alias.tsv",
+            self.home / "node.tsv",
+            self.home / "groups.json",
+        ]
+        if custom:
+            watched.append(Path(custom))
+        self.state_stream = StateStream(
+            watched,
+            build=self.state_payload,
+            tick=lambda: self.engine.call("tick"),
+        )
+        self.metrics_stream = MetricsStream(self.metrics)
+
+    # 启停后台
+
+    def start_background(self):
+        self.state_stream.start()
+        self.metrics_stream.start()
+
+    def close(self):
+        """收掉常驻执行端；已经起的服务进程不归这里管。"""
+        proc = self.engine.proc
+        self.engine.proc = None
+        if proc is None:
+            return
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
+    # 状态与动作
+
+    def state_payload(self):
+        return state_payload(self.state, self.nodes, self.aliases, self.custom, self.layout)
+
+    def start(self, body):
+        return self.engine.start(body)
+
+    def stop(self, run):
+        self.engine.stop(str(run or ""))
+
+    def update(self, svc, args):
+        self.engine.call("update", str(svc or "").strip(), one_line(args))
+
+    def rescan(self, ws):
+        self.engine.call("scan", str(ws or "").strip())
+
+    def add_workspace(self, root):
+        self.engine.add_workspace(str(root or "").strip())
+
+    def remove_workspace(self, ws):
+        # 先清别名与工具链目录，再移出工作区；工作区没了再按 id 删会找不到。
+        self.aliases.set(ws, "")
+        self.nodes.remove(ws)
+        self.engine.remove_workspace(ws)
+
+    def set_node(self, ws, node):
+        if self.state.find(WS_KIND, str(ws or "").strip()) is None:
+            raise ApiError(404, "没有这个工作区：%s" % ws)
+        node = str(node or "").strip()
+        if node:
+            node = os.path.abspath(os.path.expanduser(node))
+            if not is_node_home(node):
+                raise ApiError(400, "这个目录不是 Node：缺 bin/node")
+        self.nodes.set(ws, node)
+
+    def add_command(self, ws, type, rel=".", tag="", args=""):
+        self.engine.call(
+            "addcmd",
+            str(ws or "").strip(),
+            str(type or "").strip(),
+            str(rel or ".").strip(),
+            one_line(tag),
+            one_line(args),
+        )
+
+    def remove_command(self, svc):
+        self.engine.call("delcmd", str(svc or "").strip())
+
+    def log_page(self, query):
+        return log_page(self.state, self.logs, query, RUN_KIND)
 
 
 def ws_root(state, ws):
