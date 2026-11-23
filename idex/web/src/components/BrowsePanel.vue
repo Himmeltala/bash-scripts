@@ -1341,11 +1341,27 @@ function onTreeAction(payload) {
     pickUpload(payload.node && payload.node.path)
     return
   }
+  if (payload.action === 'compress') {
+    compressDir(payload.node)
+    return
+  }
   if (payload.action === 'props') {
     openProps(payload.node ? payload.node.path : '')
     return
   }
   return onBrowseAction(payload)
+}
+
+// 压缩目录：包落在同级，成功后提示包路径并重读父目录，让新包出现在树里。
+async function compressDir(node) {
+  if (!node || !node.path) return
+  try {
+    const data = await api.compress(props.ws.id, node.path)
+    flash(`已生成 ${data.path}`)
+    treeRef.value?.reloadDir(dirName(node.path))
+  } catch (err) {
+    flash(err && err.message ? err.message : '压缩失败')
+  }
 }
 
 // 属性：文件或目录的基础信息，只有看的份，不改磁盘上的东西。

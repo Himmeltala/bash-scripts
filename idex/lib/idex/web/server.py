@@ -323,6 +323,7 @@ WRITE_ROUTES = {
     "newfile": lambda h, m, q, b: h._browse_create(b, "file"),
     "rename": lambda h, m, q, b: h._browse_rename(b),
     "delete": lambda h, m, q, b: h._browse_delete(b),
+    "compress": lambda h, m, q, b: h._browse_compress(b),
     "stage": lambda h, m, q, b: h._stage(b),
     "unstage": lambda h, m, q, b: h._unstage(b),
     "restore-hunk": lambda h, m, q, b: h._restore_hunk(b),

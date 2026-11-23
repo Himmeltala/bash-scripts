@@ -1,6 +1,9 @@
 """浏览目录的网页接口：目录树、取文件、下载、搜索与增删改。"""
 
 import os
+import shutil
+import subprocess
+from pathlib import Path
 
 from web import ApiError, STREAMED, zip_dir
 
@@ -18,10 +21,62 @@ from browse_fs import (
 )
 from server_common import inside
 from stores import LayoutStore  # noqa: F401  只为了让类型提示与依赖关系看得出来
+from vcs_summary import workspace_paths
 
 SEARCH_IGNORE_DEFAULTS = (".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target")
 # 每个工作区最近一次搜索的代次；新请求换了代，旧的那个扫到一半就停。
 SEARCH_TOKENS = {}
+
+
+def zipx_command():
+    """打包命令：PATH 里的 zipx，找不到再看同级检出的 zipx/bin/zipx。"""
+    found = shutil.which("zipx")
+    if found:
+        return found
+    bundled = Path(__file__).resolve().parents[4] / "zipx" / "bin" / "zipx"
+    if bundled.is_file():
+        return str(bundled)
+    return None
+
+
+def _browse_compress(handler, body):
+    """把工作区里的一个目录压成同级同名 zip；已存在的包不覆盖。"""
+    handler._check_write()
+    ws = handler.store.find(str(body.get("ws", "")))
+    if ws is None:
+        raise ApiError(404, "没有这个工作区")
+    rel = browse_rel(str(body.get("path", "")))
+    if not rel:
+        raise ApiError(400, "工作区根目录不能压缩：包会落到工作区外")
+    root = workspace_paths(ws)
+    target = os.path.join(root, rel)
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if not os.path.isdir(target):
+        raise ApiError(400, "只能压缩目录：%s" % rel)
+    parent = os.path.dirname(target)
+    archive = os.path.join(parent, os.path.basename(target) + ".zip")
+    if os.path.exists(archive):
+        raise ApiError(409, "「%s」已存在" % os.path.basename(archive))
+    zipx = zipx_command()
+    if not zipx:
+        raise ApiError(503, "找不到 zipx 命令，装好 zipx 或用同级检出的再试")
+    # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
+    proc = subprocess.run(
+        [zipx, "pack", os.path.basename(target), "-o", archive],
+        cwd=parent,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        message = (proc.stderr or proc.stdout or "").strip()
+        raise ApiError(400, message or "zipx 打包失败")
+    size = os.path.getsize(archive) if os.path.isfile(archive) else 0
+    return {
+        "ok": True,
+        "path": os.path.relpath(archive, root).replace(os.sep, "/"),
+        "size": size,
+    }
 
 
 class BrowseRoutes:
@@ -96,6 +151,9 @@ class BrowseRoutes:
         ws = self._browse_write_ws(body)
         rel = str(body.get("path", ""))
         return {"workspace": ws, **delete_entry(ws["root"], ws.get("vcs", "none"), rel)}
+
+    def _browse_compress(self, body):
+        return _browse_compress(self, body)
 
     def _search(self, query):
         ws = self._ws(query)
