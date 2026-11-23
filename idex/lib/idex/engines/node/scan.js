@@ -139,7 +139,7 @@ function scriptsOf(scripts, names) {
 
 const rootPkg = readJson(path.join(root, 'package.json'))
 if (!rootPkg) {
-  process.stderr.write('nodex: ' + root + ' 下没有 package.json\n')
+  process.stderr.write('idex: ' + root + ' 下没有 package.json\n')
   process.exit(1)
 }
 
