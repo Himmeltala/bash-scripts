@@ -6,6 +6,15 @@ export function toolApi(prefix) {
   return createToolApi(prefix).api
 }
 
-export const nodeApi = toolApi('/__idex/api/node')
+// 工具独有路由从各自的客户端补：base 里的 call 不对外暴露。
+const nodeClient = createToolApi('/__idex/api/node')
+
+export const nodeApi = {
+  ...nodeClient.api,
+  nodes: () => nodeClient.call('GET', '/nodes'),
+  setNode: (ws, node) => nodeClient.call('POST', '/node', { ws, node }),
+  addCommand: (payload) => nodeClient.call('POST', '/addcmd', payload),
+  removeCommand: (svc) => nodeClient.call('POST', '/delcmd', { svc }),
+}
 export const jvmApi = toolApi('/__idex/api/jvm')
 export const toolsApi = toolApi('/__idex/api/tools')

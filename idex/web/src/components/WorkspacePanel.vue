@@ -74,7 +74,11 @@ const preferences = usePreferencesStore()
 const { activeTab: tab } = storeToRefs(preferences)
 // 不是 SVN 工作副本或 Git 仓库时只留浏览目录，别的页签没有东西可查。
 const tabs = computed(() => workspaceTabs(props.ws))
-const shownTab = computed(() => (tabs.value.includes(tab.value) ? tab.value : tabs.value[0]))
+// 当前页签不可用时回到浏览目录；普通目录里只有它，别的面板都看不了。
+const shownTab = computed(() => {
+  if (tabs.value.includes(tab.value)) return tab.value
+  return tabs.value.includes('browse') ? 'browse' : tabs.value[0]
+})
 
 // 旧记录还没探测过引擎能力：切到这个工作区时自动补一次，失败就保持原样，
 // 用户可以在页面里手动重扫。每个工作区只自动触发一次。
