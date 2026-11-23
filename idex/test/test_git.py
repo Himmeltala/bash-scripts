@@ -665,6 +665,8 @@ class GitOperations(unittest.TestCase):
         # 路径过滤默认会省掉没改这个目录的合并提交，时间线会断，所以要看得到它。
         self.assertEqual(entries[0]["message"], "合并 side")
         self.assertEqual(len(entries[0]["parents"]), 2)
+        # 标 local 的 rev-list 也要用同一套完整历史，否则这条合并会显示成「待拉取」。
+        self.assertTrue(entries[0]["local"])
 
     def test_log_all_refs_covers_branches_and_tags(self):
         run(["git", "switch", "-q", "-c", "dev"], cwd=self.work)

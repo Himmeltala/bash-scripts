@@ -229,7 +229,9 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
     entries = parse_git_log(out.decode("utf-8", "replace"))
     # 标出每条提交的位置：在所有本地分支上、已经进了远端分支，还是只在远端。
     local_revs = ["HEAD", "--branches"] if all_refs else ["HEAD"]
-    rc, out, _ = git(["rev-list", *local_revs, "--", "."], cwd=root)
+    # 与上面的 log 一样带 --full-history：默认的路径简化会省掉与某一父提交相同的合并提交，
+    # 列表里有而这里没有，就会把已经拉下来的合并提交误标成「待拉取」。
+    rc, out, _ = git(["rev-list", "--full-history", *local_revs, "--", "."], cwd=root)
     local = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
     pushed = set()
     tip = ""
@@ -241,7 +243,7 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
     has_remote = bool(git_remotes(root))
     if tracking or (all_refs and has_remote):
         pushed_revs = ["--remotes"] if all_refs else [upstream]
-        rc, out, _ = git(["rev-list", *pushed_revs, "--", "."], cwd=root)
+        rc, out, _ = git(["rev-list", "--full-history", *pushed_revs, "--", "."], cwd=root)
         pushed = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
     labels = git_ref_labels(root)
     for entry in entries:
