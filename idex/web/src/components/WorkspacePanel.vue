@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-23 23:09:19
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-23 23:09:19
+ * @FilePath: \idex\web\src\components\WorkspacePanel.vue
+ * @Description: 工作区右侧的页签容器：按版本库与引擎能力切换变更、日志、同步、浏览与引擎页面。
+-->
+
 <template>
   <div class="wp">
     <div class="tabsbar">
@@ -172,11 +181,16 @@ onBeforeUnmount(() => {
 .badge {
   margin-left: 6px;
 }
-/* 页签内容自己撑满剩余高度：外层用 flex 给高度，子面板不靠百分比，长差异才有得滚。 */
+/* 页签内容自己撑满剩余高度：外层用 flex 给高度，子面板不靠百分比，长差异才有得滚。
+   六个页签统一套一层卡片，与左侧列表、引擎页签里的表格同一底色。 */
 .tabbody {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  margin: 8px 8px 0;
+  border-radius: 10px;
+  background: rgb(var(--v-theme-surface));
+  overflow: hidden;
 }
 </style>
