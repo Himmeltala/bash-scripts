@@ -28,6 +28,7 @@ export function useToolWorkspace({ api, engineId, localApi = null, localId = nul
   const ws = computed(() => pickToolWorkspace(state.value, engineId))
   const registered = computed(() => !!ws.value)
   let source = null
+  let alive = true
 
   function apply(data) {
     state.value = data && Array.isArray(data.workspaces) ? data : { workspaces: [] }
@@ -37,8 +38,10 @@ export function useToolWorkspace({ api, engineId, localApi = null, localId = nul
 
   async function refresh() {
     try {
-      apply(await api.state())
+      const data = await api.state()
+      if (alive) apply(data)
     } catch (err) {
+      if (!alive) return
       error.value = err.message || '取不到引擎状态'
       loading.value = false
     }
@@ -53,6 +56,8 @@ export function useToolWorkspace({ api, engineId, localApi = null, localId = nul
 
   function open() {
     close()
+    // 页面在后台就不占着服务端的推送线程，回到前台再由 visibilitychange 接回。
+    if (!alive || (typeof document !== 'undefined' && document.hidden)) return
     source = new EventSource(api.stateStreamUrl())
     source.addEventListener('state', (event) => {
       try {
@@ -76,12 +81,16 @@ export function useToolWorkspace({ api, engineId, localApi = null, localId = nul
       try {
         await localApi.rescan(id)
       } catch (err) {
+        if (!alive) return
         error.value = err.message || '重新探测失败'
         loading.value = false
         return
       }
+      if (!alive) return
     }
     await refresh()
+    // 请求回来时组件可能已经卸掉：别再开一条没人收的推送。
+    if (!alive) return
     open()
   }
 
@@ -96,6 +105,7 @@ export function useToolWorkspace({ api, engineId, localApi = null, localId = nul
     document.addEventListener('visibilitychange', onVisibility)
   })
   onBeforeUnmount(() => {
+    alive = false
     close()
     document.removeEventListener('visibilitychange', onVisibility)
   })

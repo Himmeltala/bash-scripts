@@ -34,7 +34,7 @@
         <strong>Node 引擎不可用</strong>
         <p>{{ error }}</p>
       </div>
-      <v-btn variant="tonal" prepend-icon="mdi-refresh" @click="reload">重试</v-btn>
+      <v-btn variant="tonal" prepend-icon="mdi-refresh" @click="retry">重试</v-btn>
     </div>
 
     <div v-else-if="loading && !registered" class="state">
@@ -63,7 +63,7 @@
         <v-icon size="18" color="warning">mdi-alert</v-icon>
         <span>{{ error }}</span>
         <v-spacer />
-        <v-btn size="small" variant="text" @click="reload">重试</v-btn>
+        <v-btn size="small" variant="text" @click="retry">重试</v-btn>
       </div>
 
       <div class="toolbar">
@@ -167,7 +167,7 @@
       </template>
     </FloatingDialog>
 
-    <SettingsDialog
+    <NodeSettingsDialog
       v-model="settings.on"
       :svc="settings.svc"
       :log-text="logText"
@@ -207,8 +207,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import SettingsDialog from './SettingsDialog.vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import NodeSettingsDialog from './NodeSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import {
   LIVE_STATUSES,
@@ -221,6 +221,7 @@ import { formatAgo as ago } from '@bash-scripts/web-shared/format'
 import { baseName } from '../../utils/format'
 import { nodeApi, toolsApi } from '../../utils/toolApi'
 import { useToolWorkspace } from '../../composables/useToolWorkspace'
+import { createScanWait } from '../../utils/scanWait'
 import { toast } from '../../utils/notice'
 
 const props = defineProps({
@@ -374,28 +375,60 @@ async function saveCustom() {
   custom.on = false
 }
 
+// 扫描结果靠状态推送回来；等太久就把按钮放开，别一直卡在「扫描中」。
+const wait = createScanWait({
+  onTimeout: () => {
+    waiting.value = false
+    enableError.value = '扫描超过两分钟还没回来；检查 Node 引擎后重试。'
+  },
+})
+let enableToken = 0
+let alive = true
+
+function stopWait(clearError = false) {
+  wait.stop()
+  waiting.value = false
+  if (clearError) enableError.value = ''
+}
+
 // 「启用并扫描」：idex 再探测一次能力，引擎按根目录登记并扫描；结果由状态推送补上。
-// 只调 tools 的探测不会往引擎状态里写工作区行，所以两条都要走。
+// 只调 tools 的探测不会往引擎状态里写工作区行，所以两条都要走；串行避免引擎刚重扫又撞 409。
 async function enable() {
+  const token = ++enableToken
+  const id = props.ws.id
   enabling.value = true
-  enableError.value = ''
+  stopWait(true)
   try {
-    await Promise.all([toolsApi.rescan(props.ws.id), nodeApi.rescan(props.ws.id)])
-    waiting.value = true
+    await toolsApi.rescan(id)
+    await nodeApi.rescan(id)
+    if (!alive || token !== enableToken || props.ws.id !== id) return
+    if (!registered.value) {
+      waiting.value = true
+      wait.start()
+    }
     await reload()
   } catch (err) {
+    if (!alive || token !== enableToken || props.ws.id !== id) return
+    stopWait()
     enableError.value = err.message
   } finally {
-    enabling.value = false
+    if (alive && token === enableToken && props.ws.id === id) enabling.value = false
   }
+}
+
+function retry() {
+  stopWait(true)
+  reload()
 }
 
 // 扫描结果由状态推送带回来：工作区一出现就不用再等。
 watch(registered, (on) => {
-  if (on) {
-    waiting.value = false
-    enableError.value = ''
-  }
+  if (on) stopWait(true)
+})
+
+// 引擎一报错就放开等待，错误块里给重试；恢复后可以再点启用。
+watch(error, (text) => {
+  if (text) stopWait()
 })
 
 async function rescan() {
@@ -531,17 +564,25 @@ async function onSave({ args }) {
   }
 }
 
-// 换工作区时筛选回到全部，否则表里只剩空行，看着像脚本丢了。
+// 换工作区时筛选回到全部，否则表里只剩空行，看着像脚本丢了；
+// 上一个工作区的启用请求与等待也一并作废，不能带着「扫描中」的禁用态过去。
 watch(
   () => props.ws.id,
   () => {
+    enableToken += 1
+    stopWait(true)
+    enabling.value = false
     filter.value = ''
     custom.on = false
-    enableError.value = ''
   },
 )
 
 onMounted(loadNodes)
+onBeforeUnmount(() => {
+  alive = false
+  enableToken += 1
+  stopWait()
+})
 </script>
 
 <style scoped>
