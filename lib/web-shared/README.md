@@ -24,7 +24,7 @@ import { WorkspaceShell, ServiceTable, LogView } from '@bash-scripts/web-shared'
 import '@bash-scripts/web-shared/style.css'
 ```
 
-子入口按需引入：`theme`、`format`、`http`、`logs`、`highlight`、`diff`、`metrics`、`text`、`layouts`、`feedbacks`、`vite-preset`。
+子入口按需引入：`theme`、`format`、`http`、`tool-api`、`logs`、`highlight`、`diff`、`metrics`、`text`、`layouts`、`feedbacks`、`vite-preset`。
 
 ## 目录
 

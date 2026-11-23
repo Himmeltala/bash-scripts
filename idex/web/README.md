@@ -1,6 +1,6 @@
 # idex 网页前端
 
-源码在 `src/`，Vite 打包到 `../lib/idex/web/static`。
+源码在 `src/`，Vite 打包到 `../lib/idex/web/static`。`idex web` 跑的是 `static/` 里的产物。
 
 ## 打包
 
@@ -10,7 +10,7 @@ npm install
 npm run build
 ```
 
-需要 Node 20.19 或 22.12 以上。`idex web` 跑的是 `static/` 里的产物。
+需要 Node 20.19 或 22.12 以上。
 
 ## 开发
 
