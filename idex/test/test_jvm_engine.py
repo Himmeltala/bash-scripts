@@ -1,9 +1,11 @@
 import sys, tempfile, unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib" / "idex"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "commons"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "services"))
+sys.path[:0] = [
+    str(Path(__file__).resolve().parents[1] / "lib" / "idex"),
+    str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "commons"),
+    str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "services"),
+]
 from engines.jvm.engine import App
 
 # 原来 jvmx 网页用例里的启停、JDK 与扫描，改成直接调 App，不经过 HTTP。

@@ -1,7 +1,6 @@
-"""网页壳的组装：工作区、目标、运行记录与接口。
+"""JVM 引擎的组装：工作区、目标、运行记录与状态。
 
-前端沿用 mvnx 网页那一套形状：工作区列表、服务行、运行记录、别名、分组、JDK。
-区别只在于每个工作区还带一个 kind（mvn / gradle），启动时按它选工具。
+每个工作区带一个 kind（mvn / gradle），启动时按它选工具；目标由 mvnx / gradlex 扫描。
 """
 
 import os
@@ -11,12 +10,9 @@ import time
 from pathlib import Path
 
 from metrics import Metrics
-from netutil import is_loopback_address
-from runner import run_log_path
-from sse import MetricsStream, StateStream, tail
+from sse import MetricsStream, StateStream
 from stores import LayoutStore
 from toolchain import effective_home, iter_home_dirs, prepend_bin
-from toolweb import NOT_HANDLED, ToolHandler
 from web import ApiError, log
 
 from .runs import LIVE, RunRegistry
@@ -99,60 +95,14 @@ def public_run(run):
     return dict((key, run.get(key, "")) for key in RUN_FIELDS)
 
 
-class _Engine:
-    """把 App 的方法包成 ToolHandler 认的几个动作。"""
-
-    def __init__(self, app):
-        self.app = app
-
-    def add_workspace(self, root):
-        self.app.add_workspace(root)
-
-    def remove_workspace(self, ws):
-        self.app.forget_workspace(ws)
-
-    def call(self, action, *args):
-        if action == "scan":
-            self.app.scan(args[0])
-        elif action == "update":
-            self.app.update_service(args[0])
-        # tick 由 state_payload 自己推进运行表，这里不用再做。
-
-    def start(self, body):
-        return self.app.start_service(body)
-
-    def stop(self, run):
-        self.app.stop_service(run)
-
-
-class _State:
-    """ToolHandler 按状态行找工作区；JVM 引擎的工作区在 Store 里。"""
-
-    def __init__(self, store):
-        self.store = store
-
-    def find(self, kind, ws):
-        return self.store.find(ws)
-
-
-class _Aliases:
-    def __init__(self, store):
-        self.store = store
-
-    def set(self, ws, alias):
-        self.store.set_alias(ws, alias)
-
-
 class App:
     """一个 JVM 引擎进程的全部状态。"""
 
-    def __init__(self, home, static=None, allow_write=False, tools=None, jdk_roots=None):
+    def __init__(self, home, tools=None, jdk_roots=None):
         self.home = Path(home)
         self.home.mkdir(parents=True, exist_ok=True)
         self.logs = self.home / "logs"
         self.logs.mkdir(parents=True, exist_ok=True)
-        self.static = Path(static) if static else None
-        self.allow_write = allow_write
         self.tools = tools or default_tools()
         self.jdk_roots = tuple(jdk_roots) if jdk_roots is not None else JDK_ROOTS
         self.store = Store(self.home / "state.json")
@@ -433,87 +383,3 @@ class App:
         self.groups.drop("ws", ws_id)
         self.runs.remove_workspace(ws_id)
         shutil.rmtree(self.logs / ws_id, ignore_errors=True)
-
-    # 接口组装
-
-    def make_handler(self):
-        app = self
-
-        class Handler(ToolHandler):
-            server_version = "idex-jvm/0.1.0"
-            api_prefix = "/__idex/api/jvm"
-            static = app.static
-            state = _State(app.store)
-            engine = _Engine(app)
-            aliases = _Aliases(app.store)
-            layout = app.groups
-            state_stream = app.state_stream
-            metrics_stream = app.metrics_stream
-            metrics = app.metrics
-            logs = str(app.logs)
-            allow_write = app.allow_write
-
-            def _is_local(self):
-                return self.allow_write or is_loopback_address(self.client_address[0])
-
-            def _require_local(self, what):
-                if self._is_local():
-                    return
-                raise ApiError(
-                    403,
-                    "%s只允许本机发起；要放开给其他机器，用 --allow-write 启动" % what,
-                )
-
-            def _read_allowed(self, what):
-                self._require_local(what)
-
-            def _write_allowed(self):
-                self._require_local("写操作")
-
-            def build_state(self):
-                return app.state_payload()
-
-            def _log_path(self, runid):
-                logs = Path(self.logs).resolve()
-                path = run_log_path(logs, runid)
-                try:
-                    path.resolve().relative_to(logs)
-                except ValueError:
-                    raise ApiError(400, "运行号不对")
-                return path
-
-            def _log_page(self, query):
-                runid = (query.get("run") or [""])[0]
-                try:
-                    page = max(0, int((query.get("page") or ["0"])[0] or 0))
-                except ValueError:
-                    page = 0
-                text, more = tail(self._log_path(runid), page)
-                run = app.runs.find(runid) or {}
-                return {
-                    "run": runid,
-                    "status": run.get("status", ""),
-                    "code": run.get("code", ""),
-                    "text": text,
-                    "page": page,
-                    "more": more,
-                }
-
-            def _tool_get(self, route, query, method):
-                if route == "jdks":
-                    self._require_local("读取 JDK 列表")
-                    return {"jdks": app.jdks(), "current": os.environ.get("JAVA_HOME", "")}
-                return NOT_HANDLED
-
-            def _tool_post(self, route, body):
-                if route == "restart":
-                    return app.restart_service(body)
-                if route == "jdk":
-                    app.set_jdk(str(body.get("ws", "")).strip(), body.get("jdk"))
-                    return {"ok": True}
-                return NOT_HANDLED
-
-            def _tool_update_args(self, body):
-                return (body,)
-
-        return Handler
