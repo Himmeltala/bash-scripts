@@ -653,6 +653,12 @@ web_tag() {
 }
 
 main() {
+  local root
+  if [[ "${1:-}" == '--detect' ]]; then
+    root=$(find_workspace_root "${2:-}") || die "$2 及其上级都没有 package.json，不是 Node 项目" 4
+    printf '%s\n' "$root"
+    exit 0
+  fi
   case "${1:-}" in
     --engine) web_engine ;;
     -h|--help)
