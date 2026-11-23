@@ -3,7 +3,7 @@
 # @LastEditors: Himmeltala
 # @LastEditTime: 2026-11-23 00:00:00
 # @FilePath: \lib\py-shared\services\toolweb.py
-# @Description: idex 的 Node 引擎与 mvnx 共用的网页接口骨架：状态、日志、指标、别名与启停的公共路由。
+# @Description: 网页接口骨架：状态、日志、指标、别名与启停的公共路由。目前没有工具继承 ToolHandler，idex 的 Node 引擎只取 WS_KIND 常量。
 
 from browse import list_dirs
 from sse import SSEMixin, log_page
@@ -55,7 +55,7 @@ class ToolHandler(SSEMixin, WebHandler):
         return None
 
     def _write_allowed(self):
-        """写接口的统一前置检查；默认都放行，idex 的 JVM 引擎用它限制本机。"""
+        """写接口的统一前置检查；默认都放行，供继承 ToolHandler 的工具覆写。"""
         return None
 
     def _log_page(self, query):

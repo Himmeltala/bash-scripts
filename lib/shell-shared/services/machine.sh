@@ -3,7 +3,7 @@
 # @LastEditors: Himmeltala
 # @LastEditTime: 2026-11-23 00:00:00
 # @FilePath: \lib\shell-shared\services\machine.sh
-# @Description: 机器接口：网页壳读的 --list --json 目标清单，以及整批启动六列记录。
+# @Description: 机器接口：idex 的 JVM 引擎读的 --list --json 目标清单，以及整批启动六列记录。
 # 记录固定六列：标签、工作目录、工具自己的两列、展示路径、展示命令；启动函数由调用方传入。
 # shellcheck shell=bash
 # shellcheck disable=SC2154

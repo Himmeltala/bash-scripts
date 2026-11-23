@@ -28,7 +28,6 @@ source lib/shell-shared/services/web-command.sh
 
 ```bash
 bash mvnx/test/run.sh
-bash mvnx/test/run.sh
 bash idex/test/run.sh      # 需要 svn
 bash test/install-path.sh
 ```

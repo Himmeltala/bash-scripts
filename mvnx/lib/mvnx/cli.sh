@@ -64,7 +64,7 @@ EOF
 
 # 解析结果放全局。不用命令替换接：命令替换会开子 shell，函数里的赋值出不来。
 ACTION=''
-# 网页模式：不写参数是主进程，--engine 是 python 拉起来的执行进程，只接请求流。
+# 只读输出：--list 列目标，--json 配 --list 出机器接口 JSON。
 JSON_ONLY=0
 LIST_ONLY=0
 REFRESH=0
