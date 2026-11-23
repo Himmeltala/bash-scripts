@@ -1,7 +1,7 @@
 # Node 工作区扫描：包管理器、工作区里的脚本由 scan.js 读，bash 只做判定与拼记录。
 # 脚本列表在 prepare_scripts 里填一次，其余文件只读。
 
-readonly NODEX_SCAN_JS="$nodex_dir/nodex/scan.js"
+readonly NODE_SCAN_JS="$engine_dir/scan.js"
 
 NODE_PM='npm'
 NODE_ROOT=''
@@ -85,7 +85,7 @@ prepare_scripts() {
         SCRIPT_BUILD[$rel]=$build
         ;;
     esac
-  done < <(node "$NODEX_SCAN_JS" "$root" "$pmroot" 2>/dev/null)
+  done < <(node "$NODE_SCAN_JS" "$root" "$pmroot" 2>/dev/null)
 
   ((${#NODE_SCRIPTS[@]})) || die "$root 下没有读到 package.json"
 }

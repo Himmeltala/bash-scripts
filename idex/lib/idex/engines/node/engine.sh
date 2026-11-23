@@ -1,14 +1,38 @@
-# 网页模式：bash 端。状态文件与一把目录锁在这里，页面与接口由 python3 转发（见 web/server.py）。
+#!/usr/bin/env bash
+# Node 引擎：扫描与执行由 node.sh / exec.sh 负责，状态文件与目录锁在这里；idex 通过管道发请求。
 # 状态按行存、$FS 分列：bash 读写它不必管 JSON 转义，接口每轮请求现读现拼。
-# 脚本怎么找、命令怎么拼，与命令行同源：同一批脚本、同一套参数，网页与终端跑出来的结果一样。
+# 状态目录沿用 ~/.cache/nodex/web，旧状态文件不动。
+# 脚本怎么找、命令怎么拼，与原来的命令行同源：同一批脚本、同一套参数，引擎与终端跑出来的结果一样。
 
-# 缺省值在这里定，parse_args 里覆盖，nodex -p 9999 web 与 nodex web -p 9999 等价。
-RV_PORT=8200
-RV_HOST='0.0.0.0'
-RV_OPEN=0
-# 停止时先 TERM，这么多秒还没退干净再 KILL。
+set -uo pipefail
+
+# 本文件在 <仓库>/idex/lib/idex/engines/node/，向上五级是仓库根。
+engine_dir=${BASH_SOURCE[0]%/*}
+[[ "$engine_dir" == "${BASH_SOURCE[0]}" ]] && engine_dir='.'
+engine_dir=$(cd "$engine_dir" && pwd)
+readonly engine_dir
+repo=$(cd "$engine_dir/../../../../.." && pwd)
+readonly repo
+
+# bash-tui 供扫描时的标签去重；共享层都在仓库根的 lib/shell-shared 下。
+# shellcheck source=../../../../../lib/shell-shared/commons/tui-path.sh
+if ! source "$repo"/lib/shell-shared/commons/tui-path.sh; then
+  printf 'idex: 加载 bash-tui 失败，检查 BASH_TUI_DIR、同级检出或安装目录 vendor\n' >&2
+  exit 1
+fi
+
+# 状态目录仍是 ~/.cache/nodex/web：base.sh 按 SHELL_TOOL 拼 CACHE_DIR，先设 nodex 再改回显示名。
+SHELL_TOOL=nodex
+# shellcheck source=../../../../../lib/shell-shared/commons/base.sh
+source "$repo"/lib/shell-shared/commons/base.sh
+SHELL_TOOL=idex
+# shellcheck source=../../../../../lib/shell-shared/services/ui-records.sh
+source "$repo"/lib/shell-shared/services/ui-records.sh
+# shellcheck source=../../../../../lib/shell-shared/services/web-state.sh
+source "$repo"/lib/shell-shared/services/web-state.sh
+
+# 缺省值在这里定。停止时先 TERM，这么多秒还没退干净再 KILL。
 RV_GRACE=15
-readonly WEB_ATTACH_TIMEOUT=20
 
 readonly WEB_HOME="$CACHE_DIR/web"
 readonly WEB_STATE_FILE="$WEB_HOME/state.tsv"
@@ -20,8 +44,6 @@ readonly WEB_LOG_DIR="$WEB_HOME/logs"
 # 用户自己加的命令不在 package.json 里，单独存一份，每次扫描后重新挂回服务行。
 # 每行：工作区|类型|脚本目录|名称|完整命令。
 readonly WEB_CUSTOM_FILE="$WEB_HOME/custom.tsv"
-readonly WEB_PAGE="$nodex_dir/nodex/web/static/index.html"
-readonly WEB_API_PREFIX='/__nodex/api'
 
 # 状态行首列决定这是什么，读写两侧照这张表：
 #   ws  |id|root|added
@@ -36,6 +58,12 @@ readonly RUN_COL_PID=12 RUN_COL_PORT=13 RUN_COL_STATUS=14 RUN_COL_STARTED=15 RUN
 readonly SVC_COL_DIR=5 SVC_COL_REL=6 SVC_COL_ARGS=7 SVC_COL_CMD=9 SVC_COL_PM=10
 # 共享状态层按这张表判断一行该有几列；键是首列的类型。
 declare -A WEB_STATE_WIDTHS=([ws]=4 [script]=4 [svc]=10 [run]=17)
+
+for node_module in "$engine_dir"/node.sh "$engine_dir"/exec.sh; do
+  # shellcheck source=/dev/null
+  source "$node_module"
+done
+unset node_module
 
 # 工作区
 
@@ -488,7 +516,7 @@ web_reserve() {
   web_state_load
   if ! web_locate "$SVC_KIND" "$id"; then
     web_unlock
-    printf 'nodex: 没有这个服务：%s\n' "$id" >&2
+    printf '%s: 没有这个服务：%s\n' "$SHELL_TOOL" "$id" >&2
     return 1
   fi
   svc=$WEB_ROW
@@ -512,7 +540,7 @@ web_reserve() {
 # 启动的第二半：python 起好进程送回会话号，这里把会话号填进预排行再落盘。
 web_launched() {
   local sid=$1 gen=$2 line out='' i v
-  web_pend_load || { printf 'nodex: 这次启动已作废\n' >&2; return 1; }
+  web_pend_load || { printf '%s: 这次启动已作废\n' "$SHELL_TOOL" >&2; return 1; }
   web_split "$PEND_LINE"
   for ((i = 1; i <= STATE_WIDTH; i++)); do
     v=${FRAG[i - 1]}
@@ -573,13 +601,11 @@ web_update() {
   web_txn web_txn_svc_set "$id" "$args"
 }
 
-# web 命令
-
 # 引擎：接住 python 递过来的请求流，一条请求一行。
 web_engine() {
   local line req op out rc _id _extra
   if ! IFS= read -r line <&0 || [[ "$line" != "hello$FS"* ]]; then
-    web_fail '控制通道握手不对，网页服务与 nodex 版本不一致'
+    web_fail '控制通道握手不对，网页服务与引擎版本不一致'
     return
   fi
   while IFS= read -r line <&0; do
@@ -619,27 +645,27 @@ web_engine() {
   return 0
 }
 
-# web_command 的公共流程在 lib/shell-shared/services/web-command.sh，这里只给参数。
-WEB_TOOL='nodex'
-WEB_ROOT="$nodex_dir/nodex/web"
-WEB_SERVER_PY="$WEB_ROOT/server.py"
-WEB_STATIC_DIR="$WEB_ROOT/static"
-WEB_READY_MARKER='NODEX_WEB_READY'
-WEB_PYTHON_ENV='NODEX_PYTHON'
-# --json 时只打一行 JSON；nodex 的 JSON 分支不 wait，交给调用方接着用。
-WEB_JSON_FLAG=0
-WEB_JSON_WAIT=0
-WEB_SERVER_ARGS=(
-  --state "$WEB_STATE_FILE" --custom "$WEB_CUSTOM_FILE"
-  --logs "$WEB_LOG_DIR" --api "$WEB_API_PREFIX"
-  --nodex "${NODEX_SELF:-$nodex_dir/../bin/nodex}"
-)
-WEB_WARN_TEXT='页面没有登录，同一网络里能连上的人都能启停服务；只想本机用就加 --host 127.0.0.1'
-WEB_EXIT_TEXT='按 Ctrl+C 退出网页服务；正在跑的 node 在自己会话里，不跟着停，可在网页里停。'
-
 # 服务 id 形如 <工作区>.<类型>.<标签>；标签里可能还有点和斜杠，所以标签取第三段起。
 web_tag() {
   local id
   id=$(web_col "$1" 2)
   printf '%s\n' "${id#*.*.}"
 }
+
+main() {
+  case "${1:-}" in
+    --engine) web_engine ;;
+    -h|--help)
+      printf '用法: engine.sh --engine\n\nidex 的 Node 引擎，由服务端以 --engine 常驻启动，通过管道收发请求。\n'
+      ;;
+    *)
+      printf 'idex: 未知参数：%s；见 engine.sh --help\n' "${1:-}" >&2
+      return "$EXIT_USAGE"
+      ;;
+  esac
+}
+
+# 被测试或别的脚本 source 时只加载函数；直接执行本文件才进入引擎循环。
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

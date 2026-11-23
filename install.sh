@@ -214,7 +214,7 @@ build_web() {
   local dir
   need_cmd node
   need_cmd npm
-  for dir in lib/web-shared llmx/web nodex/web idex/web netx/web; do
+  for dir in lib/web-shared llmx/web idex/web netx/web; do
     [[ -d "$SRC_DIR/$dir" ]] || continue
     if [[ ! -d "$SRC_DIR/$dir/node_modules" ]]; then
       info "安装 $dir 的前端依赖"

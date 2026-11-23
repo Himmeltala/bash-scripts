@@ -6,14 +6,13 @@
 | --- | --- |
 | `mvnx` | 发现 Maven 模块，启动、安装或打包 |
 | `gradlex` | 发现 Gradle 构建，启动或构建 |
-| `nodex` | 网页里管理 Node 工作区、启停脚本、选 Node 版本 |
 | `idex` | 网页里的轻量级 IDE，带 SVN / Git 变更管理 |
 | `llmx` | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用 |
 | `netx` | 旁路记录出网连接与明文内容 |
 | `zipx` | 压缩、解压、校验、包内增删 |
 | `portx` | 查端口占用与监听端口 |
 
-网页工具默认端口：`llmx` 8000、`idex` 8100、`nodex` 8200、`netx` 8400。
+网页工具默认端口：`llmx` 8000、`idex` 8100、`netx` 8400。
 
 ## 安装
 
