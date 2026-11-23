@@ -6,7 +6,7 @@
 | --- | --- |
 | `mvnx` | 发现 Maven 模块，启动、安装或打包 |
 | `gradlex` | 发现 Gradle 构建，启动或构建 |
-| `idex` | 网页里的轻量级 IDE，带 SVN / Git 变更管理 |
+| `idex` | 网页里的轻量级 IDE，带 SVN / Git 变更管理与 Node、JVM 引擎 |
 | `llmx` | 统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用 |
 | `netx` | 旁路记录出网连接与明文内容 |
 | `zipx` | 压缩、解压、校验、包内增删 |
@@ -44,4 +44,4 @@ clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-p
 
 ## 外部依赖
 
-`mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。
+`mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`，Node 引擎需要 `node`，JVM 引擎需要 `mvnx` 或 `gradlex`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。

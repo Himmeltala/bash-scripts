@@ -1,10 +1,10 @@
 # @Author: Himmeltala
 # @Date: 2026-11-14 20:30:17
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-17 23:33:29
+# @LastEditTime: 2026-11-23 00:00:00
 # @FilePath: \lib\shell-shared\services\web-state.sh
 # @Description: 网页模式的状态文件与目录锁：按行存、$FS 分列，bash 读写不必管 JSON 转义。
-# nodex / mvnx 使用；项目先声明 WEB_STATE_WIDTHS（首列类型 -> 列数）并设好
+# idex 的 Node 引擎使用；项目先声明 WEB_STATE_WIDTHS（首列类型 -> 列数）并设好
 # WEB_HOME、WEB_STATE_FILE、WEB_LOCK_DIR、WEB_LOCK_PID、WEB_LOG_DIR，再 source 本文件。
 # shellcheck shell=bash
 # shellcheck source=./base.sh

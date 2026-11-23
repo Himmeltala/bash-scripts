@@ -1,6 +1,6 @@
 # shell-shared
 
-nodex、mvnx、gradlex、idex 共用的 bash 基础件。不是工具，没有入口，各工具按顺序 `source`。
+mvnx、gradlex、idex、llmx、zipx、portx 共用的 bash 基础件。不是工具，没有入口，各工具按顺序 `source`。
 
 ```
 commons/
@@ -17,7 +17,7 @@ services/
 ## 加载
 
 ```bash
-SHELL_TOOL=nodex
+SHELL_TOOL=mvnx
 source lib/shell-shared/commons/base.sh
 source lib/shell-shared/services/web-command.sh
 ```
@@ -27,7 +27,7 @@ source lib/shell-shared/services/web-command.sh
 ## 测试
 
 ```bash
-bash nodex/test/run.sh
+bash mvnx/test/run.sh
 bash mvnx/test/run.sh
 bash idex/test/run.sh      # 需要 svn
 bash test/install-path.sh

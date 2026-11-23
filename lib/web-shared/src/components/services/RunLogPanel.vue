@@ -19,7 +19,7 @@ defineProps({
   text: { type: String, default: '' },
   more: { type: Boolean, default: false },
   dark: { type: Boolean, default: false },
-  // 行着色规则由各工具给：nodex 认 npm，mvnx 认 Maven。
+  // 行着色规则由各工具给：idex 的 Node 引擎认 npm，mvnx 认 Maven。
   colorize: { type: Function, default: (text) => text },
   emptyText: { type: String, default: '还没有运行过' },
 })

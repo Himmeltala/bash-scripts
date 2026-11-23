@@ -7,7 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 const props = defineProps({
   text: { type: String, default: '' },
   dark: { type: Boolean, default: false },
-  // 行着色由调用方给：nodex 认 npm/Vite 的标记，mvnx 认 Maven/Spring 的，不给就原样显示。
+  // 行着色由调用方给：idex 的 Node 引擎认 npm/Vite 的标记，mvnx 认 Maven/Spring 的，不给就原样显示。
   colorize: { type: Function, default: (text) => text },
   // 给了高度就按固定高度撑开，不给就交给父容器的 flex 分配。
   height: { type: String, default: '' },

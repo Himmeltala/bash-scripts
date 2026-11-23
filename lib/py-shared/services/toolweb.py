@@ -1,9 +1,9 @@
 # @Author: Himmeltala
 # @Date: 2026-11-14 20:58:46
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-17 23:35:13
+# @LastEditTime: 2026-11-23 00:00:00
 # @FilePath: \lib\py-shared\services\toolweb.py
-# @Description: nodex 与 mvnx 共用的网页接口骨架：状态、日志、指标、别名与启停的公共路由。
+# @Description: idex 的 Node 引擎与 mvnx 共用的网页接口骨架：状态、日志、指标、别名与启停的公共路由。
 
 from browse import list_dirs
 from sse import SSEMixin, log_page
@@ -55,7 +55,7 @@ class ToolHandler(SSEMixin, WebHandler):
         return None
 
     def _write_allowed(self):
-        """写接口的统一前置检查；默认都放行，jvmx 用它限制本机。"""
+        """写接口的统一前置检查；默认都放行，idex 的 JVM 引擎用它限制本机。"""
         return None
 
     def _log_page(self, query):

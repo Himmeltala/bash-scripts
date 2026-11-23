@@ -1,6 +1,6 @@
 # py-shared
 
-nodex、jvmx、idex、llmx 四个网页进程共用的 Python 骨架。不是可执行工具，只用标准库，保持 Python 3.7 可导入。
+idex、llmx、netx 三个网页进程共用的 Python 骨架。不是可执行工具，只用标准库，保持 Python 3.7 可导入。
 
 ## 使用
 
@@ -13,7 +13,7 @@ services/   业务骨架：WebHandler、ToolHandler、SSE、指标、状态存�
 
 `services` 可以引用 `commons`，反过来不行；两层按名字平铺导入，模块名不能重名。
 
-`Handler` 继承 `WebHandler`，实现 `_dispatch`；需要日志推送时再加 `SSEMixin`。nodex 继承 `ToolHandler`，只补 `build_state`、`_tool_get`、`_tool_post`、`_tool_update_args`。启动走 `runtime.py` 的 `check_static`、`start_streams`、`serve`。
+`Handler` 继承 `WebHandler`，实现 `_dispatch`；需要日志推送时再加 `SSEMixin`。idex 的 Node 引擎继承 `ToolHandler`，只补 `build_state`、`_tool_get`、`_tool_post`、`_tool_update_args`。启动走 `runtime.py` 的 `check_static`、`start_streams`、`serve`。
 
 ## 测试
 

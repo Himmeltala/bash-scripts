@@ -100,7 +100,7 @@ const { dark, toggle: flipTheme } = useThemeToggle({
 </script>
 
 <style scoped>
-/* 收起展开的节奏跟 nodex 一致：侧栏滑出 0.18s、淡出 0.14s，正文宽度直接让位不跟着动。 */
+/* 收起展开的节奏跟 idex 一致：侧栏滑出 0.18s、淡出 0.14s，正文宽度直接让位不跟着动。 */
 .nav-drawer {
   transition: transform 0.18s ease, opacity 0.14s ease;
 }

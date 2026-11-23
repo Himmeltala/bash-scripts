@@ -30,7 +30,7 @@ EOF
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
 
-机器接口（供 jvmx 网页壳调用）:
+机器接口（供 idex 的 JVM 引擎调用）:
   mvnx --list --json [命令]   输出目标 JSON
   mvnx exec --id <id>         执行单个目标
       --mode auto|compile|no-compile|rebuild  指定启动方式
@@ -68,7 +68,7 @@ ACTION=''
 JSON_ONLY=0
 LIST_ONLY=0
 REFRESH=0
-# 机器接口：exec --id 与 jvmx 每行保存的额外参数。
+# 机器接口：exec --id 与 idex JVM 引擎每行保存的额外参数。
 MACHINE_EXEC=0
 EXEC_ID=''
 EXTRA_ARGS=''
@@ -104,7 +104,7 @@ parse_args() {
       -c|--compile) START_MODE=$MODE_COMPILE; MODE_FLAG=$a ;;
       --no-compile) START_MODE=$MODE_NO_COMPILE; MODE_FLAG=$a ;;
       --rebuild) START_MODE=$MODE_REBUILD; MODE_FLAG=$a ;;
-      # 机器接口用一档写全：jvmx 按每行保存的方式传 auto|compile|no-compile|rebuild。
+      # 机器接口用一档写全：idex 的 JVM 引擎按每行保存的方式传 auto|compile|no-compile|rebuild。
       --mode)
         case "${args[$i]:-}" in
           "$MODE_AUTO") START_MODE=$MODE_AUTO; MODE_FLAG='' ;;
@@ -253,7 +253,7 @@ run_action() {
 main() {
   parse_args "$@"
 
-  # 机器接口：jvmx 网页壳按 id 调一个目标，不经过菜单与勾选。
+  # 机器接口：idex 的 JVM 引擎按 id 调一个目标，不经过菜单与勾选。
   if ((MACHINE_EXEC)); then
     machine_exec
     return

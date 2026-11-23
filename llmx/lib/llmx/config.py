@@ -65,7 +65,7 @@ class StoreConfig:
 
 
 def config_path(explicit: str | None = None) -> Path:
-    """价格配置的位置：与 nodex、mvnx 一样放在缓存目录，页面与命令行读写同一份。"""
+    """价格配置的位置：与 mvnx 一样放在缓存目录，页面与命令行读写同一份。"""
     if explicit:
         return Path(explicit).expanduser()
     if os.environ.get("LLMX_CONFIG"):
@@ -101,7 +101,7 @@ def _model_price(spec: object, name: str) -> ModelPrice:
 
 
 def _state_dir(home: Path) -> Path:
-    """账本、配置档、备份与回收站的位置，与 nodex、mvnx 一样落在缓存目录下。"""
+    """账本、配置档、备份与回收站的位置，与 mvnx 一样落在缓存目录下。"""
     if os.environ.get("LLMX_STATE_DIR"):
         return Path(os.environ["LLMX_STATE_DIR"]).expanduser()
     base = Path(os.environ.get("XDG_CACHE_HOME", home / ".cache")).expanduser()
@@ -120,7 +120,7 @@ def _store(table: object, home: Path) -> StoreConfig:
         raise ConfigError("store.keep_days 需要写成整数天数") from exc
     if keep_days < 1:
         raise ConfigError("store.keep_days 至少为 1")
-    # 与 nodex、mvnx 同在一个缓存目录下，路径由 _state_dir 给出。
+    # 与 mvnx 同在一个缓存目录下，路径由 _state_dir 给出。
     state_dir = _state_dir(home)
     db = Path(str(table.get("db") or state_dir / "usage.db")).expanduser()
     cache_dir = Path(str(table.get("cache_dir") or state_dir / "cache")).expanduser()

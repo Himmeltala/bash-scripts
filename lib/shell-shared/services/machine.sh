@@ -1,7 +1,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-17 23:46:49
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-17 23:46:49
+# @LastEditTime: 2026-11-23 00:00:00
 # @FilePath: \lib\shell-shared\services\machine.sh
 # @Description: 机器接口：网页壳读的 --list --json 目标清单，以及整批启动六列记录。
 # 记录固定六列：标签、工作目录、工具自己的两列、展示路径、展示命令；启动函数由调用方传入。
@@ -18,7 +18,7 @@ shell_json_escape() {
   printf '%s' "$text"
 }
 
-# 一条命令的目标清单：collector 输出六列记录，这里拼成 jvmx 网页壳读的那份 JSON。
+# 一条命令的目标清单：collector 输出六列记录，这里拼成 idex 的 JVM 引擎读的那份 JSON。
 shell_machine_json() {
   local cmd=$1 collector=$2 first=1 rec tag workdir f3 f4 display cmdtext
   printf '{"command":"%s","root":"%s","targets":[' \

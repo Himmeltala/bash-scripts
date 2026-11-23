@@ -27,7 +27,7 @@ EOF
   -h, --help     显示本帮助
       --         终止选项解析，后面的词一律当关键词
 
-机器接口（供 jvmx 网页壳调用）:
+机器接口（供 idex 的 JVM 引擎调用）:
   gradlex --list --json [命令]   输出目标 JSON
   gradlex exec --id <id>         执行单个目标
       --args "参数"              追加到任务尾部
@@ -182,7 +182,7 @@ run_action() {
 main() {
   parse_args "$@"
 
-  # 机器接口：jvmx 网页壳按 id 调一个目标，不经过菜单与勾选。
+  # 机器接口：idex 的 JVM 引擎按 id 调一个目标，不经过菜单与勾选。
   if ((MACHINE_EXEC)); then
     machine_exec
     return
