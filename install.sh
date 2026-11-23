@@ -208,8 +208,8 @@ install_tree() {
   copy_tree "$src" "$INSTALL_DIR"
 }
 
-# 前端产物与源码一起提交，但每次安装都按当前源码重建：文件名不带哈希，
-# 重新打包只改同名文件；浏览器端由服务端的 no-cache 保证拿到新版本。
+# 前端产物不入库，安装时按当前源码重建：文件名不带哈希，重新打包只改同名文件；
+# 浏览器端由服务端的 no-cache 保证拿到新版本。
 build_web() {
   local dir
   need_cmd node

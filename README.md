@@ -1,6 +1,6 @@
 # bash-scripts
 
-自用的命令行与网页工具集合，一个目录一个命令：`bin/` 放可执行文件，`lib/` 放实现与共享代码。
+自用的命令行与网页工具集合。一个目录一个命令：`bin/` 放可执行文件，`lib/` 放实现与共享代码。
 
 | 命令 | 说明 |
 | --- | --- |
@@ -16,7 +16,7 @@
 
 ## 安装
 
-需要 bash 4 以上；网页工具需要 Python 3.7 以上（`llmx` 要 3.11）；安装时用 Node 与 npm 构建前端。
+需要 bash 4 以上；网页工具需要 Python 3.7 以上（`llmx` 要 3.11）；构建前端需要 Node 与 npm。前端产物不入库，安装时按当前源码重建。
 
 ```bash
 curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/install.sh | bash
@@ -30,9 +30,7 @@ cd bash-scripts
 ./install.sh
 ```
 
-装完重开 shell。重复执行 `install.sh` 等于先卸载再安装：源码放置到 `~/.local/share/bash-scripts`，各工具的可执行文件软链到 `~/.local/bin`，需要时再往 `~/.bashrc` 写带标记的 PATH 设置。
-
-安装目录可用 `BASH_SCRIPTS_INSTALL_DIR` 与 `BASH_SCRIPTS_BIN_DIR` 覆盖。
+装完重开 shell。重复执行 `install.sh` 等于先卸载再安装：源码放到 `~/.local/share/bash-scripts`，可执行文件软链到 `~/.local/bin`，需要时往 `~/.bashrc` 写带标记的 PATH 设置。`BASH_SCRIPTS_INSTALL_DIR` 与 `BASH_SCRIPTS_BIN_DIR` 可改这两处。
 
 ## 卸载
 
