@@ -260,6 +260,7 @@ const { enabling, waiting, enableError, enable, retry } = useEngineEnable({
   registered,
   error,
   reload,
+  rescanStatus: (id) => nodeApi.rescanStatus(id),
   timeoutText: '扫描超过两分钟还没回来；检查 Node 引擎后重试。',
 })
 
@@ -306,7 +307,7 @@ const scriptItems = computed(() =>
   })),
 )
 
-const CUSTOM = '__nodex_custom__'
+const CUSTOM = '__idex_custom__'
 
 const nodeItems = computed(() => {
   const items = [{ label: '跟随当前环境', path: '' }]

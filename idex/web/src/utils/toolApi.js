@@ -1,6 +1,6 @@
 // Node 与 JVM 引擎的接口表，以及只负责重新探测工作区能力的 tools 接口。
 
-import { createToolApi } from '@bash-scripts/web-shared'
+import { createToolApi } from '@bash-scripts/web-shared/tool-api'
 
 export function toolApi(prefix) {
   return createToolApi(prefix).api
@@ -12,6 +12,7 @@ const nodeClient = createToolApi('/__idex/api/node')
 export const nodeApi = {
   ...nodeClient.api,
   nodes: () => nodeClient.call('GET', '/nodes'),
+  rescanStatus: (ws) => nodeClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
   setNode: (ws, node) => nodeClient.call('POST', '/node', { ws, node }),
   addCommand: (payload) => nodeClient.call('POST', '/addcmd', payload),
   removeCommand: (svc) => nodeClient.call('POST', '/delcmd', { svc }),

@@ -32,6 +32,14 @@ class BlockingService(FakeService):
         self.started.set()
         self.release.wait(5)
 
+
+class FailingService(FakeService):
+    """后台重扫失败：错误要留在最后一个工作区上，供状态接口与轮询取。"""
+
+    def add_workspace(self, root):
+        self.calls.append(("add", root))
+        raise ApiError(502, "引擎断开")
+
 class FakeStore:
     def tools(self, wid): return {"node": {"root": "/r", "id": "n1"}} if wid == "i1" else {}
 
@@ -55,6 +63,9 @@ class NodeDispatchTest(unittest.TestCase):
         while key in NodeRoutes._node_rescanning and time.time() < deadline:
             time.sleep(0.01)
         self.assertNotIn(key, NodeRoutes._node_rescanning)
+
+    def tearDown(self):
+        NodeRoutes._node_rescan_errors.clear()
 
     def test_state(self):
         self.assertIn("workspaces", self.make()._node_dispatch("GET", "state", {}, {}))
@@ -121,6 +132,41 @@ class NodeDispatchTest(unittest.TestCase):
             {"ok": True, "started": True},
         )
         self.wait_clear()
+
+    def test_rescan_failure_sets_error_and_releases_wait(self):
+        """后台重扫失败不再只进日志：轮询接口给出原因，状态回话也带上。"""
+        h = self.make(); h.node_service = FailingService()
+        self.addCleanup(NodeRoutes._node_rescanning.discard, "n1")
+
+        self.assertEqual(
+            h._node_dispatch("POST", "rescan", {}, {"ws": "i1"}),
+            {"ok": True, "started": True},
+        )
+        self.wait_clear()
+
+        status = h._node_dispatch("GET", "rescan/status", {"ws": ["i1"]}, {})
+        self.assertFalse(status["running"])
+        self.assertIn("引擎断开", status["error"])
+
+        state = h._node_dispatch("GET", "state", {}, {})
+        self.assertEqual(state["workspaces"], [{"id": "n1", "root": "/r"}])
+        self.assertIn("引擎断开", state["rescan_errors"]["n1"])
+
+    def test_rescan_success_clears_previous_error(self):
+        NodeRoutes._node_rescan_errors["n1"] = "扫描失败：旧错误"
+        h = self.make()
+        self.addCleanup(NodeRoutes._node_rescanning.discard, "n1")
+
+        h._node_dispatch("POST", "rescan", {}, {"ws": "i1"})
+        self.wait_clear()
+
+        status = h._node_dispatch("GET", "rescan/status", {"ws": ["i1"]}, {})
+        self.assertEqual(status["error"], "")
+
+    def test_rescan_status_requires_node_workspace(self):
+        with self.assertRaises(ApiError) as ctx:
+            self.make()._node_dispatch("GET", "rescan/status", {"ws": ["missing"]}, {})
+        self.assertEqual(ctx.exception.status, 409)
 
     def test_log_stream_uses_service_logs(self):
         self.assertIs(NodeRoutes._stream_log, SSEMixin._stream_log)

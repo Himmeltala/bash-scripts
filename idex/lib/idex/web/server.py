@@ -363,7 +363,8 @@ class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, 
         """取已经起来的引擎；没起来时接口明确回 503，而不是属性错误。"""
         service = self.node_service if name == "node" else self.jvm_app
         if service is None:
-            raise ApiError(503, "%s 引擎没有起来" % name.upper())
+            label = "Node" if name == "node" else "JVM"
+            raise ApiError(503, "%s 引擎没有起来" % label)
         return service
 
     def _engine_state_stream(self, name, query):

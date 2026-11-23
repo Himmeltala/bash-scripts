@@ -21,23 +21,59 @@ export function createEngineEnable({
   reload,
   timeoutText,
   waitLimit,
+  // 扫描在后台跑，失败原因只有引擎自己知道；给了这个接口就在等待期间轮询。
+  rescanStatus,
+  pollInterval = 1000,
 }) {
   const enabling = ref(false)
   const waiting = ref(false)
   const enableError = ref('')
   let token = 0
   let alive = true
+  let pollTimer = null
 
   // 扫描结果靠状态推送回来；等太久就把按钮放开，别一直卡在「扫描中」。
   const wait = createScanWait({
     limit: waitLimit,
     onTimeout: () => {
+      stopPoll()
       waiting.value = false
       enableError.value = timeoutText
     },
   })
 
+  function stopPoll() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  function startPoll() {
+    stopPoll()
+    if (typeof rescanStatus !== 'function' || typeof setInterval !== 'function') return
+    pollTimer = setInterval(async () => {
+      if (!alive || !waiting.value) {
+        stopPoll()
+        return
+      }
+      const id = read(wsId)
+      try {
+        const data = await rescanStatus(id)
+        if (!alive || !waiting.value || read(wsId) !== id) return
+        if (data && data.error) {
+          stopWait()
+          enableError.value = data.error
+        }
+      } catch (err) {
+        // 轮询失败不当作扫描失败；等待时限到了仍然会放开。
+      }
+    }, pollInterval)
+    if (pollTimer && typeof pollTimer.unref === 'function') pollTimer.unref()
+  }
+
   function stopWait(clearError = false) {
+    stopPoll()
     wait.stop()
     waiting.value = false
     if (clearError) enableError.value = ''
@@ -57,6 +93,7 @@ export function createEngineEnable({
       if (!read(isRegistered)) {
         waiting.value = true
         wait.start()
+        startPoll()
       }
       await reload()
     } catch (err) {

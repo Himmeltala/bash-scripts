@@ -24,6 +24,8 @@ class NodeRoutes(SSEMixin):
     # 同一个工作区的重扫正在排队或跑着；Handler 每个请求一个新实例，所以放类上。
     _node_rescan_lock = threading.Lock()
     _node_rescanning = set()
+    # 每个引擎工作区最近一次重扫失败的原因；状态回话与轮询接口都从这里取。
+    _node_rescan_errors = {}
 
     def _node_ws(self, wid):
         """idex 工作区 id → Node 引擎工作区 id；没登记 Node 的不让动。"""
@@ -34,9 +36,35 @@ class NodeRoutes(SSEMixin):
             raise ApiError(409, "这个工作区没有登记 Node 引擎")
         return engine_id
 
+    def _node_rescan_target(self, wid):
+        """重扫用的去重键、引擎工作区 id 与根目录；两个工作区可能指向同一引擎工作区。"""
+        tools = self.store.tools(wid) if wid else {}
+        node = tools.get("node") if isinstance(tools, dict) else None
+        if not isinstance(node, dict):
+            raise ApiError(409, "这个工作区没有登记 Node")
+        engine_id = str(node.get("id") or "").strip()
+        root = str(node.get("root") or "").strip()
+        if not engine_id and not root:
+            raise ApiError(409, "这个工作区没有登记 Node")
+        return engine_id or root, engine_id, root
+
+    def _node_rescan_status(self, wid):
+        key, _engine_id, _root = self._node_rescan_target(wid)
+        with self._node_rescan_lock:
+            return {
+                "running": key in self._node_rescanning,
+                "error": self._node_rescan_errors.get(key, ""),
+            }
+
     def _node_dispatch(self, method, route, query, body):
         if route == "state":
-            return self.node_service.state_payload()
+            payload = self.node_service.state_payload()
+            with self._node_rescan_lock:
+                payload["rescan_errors"] = dict(self._node_rescan_errors)
+            return payload
+        if route == "rescan/status":
+            wid = str((query.get("ws") or [""])[0]).strip()
+            return self._node_rescan_status(wid)
         if route == "nodes":
             return {"nodes": discover_nodes(), "current": current_node_version()}
         if route == "log":
@@ -91,21 +119,14 @@ class NodeRoutes(SSEMixin):
         工作区；拿它直接 scan 遇到未知 id 会静默什么都不做，所以优先按根目录登记。
         扫描要几秒，放守护线程里做；同一引擎工作区同时只允许一条。
         """
-        tools = self.store.tools(wid) if wid else {}
-        node = tools.get("node") if isinstance(tools, dict) else None
-        if not isinstance(node, dict):
-            raise ApiError(409, "这个工作区没有登记 Node")
-        engine_id = str(node.get("id") or "").strip()
-        root = str(node.get("root") or "").strip()
-        if not engine_id and not root:
-            raise ApiError(409, "这个工作区没有登记 Node")
         # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id/根目录去重。
-        key = engine_id or root
+        key, engine_id, root = self._node_rescan_target(wid)
 
         with self._node_rescan_lock:
             if key in self._node_rescanning:
                 raise ApiError(409, "这个工作区正在重扫")
             self._node_rescanning.add(key)
+            self._node_rescan_errors.pop(key, None)
 
         def run():
             try:
@@ -114,9 +135,18 @@ class NodeRoutes(SSEMixin):
                 else:
                     self.node_service.rescan(engine_id)
             except ApiError as exc:
+                message = "扫描失败：%s" % exc.message
+                with self._node_rescan_lock:
+                    self._node_rescan_errors[key] = message
                 log("重扫 Node 工作区失败：%s" % exc.message)
             except Exception as exc:
+                message = "扫描出错：%r" % exc
+                with self._node_rescan_lock:
+                    self._node_rescan_errors[key] = message
                 log("重扫 Node 工作区出错：%r" % exc)
+            else:
+                with self._node_rescan_lock:
+                    self._node_rescan_errors.pop(key, None)
             finally:
                 with self._node_rescan_lock:
                     self._node_rescanning.discard(key)

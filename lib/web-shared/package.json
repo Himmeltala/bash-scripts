@@ -19,6 +19,7 @@
     "./theme": "./dist/theme.js",
     "./format": "./dist/format.js",
     "./http": "./dist/http.js",
+    "./tool-api": "./src/utils/services/toolApi.js",
     "./logs": "./dist/logs.js",
     "./text": "./dist/text.js",
     "./layouts": "./dist/layouts.js",
