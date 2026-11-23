@@ -1,6 +1,6 @@
 """找 mvnx / gradlex 入口，并在工作区根目录取目标清单。
 
-目标是工具自己算出来的：jvmx 不读 pom，也不读 settings.gradle。
+目标是工具自己算出来的：引擎不读 pom，也不读 settings.gradle。
 """
 
 import json
@@ -30,9 +30,8 @@ def _tool_argv(path):
 
 
 def default_tools():
-    """优先看与 jvmx 同级的检出，其次看 PATH；环境变量可覆盖，测试用。"""
-    root = Path(__file__).resolve().parents[2]
-    base = root.parent
+    """优先看仓库里的 mvnx / gradlex，其次看 PATH；环境变量可覆盖，测试用。"""
+    base = Path(__file__).resolve().parents[5]
     tools = {}
     for kind, env_name, name in (
         ("mvn", "JVMX_MVNX", "mvnx"),

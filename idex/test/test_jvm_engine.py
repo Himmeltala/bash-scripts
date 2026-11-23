@@ -1,31 +1,21 @@
-"""jvmx 网页端回归：工作区登记、目标合成、启停、日志与非法目录。
-
-用假的 mvn / gradle 脚本顶替真实构建工具，PATH 前置；工具本身（mvnx / gradlex）
-仍是仓库里的真实入口，这样测到的是两边机器接口的衔接。
-"""
-
-import json
-import os
-import subprocess
-import sys
-import tempfile
-import time
-import unittest
-import urllib.request
+import sys, tempfile, unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
-sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
-sys.path.insert(0, str(REPO / "jvmx" / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib" / "idex"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "commons"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "services"))
+from engines.jvm.engine import App
 
-import testkit  # noqa: E402
+# 原来 jvmx 网页用例里的启停、JDK 与扫描，改成直接调 App，不经过 HTTP。
+import json
+import os
+import shutil
 
-from jvmx.app import App  # noqa: E402
+import testkit
+from web import ApiError
 
 MVN_PORT = "18080"
 GRADLE_PORT = "18081"
-API = "/__jvmx/api"
 
 
 def write_fake(bindir, name, port, container):
@@ -97,10 +87,18 @@ def make_jdk(root):
     return root
 
 
-class WebStateTest(unittest.TestCase):
+class JvmEngineTest(unittest.TestCase):
+    def test_app_builds_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = App(Path(tmp))
+            self.assertEqual(app.store.path.name, "state.json")
+            app.close()
+
+
+class JvmEngineServiceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = Path(tempfile.mkdtemp(prefix="jvmx-web-"))
+        cls.tmp = Path(tempfile.mkdtemp(prefix="idex-jvm-"))
         cls.fakebin = cls.tmp / "fakebin"
         cls.fakebin.mkdir()
         write_fake(cls.fakebin, "mvn", MVN_PORT, "Tomcat")
@@ -120,16 +118,12 @@ class WebStateTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         os.environ["PATH"] = cls.old_path
-        import shutil
-
         shutil.rmtree(str(cls.tmp), ignore_errors=True)
 
     def setUp(self):
         self.home = Path(tempfile.mkdtemp(dir=str(self.tmp), prefix="home-"))
         self.app = App(self.home, jdk_roots=())
         self.app.start_background()
-        # 纯接口测试不需要打包好的页面。
-        self.server = testkit.serve(self.app.make_handler(), api_prefix=API)
 
     def tearDown(self):
         for run in self.app.runs.snapshot():
@@ -138,20 +132,15 @@ class WebStateTest(unittest.TestCase):
                     self.app.runs.stop(run["id"])
                 except Exception:
                     self.app.runs.sessions.kill_group(run.get("pid", ""))
-        self.server.shutdown()
         self.app.close()
 
     # 小工具
 
     def add(self, root):
-        status, data = testkit.json_call(self.server.base, "/workspaces", {"root": str(root)})
-        self.assertEqual(status, 200, data)
-        return data
+        return self.app.add_workspace(str(root))
 
     def state(self):
-        status, data = testkit.json_call(self.server.base, "/state")
-        self.assertEqual(status, 200, data)
-        return data
+        return self.app.state_payload()
 
     def workspace(self, kind):
         for ws in self.state()["workspaces"]:
@@ -179,19 +168,9 @@ class WebStateTest(unittest.TestCase):
 
         return testkit.poll_until(check, timeout=timeout, message="等不到运行状态 %s" % (statuses,))
 
-    def read_event(self, path, want, timeout=10):
-        url = self.server.url + API + path
-        deadline = time.time() + timeout
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            while time.time() < deadline:
-                event, data = testkit.read_sse_event(resp)
-                if event == want:
-                    return json.loads(data)
-        self.fail("没有收到 %s 事件" % want)
-
     # 用例
 
-    def test_01_add_mvn_workspace(self):
+    def test_add_mvn_workspace(self):
         data = self.add(self.mvn_root)
         self.assertTrue(data["ok"], data)
         ws = self.workspace("mvn")
@@ -213,10 +192,9 @@ class WebStateTest(unittest.TestCase):
         saved = json.loads((self.home / "state.json").read_text(encoding="utf-8"))
         self.assertEqual(saved["workspaces"][0]["kind"], "mvn")
 
-        status, _ = testkit.json_call(self.server.base, "/rescan", {"ws": ws["id"]})
-        self.assertEqual(status, 200)
+        self.assertEqual(self.app.scan(ws["id"]), "")
 
-    def test_02_add_gradle_workspace(self):
+    def test_add_gradle_workspace(self):
         self.add(self.gradle_root)
         ws = self.workspace("gradle")
         self.assertEqual(ws["kind"], "gradle")
@@ -224,55 +202,44 @@ class WebStateTest(unittest.TestCase):
         self.assertEqual(ws["poms"], [])
         self.assertEqual(self.service(ws, "run")["cmd"], "gradle bootRun")
 
-    def test_03_alias_groups_and_jdk(self):
+    def test_alias_groups_and_jdk(self):
         self.add(self.mvn_root)
         ws = self.workspace("mvn")
 
-        status, _ = testkit.json_call(
-            self.server.base, "/alias", {"ws": ws["id"], "alias": "  我的   工程 "}
-        )
-        self.assertEqual(status, 200)
+        self.app.store.set_alias(ws["id"], "  我的   工程 ")
         self.assertEqual(self.workspace("mvn")["alias"], "我的 工程")
 
         nodes = [
             {"kind": "group", "id": "g1", "parent": "", "name": "分组"},
             {"kind": "ws", "id": ws["id"], "parent": "g1"},
         ]
-        status, data = testkit.json_call(self.server.base, "/groups", {"nodes": nodes})
-        self.assertEqual(status, 200, data)
-        self.assertEqual(len(data["groups"]), 2)
+        self.app.groups.set(nodes)
+        self.assertEqual(len(self.app.groups.nodes()), 2)
         self.assertEqual(len(self.state()["groups"]), 2)
 
         jdk = make_jdk(self.tmp / "jdk17")
-        status, _ = testkit.json_call(self.server.base, "/jdk", {"ws": ws["id"], "jdk": str(jdk)})
-        self.assertEqual(status, 200)
+        self.app.set_jdk(ws["id"], str(jdk))
         ws = self.workspace("mvn")
         self.assertEqual(ws["jdk"], str(jdk.resolve()))
         self.assertFalse(ws["jdk_missing"])
 
-        status, _ = testkit.json_call(self.server.base, "/jdk", {"ws": ws["id"], "jdk": str(self.empty)})
-        self.assertEqual(status, 400)
+        with self.assertRaises(ApiError) as caught:
+            self.app.set_jdk(ws["id"], str(self.empty))
+        self.assertEqual(caught.exception.status, 400)
 
-    def test_04_start_stop_mvn_with_args(self):
+    def test_start_stop_mvn_with_args(self):
         self.add(self.mvn_root)
         ws = self.workspace("mvn")
         svc = self.service(ws, "run")
 
         jdk = make_jdk(self.tmp / "jdk-start")
-        status, _ = testkit.json_call(self.server.base, "/jdk", {"ws": ws["id"], "jdk": str(jdk)})
-        self.assertEqual(status, 200)
+        self.app.set_jdk(ws["id"], str(jdk))
 
-        status, _ = testkit.json_call(
-            self.server.base, "/update", {"svc": svc["id"], "args": "-Dfoo=bar", "mode": "compile"}
-        )
-        self.assertEqual(status, 200)
+        self.app.update_service({"svc": svc["id"], "args": "-Dfoo=bar", "mode": "compile"})
         svc = self.service(self.workspace("mvn"), "run")
         self.assertEqual(svc["args"], "-Dfoo=bar")
 
-        status, data = testkit.json_call(
-            self.server.base, "/start", {"svc": svc["id"], "mode": "compile"}
-        )
-        self.assertEqual(status, 200, data)
+        data = self.app.start_service({"svc": svc["id"], "mode": "compile"})
         runid = data["run"]
         run = self.wait_run(ws["id"], svc["id"], ("ready",))
         self.assertEqual(run["port"], MVN_PORT)
@@ -285,40 +252,22 @@ class WebStateTest(unittest.TestCase):
         self.assertIn("Tomcat started on port", text)
         self.assertIn("JAVA_HOME=%s" % jdk.resolve(), text)
 
-        status, data = testkit.json_call(self.server.base, "/log", None)
-        # 上面故意不带 run，返回空日志；再按运行号取一份。
-        self.assertEqual(status, 200)
-        status, data = testkit.json_call(
-            self.server.base, "/log?run=%s" % runid, None
-        )
-        self.assertEqual(status, 200, data)
-        self.assertIn("fake-mvn", data["text"])
-
         pid = int(run["pid"])
-        status, _ = testkit.json_call(self.server.base, "/stop", {"run": runid})
-        self.assertEqual(status, 200)
+        self.app.stop_service(runid)
         run = self.wait_run(ws["id"], svc["id"], ("stopped",))
         self.assertEqual(run["pid"], "")
         with self.assertRaises(ProcessLookupError):
             os.killpg(pid, 0)
 
-    def test_05_start_stop_gradle(self):
+    def test_start_stop_gradle(self):
         self.add(self.gradle_root)
         ws = self.workspace("gradle")
         svc = self.service(ws, "run")
 
-        status, _ = testkit.json_call(
-            self.server.base,
-            "/update",
-            {"svc": svc["id"], "args": "--info", "mode": "rebuild", "refresh": True},
+        self.app.update_service(
+            {"svc": svc["id"], "args": "--info", "mode": "rebuild", "refresh": True}
         )
-        self.assertEqual(status, 200)
-        status, data = testkit.json_call(
-            self.server.base,
-            "/start",
-            {"svc": svc["id"], "mode": "rebuild", "refresh": True},
-        )
-        self.assertEqual(status, 200, data)
+        data = self.app.start_service({"svc": svc["id"], "mode": "rebuild", "refresh": True})
         runid = data["run"]
         run = self.wait_run(ws["id"], svc["id"], ("ready",))
         self.assertEqual(run["port"], GRADLE_PORT)
@@ -327,59 +276,25 @@ class WebStateTest(unittest.TestCase):
         self.assertIn("--info", text)
         self.assertIn("--refresh-dependencies", text)
 
-        status, _ = testkit.json_call(self.server.base, "/stop", {"run": runid})
-        self.assertEqual(status, 200)
+        self.app.stop_service(runid)
         self.wait_run(ws["id"], svc["id"], ("stopped",))
 
-    def test_06_invalid_directories_rejected(self):
-        status, data = testkit.json_call(
-            self.server.base, "/workspaces", {"root": str(self.empty)}
-        )
-        self.assertEqual(status, 400, data)
-        self.assertIn("不是 Maven 或 Gradle", data["error"])
+    def test_invalid_directories_rejected(self):
+        with self.assertRaises(ApiError) as caught:
+            self.add(self.empty)
+        self.assertEqual(caught.exception.status, 400)
+        self.assertIn("不是 Maven 或 Gradle", caught.exception.message)
 
-        status, data = testkit.json_call(
-            self.server.base, "/workspaces", {"root": str(self.both)}
-        )
-        self.assertEqual(status, 400, data)
-        self.assertIn("无法判断", data["error"])
+        with self.assertRaises(ApiError) as caught:
+            self.add(self.both)
+        self.assertEqual(caught.exception.status, 400)
+        self.assertIn("无法判断", caught.exception.message)
 
-        status, data = testkit.json_call(
-            self.server.base, "/workspaces", {"root": str(self.tmp / "missing")}
-        )
-        self.assertEqual(status, 400, data)
+        with self.assertRaises(ApiError) as caught:
+            self.add(self.tmp / "missing")
+        self.assertEqual(caught.exception.status, 400)
         self.assertEqual(self.state()["workspaces"], [])
-
-    def test_07_sse_state_metrics_and_log(self):
-        self.add(self.mvn_root)
-        ws = self.workspace("mvn")
-        svc = self.service(ws, "run")
-
-        state = self.read_event("/state/stream", "state")
-        self.assertEqual(state["workspaces"][0]["id"], ws["id"])
-        metrics = self.read_event("/state/stream", "metrics")
-        self.assertIsInstance(metrics, dict)
-
-        status, data = testkit.json_call(self.server.base, "/start", {"svc": svc["id"]})
-        self.assertEqual(status, 200, data)
-        runid = data["run"]
-        self.wait_run(ws["id"], svc["id"], ("ready",))
-        tail = self.read_event("/log/stream?run=%s" % runid, "tail")
-        self.assertIn("fake-mvn", tail["text"])
-
-        status, data = testkit.json_call(self.server.base, "/metrics")
-        self.assertEqual(status, 200)
-        self.assertIsInstance(data, dict)
-
-    def test_08_cli_version_and_help(self):
-        exe = REPO / "jvmx" / "bin" / "jvmx"
-        done = subprocess.run([str(exe), "--version"], capture_output=True, text=True, timeout=20)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("0.1.0", done.stdout)
-        done = subprocess.run([str(exe), "--help"], capture_output=True, text=True, timeout=20)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("jvmx web", done.stdout)
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main()

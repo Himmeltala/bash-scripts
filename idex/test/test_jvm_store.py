@@ -8,11 +8,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
-sys.path.insert(0, str(REPO / "jvmx" / "lib"))
+sys.path.insert(0, str(REPO / "idex" / "lib" / "idex"))
 
 from fileio import read_json, write_json
-from jvmx.app import App
-from jvmx.store import KIND_MVN
+from engines.jvm.engine import App
+from engines.jvm.store import KIND_MVN
 
 
 class GroupMigrationTest(unittest.TestCase):

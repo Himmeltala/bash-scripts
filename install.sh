@@ -214,8 +214,7 @@ build_web() {
   local dir
   need_cmd node
   need_cmd npm
-  # jvmx 是 Maven 与 Gradle 共用的网页入口；mvnx 只做终端与机器接口。
-  for dir in lib/web-shared jvmx/web llmx/web nodex/web idex/web netx/web; do
+  for dir in lib/web-shared llmx/web nodex/web idex/web netx/web; do
     [[ -d "$SRC_DIR/$dir" ]] || continue
     if [[ ! -d "$SRC_DIR/$dir/node_modules" ]]; then
       info "安装 $dir 的前端依赖"

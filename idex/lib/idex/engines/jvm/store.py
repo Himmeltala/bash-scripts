@@ -1,6 +1,6 @@
 """工作区登记表：state.json 里存工作区、别名与每行参数。
 
-jvmx 不解析 pom / settings.gradle，目标由 mvnx / gradlex 的 ``--list --json``
+JVM 引擎不解析 pom / settings.gradle，目标由 mvnx / gradlex 的 ``--list --json``
 给出，这里只保存扫描结果与用户在页面上改过的参数。分组结构在 groups.json，由共享的
 LayoutStore 管理。
 """

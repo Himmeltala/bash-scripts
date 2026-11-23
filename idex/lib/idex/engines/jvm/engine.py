@@ -126,7 +126,7 @@ class _Engine:
 
 
 class _State:
-    """ToolHandler 按状态行找工作区；jvmx 的工作区在 Store 里。"""
+    """ToolHandler 按状态行找工作区；JVM 引擎的工作区在 Store 里。"""
 
     def __init__(self, store):
         self.store = store
@@ -144,7 +144,7 @@ class _Aliases:
 
 
 class App:
-    """一个 jvmx 网页进程的全部状态。"""
+    """一个 JVM 引擎进程的全部状态。"""
 
     def __init__(self, home, static=None, allow_write=False, tools=None, jdk_roots=None):
         self.home = Path(home)
@@ -440,8 +440,8 @@ class App:
         app = self
 
         class Handler(ToolHandler):
-            server_version = "jvmx/0.1.0"
-            api_prefix = "/__jvmx/api"
+            server_version = "idex-jvm/0.1.0"
+            api_prefix = "/__idex/api/jvm"
             static = app.static
             state = _State(app.store)
             engine = _Engine(app)
