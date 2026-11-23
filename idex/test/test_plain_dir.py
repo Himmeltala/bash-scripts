@@ -16,14 +16,15 @@ sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 web = load_module("idex_web_server_plain", SERVER)
+vcs_mod = load_module("idex_vcs_summary_plain", HERE.parent / "lib" / "idex" / "web" / "vcs_summary.py")
 
 
 class PlainDirTest(unittest.TestCase):
     def test_detect_returns_none(self):
         with tempfile.TemporaryDirectory() as td:
             Path(td, "readme.txt").write_text("hello", encoding="utf-8")
-            vcs, info = web.detect_vcs(td)
-            self.assertEqual(vcs, "none")
+            kind, info = vcs_mod.detect_vcs(td)
+            self.assertEqual(kind, "none")
             self.assertEqual(info, {"url": ""})
 
     def test_add_and_browse(self):
@@ -81,19 +82,19 @@ class PlainDirTest(unittest.TestCase):
             root = Path(td)
             (root / "a.txt").write_text("hello", encoding="utf-8")
             ws = {"vcs": "none", "root": td}
-            sig1, count1, rev1 = web.changes_signature(ws)
+            sig1, count1, rev1 = vcs_mod.changes_signature(ws)
             self.assertIsNotNone(sig1)
             self.assertEqual(count1, 1)
             self.assertIsNone(rev1)
-            self.assertEqual(web.changes_signature(ws)[0], sig1)
+            self.assertEqual(vcs_mod.changes_signature(ws)[0], sig1)
 
             (root / "b.txt").write_text("new", encoding="utf-8")
-            sig2, count2, _ = web.changes_signature(ws)
+            sig2, count2, _ = vcs_mod.changes_signature(ws)
             self.assertNotEqual(sig2, sig1)
             self.assertEqual(count2, 2)
 
             (root / "a.txt").write_text("hello world", encoding="utf-8")
-            self.assertNotEqual(web.changes_signature(ws)[0], sig2)
+            self.assertNotEqual(vcs_mod.changes_signature(ws)[0], sig2)
 
 
 if __name__ == "__main__":

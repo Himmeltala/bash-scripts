@@ -27,6 +27,7 @@ from stores import LayoutStore
 from routes_lsp import LspRoutes
 from web import ApiError, WebHandler
 from server_common import log
+from browse_fs import save_upload
 from routes_browse import BrowseRoutes
 from routes_vcs import VcsRoutes
 from routes_stream import StreamRoutes
