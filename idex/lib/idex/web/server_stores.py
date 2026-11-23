@@ -97,6 +97,11 @@ class Workspaces:
                         item["vcs"] = vcs
                         if info["url"]:
                             item["url"] = info["url"]
+                    # 显式传了 tools 就顺手更新；没传时保留旧值。
+                    if tools is not None:
+                        item["tools"] = clean_tools(tools)
+                        changed = True
+                    if changed:
                         self.save(items)
                     return item
             item = {
@@ -171,7 +176,7 @@ class Workspaces:
                     "url": unquote(w.get("url", "")),
                     "alias": w.get("alias", ""),
                     # 旧记录没有这项，给 None；检测过但没有能力时是 {}。
-                    "tools": w.get("tools"),
+                    "tools": w.get("tools") if isinstance(w.get("tools"), dict) else None,
                     "rel": rel,
                 }
             )
