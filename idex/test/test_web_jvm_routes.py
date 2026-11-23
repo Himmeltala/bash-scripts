@@ -98,9 +98,9 @@ class JvmDispatchTest(unittest.TestCase):
 
     def wait_clear(self, key="j1"):
         deadline = time.time() + 5
-        while key in JvmRoutes._rescanning and time.time() < deadline:
+        while key in JvmRoutes._jvm_rescanning and time.time() < deadline:
             time.sleep(0.01)
-        self.assertNotIn(key, JvmRoutes._rescanning)
+        self.assertNotIn(key, JvmRoutes._jvm_rescanning)
 
     def test_state(self):
         self.assertIn("workspaces", self.make()._jvm_dispatch("GET", "state", {}, {}))
@@ -240,7 +240,7 @@ class JvmDispatchTest(unittest.TestCase):
     def test_rescan_duplicate_is_409(self):
         app = BlockingApp()
         h = self.make(); h.jvm_app = app
-        self.addCleanup(JvmRoutes._rescanning.discard, "j1")
+        self.addCleanup(JvmRoutes._jvm_rescanning.discard, "j1")
         self.addCleanup(app.release.set)
 
         h._jvm_dispatch("POST", "rescan", {}, {"ws": "i1"})
@@ -254,12 +254,12 @@ class JvmDispatchTest(unittest.TestCase):
     def test_rescan_flag_clears_after_thread(self):
         app = BlockingApp()
         h = self.make(); h.jvm_app = app
-        self.addCleanup(JvmRoutes._rescanning.discard, "j1")
+        self.addCleanup(JvmRoutes._jvm_rescanning.discard, "j1")
         self.addCleanup(app.release.set)
 
         h._jvm_dispatch("POST", "rescan", {}, {"ws": "i1"})
         self.assertTrue(app.started.wait(2))
-        self.assertIn("j1", JvmRoutes._rescanning)
+        self.assertIn("j1", JvmRoutes._jvm_rescanning)
         app.release.set()
         self.wait_clear()
 

@@ -49,6 +49,14 @@ def _tool_root(item, key):
     return str(tool.get("root") or "").strip() if isinstance(tool, dict) else ""
 
 
+def _holds_root(item, key, root):
+    """工作区是否还占着这个引擎根：没探测过的同目录工作区也算占着。"""
+    tool_root = _tool_root(item, key)
+    if tool_root:
+        return tool_root == root
+    return str(item.get("root") or "").strip() == root
+
+
 def _release_engines(handler, item, remaining):
     """最后一个指向该引擎根的工作区移出时才注销，别的 idex 工作区可能还在用。"""
     tools = item.get("tools") if isinstance(item.get("tools"), dict) else {}
@@ -64,7 +72,7 @@ def _release_engines(handler, item, remaining):
         engine_id = str(tool.get("id") or "").strip()
         if not root or not engine_id:
             continue
-        if any(_tool_root(other, key) == root for other in remaining):
+        if any(_holds_root(other, key, root) for other in remaining):
             continue
         try:
             getattr(service, method)(engine_id)
@@ -83,6 +91,7 @@ def _forget_workspace(handler, body):
 
 
 def _rescan_tools(handler, body):
+    handler._check_write()
     ws = handler.store.find(str(body.get("ws", "")))
     if ws is None:
         raise ApiError(404, "没有这个工作区")

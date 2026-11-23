@@ -52,9 +52,9 @@ class NodeDispatchTest(unittest.TestCase):
 
     def wait_clear(self, key="n1"):
         deadline = time.time() + 5
-        while key in NodeRoutes._rescanning and time.time() < deadline:
+        while key in NodeRoutes._node_rescanning and time.time() < deadline:
             time.sleep(0.01)
-        self.assertNotIn(key, NodeRoutes._rescanning)
+        self.assertNotIn(key, NodeRoutes._node_rescanning)
 
     def test_state(self):
         self.assertIn("workspaces", self.make()._node_dispatch("GET", "state", {}, {}))
@@ -78,7 +78,7 @@ class NodeDispatchTest(unittest.TestCase):
         """探测到 id 不代表引擎状态里有 ws 行；按根目录重加才会登记并扫描。"""
         svc = BlockingService()
         h = self.make(); h.node_service = svc
-        self.addCleanup(NodeRoutes._rescanning.discard, "n1")
+        self.addCleanup(NodeRoutes._node_rescanning.discard, "n1")
         self.addCleanup(svc.release.set)
 
         out = h._node_dispatch("POST", "rescan", {}, {"ws": "i1"})
@@ -92,7 +92,7 @@ class NodeDispatchTest(unittest.TestCase):
     def test_rescan_duplicate_is_409(self):
         svc = BlockingService()
         h = self.make(); h.node_service = svc
-        self.addCleanup(NodeRoutes._rescanning.discard, "n1")
+        self.addCleanup(NodeRoutes._node_rescanning.discard, "n1")
         self.addCleanup(svc.release.set)
 
         h._node_dispatch("POST", "rescan", {}, {"ws": "i1"})
@@ -106,12 +106,12 @@ class NodeDispatchTest(unittest.TestCase):
     def test_rescan_flag_clears_after_thread(self):
         svc = BlockingService()
         h = self.make(); h.node_service = svc
-        self.addCleanup(NodeRoutes._rescanning.discard, "n1")
+        self.addCleanup(NodeRoutes._node_rescanning.discard, "n1")
         self.addCleanup(svc.release.set)
 
         h._node_dispatch("POST", "rescan", {}, {"ws": "i1"})
         self.assertTrue(svc.started.wait(2))
-        self.assertIn("n1", NodeRoutes._rescanning)
+        self.assertIn("n1", NodeRoutes._node_rescanning)
         svc.release.set()
         self.wait_clear()
 

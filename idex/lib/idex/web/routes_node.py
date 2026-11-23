@@ -22,8 +22,8 @@ class NodeRoutes(SSEMixin):
     node_service = None
 
     # 同一个工作区的重扫正在排队或跑着；Handler 每个请求一个新实例，所以放类上。
-    _rescan_lock = threading.Lock()
-    _rescanning = set()
+    _node_rescan_lock = threading.Lock()
+    _node_rescanning = set()
 
     def _node_ws(self, wid):
         """idex 工作区 id → Node 引擎工作区 id；没登记 Node 的不让动。"""
@@ -102,10 +102,10 @@ class NodeRoutes(SSEMixin):
         # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id/根目录去重。
         key = engine_id or root
 
-        with self._rescan_lock:
-            if key in self._rescanning:
+        with self._node_rescan_lock:
+            if key in self._node_rescanning:
                 raise ApiError(409, "这个工作区正在重扫")
-            self._rescanning.add(key)
+            self._node_rescanning.add(key)
 
         def run():
             try:
@@ -118,8 +118,8 @@ class NodeRoutes(SSEMixin):
             except Exception as exc:
                 log("重扫 Node 工作区出错：%r" % exc)
             finally:
-                with self._rescan_lock:
-                    self._rescanning.discard(key)
+                with self._node_rescan_lock:
+                    self._node_rescanning.discard(key)
 
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True, "started": True}

@@ -24,8 +24,8 @@ class JvmRoutes(SSEMixin):
     jvm_app = None
 
     # 同一个工作区的重扫正在排队或跑着；Handler 每个请求一个新实例，所以放类上。
-    _rescan_lock = threading.Lock()
-    _rescanning = set()
+    _jvm_rescan_lock = threading.Lock()
+    _jvm_rescanning = set()
 
     def _require_local(self, what):
         """读 JDK 与浏览目录会露出本机情况，默认只认本机；--allow-write 放开。"""
@@ -139,10 +139,10 @@ class JvmRoutes(SSEMixin):
         # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id 去重。
         key = engine_id
 
-        with self._rescan_lock:
-            if key in self._rescanning:
+        with self._jvm_rescan_lock:
+            if key in self._jvm_rescanning:
                 raise ApiError(409, "这个工作区正在重扫")
-            self._rescanning.add(key)
+            self._jvm_rescanning.add(key)
 
         def run():
             try:
@@ -156,8 +156,8 @@ class JvmRoutes(SSEMixin):
             except Exception as exc:
                 log("重扫 JVM 工作区出错：%r" % exc)
             finally:
-                with self._rescan_lock:
-                    self._rescanning.discard(key)
+                with self._jvm_rescan_lock:
+                    self._jvm_rescanning.discard(key)
 
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True, "started": True}
