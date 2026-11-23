@@ -5,8 +5,10 @@
 
 import os
 import threading
+from pathlib import Path
 
 from browse import list_dirs
+from engines.jvm.store import KINDS
 from netutil import is_loopback_address
 from runner import run_log_path
 from sse import SSEMixin, tail
@@ -84,6 +86,16 @@ class JvmRoutes(SSEMixin):
             return self._jvm_rescan(str(body.get("ws", "") or "").strip())
         raise ApiError(404, "没有这个接口：%s" % route)
 
+    def _jvm_log_path(self, runid):
+        """运行号只能落在 App 的日志目录里，防止 ../ 读到别处的 *.log。"""
+        logs = Path(self.jvm_app.logs).resolve()
+        path = run_log_path(logs, runid)
+        try:
+            path.resolve().relative_to(logs)
+        except ValueError:
+            raise ApiError(400, "运行号不对")
+        return path
+
     def _jvm_log_page(self, query):
         """日志分页；运行状态从 App 的运行表取，与旧 jvmx 的 _log_page 一致。"""
         runid = (query.get("run") or [""])[0]
@@ -91,7 +103,7 @@ class JvmRoutes(SSEMixin):
             page = max(0, int((query.get("page") or ["0"])[0] or 0))
         except ValueError:
             page = 0
-        text, more = tail(run_log_path(self.jvm_app.logs, runid), page)
+        text, more = tail(self._jvm_log_path(runid), page)
         run = self.jvm_app.runs.find(runid) or {}
         return {
             "run": runid,
@@ -119,10 +131,13 @@ class JvmRoutes(SSEMixin):
         if not engine_id:
             raise ApiError(409, "这个工作区没有登记 JVM")
         known = self.jvm_app.store.find(engine_id) is not None
-        if not known and not root:
-            raise ApiError(409, "这个工作区没有登记 JVM 根目录")
-        # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id/根目录去重。
-        key = engine_id or root
+        if not known:
+            if not root:
+                raise ApiError(409, "这个工作区没有登记 JVM 根目录")
+            if kind not in KINDS:
+                raise ApiError(400, "工作区类型不认识：%s" % kind)
+        # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id 去重。
+        key = engine_id
 
         with self._rescan_lock:
             if key in self._rescanning:

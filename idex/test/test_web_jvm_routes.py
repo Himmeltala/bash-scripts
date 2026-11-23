@@ -82,9 +82,12 @@ class BlockingApp(FakeApp):
         self.release.wait(5)
 
 class FakeStore:
+    def __init__(self, jvm=None):
+        self.jvm = jvm if jvm is not None else {"root": "/r", "kind": "mvn", "id": "j1"}
+
     def tools(self, wid):
         if wid == "i1":
-            return {"jvm": {"root": "/r", "kind": "mvn", "id": "j1"}}
+            return {"jvm": self.jvm}
         return {}
 
 class JvmDispatchTest(unittest.TestCase):
@@ -135,6 +138,12 @@ class JvmDispatchTest(unittest.TestCase):
             self.make()._jvm_ws("missing")
         self.assertEqual(ctx.exception.status, 409)
 
+    def test_blank_engine_id_is_409(self):
+        h = self.make(); h.store = FakeStore({"root": "/r", "kind": "mvn", "id": ""})
+        with self.assertRaises(ApiError) as ctx:
+            h._jvm_ws("i1")
+        self.assertEqual(ctx.exception.status, 409)
+
     def test_write_checks_local(self):
         h = self.make()
         h._check_write = lambda: (_ for _ in ()).throw(ApiError(403, "只允许本机"))
@@ -179,6 +188,21 @@ class JvmDispatchTest(unittest.TestCase):
         self.assertEqual(out["run"], "r1")
         self.assertEqual(out["status"], "running")
         self.assertIn("two", out["text"])
+
+    def test_log_runid_cannot_escape_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs = Path(tmp) / "logs"
+            logs.mkdir()
+            outside = Path(tmp) / "outside.log"
+            outside.write_text("secret\n", encoding="utf-8")
+            h = self.make()
+            h.jvm_app.logs = logs
+
+            with self.assertRaises(ApiError) as ctx:
+                h._jvm_dispatch("GET", "log", {"run": ["../outside"]}, {})
+
+        self.assertEqual(ctx.exception.status, 400)
+        self.assertEqual(ctx.exception.message, "运行号不对")
 
     def test_log_stream_uses_app_logs(self):
         self.assertIs(JvmRoutes._stream_log, SSEMixin._stream_log)
@@ -245,6 +269,12 @@ class JvmDispatchTest(unittest.TestCase):
         )
         app.release.set()
         self.wait_clear()
+
+    def test_rescan_unknown_kind_is_400(self):
+        h = self.make(); h.store = FakeStore({"root": "/r", "kind": "ant", "id": "j1"})
+        with self.assertRaises(ApiError) as ctx:
+            h._jvm_dispatch("POST", "rescan", {}, {"ws": "i1"})
+        self.assertEqual(ctx.exception.status, 400)
 
     def test_rescan_unregistered_ws_is_409(self):
         h = self.make()
