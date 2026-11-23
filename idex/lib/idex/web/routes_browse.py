@@ -1,6 +1,10 @@
 """浏览目录的网页接口：目录树、取文件、下载、搜索与增删改。"""
 
 import os
+import posixpath
+import shutil
+import subprocess
+from pathlib import Path
 
 from web import ApiError, STREAMED, zip_dir
 
@@ -22,6 +26,86 @@ from stores import LayoutStore  # noqa: F401  只为了让类型提示与依赖�
 SEARCH_IGNORE_DEFAULTS = (".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target")
 # 每个工作区最近一次搜索的代次；新请求换了代，旧的那个扫到一半就停。
 SEARCH_TOKENS = {}
+# 大目录打包可能很久，给个上限；超时当失败回给页面。
+COMPRESS_TIMEOUT = 600
+
+
+def zipx_command():
+    """打包命令：PATH 里的 zipx，找不到再看同级检出的 zipx/bin/zipx；两者都要能执行。"""
+    found = shutil.which("zipx")
+    if found and os.access(found, os.X_OK):
+        return found
+    bundled = Path(__file__).resolve().parents[4] / "zipx" / "bin" / "zipx"
+    if bundled.is_file() and os.access(str(bundled), os.X_OK):
+        return str(bundled)
+    return None
+
+
+def _discard_archive(path):
+    """失败时清掉这次调用可能留下的半截包；清不掉也不能盖住原本的错误。"""
+    try:
+        if os.path.lexists(path):
+            os.unlink(path)
+    except OSError:
+        pass
+
+
+def _browse_compress(handler, body):
+    """把工作区里的一个目录压成同级同名 zip；已存在的包不覆盖。"""
+    handler._check_write()
+    ws = handler.store.find(str(body.get("ws", "")))
+    if ws is None:
+        raise ApiError(404, "没有这个工作区")
+    # 与浏览接口同一套根：登记目录本身；尾斜杠去掉，"." 与根目录一样不能压。
+    root = ws["root"]
+    rel = posixpath.normpath(browse_rel(str(body.get("path", ""))).rstrip("/"))
+    if not rel or rel == ".":
+        raise ApiError(400, "工作区根目录不能压缩：包会落到工作区外")
+    target = os.path.join(root, rel)
+    if not inside(root, target):
+        raise ApiError(400, "路径要在工作副本里：%s" % rel)
+    if os.path.realpath(target) == os.path.realpath(root):
+        raise ApiError(400, "工作区根目录不能压缩：包会落到工作区外")
+    if not os.path.isdir(target):
+        raise ApiError(400, "只能压缩目录：%s" % rel)
+    parent = os.path.dirname(target)
+    archive = os.path.join(parent, os.path.basename(target) + ".zip")
+    # 断链的符号链接也算已存在；否则 zipx 会顺着它写到别处。
+    if os.path.lexists(archive):
+        raise ApiError(409, "「%s」已存在" % os.path.basename(archive))
+    zipx = zipx_command()
+    if not zipx:
+        raise ApiError(503, "找不到可执行的 zipx 命令，装好 zipx 或用同级检出的再试")
+    # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
+    try:
+        proc = subprocess.run(
+            [zipx, "pack", os.path.basename(target), "-o", archive],
+            cwd=parent,
+            capture_output=True,
+            text=True,
+            timeout=COMPRESS_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        _discard_archive(archive)
+        raise ApiError(504, "压缩超时：%s" % rel)
+    except OSError as exc:
+        _discard_archive(archive)
+        raise ApiError(503, "起 zipx 失败：%s" % exc)
+    if proc.returncode != 0:
+        _discard_archive(archive)
+        message = (proc.stderr or proc.stdout or "").strip()
+        raise ApiError(400, message or "zipx 打包失败")
+    if not os.path.isfile(archive):
+        _discard_archive(archive)
+        raise ApiError(400, "zipx 没有生成包文件")
+    if not inside(root, archive):
+        _discard_archive(archive)
+        raise ApiError(400, "包文件落在工作副本外：%s" % os.path.basename(archive))
+    return {
+        "ok": True,
+        "path": os.path.relpath(archive, root).replace(os.sep, "/"),
+        "size": os.path.getsize(archive),
+    }
 
 
 class BrowseRoutes:
@@ -96,6 +180,9 @@ class BrowseRoutes:
         ws = self._browse_write_ws(body)
         rel = str(body.get("path", ""))
         return {"workspace": ws, **delete_entry(ws["root"], ws.get("vcs", "none"), rel)}
+
+    def _browse_compress(self, body):
+        return _browse_compress(self, body)
 
     def _search(self, query):
         ws = self._ws(query)

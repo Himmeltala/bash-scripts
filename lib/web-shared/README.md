@@ -1,6 +1,6 @@
 # web-shared
 
-nodex、jvmx、idex、llmx、netx 共用的 Vue 组件、组合式函数与主题，做成 `file:` 依赖的本地包。
+idex、llmx、netx 共用的 Vue 组件、组合式函数与主题，做成 `file:` 依赖的本地包。
 
 ## 编译
 

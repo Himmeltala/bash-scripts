@@ -1,7 +1,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-14 00:32:22
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-17 23:35:13
+# @LastEditTime: 2026-11-23 00:00:00
 # @FilePath: \lib\py-shared\services\runner.py
 # @Description: 长命子进程与执行端管路：会话管理、逐行请求、状态文件缓存。
 
@@ -18,7 +18,7 @@ from pathlib import Path
 from stores import FS, Row
 from web import ApiError, log
 
-# run 行的列名与运行号前缀：nodex 与 mvnx 的状态格式一致。
+# run 行的列名与运行号前缀：idex 的 Node 引擎按这个解析状态。
 RUN_FIELDS = ("id", "ws", "type", "tag", "path", "pl", "display", "module", "args",
               "cmd", "pid", "port", "status", "started", "code", "err")
 RUN_KIND = "run"
@@ -181,7 +181,7 @@ class EngineClient:
     # 回话带数据行的请求：除这几条之外都只有一行 ok。
     WITH_DATA = ("reserve",)
     WELCOME = "hello" + FS + "1\n"
-    # 出错提示里用的名字，子类改成 nodex / mvnx。
+    # 出错提示里用的名字，Node 引擎改成 Node。
     label = "执行端"
 
     def __init__(self, command, state, sessions, logs):
@@ -289,7 +289,7 @@ class EngineClient:
 
 
 class ToolEngine(EngineClient):
-    """nodex 与 mvnx 共用的执行端动作：增删工作区、停止、解析 reserve 回话。"""
+    """idex 的 Node 引擎使用的执行端动作：增删工作区、停止、解析 reserve 回话。"""
 
     def add_workspace(self, root):
         self.call("add", root)

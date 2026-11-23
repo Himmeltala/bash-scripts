@@ -8,6 +8,7 @@
 """
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -16,8 +17,12 @@ from pathlib import Path
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "lib" / "py-shared" / "services"))
+# 引擎包在 idex 根目录的 engines/ 下，与 web/ 同级；加进去才能按模块导入。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # 同目录下的 LSP 桥接；按文件加载本模块时也能找到。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from engines.jvm.engine import App as JvmApp
+from engines.node.engine import NodeService
 from lsp_client import LspManager
 from metrics import Metrics
 from netutil import is_loopback_address as is_loopback
@@ -25,13 +30,16 @@ from runtime import check_static, serve as serve_web, start_streams
 from sse import MetricsStream
 from stores import LayoutStore
 from routes_lsp import LspRoutes
+from routes_jvm import JvmRoutes
+from routes_node import NodeRoutes
 from web import ApiError, WebHandler
 from server_common import log
+from browse_fs import save_upload
 from routes_browse import BrowseRoutes
 from routes_vcs import VcsRoutes
 from routes_stream import StreamRoutes
 from routes_jobs import JobRoutes
-from routes_workspaces import WorkspacesRoutes, _add_workspace, _forget_workspace, _save_groups, _save_settings, _set_alias, list_dirs
+from routes_workspaces import WorkspacesRoutes, _add_workspace, _forget_workspace, _rescan_tools, _save_groups, _save_settings, _set_alias, list_dirs
 from server_stores import Settings, Workspaces
 from event_hub import StateStream
 
@@ -309,11 +317,13 @@ WRITE_ROUTES = {
     "lsp/rename-apply": lambda h, m, q, b: h._lsp_rename(b, apply=True),
     "settings": lambda h, m, q, b: _save_settings(h, b),
     "groups": lambda h, m, q, b: _save_groups(h, b),
+    "tools/rescan": lambda h, m, q, b: _rescan_tools(h, b),
     "save": lambda h, m, q, b: h._save(b),
     "mkdir": lambda h, m, q, b: h._browse_create(b, "dir"),
     "newfile": lambda h, m, q, b: h._browse_create(b, "file"),
     "rename": lambda h, m, q, b: h._browse_rename(b),
     "delete": lambda h, m, q, b: h._browse_delete(b),
+    "compress": lambda h, m, q, b: h._browse_compress(b),
     "stage": lambda h, m, q, b: h._stage(b),
     "unstage": lambda h, m, q, b: h._unstage(b),
     "restore-hunk": lambda h, m, q, b: h._restore_hunk(b),
@@ -323,11 +333,14 @@ WRITE_ROUTES = {
 }
 
 
-class Handler(JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes, LspRoutes, WebHandler):
+class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes, LspRoutes, WebHandler):
     server_version = "idex-web"
 
     static = None
     store = None
+    # Node 与 JVM 引擎各一份；初始化失败时留 None，对应路由回 503。
+    node_service = None
+    jvm_app = None
     # 左侧工作副本的分组结构，存在 state.json 旁边。
     groups = None
     # 全局设置（搜索跳过的目录等），同样存在 state.json 旁边。
@@ -346,8 +359,34 @@ class Handler(JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes
 
 
 
+    def _engine(self, name):
+        """取已经起来的引擎；没起来时接口明确回 503，而不是属性错误。"""
+        service = self.node_service if name == "node" else self.jvm_app
+        if service is None:
+            label = "Node" if name == "node" else "JVM"
+            raise ApiError(503, "%s 引擎没有起来" % label)
+        return service
+
+    def _engine_state_stream(self, name, query):
+        service = self._engine(name)
+        self._sse([(service.state_stream, "state"), (service.metrics_stream, "metrics")])
+
     def _stream_routes(self, route, query):
         # SSE 自己写响应头与数据流，不走一次性回 JSON 的路。
+        if route == "node/state/stream":
+            self._engine_state_stream("node", query)
+            return True
+        if route == "jvm/state/stream":
+            self._engine_state_stream("jvm", query)
+            return True
+        if route == "node/log/stream":
+            self._engine("node")
+            self._node_log_stream(query)
+            return True
+        if route == "jvm/log/stream":
+            self._engine("jvm")
+            self._jvm_log_stream(query)
+            return True
         if route == "state/stream":
             self._sse_state()
             return True
@@ -364,6 +403,12 @@ class Handler(JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes
         return False
 
     def _dispatch(self, method, route, query, body):
+        if route == "node" or route.startswith("node/"):
+            self._engine("node")
+            return self._node_dispatch(method, route[5:], query, body)
+        if route == "jvm" or route.startswith("jvm/"):
+            self._engine("jvm")
+            return self._jvm_dispatch(method, route[4:], query, body)
         handler = READ_ROUTES.get(route)
         if handler is not None:
             result = handler(self, method, query, body)
@@ -469,14 +514,30 @@ class Handler(JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes
         return save_upload(ws["root"], rel, name, self.rfile, length, overwrite)
 
 
-def serve(args):
-    static = check_static(args.static)
-    if static is None:
-        return 3
-    if not (shutil.which("svn") or shutil.which("git")):
-        log("找不到 svn 与 git 命令，装上其中一个再试")
-        return 3
+def _engine_home(name):
+    """引擎的状态目录：${XDG_CACHE_HOME:-~/.cache}/<工具>/web，与引擎脚本的算法一致。"""
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return Path(base) / name / "web"
 
+
+def _start_engine(label, factory):
+    """起一份引擎；初始化或起后台失败都只留 None，另一个引擎照常工作。"""
+    engine = None
+    try:
+        engine = factory()
+        engine.start_background()
+        return engine
+    except Exception as exc:
+        log("%s 引擎没有起来：%r" % (label, exc))
+        if engine is not None:
+            try:
+                engine.close()
+            except Exception:
+                pass
+        return None
+
+
+def _make_handler(args, static):
     Handler.static = static
     Handler.store = Workspaces(args.state)
     Handler.groups = LayoutStore(Path(args.state).parent / "groups.json")
@@ -489,16 +550,51 @@ def serve(args):
         lambda: {"workspaces": Handler.store.workspaces(), "groups": Handler.groups.nodes()},
     )
     Handler.metrics_stream = MetricsStream(METRICS)
-    start_streams(Handler.state_stream, Handler.metrics_stream)
+
+    node_home = _engine_home("nodex")
+    Handler.node_service = _start_engine(
+        "Node",
+        lambda: NodeService(
+            str(Path(__file__).resolve().parents[1] / "engines/node/engine.sh"),
+            node_home,
+            node_home / "custom.tsv",
+        ),
+    )
+    Handler.jvm_app = _start_engine("JVM", lambda: JvmApp(_engine_home("jvmx")))
+    return Handler
+
+
+def _cleanup():
+    """退出时收掉两个引擎的后台线程，再停语言服务器；一个出错不挡别的。"""
+    for label, engine in (("Node", Handler.node_service), ("JVM", Handler.jvm_app)):
+        if engine is None:
+            continue
+        try:
+            engine.close()
+        except Exception as exc:
+            log("关闭 %s 引擎出错：%r" % (label, exc))
+    Handler.lsp.stop_all()
+
+
+def serve(args):
+    static = check_static(args.static)
+    if static is None:
+        return 3
+    if not (shutil.which("svn") or shutil.which("git")):
+        log("找不到 svn 与 git 命令，装上其中一个再试")
+        return 3
+
+    handler = _make_handler(args, static)
+    start_streams(handler.state_stream, handler.metrics_stream)
 
     return serve_web(
-        Handler,
+        handler,
         args.host,
         args.port,
         ready="IDEX_WEB_READY",
         title="idex 网页",
         open_browser=args.open,
-        cleanup=Handler.lsp.stop_all,
+        cleanup=_cleanup,
         label="idex",
     )
 

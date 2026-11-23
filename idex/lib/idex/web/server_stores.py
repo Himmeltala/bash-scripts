@@ -19,6 +19,24 @@ SEARCH_IGNORE_MAX = 50
 SEARCH_IGNORE_LEN = 80
 
 
+def clean_tools(tools):
+    """只留已知工具的能力信息：缺字段的整条丢掉，值一律转成字符串。"""
+    if not isinstance(tools, dict):
+        return {}
+    out = {}
+    node = tools.get("node")
+    if isinstance(node, dict) and node.get("root") and node.get("id"):
+        out["node"] = {"root": str(node["root"]), "id": str(node["id"])}
+    jvm = tools.get("jvm")
+    if isinstance(jvm, dict) and jvm.get("root") and jvm.get("kind") and jvm.get("id"):
+        out["jvm"] = {
+            "root": str(jvm["root"]),
+            "kind": str(jvm["kind"]),
+            "id": str(jvm["id"]),
+        }
+    return out
+
+
 def clean_search_ignore(values):
     """只收目录名：去空白、去重，带路径分隔符的条目丢掉，数量与长度都设上限。"""
     names = []
@@ -62,7 +80,7 @@ class Workspaces:
                 return item
         return None
 
-    def add(self, root):
+    def add(self, root, tools=None):
         root = os.path.abspath(os.path.expanduser(root))
         if not os.path.isdir(root):
             raise ApiError(400, "目录不存在：%s" % root)
@@ -79,6 +97,11 @@ class Workspaces:
                         item["vcs"] = vcs
                         if info["url"]:
                             item["url"] = info["url"]
+                    # 显式传了 tools 就顺手更新；没传时保留旧值。
+                    if tools is not None:
+                        item["tools"] = clean_tools(tools)
+                        changed = True
+                    if changed:
                         self.save(items)
                     return item
             item = {
@@ -89,6 +112,9 @@ class Workspaces:
                 "alias": "",
                 "added": int(time.time()),
             }
+            # 没传 tools 就不写这一项，列出来时是 None，前端据此只自动探测一次。
+            if tools is not None:
+                item["tools"] = clean_tools(tools)
             items.append(item)
             self.save(items)
             return item
@@ -96,10 +122,29 @@ class Workspaces:
     def remove(self, wid):
         with self.lock:
             items = self.load()
-            left = [item for item in items if item["id"] != wid]
-            if len(left) == len(items):
+            gone = [item for item in items if item["id"] == wid]
+            if not gone:
                 raise ApiError(404, "没有这个工作区：%s" % wid)
-            self.save(left)
+            self.save([item for item in items if item["id"] != wid])
+            return gone[0]
+
+    def tools(self, wid):
+        """工作区检测到的工具映射；没这项或没有能力时都当空。"""
+        item = self.find(wid)
+        value = item.get("tools") if item else None
+        return value if isinstance(value, dict) else {}
+
+    def set_tools(self, wid, tools):
+        """整份替换工作区的工具映射。"""
+        cleaned = clean_tools(tools)
+        with self.lock:
+            items = self.load()
+            for item in items:
+                if item["id"] == wid:
+                    item["tools"] = cleaned
+                    self.save(items)
+                    return
+            raise ApiError(404, "没有这个工作区：%s" % wid)
 
     def set_alias(self, wid, alias):
         alias = " ".join((alias or "").split())
@@ -130,6 +175,8 @@ class Workspaces:
                     "vcs": w.get("vcs", "svn"),
                     "url": unquote(w.get("url", "")),
                     "alias": w.get("alias", ""),
+                    # 旧记录没有这项，给 None；检测过但没有能力时是 {}。
+                    "tools": w.get("tools") if isinstance(w.get("tools"), dict) else None,
                     "rel": rel,
                 }
             )

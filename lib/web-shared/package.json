@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "nodex、jvmx、idex、llmx、netx 五个网页界面共用的组件、组合式函数与纯工具",
+  "description": "idex、llmx、netx 三个网页界面共用的组件、组合式函数与纯工具",
   "files": [
     "dist",
     "vite-preset.js",
@@ -19,6 +19,7 @@
     "./theme": "./dist/theme.js",
     "./format": "./dist/format.js",
     "./http": "./dist/http.js",
+    "./tool-api": "./src/utils/services/toolApi.js",
     "./logs": "./dist/logs.js",
     "./text": "./dist/text.js",
     "./layouts": "./dist/layouts.js",

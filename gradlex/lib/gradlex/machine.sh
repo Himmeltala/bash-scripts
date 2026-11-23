@@ -1,4 +1,4 @@
-# 机器接口：--list --json 供 jvmx 网页壳读目标，exec --id 执行单个目标。
+# 机器接口：--list --json 供 idex 的 JVM 引擎读目标，exec --id 执行单个目标。
 # 记录六段：标签|构建根|项目路径|任务|展示路径|展示命令；id 取「命令:标签」。
 
 machine_collect() {

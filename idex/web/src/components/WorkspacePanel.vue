@@ -7,24 +7,12 @@
         color="primary"
         @update:model-value="tab = $event"
       >
-        <v-tab v-if="!plain" value="changes">
-          <v-icon start size="18">mdi-file-compare</v-icon>
-          变更
-          <v-chip v-if="count" class="badge" size="x-small" variant="flat" color="primary">
+        <v-tab v-for="name in tabs" :key="name" :value="name">
+          <v-icon start size="18">{{ TAB_META[name].icon }}</v-icon>
+          {{ TAB_META[name].label }}
+          <v-chip v-if="name === 'changes' && count" class="badge" size="x-small" variant="flat" color="primary">
             {{ count }}
           </v-chip>
-        </v-tab>
-        <v-tab v-if="!plain" value="log">
-          <v-icon start size="18">mdi-history</v-icon>
-          提交日志
-        </v-tab>
-        <v-tab v-if="!plain" value="sync">
-          <v-icon start size="18">mdi-cloud-sync-outline</v-icon>
-          同步
-        </v-tab>
-        <v-tab value="browse">
-          <v-icon start size="18">mdi-folder-open-outline</v-icon>
-          浏览目录
         </v-tab>
       </v-tabs>
     </div>
@@ -38,10 +26,17 @@
       />
       <LogPanel v-else-if="shownTab === 'log'" :ws="ws" :refresh="repoKey" />
       <SyncPanel v-else-if="shownTab === 'sync'" :ws="ws" :refresh="repoKey" />
+      <NodePanel v-else-if="shownTab === 'node'" :ws="ws" />
+      <JvmPanel v-else-if="shownTab === 'jvm'" :ws="ws" />
       <BrowsePanel v-else :ws="ws" :refresh="changesKey" :changed-paths="changedPaths" />
     </div>
   </div>
 </template>
+
+<script>
+// 自动探测按工作区记账；换走再回来会重建组件，这个集合让每个工作区只触发一次。
+const detected = new Set()
+</script>
 
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -52,19 +47,47 @@ import BrowsePanel from './BrowsePanel.vue'
 const ChangesPanel = defineAsyncComponent(() => import('./ChangesPanel.vue'))
 const LogPanel = defineAsyncComponent(() => import('./LogPanel.vue'))
 const SyncPanel = defineAsyncComponent(() => import('./SyncPanel.vue'))
+// 引擎页签只在工作区真有这项能力时出现，面板按需再拉。
+const NodePanel = defineAsyncComponent(() => import('./services/NodePanel.vue'))
+const JvmPanel = defineAsyncComponent(() => import('./services/JvmPanel.vue'))
 import { workspaceEventsUrl } from '../utils/api'
+import { toolsApi } from '../utils/toolApi'
+import { needsToolDetection, workspaceTabs } from '../utils/workspaceTabs'
 import { usePreferencesStore } from '../stores/preferences'
 
 const props = defineProps({
   ws: { type: Object, required: true },
 })
 
+// 页签标题与图标；顺序由 workspaceTabs 决定，这里只管怎么显示。
+const TAB_META = {
+  changes: { icon: 'mdi-file-compare', label: '变更' },
+  log: { icon: 'mdi-history', label: '提交日志' },
+  sync: { icon: 'mdi-cloud-sync-outline', label: '同步' },
+  browse: { icon: 'mdi-folder-open-outline', label: '浏览目录' },
+  node: { icon: 'mdi-nodejs', label: 'Node' },
+  jvm: { icon: 'mdi-language-java', label: 'JVM' },
+}
+
 // 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
 const preferences = usePreferencesStore()
 const { activeTab: tab } = storeToRefs(preferences)
 // 不是 SVN 工作副本或 Git 仓库时只留浏览目录，别的页签没有东西可查。
-const plain = computed(() => props.ws.vcs !== 'git' && props.ws.vcs !== 'svn')
-const shownTab = computed(() => (plain.value ? 'browse' : tab.value))
+const tabs = computed(() => workspaceTabs(props.ws))
+// 当前页签不可用时回到浏览目录；普通目录里只有它，别的面板都看不了。
+const shownTab = computed(() => {
+  if (tabs.value.includes(tab.value)) return tab.value
+  return tabs.value.includes('browse') ? 'browse' : tabs.value[0]
+})
+
+// 旧记录还没探测过引擎能力：切到这个工作区时自动补一次，失败就保持原样，
+// 用户可以在页面里手动重扫。每个工作区只自动触发一次。
+function detectTools() {
+  if (!props.ws || !props.ws.id || !needsToolDetection(props.ws)) return
+  if (detected.has(props.ws.id)) return
+  detected.add(props.ws.id)
+  toolsApi.rescan(props.ws.id).catch(() => {})
+}
 const count = ref(0)
 // changes 只影响变更页；repo 是写操作结束，日志与同步信息也要重载。
 const changesKey = ref(0)
@@ -121,11 +144,13 @@ watch(
   () => {
     count.value = 0
     changedPaths.value = []
+    detectTools()
     openEvents()
   }
 )
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibility)
+  detectTools()
   openEvents()
 })
 onBeforeUnmount(() => {

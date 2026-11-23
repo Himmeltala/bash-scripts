@@ -99,6 +99,16 @@
             <span>{{ text.upload }}</span>
           </button>
           <button
+            v-if="isDirNode"
+            class="ft-item"
+            type="button"
+            :disabled="!relativePath"
+            @click="run('compress')"
+          >
+            <v-icon size="16">mdi-zip-box-outline</v-icon>
+            <span>{{ text.compress }}</span>
+          </button>
+          <button
             class="ft-item"
             type="button"
             :disabled="!relativePath"
@@ -188,6 +198,7 @@ const DEFAULTS = {
   newFile: '新建文件',
   newDir: '新建目录',
   upload: '上传文件',
+  compress: '压缩为 zip',
   props: '属性',
   rename: '重命名',
   delete: '删除',

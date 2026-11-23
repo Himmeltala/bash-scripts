@@ -3,10 +3,11 @@
 import os
 from pathlib import Path
 
-from web import ApiError
+from web import ApiError, log
 
 from server_common import inside
 from server_stores import SEARCH_IGNORE_DEFAULTS
+from tool_detect import detect_tools
 
 
 def list_dirs(raw):
@@ -38,16 +39,65 @@ def _add_workspace(handler, body):
     root = str(body.get("root", "")).strip()
     if not root:
         raise ApiError(400, "没给目录")
-    item = handler.store.add(root)
+    item = handler.store.add(root, tools=detect_tools(root))
     return {"ok": True, "workspace": item}
+
+
+def _tool_root(item, key):
+    tools = item.get("tools") if isinstance(item.get("tools"), dict) else {}
+    tool = tools.get(key) if isinstance(tools, dict) else None
+    return str(tool.get("root") or "").strip() if isinstance(tool, dict) else ""
+
+
+def _holds_root(item, key, root):
+    """工作区是否还占着这个引擎根：没探测过的同目录工作区也算占着。"""
+    tool_root = _tool_root(item, key)
+    if tool_root:
+        return tool_root == root
+    return str(item.get("root") or "").strip() == root
+
+
+def _release_engines(handler, item, remaining):
+    """最后一个指向该引擎根的工作区移出时才注销，别的 idex 工作区可能还在用。"""
+    tools = item.get("tools") if isinstance(item.get("tools"), dict) else {}
+    engines = (
+        ("node", getattr(handler, "node_service", None), "remove_workspace"),
+        ("jvm", getattr(handler, "jvm_app", None), "forget_workspace"),
+    )
+    for key, service, method in engines:
+        tool = tools.get(key) if isinstance(tools, dict) else None
+        if service is None or not isinstance(tool, dict):
+            continue
+        root = str(tool.get("root") or "").strip()
+        engine_id = str(tool.get("id") or "").strip()
+        if not root or not engine_id:
+            continue
+        if any(_holds_root(other, key, root) for other in remaining):
+            continue
+        try:
+            getattr(service, method)(engine_id)
+        except Exception as exc:
+            # 引擎可能还没登记过这个工作区；idex 的登记已经移出，不因此回失败。
+            log("注销 %s 引擎工作区失败：%r" % (key, exc))
 
 
 def _forget_workspace(handler, body):
     wid = str(body.get("ws", ""))
-    handler.store.remove(wid)
+    item = handler.store.remove(wid)
     if handler.lsp is not None:
         handler.lsp.stop_workspace(wid)
-    return {"ok": True}
+    _release_engines(handler, item, handler.store.load())
+    return {"ok": True, "removed": item}
+
+
+def _rescan_tools(handler, body):
+    handler._check_write()
+    ws = handler.store.find(str(body.get("ws", "")))
+    if ws is None:
+        raise ApiError(404, "没有这个工作区")
+    tools = detect_tools(ws["root"])
+    handler.store.set_tools(ws["id"], tools)
+    return {"ok": True, "tools": tools}
 
 
 def _set_alias(handler, body):

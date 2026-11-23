@@ -5,6 +5,7 @@ import http.client
 import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -26,6 +27,14 @@ def load_server():
 
 
 svnmod = load_server()
+WEB = HERE.parent / "lib" / "idex" / "web"
+sys.path.insert(0, str(WEB))
+# 重构后函数分散到各模块；用例仍从一个命名空间取，测试侧合并，产品代码不加重导出。
+for _name in ("svn_query", "vcs_ops", "vcs_common", "vcs_summary", "vcs_cli", "browse_fs", "server_common", "server_stores"):
+    _mod = importlib.import_module(_name)
+    for _key, _value in vars(_mod).items():
+        if not _key.startswith("_") and not hasattr(svnmod, _key):
+            setattr(svnmod, _key, _value)
 
 
 def run(args, cwd=None):
@@ -110,6 +119,7 @@ class SvnWorkspace(unittest.TestCase):
 
     def test_changes_signature_tracks_working_copy_revision(self):
         # 本地没有改动时指纹不变，外面 svn update 拉下来的版本只能从版本号上看出来。
+        run(["svn", "update", "-q"], cwd=self.wc)
         _, _, revision = svnmod.changes_signature(
             {"id": "w", "root": str(self.wc), "vcs": "svn"}
         )

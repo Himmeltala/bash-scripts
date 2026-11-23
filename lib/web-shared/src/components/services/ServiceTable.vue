@@ -95,9 +95,9 @@
 <script setup>
 defineProps({
   rows: { type: Array, required: true },
-  // 第一列的表头，nodex 叫脚本，mvnx 叫模块，由调用方给。
+  // 第一列的表头，idex 的 Node 引擎叫脚本，mvnx 叫模块，由调用方给。
   nameTitle: { type: String, required: true },
-  // 名字下那行路径：nodex 的服务都跑在工作区根上，只有一个点，调用方可以关掉。
+  // 名字下那行路径：idex 的 Node 引擎的服务都跑在工作区根上，只有一个点，调用方可以关掉。
   showPath: { type: Boolean, default: true },
   // 运行中的行要不要给重启按钮；只有实现 restart 接口的工具打开它。
   showRestart: { type: Boolean, default: false },

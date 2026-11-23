@@ -18,6 +18,7 @@ sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import load_module, read_sse_event, serve
 
 web = load_module("idex_web_server", SERVER)
+hub = load_module("idex_event_hub", HERE.parent / "lib" / "idex" / "web" / "event_hub.py")
 
 
 def workspace(wid, root):
@@ -78,11 +79,11 @@ class WorkspaceSseTest(unittest.TestCase):
         self.store = web.Workspaces(str(base / "state.json"))
         self.store.save([workspace("w1", str(self.repo))])
         # 默认 3 秒一轮，测试里跑快一点。
-        self.interval = web.WATCH_INTERVAL
-        web.WATCH_INTERVAL = 0.1
+        self.interval = hub.WATCH_INTERVAL
+        hub.WATCH_INTERVAL = 0.1
 
     def tearDown(self):
-        web.WATCH_INTERVAL = self.interval
+        hub.WATCH_INTERVAL = self.interval
         self.tmp.cleanup()
 
     def git(self, *args, cwd):

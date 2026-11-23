@@ -20,7 +20,15 @@ sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 gitmod = load_module("idex_server", SERVER_PY)
-hunksmod = load_module("idex_vcs_hunks", HERE.parent / "lib" / "idex" / "web" / "vcs_hunks.py")
+WEB = HERE.parent / "lib" / "idex" / "web"
+sys.path.insert(0, str(WEB))
+# 重构后函数分散到各模块；用例仍从一个命名空间取，测试侧合并，产品代码不加重导出。
+for _name in ("browse_fs", "git_query", "vcs_ops", "vcs_summary", "server_common", "server_stores", "vcs_common"):
+    _mod = load_module("idex_" + _name, WEB / (_name + ".py"))
+    for _key, _value in vars(_mod).items():
+        if not _key.startswith("_") and not hasattr(gitmod, _key):
+            setattr(gitmod, _key, _value)
+hunksmod = load_module("idex_vcs_hunks", WEB / "vcs_hunks.py")
 
 # 临时仓库里的提交要作者信息，本机的全局配置不一定有。
 ENV = dict(
