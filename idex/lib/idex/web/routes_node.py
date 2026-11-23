@@ -7,13 +7,14 @@ import threading
 
 from browse import list_dirs
 from engines.node.engine import current_node_version, discover_nodes
+from sse import SSEMixin
 from web import ApiError, STREAMED, log
 
 # 这些路由要写状态文件或动进程，POST 之外的方法一律不接。
 _WRITE_ROUTES = ("start", "stop", "update", "rescan", "addcmd", "delcmd", "node")
 
 
-class NodeRoutes:
+class NodeRoutes(SSEMixin):
     """路由表里 /node 一组接口的实现，靠 MRO 混进 Handler。"""
 
     node_service = None
@@ -82,9 +83,11 @@ class NodeRoutes:
         raise ApiError(404, "没有这个接口：%s" % route)
 
     def _node_rescan(self, wid):
-        """重扫一个工作区：登记过 Node 的按引擎 id 扫，没扫描过的按根目录登记。
+        """重扫一个工作区：有根目录就重加一次，引擎的 add 本身幂等并会重扫。
 
-        扫描要几秒，放守护线程里做；同一工作区同时只允许一条。
+        探测到的 ``tools.node.id`` 只证明 idex 这边的映射，不代表引擎状态里已有这个
+        工作区；拿它直接 scan 遇到未知 id 会静默什么都不做，所以优先按根目录登记。
+        扫描要几秒，放守护线程里做；同一引擎工作区同时只允许一条。
         """
         tools = self.store.tools(wid) if wid else {}
         node = tools.get("node") if isinstance(tools, dict) else None
@@ -94,25 +97,27 @@ class NodeRoutes:
         root = str(node.get("root") or "").strip()
         if not engine_id and not root:
             raise ApiError(409, "这个工作区没有登记 Node")
+        # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id/根目录去重。
+        key = engine_id or root
 
         with self._rescan_lock:
-            if wid in self._rescanning:
+            if key in self._rescanning:
                 raise ApiError(409, "这个工作区正在重扫")
-            self._rescanning.add(wid)
+            self._rescanning.add(key)
 
         def run():
             try:
-                if engine_id:
-                    self.node_service.rescan(engine_id)
-                else:
+                if root:
                     self.node_service.add_workspace(root)
+                else:
+                    self.node_service.rescan(engine_id)
             except ApiError as exc:
                 log("重扫 Node 工作区失败：%s" % exc.message)
             except Exception as exc:
                 log("重扫 Node 工作区出错：%r" % exc)
             finally:
                 with self._rescan_lock:
-                    self._rescanning.discard(wid)
+                    self._rescanning.discard(key)
 
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True, "started": True}

@@ -314,8 +314,9 @@ class NodeService:
 
     def close(self):
         """收掉常驻执行端；已经起的服务进程不归这里管。"""
-        proc = self.engine.proc
-        self.engine.proc = None
+        with self.engine.lock:
+            proc = self.engine.proc
+            self.engine.proc = None
         if proc is None:
             return
         if proc.poll() is None:
@@ -331,6 +332,11 @@ class NodeService:
     # 状态与动作
 
     def state_payload(self):
+        # 与原 nodex 的状态接口一致：取状态前先让引擎收拾一遍在跑的记录。
+        try:
+            self.engine.call("tick")
+        except ApiError as exc:
+            log("tick 失败：%s" % exc.message)
         return state_payload(self.state, self.nodes, self.aliases, self.custom, self.layout)
 
     def start(self, body):
@@ -355,7 +361,8 @@ class NodeService:
         self.engine.remove_workspace(ws)
 
     def set_node(self, ws, node):
-        if self.state.find(WS_KIND, str(ws or "").strip()) is None:
+        ws = str(ws or "").strip()
+        if self.state.find(WS_KIND, ws) is None:
             raise ApiError(404, "没有这个工作区：%s" % ws)
         node = str(node or "").strip()
         if node:
