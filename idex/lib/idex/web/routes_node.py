@@ -4,9 +4,11 @@
 """
 
 import threading
+from pathlib import Path
 
 from browse import list_dirs
 from engines.node.engine import current_node_version, discover_nodes
+from runner import run_log_path
 from sse import SSEMixin
 from web import ApiError, STREAMED, log
 
@@ -38,7 +40,7 @@ class NodeRoutes(SSEMixin):
         if route == "nodes":
             return {"nodes": discover_nodes(), "current": current_node_version()}
         if route == "log":
-            return self.node_service.log_page(query)
+            return self._node_log_page(query)
         if route == "log/stream":
             self._node_log_stream(query)
             return STREAMED
@@ -121,6 +123,21 @@ class NodeRoutes(SSEMixin):
 
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True, "started": True}
+
+    def _node_log_path(self, runid):
+        """运行号只能落在 NodeService 的日志目录里，防止 ../ 读到别处的 *.log。"""
+        logs = Path(self.node_service.logs).resolve()
+        path = run_log_path(logs, runid)
+        try:
+            path.resolve().relative_to(logs)
+        except ValueError:
+            raise ApiError(400, "运行号不对")
+        return path
+
+    def _node_log_page(self, query):
+        """日志分页仍由 NodeService 拼状态；先确认运行号没跳出日志目录。"""
+        self._node_log_path((query.get("run") or [""])[0])
+        return self.node_service.log_page(query)
 
     def _node_log_stream(self, query):
         """日志流按 NodeService 的日志目录走；Engine 的日志就在这底下。"""
