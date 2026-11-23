@@ -39,7 +39,7 @@ from routes_browse import BrowseRoutes
 from routes_vcs import VcsRoutes
 from routes_stream import StreamRoutes
 from routes_jobs import JobRoutes
-from routes_workspaces import WorkspacesRoutes, _add_workspace, _forget_workspace, _rescan_tools, _save_groups, _save_settings, _set_alias, list_dirs
+from routes_workspaces import WorkspacesRoutes, _add_workspace, _forget_workspace, _rescan_tools, _save_groups, _save_settings, _set_alias
 from server_stores import Settings, Workspaces
 from event_hub import StateStream
 
@@ -284,7 +284,7 @@ _NOT_HANDLED = object()
 
 READ_ROUTES = {
     "state": lambda h, m, q, b: {"workspaces": h.store.workspaces(), "groups": h._group_nodes()},
-    "dirs": lambda h, m, q, b: list_dirs((q.get("path") or [""])[0]),
+    "dirs": lambda h, m, q, b: h._local_dirs(q),
     "changes": lambda h, m, q, b: h._changes(q),
     "diff": lambda h, m, q, b: h._diff(q),
     "log": lambda h, m, q, b: h._log(q),

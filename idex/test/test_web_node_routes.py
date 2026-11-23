@@ -14,6 +14,7 @@ from routes_node import NodeRoutes
 
 class FakeService:
     def __init__(self): self.calls = []
+    def has_workspace(self, ws): return ws == "n1"
     def state_payload(self): return {"workspaces": [{"id": "n1", "root": "/r"}]}
     def start(self, body): self.calls.append(("start", body)); return {"run": "r1"}
     def stop(self, run): self.calls.append(("stop", run))
@@ -76,6 +77,14 @@ class NodeDispatchTest(unittest.TestCase):
     def test_unregistered_is_409(self):
         with self.assertRaises(ApiError) as ctx:
             self.make()._node_ws("missing")
+        self.assertEqual(ctx.exception.status, 409)
+
+    def test_detected_but_not_engine_registered_is_409(self):
+        """idex 探测出 id 但引擎状态里还没登记时，直接调接口要回 409。"""
+        h = self.make()
+        h.store = type("S", (), {"tools": lambda self_, wid: {"node": {"root": "/r", "id": "n9"}}})()
+        with self.assertRaises(ApiError) as ctx:
+            h._node_ws("i1")
         self.assertEqual(ctx.exception.status, 409)
 
     def test_write_checks_local(self):

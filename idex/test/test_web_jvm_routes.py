@@ -96,6 +96,9 @@ class JvmDispatchTest(unittest.TestCase):
         h._check_write = lambda: None; h._require_local = lambda *_: None
         return h
 
+    def tearDown(self):
+        JvmRoutes._jvm_rescan_errors.clear()
+
     def wait_clear(self, key="j1"):
         deadline = time.time() + 5
         while key in JvmRoutes._jvm_rescanning and time.time() < deadline:
@@ -269,6 +272,39 @@ class JvmDispatchTest(unittest.TestCase):
         )
         app.release.set()
         self.wait_clear()
+
+    def test_rescan_status_reports_scan_error(self):
+        class ErrorApp(FakeApp):
+            def scan(self, wid, strict=True):
+                self.scans.append((wid, strict))
+                return "找不到 pom"
+
+        h = self.make(); h.jvm_app = ErrorApp()
+
+        h._jvm_dispatch("POST", "rescan", {}, {"ws": "i1"})
+        self.wait_clear()
+
+        status = h._jvm_dispatch("GET", "rescan/status", {"ws": ["i1"]}, {})
+        self.assertFalse(status["running"])
+        self.assertIn("找不到 pom", status["error"])
+
+        state = h._jvm_dispatch("GET", "state", {}, {})
+        self.assertIn("找不到 pom", state["rescan_errors"]["j1"])
+
+    def test_rescan_success_clears_previous_error(self):
+        JvmRoutes._jvm_rescan_errors["j1"] = "扫描失败：旧错误"
+        h = self.make()
+
+        h._jvm_dispatch("POST", "rescan", {}, {"ws": "i1"})
+        self.wait_clear()
+
+        status = h._jvm_dispatch("GET", "rescan/status", {"ws": ["i1"]}, {})
+        self.assertEqual(status["error"], "")
+
+    def test_rescan_status_requires_jvm_workspace(self):
+        with self.assertRaises(ApiError) as ctx:
+            self.make()._jvm_dispatch("GET", "rescan/status", {"ws": ["missing"]}, {})
+        self.assertEqual(ctx.exception.status, 409)
 
     def test_rescan_unknown_kind_is_400(self):
         h = self.make(); h.store = FakeStore({"root": "/r", "kind": "ant", "id": "j1"})

@@ -199,6 +199,36 @@ class WiringTest(WiringTestBase):
         detect.assert_not_called()
         self.assertEqual(self.store.tools("w1"), {})
 
+    def test_workspace_write_routes_check_write_permission(self):
+        """远端不能添加、移出工作区，也不能改别名、分组、设置或浏览家目录。"""
+        root = self.base / "proj"
+        root.mkdir()
+        self.store.save([workspace("w1", root)])
+
+        def deny(*_args):
+            raise ApiError(403, "只允许本机")
+
+        handler = type(
+            "DenyHandler",
+            (web.Handler,),
+            {"store": self.store, "_check_write": deny, "_require_local": deny},
+        )
+        with serve(handler, api_prefix="/api") as srv:
+            for route, body in (
+                ("workspaces", {"root": str(root)}),
+                ("forget", {"ws": "w1"}),
+                ("alias", {"ws": "w1", "alias": "x"}),
+                ("settings", {"search_ignore": []}),
+                ("groups", {"nodes": []}),
+            ):
+                status, payload = json_call(srv.base, route, body)
+                self.assertEqual(status, 403, route)
+                self.assertEqual(payload["error"], "只允许本机", route)
+
+            status, payload = json_call(srv.base, "dirs")
+            self.assertEqual(status, 403)
+            self.assertEqual(payload["error"], "只允许本机")
+
     def test_undetected_same_root_blocks_unregistration(self):
         """同目录但没有探测过的工作区还占着这个根，不能注销引擎工作区。"""
         root = self.base / "shared-undetected"

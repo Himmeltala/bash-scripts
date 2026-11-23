@@ -26,6 +26,8 @@ class JvmRoutes(SSEMixin):
     # 同一个工作区的重扫正在排队或跑着；Handler 每个请求一个新实例，所以放类上。
     _jvm_rescan_lock = threading.Lock()
     _jvm_rescanning = set()
+    # 每个引擎工作区最近一次重扫失败的原因；状态回话与轮询接口都从这里取。
+    _jvm_rescan_errors = {}
 
     def _require_local(self, what):
         """读 JDK 与浏览目录会露出本机情况，默认只认本机；--allow-write 放开。"""
@@ -47,9 +49,36 @@ class JvmRoutes(SSEMixin):
             raise ApiError(409, "这个工作区没有登记 JVM 引擎")
         return engine_id
 
+    def _jvm_rescan_target(self, wid):
+        """重扫用的引擎工作区 id、根目录与类型；没登记 JVM 的不让动。"""
+        tools = self.store.tools(wid) if wid else {}
+        jvm = tools.get("jvm") if isinstance(tools, dict) else None
+        if not isinstance(jvm, dict):
+            raise ApiError(409, "这个工作区没有登记 JVM")
+        engine_id = str(jvm.get("id") or "").strip()
+        root = str(jvm.get("root") or "").strip()
+        kind = str(jvm.get("kind") or "").strip()
+        if not engine_id:
+            raise ApiError(409, "这个工作区没有登记 JVM")
+        return engine_id, root, kind
+
+    def _jvm_rescan_status(self, wid):
+        key, _root, _kind = self._jvm_rescan_target(wid)
+        with self._jvm_rescan_lock:
+            return {
+                "running": key in self._jvm_rescanning,
+                "error": self._jvm_rescan_errors.get(key, ""),
+            }
+
     def _jvm_dispatch(self, method, route, query, body):
         if route == "state":
-            return self.jvm_app.state_payload()
+            payload = self.jvm_app.state_payload()
+            with self._jvm_rescan_lock:
+                payload["rescan_errors"] = dict(self._jvm_rescan_errors)
+            return payload
+        if route == "rescan/status":
+            wid = str((query.get("ws") or [""])[0]).strip()
+            return self._jvm_rescan_status(wid)
         if route == "jdks":
             self._require_local("读取 JDK 列表")
             return {"jdks": self.jvm_app.jdks(), "current": os.environ.get("JAVA_HOME", "")}
@@ -88,12 +117,15 @@ class JvmRoutes(SSEMixin):
 
     def _jvm_log_path(self, runid):
         """运行号只能落在 App 的日志目录里，防止 ../ 读到别处的 *.log。"""
-        logs = Path(self.jvm_app.logs).resolve()
-        path = run_log_path(logs, runid)
         try:
+            logs = Path(self.jvm_app.logs).resolve()
+            path = run_log_path(logs, runid)
             path.resolve().relative_to(logs)
         except ValueError:
             raise ApiError(400, "运行号不对")
+        except (OSError, RuntimeError) as exc:
+            # 符号链接成环时 resolve 抛 RuntimeError，按路径不对处理。
+            raise ApiError(400, "日志路径读不了：%s" % exc)
         return path
 
     def _jvm_log_page(self, query):
@@ -121,15 +153,7 @@ class JvmRoutes(SSEMixin):
         工作区；直接 scan 未知 id 会报 404。扫描要几秒，放守护线程里做；同一引擎
         工作区同时只允许一条。
         """
-        tools = self.store.tools(wid) if wid else {}
-        jvm = tools.get("jvm") if isinstance(tools, dict) else None
-        if not isinstance(jvm, dict):
-            raise ApiError(409, "这个工作区没有登记 JVM")
-        engine_id = str(jvm.get("id") or "").strip()
-        root = str(jvm.get("root") or "").strip()
-        kind = str(jvm.get("kind") or "").strip()
-        if not engine_id:
-            raise ApiError(409, "这个工作区没有登记 JVM")
+        engine_id, root, kind = self._jvm_rescan_target(wid)
         known = self.jvm_app.store.find(engine_id) is not None
         if not known:
             if not root:
@@ -143,20 +167,30 @@ class JvmRoutes(SSEMixin):
             if key in self._jvm_rescanning:
                 raise ApiError(409, "这个工作区正在重扫")
             self._jvm_rescanning.add(key)
+            self._jvm_rescan_errors.pop(key, None)
 
         def run():
+            error = ""
             try:
                 if known:
-                    self.jvm_app.scan(engine_id, strict=False)
+                    error = self.jvm_app.scan(engine_id, strict=False) or ""
                 else:
                     ws = self.jvm_app.store.add(root, kind)
-                    self.jvm_app.scan(str(ws.get("id") or engine_id), strict=False)
+                    error = self.jvm_app.scan(str(ws.get("id") or engine_id), strict=False) or ""
+                if error:
+                    error = "扫描失败：%s" % error
             except ApiError as exc:
+                error = "扫描失败：%s" % exc.message
                 log("重扫 JVM 工作区失败：%s" % exc.message)
             except Exception as exc:
+                error = "扫描出错：%r" % exc
                 log("重扫 JVM 工作区出错：%r" % exc)
             finally:
                 with self._jvm_rescan_lock:
+                    if error:
+                        self._jvm_rescan_errors[key] = error
+                    else:
+                        self._jvm_rescan_errors.pop(key, None)
                     self._jvm_rescanning.discard(key)
 
         threading.Thread(target=run, daemon=True).start()

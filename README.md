@@ -44,4 +44,4 @@ clone 过的直接跑 `./uninstall.sh`；`--dry-run` 只打印不删，`--keep-p
 
 ## 外部依赖
 
-`mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`，Node 引擎需要 `node` 与 `npm`、`pnpm`、`yarn` 之一，JVM 引擎需要 `mvnx` 或 `gradlex`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。
+`mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`，Node 引擎需要 `node` 与 `npm`（默认安装命令是 `npm install`，用 pnpm 或 yarn 的要在页面里改这一行命令），JVM 引擎需要 `mvnx` 或 `gradlex`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。

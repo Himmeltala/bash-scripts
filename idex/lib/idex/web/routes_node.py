@@ -34,6 +34,9 @@ class NodeRoutes(SSEMixin):
         engine_id = str((node or {}).get("id") or "").strip()
         if not engine_id:
             raise ApiError(409, "这个工作区没有登记 Node 引擎")
+        # 探测出的 id 只说明 idex 这边的映射，引擎状态里可能还没这个工作区。
+        if not self.node_service.has_workspace(engine_id):
+            raise ApiError(409, "这个工作区还没在 Node 引擎登记，先启用并扫描")
         return engine_id
 
     def _node_rescan_target(self, wid):
@@ -156,12 +159,15 @@ class NodeRoutes(SSEMixin):
 
     def _node_log_path(self, runid):
         """运行号只能落在 NodeService 的日志目录里，防止 ../ 读到别处的 *.log。"""
-        logs = Path(self.node_service.logs).resolve()
-        path = run_log_path(logs, runid)
         try:
+            logs = Path(self.node_service.logs).resolve()
+            path = run_log_path(logs, runid)
             path.resolve().relative_to(logs)
         except ValueError:
             raise ApiError(400, "运行号不对")
+        except (OSError, RuntimeError) as exc:
+            # 符号链接成环时 resolve 抛 RuntimeError，按路径不对处理。
+            raise ApiError(400, "日志路径读不了：%s" % exc)
         return path
 
     def _node_log_page(self, query):

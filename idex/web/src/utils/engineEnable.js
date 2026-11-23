@@ -88,6 +88,8 @@ export function createEngineEnable({
     stopWait(true)
     try {
       await toolsApi.rescan(id)
+      // 探测回来前换了工作区就停手，别再对旧工作区发一次引擎重扫。
+      if (!alive || mine !== token || read(wsId) !== id) return
       await engineApi.rescan(id)
       if (!alive || mine !== token || read(wsId) !== id) return
       if (!read(isRegistered)) {

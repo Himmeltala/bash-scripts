@@ -45,14 +45,16 @@ test('nodeApi 的独有路由挂在 node 前缀下', async () => {
 test('jvmApi 的独有路由挂在 jvm 前缀下', async () => {
   reset()
   await jvmApi.jdks()
+  await jvmApi.rescanStatus('w1')
   await jvmApi.setJdk('w1', '/opt/jdk')
   await jvmApi.restart('r1')
   assert.deepEqual(calls.map((item) => [item.method, item.url]), [
     ['GET', '/__idex/api/jvm/jdks'],
+    ['GET', '/__idex/api/jvm/rescan/status?ws=w1'],
     ['POST', '/__idex/api/jvm/jdk'],
     ['POST', '/__idex/api/jvm/restart'],
   ])
-  assert.equal(calls[2].body, JSON.stringify({ run: 'r1' }))
+  assert.equal(calls[3].body, JSON.stringify({ run: 'r1' }))
 })
 
 test('推送地址与接口前缀一致', () => {

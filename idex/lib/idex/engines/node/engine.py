@@ -366,6 +366,10 @@ class NodeService:
         self.nodes.remove(ws)
         self.engine.remove_workspace(ws)
 
+    def has_workspace(self, ws):
+        """引擎状态里是否已经登记了这个工作区。"""
+        return self.state.find(WS_KIND, str(ws or "").strip()) is not None
+
     def set_node(self, ws, node):
         ws = str(ws or "").strip()
         if self.state.find(WS_KIND, ws) is None:

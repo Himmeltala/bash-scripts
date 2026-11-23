@@ -72,9 +72,9 @@ const TAB_META = {
 // 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
 const preferences = usePreferencesStore()
 const { activeTab: tab } = storeToRefs(preferences)
-// 不是 SVN 工作副本或 Git 仓库时只留浏览目录，别的页签没有东西可查。
+// 不是 SVN 工作副本或 Git 仓库时留浏览目录，探测到 Node 或 JVM 工程再加对应页签。
 const tabs = computed(() => workspaceTabs(props.ws))
-// 当前页签不可用时回到浏览目录；普通目录里只有它，别的面板都看不了。
+// 当前页签不可用时回到浏览目录；普通目录默认停在它，引擎页签按探测结果追加。
 const shownTab = computed(() => {
   if (tabs.value.includes(tab.value)) return tab.value
   return tabs.value.includes('browse') ? 'browse' : tabs.value[0]

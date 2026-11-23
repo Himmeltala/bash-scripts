@@ -88,6 +88,32 @@ test('状态接口没有错误时继续等待', async () => {
   flow.dispose()
 })
 
+test('探测回来前换了工作区，不再对旧工作区发引擎重扫', async () => {
+  let ws = 'w1'
+  const calls = []
+  let release
+  const flow = createEngineEnable({
+    toolsApi: {
+      rescan: () =>
+        new Promise((resolve) => {
+          calls.push('tools:w1')
+          release = resolve
+        }),
+    },
+    engineApi: { rescan: async (id) => calls.push(`engine:${id}`) },
+    wsId: () => ws,
+    isRegistered: () => false,
+    reload: async () => {},
+    timeoutText: '超时',
+  })
+  const pending = flow.enable()
+  ws = 'w2'
+  release()
+  await pending
+  assert.deepEqual(calls, ['tools:w1'])
+  flow.dispose()
+})
+
 test('引擎报错留下原因，换工作区把等待与错误清掉', async () => {
   const { flow } = setup({
     engineApi: {

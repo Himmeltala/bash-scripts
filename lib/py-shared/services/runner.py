@@ -235,7 +235,7 @@ class EngineClient:
         while b"\n" not in self._buffer:
             chunk = stdout.read(1)
             if not chunk:
-                raise ApiError(502, "%s 执行端退出了，看 %s web 那个终端" % (self.label, self.label))
+                raise ApiError(502, "%s 执行端退出了，看服务端的输出" % self.label)
             self._buffer += chunk
         line, self._buffer = self._buffer.split(b"\n", 1)
         return line.decode("utf-8", "replace")
@@ -251,7 +251,7 @@ class EngineClient:
             if first == "fail":
                 # 引擎把原因打在 stderr 上，_drain_err 已经把它记成「engine: ...」那一行。
                 hint = self.last_error()
-                raise ApiError(400, hint or "%s 处理失败，详见 %s web 的输出" % (self.label, self.label))
+                raise ApiError(400, hint or "%s 处理失败，详见服务端的输出" % self.label)
             if first != "ok":
                 raise ApiError(502, "%s 回了看不懂的一行：%s" % (self.label, first))
             if op in self.WITH_DATA:

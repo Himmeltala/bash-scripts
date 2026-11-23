@@ -4,6 +4,7 @@
 """
 
 import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -54,6 +55,8 @@ def _detect_jvm(root):
 
 def detect_tools(root, node_engine=None, timeout=10.0):
     """探测一个目录下可用的工具，返回 node 与 jvm 的能力；都没有时是空字典。"""
+    # Node 探测脚本不认 ~，这里先展开成绝对路径，与 JVM 侧的展开一致。
+    root = os.path.abspath(os.path.expanduser(str(root)))
     tools = {}
     node = _detect_node(root, node_engine or NODE_ENGINE, timeout)
     if node:

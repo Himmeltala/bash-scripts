@@ -22,6 +22,7 @@ const jvmClient = createToolApi('/__idex/api/jvm')
 export const jvmApi = {
   ...jvmClient.api,
   jdks: () => jvmClient.call('GET', '/jdks'),
+  rescanStatus: (ws) => jvmClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
   setJdk: (ws, jdk) => jvmClient.call('POST', '/jdk', { ws, jdk }),
   restart: (run) => jvmClient.call('POST', '/restart', { run }),
 }

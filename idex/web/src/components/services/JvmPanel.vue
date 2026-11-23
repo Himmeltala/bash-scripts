@@ -121,22 +121,20 @@
 
     <FloatingDialog
       v-model="custom.on"
-      :initial-width="560"
-      :initial-height="300"
-      :min-width="400"
-      :min-height="220"
+      :initial-width="640"
+      :initial-height="560"
+      :min-width="480"
+      :min-height="380"
     >
       <template #title>自定义 JDK</template>
-      <v-text-field
+      <!-- 目录树从家目录往下点；家目录之外的 JDK（如 /usr/lib/jvm）直接填在输入框里。 -->
+      <DirectoryPicker
         v-model="custom.path"
+        tip="点目录树选，或直接填 JDK 根目录；目录下要有 bin/java 与 bin/javac。"
         label="JAVA_HOME"
         placeholder="/opt/jdk-17"
-        density="compact"
-        variant="outlined"
-        hide-details="auto"
-        hint="填 JDK 根目录，目录下要有 bin/java 与 bin/javac"
-        persistent-hint
-        autofocus
+        :loader="jvmApi.dirs"
+        :validate="() => true"
       />
       <template #actions>
         <v-spacer />
@@ -148,10 +146,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import EngineRegisterState from './EngineRegisterState.vue'
 import JvmSettingsDialog from './JvmSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { DirectoryPicker } from '@bash-scripts/web-shared'
 import {
   LIVE_STATUSES,
   ServiceTable,
@@ -191,7 +190,7 @@ const engineId = computed(() => {
   return (jvm && jvm.id) || ''
 })
 
-const { ws: engineWs, registered, loading, error, refresh, reload } = useToolWorkspace({
+const { state: engineState, ws: engineWs, registered, loading, error, refresh, reload } = useToolWorkspace({
   api: jvmApi,
   engineId: () => engineId.value,
   localApi: toolsApi,
@@ -221,14 +220,18 @@ const { enabling, waiting, enableError, enable, retry } = useEngineEnable({
   error,
   reload,
   timeoutText: '扫描超过两分钟还没回来；检查 JVM 引擎后重试。',
+  // 扫描失败的具体原因在引擎那边，等待期间轮询，拿到就提前放开。
+  rescanStatus: (id) => jvmApi.rescanStatus(id),
 })
 
 const scanning = ref(false)
 const filter = ref('')
 const tab = ref('service')
 const custom = reactive({ on: false, path: '' })
-const jdks = ref([])
-const currentJdk = ref('')
+
+// JDK 候选随引擎状态推送过来，不再单独请求 jdks：离本机打开页面时那个接口是 403。
+const jdks = computed(() => engineState.value.jdks || [])
+const currentJdk = computed(() => engineState.value.currentJdk || '')
 
 // Maven 与 Gradle 的命令不同，页签跟着工作区类型走。
 const tabs = computed(() =>
@@ -301,16 +304,6 @@ const jdkTitle = computed(() => {
   return currentJdk.value ? `跟随当前环境：${currentJdk.value}` : '跟随启动服务时的环境'
 })
 
-async function loadJdks() {
-  try {
-    const data = await jvmApi.jdks()
-    jdks.value = data.jdks || []
-    currentJdk.value = data.current || ''
-  } catch (err) {
-    // 取不到只是下拉里没有候选，手动填路径仍然可用。
-  }
-}
-
 async function pickJdk(value) {
   if (value === CUSTOM) {
     custom.path = (engineWs.value && engineWs.value.jdk) || ''
@@ -325,14 +318,16 @@ async function setJdk(jdk) {
     await jvmApi.setJdk(props.ws.id, jdk)
     toast(jdk ? 'JDK 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
     await refresh()
+    return true
   } catch (err) {
     toast(`设置 JDK 失败：${err.message}`, 'error')
+    return false
   }
 }
 
+// 保存失败时留着弹窗，用户填的路径不丢。
 async function saveCustom() {
-  await setJdk(custom.path.trim())
-  custom.on = false
+  if (await setJdk(custom.path.trim())) custom.on = false
 }
 
 // 引擎扫描失败的原因放在工作区行上，扫不到目标时也至少说明为什么。
@@ -452,12 +447,11 @@ const rows = computed(() => {
 })
 
 // 弹窗给的是整份参数，模块与启动方式一起存回这一行。
-async function onSave({ module, args, mode, refresh: refreshDeps }) {
+async function onSave({ args, mode, refresh: refreshDeps }) {
   if (!settings.svc) return
   try {
     await jvmApi.update({
       svc: settings.svc.id,
-      module,
       args,
       mode,
       refresh: refreshDeps,
@@ -479,7 +473,6 @@ watch(
   },
 )
 
-onMounted(loadJdks)
 </script>
 
 <style scoped>

@@ -4,6 +4,7 @@ import os
 import posixpath
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from web import ApiError, STREAMED, zip_dir
@@ -50,6 +51,21 @@ def _discard_archive(path):
         pass
 
 
+# 同一个包文件同时只让一个请求读写：两个请求压同一目录时，失败的清理不能删掉
+# 另一个刚打好的包。Handler 每个请求一个新实例，所以锁放模块上。
+_COMPRESS_LOCKS = {}
+_COMPRESS_LOCKS_GUARD = threading.Lock()
+
+
+def _compress_lock(path):
+    key = os.path.realpath(path)
+    with _COMPRESS_LOCKS_GUARD:
+        lock = _COMPRESS_LOCKS.get(key)
+        if lock is None:
+            lock = _COMPRESS_LOCKS[key] = threading.Lock()
+        return lock
+
+
 def _browse_compress(handler, body):
     """把工作区里的一个目录压成同级同名 zip；已存在的包不覆盖。"""
     handler._check_write()
@@ -70,42 +86,48 @@ def _browse_compress(handler, body):
         raise ApiError(400, "只能压缩目录：%s" % rel)
     parent = os.path.dirname(target)
     archive = os.path.join(parent, os.path.basename(target) + ".zip")
-    # 断链的符号链接也算已存在；否则 zipx 会顺着它写到别处。
-    if os.path.lexists(archive):
-        raise ApiError(409, "「%s」已存在" % os.path.basename(archive))
-    zipx = zipx_command()
-    if not zipx:
-        raise ApiError(503, "找不到可执行的 zipx 命令，装好 zipx 或用同级检出的再试")
-    # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
-    try:
-        proc = subprocess.run(
-            [zipx, "pack", os.path.basename(target), "-o", archive],
-            cwd=parent,
-            capture_output=True,
-            text=True,
-            timeout=COMPRESS_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        _discard_archive(archive)
-        raise ApiError(504, "压缩超时：%s" % rel)
-    except OSError as exc:
-        _discard_archive(archive)
-        raise ApiError(503, "起 zipx 失败：%s" % exc)
-    if proc.returncode != 0:
-        _discard_archive(archive)
-        message = (proc.stderr or proc.stdout or "").strip()
-        raise ApiError(400, message or "zipx 打包失败")
-    if not os.path.isfile(archive):
-        _discard_archive(archive)
-        raise ApiError(400, "zipx 没有生成包文件")
-    if not inside(root, archive):
-        _discard_archive(archive)
-        raise ApiError(400, "包文件落在工作副本外：%s" % os.path.basename(archive))
-    return {
-        "ok": True,
-        "path": os.path.relpath(archive, root).replace(os.sep, "/"),
-        "size": os.path.getsize(archive),
-    }
+
+    def pack():
+        # 断链的符号链接也算已存在；否则 zipx 会顺着它写到别处。
+        if os.path.lexists(archive):
+            raise ApiError(409, "「%s」已存在" % os.path.basename(archive))
+        zipx = zipx_command()
+        if not zipx:
+            raise ApiError(503, "找不到可执行的 zipx 命令，装好 zipx 或用同级检出的再试")
+        # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
+        try:
+            proc = subprocess.run(
+                [zipx, "pack", os.path.basename(target), "-o", archive],
+                cwd=parent,
+                capture_output=True,
+                text=True,
+                timeout=COMPRESS_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            _discard_archive(archive)
+            raise ApiError(504, "压缩超时：%s" % rel)
+        except OSError as exc:
+            _discard_archive(archive)
+            raise ApiError(503, "起 zipx 失败：%s" % exc)
+        if proc.returncode != 0:
+            _discard_archive(archive)
+            message = (proc.stderr or proc.stdout or "").strip()
+            raise ApiError(400, message or "zipx 打包失败")
+        if not os.path.isfile(archive):
+            _discard_archive(archive)
+            raise ApiError(400, "zipx 没有生成包文件")
+        if not inside(root, archive):
+            _discard_archive(archive)
+            raise ApiError(400, "包文件落在工作副本外：%s" % os.path.basename(archive))
+        return {
+            "ok": True,
+            "path": os.path.relpath(archive, root).replace(os.sep, "/"),
+            "size": os.path.getsize(archive),
+        }
+
+    # 存在判断、打包与失败清理放在同一把锁里，并发压同一目录时后到的请求会等前一个收尾。
+    with _compress_lock(archive):
+        return pack()
 
 
 class BrowseRoutes:

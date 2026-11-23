@@ -36,6 +36,7 @@ def list_dirs(raw):
 
 
 def _add_workspace(handler, body):
+    handler._check_write()
     root = str(body.get("root", "")).strip()
     if not root:
         raise ApiError(400, "没给目录")
@@ -82,6 +83,7 @@ def _release_engines(handler, item, remaining):
 
 
 def _forget_workspace(handler, body):
+    handler._check_write()
     wid = str(body.get("ws", ""))
     item = handler.store.remove(wid)
     if handler.lsp is not None:
@@ -101,6 +103,7 @@ def _rescan_tools(handler, body):
 
 
 def _set_alias(handler, body):
+    handler._check_write()
     ws = handler.store.find(str(body.get("ws", "")))
     if ws is None:
         raise ApiError(404, "没有这个工作区")
@@ -109,6 +112,7 @@ def _set_alias(handler, body):
 
 
 def _save_settings(handler, body):
+    handler._check_write()
     if handler.settings is None:
         raise ApiError(404, "设置没有起来")
     handler.settings.set_search_ignore(body.get("search_ignore") or [])
@@ -116,6 +120,7 @@ def _save_settings(handler, body):
 
 
 def _save_groups(handler, body):
+    handler._check_write()
     if handler.groups is None:
         raise ApiError(404, "分组结构没有起来")
     # 整份替换：页面改完一次就发整张表，服务端只做清洗。
@@ -124,7 +129,12 @@ def _save_groups(handler, body):
 
 
 class WorkspacesRoutes:
-    """分组与设置载荷两个小方法，路由表与上面的处理函数都用得到。"""
+    """分组、设置载荷与目录浏览三个小方法，路由表与上面的处理函数都用得到。"""
+
+    def _local_dirs(self, query):
+        """目录列表会露出本机家目录结构，默认只认本机；--allow-write 放开。"""
+        self._require_local("浏览本机目录")
+        return list_dirs((query.get("path") or [""])[0])
 
     def _group_nodes(self):
         return self.groups.nodes() if self.groups is not None else []

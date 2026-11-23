@@ -132,7 +132,13 @@ class App:
         self.metrics_stream.start()
 
     def close(self):
+        """收掉运行记录与状态、指标推送线程；已经起的服务进程不归这里管。"""
         self.runs.close()
+        for stream in (self.state_stream, self.metrics_stream):
+            try:
+                stream.stop()
+            except Exception:
+                pass
 
     def tick(self):
         self.runs.advance()
