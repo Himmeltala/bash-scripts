@@ -160,9 +160,21 @@ class StateStream(Fanout):
         self.tick = tick
         self.pump = pump
         self.tick_interval = tick_interval
+        self._stopped = threading.Event()
+        self._thread = None
 
     def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
+        self._stopped.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """收掉推送线程；最多等一个采样的间隔，收不掉也不能拖住退出。"""
+        self._stopped.set()
+        thread = self._thread
+        self._thread = None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.5)
 
     def _mtimes(self):
         out = []
@@ -176,7 +188,7 @@ class StateStream(Fanout):
     def _run(self):
         seen = None
         next_tick = 0.0
-        while True:
+        while not self._stopped.is_set():
             # 没有页面连着就不收拾，和以前没人轮询时一样。
             if not self.listeners():
                 seen = None
@@ -209,13 +221,25 @@ class MetricsStream(Fanout):
         self.metrics = metrics
         self.pump = pump
         self.interval = interval
+        self._stopped = threading.Event()
+        self._thread = None
 
     def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
+        self._stopped.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """收掉指标采样线程；与状态推送一样只做有上限的等待。"""
+        self._stopped.set()
+        thread = self._thread
+        self._thread = None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.5)
 
     def _run(self):
         last = 0.0
-        while True:
+        while not self._stopped.is_set():
             if not self.listeners():
                 last = 0.0
                 time.sleep(self.pump)

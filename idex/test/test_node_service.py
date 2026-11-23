@@ -113,6 +113,24 @@ class NodeStoreTest(unittest.TestCase):
             self.assertEqual(store.get("ws"), "")
 
 
+class NodeServiceCloseTest(unittest.TestCase):
+    def test_close_stops_streams_without_engine_process(self):
+        """执行端还没起来时也要收掉两条推送线程，失败清理不能漏。"""
+        class FakeStream:
+            def __init__(self):
+                self.stopped = False
+
+            def stop(self):
+                self.stopped = True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = engine.NodeService("/bin/false", Path(tmp))
+            streams = (FakeStream(), FakeStream())
+            service.state_stream, service.metrics_stream = streams
+            service.close()
+        self.assertTrue(all(stream.stopped for stream in streams))
+
+
 class AttachNodesTest(unittest.TestCase):
     def test_marks_missing_node(self):
         with tempfile.TemporaryDirectory() as tmp:

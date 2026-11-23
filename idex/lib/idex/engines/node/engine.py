@@ -313,20 +313,26 @@ class NodeService:
         self.metrics_stream.start()
 
     def close(self):
-        """收掉常驻执行端；已经起的服务进程不归这里管。"""
-        with self.engine.lock:
-            proc = self.engine.proc
-            self.engine.proc = None
-        if proc is None:
-            return
-        if proc.poll() is None:
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
+        """收掉常驻执行端与状态、指标推送线程；已经起的服务进程不归这里管。"""
+        try:
+            with self.engine.lock:
+                proc = self.engine.proc
+                self.engine.proc = None
+            if proc is not None and proc.poll() is None:
                 try:
-                    proc.kill()
-                except OSError:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
+        finally:
+            # 起后台失败时执行端可能还没起来，但推送线程已经起了一半，也要收掉。
+            for stream in (self.state_stream, self.metrics_stream):
+                try:
+                    stream.stop()
+                except Exception:
                     pass
 
     # 状态与动作
