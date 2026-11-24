@@ -217,7 +217,9 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
     rc, out, err = git(
         [
             "log", "-n", str(limit), "--skip=%d" % skip,
-            "--no-color", "--topo-order",
+            # --parents 让 git 按路径过滤改写父提交；只用 %P 拿到的是原始父提交，
+            # 工作区是仓库子目录时父提交可能已被省掉，时间线会等一个永远不出现的提交。
+            "--parents", "--no-color", "--topo-order",
             # 路径过滤默认会把没改这个目录的合并提交省掉，时间线就断开了；--full-history 留住它们。
             "--full-history",
             "--date=iso-strict", "--format=" + LOG_FMT, *revs, "--", ".",

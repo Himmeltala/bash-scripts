@@ -549,6 +549,39 @@ class GitWorkspace(unittest.TestCase):
             self.assertIn(b"<html>", resp.read())
 
 
+class GitSubdirHistory(unittest.TestCase):
+    """工作区是仓库子目录时，路径过滤会省掉目录外提交，日志里的父提交要被 git 改写。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory(prefix="idex-git-subdir-")
+        cls.repo = Path(cls.tmp.name) / "repo"
+        cls.repo.mkdir()
+        run(["git", "init", "-q"], cwd=cls.repo)
+        web = cls.repo / "web"
+        web.mkdir()
+        (web / "a.txt").write_text("1\n", "utf-8")
+        run(["git", "add", "-A"], cwd=cls.repo)
+        run(["git", "commit", "-qm", "web 第一次"], cwd=cls.repo)
+        other = cls.repo / "other"
+        other.mkdir()
+        (other / "b.txt").write_text("b\n", "utf-8")
+        run(["git", "add", "-A"], cwd=cls.repo)
+        run(["git", "commit", "-qm", "目录外提交"], cwd=cls.repo)
+        (web / "a.txt").write_text("2\n", "utf-8")
+        run(["git", "commit", "-qam", "web 第二次"], cwd=cls.repo)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_log_parents_are_rewritten_for_subdir(self):
+        entries = gitmod.git_log(str(self.repo / "web"), 10)
+        self.assertEqual([entry["message"] for entry in entries], ["web 第二次", "web 第一次"])
+        # 目录外的中间提交不在列表里，父提交要落到上一个仍可见的提交。
+        self.assertEqual(entries[0]["parents"], [entries[1]["revision"]])
+
+
 class GitRemoteLog(unittest.TestCase):
     """有远端时取日志先同步：别人刚推的提交要列出来，并标成远程。"""
 
