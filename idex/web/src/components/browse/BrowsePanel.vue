@@ -768,7 +768,7 @@ import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from './browseMenus'
 import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../../editor/diagnostics'
 import { useDiagnostics } from '../../editor/useDiagnostics'
 import { useCodeIndex } from '../../editor/useCodeIndex'
-import { SERVER_BY_EXT } from '../../utils/languageServers'
+import { handlerOf } from '../../editor/handlers/registry'
 import { cmCodeView } from '../../editor/codeView'
 import { useBrowseSearch } from './useBrowseSearch'
 import { useBrowseEditors } from './useBrowseEditors'
@@ -868,17 +868,24 @@ const {
 
 // 代码编辑器的补全与格式化适配器：拿当前工作区、当前草稿全文去问服务端。
 function capabilitiesOf(path) {
-  const name = String(path || '').split('/').pop() || ''
-  const dot = name.lastIndexOf('.')
-  const ext = dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
-  const info = servers.value.find((item) => item.id === SERVER_BY_EXT[ext])
+  const id = handlerOf(path).server
+  const info = id ? servers.value.find((item) => item.id === id) : null
   return (info && info.capabilities) || {}
 }
 
 const editorViewProps = computed(() => ({
   complete: ({ path, text, line, character, trigger }) =>
     api.completion(props.ws.id, path, text, line, character, trigger),
-  format: ({ path, text }) => api.format(props.ws.id, path, text, 4, true),
+  format: ({ path, text }) => {
+    const options = handlerOf(path).formatOptions?.(path) || {}
+    return api.format(
+      props.ws.id,
+      path,
+      text,
+      options.tabSize ?? 4,
+      options.insertSpaces ?? true,
+    )
+  },
   capabilities: capabilitiesOf,
   notice: (text) => flash(text),
   theme: preferences.editorTheme,

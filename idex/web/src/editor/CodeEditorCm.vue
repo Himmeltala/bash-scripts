@@ -12,7 +12,8 @@ import { indentUnit } from '@codemirror/language'
 import { autocompletion, startCompletion } from '@codemirror/autocomplete'
 import { lintGutter, setDiagnostics } from '@codemirror/lint'
 import { symbolAt } from '@bash-scripts/web-shared'
-import { cmLanguageOf, languageExtension } from './languages.js'
+import { handlerOf } from './handlers/registry.js'
+import { languageExtension } from './languageExtension.js'
 import { editorThemeExtensions } from './themes.js'
 import {
   completionAnchor,
@@ -164,7 +165,7 @@ function completeAt(args) {
 }
 
 async function completionSource(context) {
-  if (!capabilitiesOf().completion || !cmLanguageOf(props.path)) return null
+  if (!capabilitiesOf().completion || !handlerOf(props.path).cmLanguage(props.path)) return null
   const text = currentText()
   const anchor = completionAnchor(text, context.pos)
   if (!context.explicit && (!anchor || (anchor.empty && !anchor.trigger))) return null
@@ -345,7 +346,7 @@ function buildExtensions() {
     keymap.of(keys),
     lintGutter(),
     diffGutter(),
-    language.of(languageExtension(cmLanguageOf(props.path))),
+    language.of(languageExtension(handlerOf(props.path).cmLanguage(props.path))),
     autocompletion({ override: [completionSource], activateOnTyping: true }),
     domEvents,
     updateListener,
@@ -393,7 +394,7 @@ watch(
   () => {
     if (!view) return
     view.dispatch({
-      effects: language.reconfigure(languageExtension(cmLanguageOf(props.path))),
+      effects: language.reconfigure(languageExtension(handlerOf(props.path).cmLanguage(props.path))),
     })
   }
 )

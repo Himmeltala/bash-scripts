@@ -9,8 +9,8 @@
 import { computed, reactive, ref } from 'vue'
 import { symbolAt } from '@bash-scripts/web-shared/text'
 import { api } from '../utils/api.js'
-import { extensionOf } from '../components/browse/browseOps.js'
-import { LANGUAGES, SERVER_BY_EXT, SYMBOL_ICONS, SYMBOL_TITLES } from '../utils/languageServers.js'
+import { handlerOf } from './handlers/registry.js'
+import { SYMBOL_ICONS, SYMBOL_TITLES } from './symbols.js'
 import { offsetOf } from './textPositions.js'
 
 export function useCodeIndex({
@@ -52,11 +52,12 @@ export function useCodeIndex({
   let hoverSeq = 0
 
   const languageLabel = computed(() => {
-    const ext = extensionOf(activePath.value)
-    return ext ? LANGUAGES[ext] || ext.toUpperCase() : '文本'
+    const path = activePath.value
+    return path ? handlerOf(path).label(path) : '文本'
   })
   const serverInfo = computed(() => {
-    const id = SERVER_BY_EXT[extensionOf(activePath.value)]
+    const path = activePath.value
+    const id = path ? handlerOf(path).server : null
     return id ? servers.value.find((item) => item.id === id) || null : null
   })
   const serverReady = computed(() => !!(serverInfo.value && serverInfo.value.available))
