@@ -36,6 +36,12 @@ const SECTIONS = [
     icon: 'mdi-forum-outline',
     component: defineAsyncComponent(() => import('./widgets/Sessions.vue')),
   },
+  {
+    key: 'memories',
+    title: '记忆',
+    icon: 'mdi-brain',
+    component: defineAsyncComponent(() => import('./widgets/ClaudeMemories.vue')),
+  },
 ]
 const sections = SECTIONS
 

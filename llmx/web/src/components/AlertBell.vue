@@ -1,5 +1,5 @@
 <template>
-  <v-menu open-on-hover location="bottom end" offset="8">
+  <v-menu location="bottom end" offset="8">
     <template #activator="{ props }">
       <v-btn v-bind="props" variant="text" :title="summary" :aria-label="summary">
         <v-badge v-if="rows.length" :content="rows.length" :color="tone" offset-x="6" offset-y="-4">

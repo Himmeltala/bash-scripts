@@ -33,7 +33,7 @@ from runtime import serve as serve_web
 from sse import MetricsStream, SSE_INTERVAL, SSE_PING_SECONDS, SSEMixin, sse_data
 from web import ApiError, WebHandler
 
-from .. import budget, cli, profiles, sessions
+from .. import budget, cli, memories, profiles, sessions
 from ..config import Config, ConfigError, config_path, load, render, validate_text
 from ..sources import SOURCE_ORDER
 
@@ -240,7 +240,7 @@ def _manage(build):
     """配置档与会话的失败翻成 400，消息原样给页面。"""
     try:
         return build()
-    except (profiles.ProfileError, sessions.SessionError) as exc:
+    except (memories.MemoryError, profiles.ProfileError, sessions.SessionError) as exc:
         raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
 
 
@@ -324,6 +324,8 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                 return _manage(lambda: profiles.current_settings(config.paths))
             if parts[:2] == ["claude", "memory"]:
                 return self._memory(method, body)
+            if parts[:2] == ["claude", "memories"]:
+                return self._memories(method, query, body)
             if parts[:2] == ["claude", "sessions"]:
                 return self._sessions(method, parts[2:], query, body)
             raise ApiError(HTTPStatus.NOT_FOUND, f"没有 /api/{route}")
@@ -374,6 +376,22 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
             data = _manage(lambda: profiles.read_memory(paths))
             data["writable"] = self._is_local()
             return data
+
+        def _memories(self, method, query, body):
+            self._require_local("读写项目记忆")
+            if method == "POST":
+                project = body.get("project")
+                name = body.get("name")
+                return _manage(
+                    lambda: memories.write_file(config, project, name, body.get("text"))
+                )
+            project = _first(query, "project")
+            name = _first(query, "name")
+            if project or name:
+                data = _manage(lambda: memories.read_file(config, project, name))
+                data["writable"] = self._is_local()
+                return data
+            return _manage(lambda: memories.list_memories(config))
 
         def _sessions(self, method, rest, query, body):
             current = _current(config)
