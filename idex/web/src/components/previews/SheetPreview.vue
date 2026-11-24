@@ -90,17 +90,28 @@
                 :style="{ height: `${ROW_HEIGHT}px` }"
               >
                 <th class="sheet-row-no">{{ row.number }}</th>
-                <td
-                  v-for="cell in row.cells"
-                  :key="cell.col"
-                  :rowspan="cell.rowspan"
-                  :colspan="cell.colspan"
-                  class="sheet-cell"
-                  :class="{ frozen: cell.col < freezeCols, selected: isSelected(row.number, cell.col) }"
-                  :style="cellStyle(cell)"
-                  @click="select(row.number, cell.col)"
-                  v-text="cell.text"
-                ></td>
+                <template v-for="(item, itemIndex) in row.items" :key="itemIndex">
+                  <td
+                    v-if="item.gap"
+                    class="sheet-cell sheet-gap"
+                    :class="{ frozen: item.col < freezeCols }"
+                    :style="item.col < freezeCols ? { left: `${frozenLeft(item.col)}px` } : null"
+                    :colspan="item.colspan"
+                  ></td>
+                  <td
+                    v-else
+                    :rowspan="item.cell.rowspan"
+                    :colspan="item.cell.colspan"
+                    class="sheet-cell"
+                    :class="{
+                      frozen: item.cell.col < freezeCols,
+                      selected: isSelected(row.number, item.cell.col),
+                    }"
+                    :style="cellStyle(item.cell)"
+                    @click="select(row.number, item.cell.col)"
+                    v-text="item.cell.text"
+                  ></td>
+                </template>
               </tr>
             </tbody>
           </table>
@@ -118,17 +129,28 @@
                   :style="{ height: `${ROW_HEIGHT}px` }"
                 >
                   <th class="sheet-row-no">{{ row.number }}</th>
-                  <td
-                    v-for="cell in row.cells"
-                    :key="cell.col"
-                    :rowspan="cell.rowspan"
-                    :colspan="cell.colspan"
-                    class="sheet-cell"
-                    :class="{ frozen: cell.col < freezeCols, selected: isSelected(row.number, cell.col) }"
-                    :style="cellStyle(cell)"
-                    @click="select(row.number, cell.col)"
-                    v-text="cell.text"
-                  ></td>
+                  <template v-for="(item, itemIndex) in row.items" :key="itemIndex">
+                    <td
+                      v-if="item.gap"
+                      class="sheet-cell sheet-gap"
+                      :class="{ frozen: item.col < freezeCols }"
+                      :style="item.col < freezeCols ? { left: `${frozenLeft(item.col)}px` } : null"
+                      :colspan="item.colspan"
+                    ></td>
+                    <td
+                      v-else
+                      :rowspan="item.cell.rowspan"
+                      :colspan="item.cell.colspan"
+                      class="sheet-cell"
+                      :class="{
+                        frozen: item.cell.col < freezeCols,
+                        selected: isSelected(row.number, item.cell.col),
+                      }"
+                      :style="cellStyle(item.cell)"
+                      @click="select(row.number, item.cell.col)"
+                      v-text="item.cell.text"
+                    ></td>
+                  </template>
                 </tr>
               </tbody>
             </table>
@@ -498,6 +520,9 @@ function observeScroller() {
 }
 .sheet-cell.selected {
   box-shadow: inset 0 0 0 2px rgb(var(--v-theme-primary));
+}
+.sheet-gap {
+  cursor: default;
 }
 .sheet-status {
   flex: 0 0 auto;

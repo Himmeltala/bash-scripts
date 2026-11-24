@@ -15,6 +15,9 @@ export const SHEET_LIMITS = {
   rows: 100000,
 }
 
+// 冻结行列再多也不该把整屏 DOM 钉住；列数还要受实际列数限制。
+export const MAX_FREEZE = 50
+
 export function columnName(index) {
   let name = ''
   let n = Number(index) + 1
@@ -168,6 +171,7 @@ export function buildSheetModel(worksheet, limits = SHEET_LIMITS) {
   const merges = []
   const anchors = new Map()
   const covered = new Set()
+  let mergedArea = 0
   for (const range of (worksheet.model && worksheet.model.merges) || []) {
     const parsed = parseRange(range)
     if (!parsed) continue
@@ -178,6 +182,13 @@ export function buildSheetModel(worksheet, limits = SHEET_LIMITS) {
       right: Math.min(parsed.right, colLimit - 1),
     }
     if (merge.bottom < merge.top || merge.right < merge.left) continue
+    const area = (merge.bottom - merge.top + 1) * (merge.right - merge.left + 1)
+    // 覆盖集按面积展开，超大合并先挡掉，别让一个区域把内存撑爆。
+    if (area > limits.cells - mergedArea) {
+      truncated = true
+      continue
+    }
+    mergedArea += area
     merges.push(merge)
     anchors.set(`${merge.top}:${merge.left}`, merge)
     for (let row = merge.top; row <= merge.bottom; row += 1) {
@@ -229,20 +240,69 @@ export function buildSheetModel(worksheet, limits = SHEET_LIMITS) {
     rows,
     merges,
     freeze: {
-      rows: Number(view.ySplit) || 0,
-      cols: Number(view.xSplit) || 0,
+      rows: Math.min(Number(view.ySplit) || 0, rowLimit, MAX_FREEZE),
+      cols: Math.min(Number(view.xSplit) || 0, colLimit, MAX_FREEZE),
     },
     truncated,
   }
 }
 
+// 行索引按 model 缓存，滚动时别每次把全部行重建成 Map。
+const ROW_INDEX = new WeakMap()
+
+function rowsByNumber(model) {
+  let index = ROW_INDEX.get(model)
+  if (!index) {
+    index = new Map((model.rows || []).map((row) => [row.number, row]))
+    ROW_INDEX.set(model, index)
+  }
+  return index
+}
+
+// 从 from 到 to 之间跳掉被合并占住的列，返回连续的空列区间。
+function freeRuns(from, to, occupied) {
+  const runs = []
+  let start = -1
+  for (let col = from; col < to; col += 1) {
+    if (occupied && occupied.has(col)) {
+      if (start >= 0) {
+        runs.push([start, col])
+        start = -1
+      }
+    } else if (start < 0) {
+      start = col
+    }
+  }
+  if (start >= 0) runs.push([start, to])
+  return runs
+}
+
 // 只切窗口内的行；合并区跨越窗口时把内容贴到第一个可见行，跨行数按窗口裁剪。
+// items 把空列也补成渲染项，否则稀疏行会整体左移。
 export function visibleRows(model, start, count) {
   const first = Math.max(0, Number(start) || 0)
   const end = Math.min(Number(model.rowCount) || 0, first + Math.max(0, Number(count) || 0))
   if (end <= first) return []
 
-  const sourceByNumber = new Map((model.rows || []).map((row) => [row.number, row]))
+  const sourceByNumber = rowsByNumber(model)
+  const colCount = Number(model.colCount) || 0
+  const freezeCols = Math.min(Number(model.freeze && model.freeze.cols) || 0, colCount)
+  const occupiedByNumber = new Map()
+
+  for (const merge of model.merges || []) {
+    if (merge.bottom < first || merge.top > end - 1) continue
+    const top = Math.max(merge.top, first)
+    const bottom = Math.min(merge.bottom, end - 1)
+    for (let row = top + 1; row <= bottom; row += 1) {
+      let occupied = occupiedByNumber.get(row + 1)
+      if (!occupied) {
+        occupied = new Set()
+        occupiedByNumber.set(row + 1, occupied)
+      }
+      for (let col = merge.left; col <= merge.right; col += 1) occupied.add(col)
+    }
+  }
+
   const rows = []
   for (let number = first + 1; number <= end; number += 1) {
     const source = sourceByNumber.get(number)
@@ -274,7 +334,33 @@ export function visibleRows(model, start, count) {
       rowspan: bottom - top + 1,
     })
   }
-  for (const row of rows) row.cells.sort((a, b) => a.col - b.col)
+
+  for (const row of rows) {
+    row.cells.sort((a, b) => a.col - b.col)
+    const occupied = occupiedByNumber.get(row.number) || null
+    const items = []
+    let cursor = 0
+    const pushGaps = (from, to) => {
+      for (const [start, stop] of freeRuns(from, to, occupied)) {
+        let gapStart = start
+        let gapCount = stop - start
+        if (gapStart < freezeCols) {
+          const frozen = Math.min(gapCount, freezeCols - gapStart)
+          items.push({ col: gapStart, colspan: frozen, gap: true })
+          gapStart += frozen
+          gapCount -= frozen
+        }
+        if (gapCount > 0) items.push({ col: gapStart, colspan: gapCount, gap: true })
+      }
+    }
+    for (const cell of row.cells) {
+      pushGaps(cursor, cell.col)
+      items.push({ col: cell.col, cell })
+      cursor = cell.col + (cell.colspan || 1)
+    }
+    pushGaps(cursor, colCount)
+    row.items = items
+  }
   return rows
 }
 
@@ -295,7 +381,7 @@ export function formatCellValue(cell) {
     if ('text' in value) return { text: String(value.text), formula: '' }
   }
   if (value instanceof Date) {
-    const dateFmt = /[yd]/i.test(numFmt) ? numFmt : 'yyyy-mm-dd'
+    const dateFmt = /[ydhs]/i.test(numFmt) ? numFmt : 'yyyy-mm-dd'
     return { text: formatNumber(value, dateFmt), formula: '' }
   }
   if (typeof value === 'boolean') return { text: value ? 'TRUE' : 'FALSE', formula: '' }

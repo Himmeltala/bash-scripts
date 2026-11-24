@@ -196,6 +196,96 @@ test('窗口越过表格末尾时截断', () => {
   assert.deepEqual(rows.map((row) => row.number), [29, 30])
 })
 
+test('时间格式的日期只显示时间，不补成 1899 年', () => {
+  const value = new Date(Date.UTC(1899, 11, 31, 9, 5, 6))
+  assert.deepEqual(formatCellValue({ value, numFmt: 'hh:mm:ss' }), {
+    text: '09:05:06',
+    formula: '',
+  })
+})
+
+test('稀疏行按列号补空列后再渲染', () => {
+  const model = {
+    rowCount: 1,
+    colCount: 4,
+    rows: [{ number: 1, cells: [{ col: 2, text: 'C', style: {}, formula: '', colspan: 1, rowspan: 1 }] }],
+    merges: [],
+    freeze: { rows: 0, cols: 0 },
+    truncated: false,
+  }
+  const [row] = visibleRows(model, 0, 1)
+  assert.deepEqual(
+    row.items.map((item) => (item.gap ? `gap:${item.colspan}` : `cell:${item.cell.text}`)),
+    ['gap:2', 'cell:C', 'gap:1'],
+  )
+})
+
+test('合并占住的列不重复补空列', () => {
+  const model = {
+    rowCount: 2,
+    colCount: 5,
+    rows: [
+      { number: 1, cells: [{ col: 0, text: 'M', style: {}, formula: '', colspan: 2, rowspan: 2 }] },
+      { number: 2, cells: [{ col: 3, text: 'D', style: {}, formula: '', colspan: 1, rowspan: 1 }] },
+    ],
+    merges: [{ top: 0, left: 0, bottom: 1, right: 1 }],
+    freeze: { rows: 0, cols: 0 },
+    truncated: false,
+  }
+  const rows = visibleRows(model, 0, 2)
+  const second = rows[1].items.map((item) =>
+    item.gap ? `gap:${item.colspan}` : `cell:${item.cell.text}`,
+  )
+  assert.deepEqual(second, ['gap:1', 'cell:D', 'gap:1'])
+})
+
+test('冻结行列数按上限夹住，避免超大冻结拖垮 DOM', () => {
+  const sheet = sheetOf((ws) => {
+    for (let row = 1; row <= 100; row += 1) {
+      for (let col = 1; col <= 10; col += 1) ws.getCell(row, col).value = row * col
+    }
+    ws.views = [{ state: 'frozen', xSplit: 50000, ySplit: 50000 }]
+  })
+  const model = buildSheetModel(sheet, { ...SHEET_LIMITS, rows: 100, columns: 10 })
+  assert.equal(model.freeze.rows, 50)
+  assert.equal(model.freeze.cols, 10)
+})
+
+test('面积超过单元格上限的合并直接跳过，不展开覆盖集', () => {
+  const sheet = sheetOf((ws) => {
+    ws.getCell('A1').value = 'x'
+    ws.mergeCells('A1:D4')
+  })
+  const model = buildSheetModel(sheet, { ...SHEET_LIMITS, cells: 5 })
+  assert.equal(model.truncated, true)
+  assert.deepEqual(model.merges, [])
+})
+
+test('重复切窗口不重建行索引', () => {
+  const source = Array.from({ length: 1000 }, (_, index) => ({
+    number: index + 1,
+    cells: [{ col: 0, text: String(index), style: {}, formula: '', colspan: 1, rowspan: 1 }],
+  }))
+  let iterated = 0
+  const rows = new Proxy(source, {
+    get(target, prop, receiver) {
+      if (prop === 'length') iterated += 1
+      return Reflect.get(target, prop, receiver)
+    },
+  })
+  const model = {
+    rowCount: 1000,
+    colCount: 1,
+    rows,
+    merges: [],
+    freeze: { rows: 0, cols: 0 },
+    truncated: false,
+  }
+  visibleRows(model, 0, 10)
+  visibleRows(model, 100, 10)
+  assert.equal(iterated, 1)
+})
+
 test('上限常量与设计一致', () => {
   assert.deepEqual(SHEET_LIMITS, {
     fileBytes: 20 * 1024 * 1024,
