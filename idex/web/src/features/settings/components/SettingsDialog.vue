@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-18 23:19:43
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 23:01:03
+ * @LastEditTime: 2026-11-24 23:11:07
  * @FilePath: \idex\web\src\features\settings\components\SettingsDialog.vue
  * @Description: 设置外壳：左侧按登记表列分类，右侧按需加载对应 section，保存交给 section 自己。
 -->
@@ -34,14 +34,36 @@
       </nav>
 
       <section class="pane">
-        <component :is="current" :key="`${section}-${openSeq}`" ref="paneRef" />
+        <div
+          v-for="item in sections"
+          v-show="section === item.id"
+          :key="`${item.id}-${openSeq}`"
+          class="section"
+        >
+          <component :is="views.get(item.id)" :ref="(el) => setPane(item.id, el)" />
+        </div>
       </section>
     </div>
 
     <template #actions>
+      <v-btn
+        variant="text"
+        :disabled="!resettable"
+        :title="resettable ? '恢复这一类的默认值' : '这一类没有可重置的设置'"
+        @click="reset"
+      >
+        重置
+      </v-btn>
       <v-spacer />
       <v-btn variant="text" @click="open = false">关闭</v-btn>
-      <v-btn v-if="savable" color="primary" variant="flat" :loading="saving" @click="save">
+      <v-btn
+        color="primary"
+        variant="flat"
+        :loading="saving"
+        :disabled="!savable"
+        title="保存所有类别的设置"
+        @click="save"
+      >
         保存
       </v-btn>
     </template>
@@ -59,9 +81,14 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 
 const sections = SETTINGS_SECTIONS
 const section = ref(sections[0].id)
-const paneRef = ref(null)
+const panes = new Map()
 const saving = ref(false)
 const openSeq = ref(0)
+
+function setPane(id, el) {
+  if (el) panes.set(id, el)
+  else panes.delete(id)
+}
 const views = new Map(
   sections.map((item) => [item.id, defineAsyncComponent(item.load)]),
 )
@@ -71,10 +98,11 @@ const open = computed({
   set: (value) => emit('update:modelValue', value),
 })
 
-const current = computed(() => views.get(section.value))
-const savable = computed(() => {
+// 保存是整份设置：只要有一类需要单独保存，按钮就可用，点击时逐类提交。
+const savable = computed(() => sections.some((item) => item.savable))
+const resettable = computed(() => {
   const hit = sections.find((item) => item.id === section.value)
-  return !!(hit && hit.savable)
+  return !!(hit && hit.resettable)
 })
 
 watch(
@@ -85,16 +113,20 @@ watch(
   },
 )
 
+// 重置只作用于当前查看的类别。
+function reset() {
+  panes.get(section.value)?.reset?.()
+}
+
 async function save() {
-  const pane = paneRef.value
-  if (!pane || typeof pane.save !== 'function') {
-    open.value = false
-    return
-  }
   saving.value = true
   try {
-    const ok = await pane.save()
-    if (ok === false) return
+    for (const item of sections) {
+      const pane = panes.get(item.id)
+      if (!pane || typeof pane.save !== 'function') continue
+      const ok = await pane.save()
+      if (ok === false) return
+    }
     emit('saved')
     open.value = false
   } catch (err) {
@@ -144,5 +176,8 @@ async function save() {
   min-width: 0;
   overflow: auto;
   padding: 4px 4px 4px 16px;
+}
+.section {
+  min-width: 0;
 }
 </style>
