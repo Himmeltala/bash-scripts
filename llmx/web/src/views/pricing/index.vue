@@ -1,8 +1,5 @@
 <template>
   <v-container fluid class="pa-2 page">
-    <p v-if="loaded && !loadError" class="hint">
-      保存后下一轮推送就按新价重算，不用重启服务。
-    </p>
     <div v-if="loaded && !loadError" class="editor">
       <FileEditor
         ref="editorRef"
@@ -77,12 +74,5 @@ onMounted(async () => {
 .editor > * {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.hint {
-  flex: none;
-  margin-bottom: 0.5rem;
-  font-size: 0.78rem;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 </style>
