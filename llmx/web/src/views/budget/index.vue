@@ -9,7 +9,7 @@ import {
   spend,
   toneOf,
 } from '../../composables/useBudgets.js'
-import { fmtMoney } from '../usage/composables/format'
+import { fmtMoney } from '../usage/lib/format'
 import { warningTone } from '../../composables/useWarnings.js'
 import { toast } from '../../composables/notice'
 

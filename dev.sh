@@ -20,12 +20,12 @@ case "$tool" in
     ;;
   llmx)
     web_dir="$repo/llmx/web"
-    static="$repo/llmx/lib/llmx/web/static"
+    static="$repo/llmx/web/dist"
     origin_var=LLMX_WEB_ORIGIN
     backend_port=8770
-    watch_dirs=("$repo/llmx/lib" "$repo/lib/py-shared")
+    watch_dirs=("$repo/llmx/src" "$repo/lib/py-shared")
     start_backend() {
-      PYTHONPATH="$repo/llmx/lib${PYTHONPATH:+:$PYTHONPATH}" \
+      PYTHONPATH="$repo/llmx/src${PYTHONPATH:+:$PYTHONPATH}" \
         python3 -m llmx web --host "$dev_host" --port "$backend_port" --allow-write
     }
     ;;

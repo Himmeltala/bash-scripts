@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { data } from '../composables/useUsage'
-import { fmtMoney, fmtNum, fmtTokens } from '../composables/format'
+import { fmtMoney, fmtNum, fmtTokens } from '../lib/format'
 import MetricsDialog from './MetricsDialog.vue'
 
 const details = ref(false)

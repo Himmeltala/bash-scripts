@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { fadeColor } from '../src/views/usage/composables/chartUtils.js'
+import { fadeColor } from '../src/views/usage/lib/chartUtils.js'
 
 test('十六进制颜色按透明度转 rgba', () => {
   assert.equal(fadeColor('#112233', 0.5), 'rgba(17,34,51,0.5)')

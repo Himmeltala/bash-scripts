@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { BRANDS } from '../composables/brandIcons'
+import { BRANDS } from '../utils/brandIcons'
 
 const props = defineProps({
   name: { type: String, required: true },

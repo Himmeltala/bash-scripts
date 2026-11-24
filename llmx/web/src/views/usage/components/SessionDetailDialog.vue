@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { data } from '../composables/useUsage'
-import { fmtMoney, fmtNum, fmtTokens } from '../composables/format'
+import { fmtMoney, fmtNum, fmtTokens } from '../lib/format'
 import { setTag, tagOf } from '../composables/useSessionTags'
 import { get } from '../../../composables/useApi'
 import { toast } from '../../../composables/notice'

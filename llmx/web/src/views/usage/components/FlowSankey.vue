@@ -5,8 +5,8 @@ import { SankeyChart } from 'echarts/charts'
 import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
-import { SOURCE_LIST, fmtMoney } from '../composables/format'
-import { CHART_FONT, chartTitle } from '../composables/chartUtils'
+import { SOURCE_LIST, fmtMoney } from '../lib/format'
+import { CHART_FONT, chartTitle } from '../lib/chartUtils'
 import { useChart } from '../composables/useChart'
 
 echarts.use([SankeyChart, TooltipComponent, CanvasRenderer])

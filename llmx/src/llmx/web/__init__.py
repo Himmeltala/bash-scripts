@@ -37,8 +37,8 @@ from .. import budget, cli, memories, profiles, sessions
 from ..config import Config, ConfigError, config_path, load, render, validate_text
 from ..sources import SOURCE_ORDER
 
-# vite 把 web/ 打包成 lib/llmx/web/static，这里只认打包产物；开发时用 web/README.md 里的代理。
-STATIC = Path(__file__).resolve().parent / "static"
+# vite 把 web/ 打包成 web/dist，这里只认打包产物；开发时用 dev.sh 或 web/vite 的代理。
+STATIC = Path(__file__).resolve().parents[3] / "web" / "dist"
 INDEX = STATIC / "index.html"
 COMMANDS = ("daily", "session", "hour", "project", "api")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。

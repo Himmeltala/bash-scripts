@@ -13,7 +13,7 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
-sys.path.insert(0, str(REPO / "llmx" / "lib"))
+sys.path.insert(0, str(REPO / "llmx" / "src"))
 
 from llmx import api as llmx_api
 from llmx import config as llmx_config

@@ -4,7 +4,7 @@ set -uo pipefail
 
 self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
 root=${self%/bin/*}
-export PYTHONPATH="$root/lib${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}"
 
 menu=0
 if (($# == 0)); then

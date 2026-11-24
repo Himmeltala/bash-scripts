@@ -5,8 +5,8 @@ import { HeatmapChart } from 'echarts/charts'
 import { CalendarComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
-import { fmtMoney } from '../composables/format'
-import { CHART_FONT, chartTitle, fadeColor } from '../composables/chartUtils'
+import { fmtMoney } from '../lib/format'
+import { CHART_FONT, chartTitle, fadeColor } from '../lib/chartUtils'
 import { useChart } from '../composables/useChart'
 
 echarts.use([HeatmapChart, CalendarComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])

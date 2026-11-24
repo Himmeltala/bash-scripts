@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { data } from '../composables/useUsage'
-import { fmtMoney, fmtNum, fmtTokens } from '../composables/format'
+import { fmtMoney, fmtNum, fmtTokens } from '../lib/format'
 import CostBreakdown from './CostBreakdown.vue'
 
 defineProps({

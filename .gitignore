@@ -34,7 +34,7 @@ htmlcov/
 
 # 前端构建产物：安装时由 install.sh 按当前源码重建，不入库
 lib/web-shared/dist/
-llmx/lib/llmx/web/static/
+llmx/web/dist/
 idex/web/dist/
 netx/lib/netx/static/
 

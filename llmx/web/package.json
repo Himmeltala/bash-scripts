@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "llmx 的网页界面，由 vite 打包进 llmx/lib/llmx/web/static",
+  "description": "llmx 的网页界面，由 vite 打包进 llmx/web/dist",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

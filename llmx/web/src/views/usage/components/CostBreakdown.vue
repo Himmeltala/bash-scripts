@@ -6,7 +6,7 @@ import { LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useTheme } from 'vuetify'
 import { data } from '../composables/useUsage'
-import { fmtMoney } from '../composables/format'
+import { fmtMoney } from '../lib/format'
 
 echarts.use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
 

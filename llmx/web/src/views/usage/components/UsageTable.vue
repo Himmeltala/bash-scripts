@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import BrandIcon from '../../../components/BrandIcon.vue'
 import { data } from '../composables/useUsage'
 import { formatNumber } from '@bash-scripts/web-shared/format'
-import { COLUMNS, SOURCE_LIST, cellValue } from '../composables/format'
+import { COLUMNS, SOURCE_LIST, cellValue } from '../lib/format'
 import { tagOf } from '../composables/useSessionTags'
 import SessionDetailDialog from './SessionDetailDialog.vue'
 

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { data } from '../composables/useUsage'
 import { previous } from '../composables/useCompare'
-import { fmtMoney, fmtNum, fmtTokens } from '../composables/format'
+import { fmtMoney, fmtNum, fmtTokens } from '../lib/format'
 
 function rate(now, before) {
   const value = Number(now)

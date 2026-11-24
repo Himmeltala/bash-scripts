@@ -2,7 +2,7 @@
 
 import { useLocalStorage } from '@vueuse/core'
 import { formatDate, startOfWeek } from '@bash-scripts/web-shared/format'
-import { SOURCE_LIST } from './format'
+import { SOURCE_LIST } from '../lib/format'
 
 export const SOURCES = SOURCE_LIST
 

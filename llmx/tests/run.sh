@@ -445,7 +445,7 @@ print("ok - 会话变短后以现扫为准")
 PY
 
 # 账本按天清理：老会话里的请求时间没动，按请求时间算就不会被一次次刷新而永远清不掉。
-PYTHONPATH="$repo/llmx/lib" python3 - "$HOME" <<'PY' || exit 1
+PYTHONPATH="$repo/llmx/src" python3 - "$HOME" <<'PY' || exit 1
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -478,7 +478,7 @@ print("ok - mimo 实时价")
 PY
 
 # opencode 的配置文件允许注释，剥注释后再解析。
-PYTHONPATH="$repo/llmx/lib" python3 - <<'PY' || exit 1
+PYTHONPATH="$repo/llmx/src" python3 - <<'PY' || exit 1
 import json
 from llmx.api import _strip_jsonc
 
@@ -488,7 +488,7 @@ print("ok - 剥离 JSONC 注释")
 PY
 
 # 直连计价函数：高峰与空闲时段金额相同，输入按 miss 价。
-PYTHONPATH="$repo/llmx/lib" python3 - <<'PY' || exit 1
+PYTHONPATH="$repo/llmx/src" python3 - <<'PY' || exit 1
 from datetime import datetime, timezone
 from llmx.model import Usage
 from llmx.pricing import PriceBook
@@ -573,13 +573,13 @@ res, raw = get("/")
 assert res.status == 200 and "text/html" in res.headers["Content-Type"], res.headers
 assert "<title>llmx</title>" in raw.decode("utf-8"), raw[:200]
 assert res.headers["Cache-Control"] == "no-cache", res.headers
-# 页面是 vite 打包出来的，资源名带内容哈希；从首页里取出实际引用的地址再逐个取一遍。
+# 页面是 vite 打包出来的；从首页里取出实际引用的地址再逐个取一遍。
 assets = re.findall(r'(?:src|href)="\.(/assets/[^"]+)"', raw.decode("utf-8"))
 assert len(assets) >= 2, assets
 for path in assets:
     res, _ = get(path)
     assert res.status == 200, (path, res.status)
-    assert res.headers["Cache-Control"] == "public, max-age=31536000, immutable", (path, res.headers)
+    assert res.headers["Cache-Control"] == "no-cache", (path, res.headers)
     kind = "javascript" if path.endswith(".js") else "text/css"
     assert kind in res.headers["Content-Type"], (path, res.headers)
 
@@ -761,11 +761,11 @@ printf '' | "$bin" menu >/dev/null 2>&1
 [[ $? -eq 3 ]] || fail "取消菜单的退出码不是 3"
 ok 取消菜单返回 3
 
-python3 "$repo/llmx/test/test_api.py" >/dev/null 2>&1 || fail '地址与配置识别的测试未通过'
+python3 "$repo/llmx/tests/test_api.py" >/dev/null 2>&1 || fail '地址与配置识别的测试未通过'
 ok 地址与配置识别
 
 for name in test_web_config test_web_metrics test_web_profiles test_web_memory test_web_sessions; do
-  python3 "$repo/llmx/test/$name.py" >/dev/null 2>&1 || fail "网页测试 $name 未通过"
+  python3 "$repo/llmx/tests/$name.py" >/dev/null 2>&1 || fail "网页测试 $name 未通过"
 done
 ok '网页接口的单元测试通过'
 

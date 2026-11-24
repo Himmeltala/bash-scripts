@@ -9,7 +9,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
-sys.path.insert(0, str(REPO / "llmx" / "lib"))
+sys.path.insert(0, str(REPO / "llmx" / "src"))
 
 from llmx import web as llmx_web
 
