@@ -57,24 +57,27 @@
     <div v-else-if="path" class="edit-wrap">
       <p v-if="modeError" class="hint bad edit-error">{{ modeError }}</p>
       <p v-if="state.saveError" class="hint bad edit-error">{{ state.saveError }}</p>
-      <component
-        :is="modeComp"
-        v-if="modeComp"
-        ref="paneRef"
-        v-model="state.draft"
-        v-bind="usesCodeView(path, codeView) ? viewProps : {}"
+      <slot
+        v-if="slotActive"
+        name="editor"
+        :value="state.draft"
+        :update="updateDraft"
+        :register="registerView"
         :path="path"
-        @symbol="onSymbol"
-        @menu="onMenu"
-        @rename="onRename"
-        @caret="onCaret"
-        :markers="markers"
-        @edit="$emit('edit', { path: path })"
-        @hover="$emit('hover', { path: path, ...$event })"
-        @hover-end="$emit('hover-end', { path: path })"
-        @diffhunk="$emit('diffhunk', { path: path, ...$event })"
+        :root-name="rootName"
+        :size="size"
       />
-      <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
+      <template v-else>
+        <component
+          :is="modeComp"
+          v-if="modeComp"
+          ref="paneRef"
+          v-model="state.draft"
+          :path="path"
+          @edit="$emit('edit', { path: path })"
+        />
+        <p v-else-if="modeLoading" class="hint">正在准备视图…</p>
+      </template>
     </div>
     <EmptyState v-else icon="mdi-file-outline" hint="从左边选一个文件，右边显示它的内容。" />
 
@@ -83,7 +86,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch } from 'vue'
 import FileHead from './widgets/FileHead.vue'
 import SaveLeaveDialog from './widgets/SaveLeaveDialog.vue'
 import EmptyState from '../../../layouts/commons/EmptyState.vue'
@@ -91,7 +94,7 @@ import { useFileEditor } from './useFileEditor'
 import {
   modesOf,
   resolveMode,
-  usesCodeView,
+  usesEditorSlot,
   viewForOpen,
   viewLoadFailure,
 } from './handlers/registry.js'
@@ -99,28 +102,13 @@ import {
 const props = defineProps({
   rootName: { type: String, default: '/' },
   size: { type: Number, default: undefined },
-  markers: { type: Object, default: () => ({}) },
-  // 可选：调用方自定义代码文件的处理器，不传时用内置的代码编辑器。
-  codeView: { type: Object, default: null },
-  // 透传给处理器组件的额外 props；共享包不认识这些内容。
-  viewProps: { type: Object, default: () => ({}) },
   // 取数与落盘由调用方给：打开哪个文件、存到哪里，组件不认。
   loader: { type: Function, required: true },
   saver: { type: Function, required: true },
 })
 
-const emit = defineEmits([
-  'saved',
-  'dirty',
-  'definition',
-  'menu',
-  'rename',
-  'caret',
-  'edit',
-  'hover',
-  'hover-end',
-  'diffhunk',
-])
+const emit = defineEmits(['saved', 'dirty', 'edit'])
+const slots = useSlots()
 
 const {
   path,
@@ -135,13 +123,16 @@ const {
   saver: props.saver,
 })
 const paneRef = ref(null)
+// 插槽里的编辑器自己注册实例方法；内置处理器则用 paneRef。
+const viewApi = ref(null)
+const slotActive = computed(() => usesEditorSlot(path.value, !!slots.editor))
 
 // 草稿改没改：页签栏靠这个标未保存，只在变化时报一次。
 watch(dirty, (on) => emit('dirty', on))
 
 // 文件类型处理器给出这类文件的渲染与编辑方式，具体组件按需加载。
 const mode = ref('source')
-const modes = computed(() => modesOf(path.value, props.codeView))
+const modes = computed(() => modesOf(path.value))
 const modeEntry = computed(() => modes.value.find((item) => item.id === mode.value) || null)
 const modeComp = shallowRef(null)
 const modeLoading = ref(false)
@@ -149,9 +140,22 @@ const modeError = ref('')
 // 搜索命中要求的行号：处理器组件可能还在加载，挂上之后再定位。
 let pendingLocate = 0
 
+function currentView() {
+  return slotActive.value ? viewApi.value : paneRef.value
+}
+
+function registerView(view) {
+  viewApi.value = view
+  if (view) locateWhenReady()
+}
+
+function updateDraft(value) {
+  state.draft = value == null ? '' : String(value)
+}
+
 function locateWhenReady() {
   if (!pendingLocate) return
-  const pane = paneRef.value
+  const pane = currentView()
   if (!pane || typeof pane.locate !== 'function') return
   const line = pendingLocate
   pendingLocate = 0
@@ -167,9 +171,27 @@ watch(
   { immediate: true },
 )
 
+// 插槽接管代码文件时不再加载内置代码视图。
+watch(
+  slotActive,
+  (on) => {
+    if (!on) return
+    modeComp.value = null
+    modeError.value = ''
+    modeLoading.value = false
+    locateWhenReady()
+  },
+  { immediate: true },
+)
+
 watch(
   modeEntry,
   async (target) => {
+    if (slotActive.value) {
+      modeComp.value = null
+      modeLoading.value = false
+      return
+    }
     modeComp.value = null
     modeLoading.value = !!target
     if (!target) return
@@ -207,26 +229,6 @@ function discard() {
   discardDraft()
 }
 
-// Ctrl+点击取到的词：补上这个编辑器正在看的文件，交给调用方去查定义。
-function onSymbol(symbol) {
-  emit('definition', { path: path.value, ...symbol })
-}
-
-// 右键菜单：同样带上文件路径，鼠标位置也一起给出去。
-function onMenu(payload) {
-  emit('menu', { path: path.value, ...payload })
-}
-
-// F2 重命名：带上文件路径交给调用方。
-function onRename(symbol) {
-  emit('rename', { path: path.value, ...symbol })
-}
-
-// 光标行列：状态栏用。
-function onCaret(position) {
-  emit('caret', { path: path.value, ...position })
-}
-
 const leaveAsk = ref(false)
 let leaveResolve = null
 
@@ -240,7 +242,7 @@ async function open(target, line = 0) {
     return false
   }
   await nextTick()
-  if (!line) paneRef.value?.resetScroll()
+  if (!line) currentView()?.resetScroll()
   // 处理器组件可能还在加载，挂上后由 locateWhenReady 接着定位。
   locateWhenReady()
   return true
@@ -250,7 +252,7 @@ async function reload() {
   if (!path.value) return false
   if (!(await load(path.value))) return false
   await nextTick()
-  paneRef.value?.resetScroll()
+  currentView()?.resetScroll()
   return true
 }
 

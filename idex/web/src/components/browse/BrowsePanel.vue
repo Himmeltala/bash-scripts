@@ -255,20 +255,29 @@
                   :size="tab.size"
                   :loader="loadFile"
                   :saver="saveFile"
-                  :code-view="cmCodeView"
-                  :view-props="editorViewProps"
                   @saved="onSaved"
                   @dirty="(on) => setDirty(tab.path, on)"
-                  @definition="onDefinition"
-                  @menu="openSymbolMenu"
-                  @rename="openRename"
-                  @caret="onCaret"
                   @edit="onEdit"
-                  @hover="onHover"
-                  @hover-end="onHoverEnd"
-                  @diffhunk="openDiffHunk"
-                  :markers="markers"
-                />
+                >
+                  <template #editor="{ value, update, register }">
+                    <IdexCodeEditor
+                      :model-value="value"
+                      @update:model-value="update"
+                      :path="tab.path"
+                      :register="register"
+                      :markers="markers"
+                      v-bind="editorViewProps"
+                      @definition="onDefinition"
+                      @menu="openSymbolMenu"
+                      @rename="openRename"
+                      @caret="onCaret"
+                      @edit="onEdit"
+                      @hover="onHover"
+                      @hover-end="onHoverEnd"
+                      @diffhunk="openDiffHunk"
+                    />
+                  </template>
+                </FileEditor>
               </template>
             </div>
           </template>
@@ -769,7 +778,7 @@ import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../../editor/diagnostics'
 import { useDiagnostics } from '../../editor/useDiagnostics'
 import { useCodeIndex } from '../../editor/useCodeIndex'
 import { handlerOf } from '../../editor/handlers/registry'
-import { cmCodeView } from '../../editor/codeView'
+import IdexCodeEditor from '../../editor/IdexCodeEditor.vue'
 import { useBrowseSearch } from './useBrowseSearch'
 import { useBrowseEditors } from './useBrowseEditors'
 import { useBrowseFiles } from './useBrowseFiles'
