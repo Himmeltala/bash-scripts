@@ -11,6 +11,7 @@ import { extensionOf } from './browseOps.js'
 
 export const PREVIEW_TYPES = {
   image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'avif'],
+  sheet: ['xlsx', 'xlsm'],
 }
 
 const KIND_BY_EXT = new Map()
