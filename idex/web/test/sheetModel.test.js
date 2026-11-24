@@ -18,6 +18,7 @@ import {
   formatCellValue,
   formatNumber,
   styleOf,
+  visibleRows,
 } from '../src/utils/sheetModel.js'
 
 test('列名与地址换算', () => {
@@ -155,6 +156,44 @@ test('建模：超过单元格上限时截断并标记', () => {
 test('建模：没有冻结设置时 freeze 为零', () => {
   const model = buildSheetModel(sheetOf((ws) => { ws.getCell('A1').value = 1 }))
   assert.deepEqual(model.freeze, { rows: 0, cols: 0 })
+})
+
+function mergeModel() {
+  return {
+    rowCount: 30,
+    colCount: 10,
+    rows: [
+      { number: 1, cells: [{ col: 0, text: '合并', style: {}, formula: '', colspan: 2, rowspan: 6 }] },
+      { number: 2, cells: [] },
+      { number: 3, cells: [{ col: 3, text: 'x', style: {}, formula: '', colspan: 1, rowspan: 1 }] },
+      { number: 4, cells: [] },
+      { number: 5, cells: [] },
+      { number: 6, cells: [] },
+    ],
+    merges: [{ top: 0, left: 0, bottom: 5, right: 1 }],
+    freeze: { rows: 0, cols: 0 },
+    truncated: false,
+  }
+}
+
+test('窗口外的合并锚点贴到第一个可见行并裁剪', () => {
+  const rows = visibleRows(mergeModel(), 3, 2) // 显示第 4、5 行
+  assert.equal(rows[0].number, 4)
+  const anchor = rows[0].cells.find((cell) => cell.col === 0)
+  assert.equal(anchor.text, '合并')
+  assert.equal(anchor.rowspan, 2)
+  assert.equal(anchor.colspan, 2)
+})
+
+test('窗口内的合并保持完整跨行数', () => {
+  const rows = visibleRows(mergeModel(), 0, 10)
+  assert.equal(rows[0].cells[0].rowspan, 6)
+})
+
+test('窗口越过表格末尾时截断', () => {
+  const rows = visibleRows(mergeModel(), 28, 10)
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map((row) => row.number), [29, 30])
 })
 
 test('上限常量与设计一致', () => {

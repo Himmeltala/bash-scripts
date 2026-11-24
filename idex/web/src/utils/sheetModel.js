@@ -236,6 +236,48 @@ export function buildSheetModel(worksheet, limits = SHEET_LIMITS) {
   }
 }
 
+// 只切窗口内的行；合并区跨越窗口时把内容贴到第一个可见行，跨行数按窗口裁剪。
+export function visibleRows(model, start, count) {
+  const first = Math.max(0, Number(start) || 0)
+  const end = Math.min(Number(model.rowCount) || 0, first + Math.max(0, Number(count) || 0))
+  if (end <= first) return []
+
+  const sourceByNumber = new Map((model.rows || []).map((row) => [row.number, row]))
+  const rows = []
+  for (let number = first + 1; number <= end; number += 1) {
+    const source = sourceByNumber.get(number)
+    rows.push({
+      number,
+      cells: source ? source.cells.map((cell) => ({ ...cell })) : [],
+    })
+  }
+  const indexByNumber = new Map(rows.map((row, index) => [row.number, index]))
+
+  for (const merge of model.merges || []) {
+    if (merge.bottom < first || merge.top > end - 1) continue
+    const top = Math.max(merge.top, first)
+    const bottom = Math.min(merge.bottom, end - 1)
+    const anchorRow = sourceByNumber.get(merge.top + 1)
+    const anchorCell = anchorRow && anchorRow.cells.find((cell) => cell.col === merge.left)
+    for (let row = top; row <= bottom; row += 1) {
+      const target = rows[indexByNumber.get(row + 1)]
+      target.cells = target.cells.filter(
+        (cell) => cell.col < merge.left || cell.col > merge.right,
+      )
+    }
+    rows[indexByNumber.get(top + 1)].cells.push({
+      col: merge.left,
+      text: anchorCell ? anchorCell.text : '',
+      formula: anchorCell ? anchorCell.formula : '',
+      style: anchorCell ? anchorCell.style : {},
+      colspan: merge.right - merge.left + 1,
+      rowspan: bottom - top + 1,
+    })
+  }
+  for (const row of rows) row.cells.sort((a, b) => a.col - b.col)
+  return rows
+}
+
 export function formatCellValue(cell) {
   const value = cell ? cell.value : null
   const numFmt = (cell && cell.numFmt) || ''
