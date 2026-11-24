@@ -2,75 +2,12 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:53:37
  * @FilePath: \idex\web\src\features\log\components\LogPanel.vue
  * @Description: 按时间线列出提交历史，查看提交说明与逐文件差异。
 -->
 <template>
   <div class="panel">
-    <div class="bar">
-      <span class="count">
-        最近 {{ entries.length }} 次提交
-        <template v-if="isGit && remote && remote.branch">
-          · <span class="mono">{{ remote.branch }}</span>
-          <span
-            v-if="remote.ahead"
-            class="ab"
-            :title="`本地分支比 ${remote.upstream} 多 ${remote.ahead} 个提交`"
-          >
-            <v-icon size="12">mdi-arrow-up-bold</v-icon>{{ remote.ahead }}
-          </span>
-          <span
-            v-if="remote.behind"
-            class="ab"
-            :title="`${remote.upstream} 比本地分支多 ${remote.behind} 个提交`"
-          >
-            <v-icon size="12">mdi-arrow-down-bold</v-icon>{{ remote.behind }}
-          </span>
-        </template>
-        <template v-if="isGit && remote && remote.upstream">
-          · <span class="mono">{{ remote.upstream }}</span>
-          {{ syncing ? '同步中' : remote.fetched ? '已同步' : '未同步' }}
-        </template>
-        <template v-if="!isGit && remote">
-          · 工作副本 r{{ remote.wc_revision }}
-          <template v-if="pendingCount">· {{ pendingCount }} 个版本待更新</template>
-        </template>
-      </span>
-      <div class="bar-actions">
-        <v-switch
-          v-if="isGit"
-          v-model="logAllBranches"
-          class="allrefs"
-          label="所有分支"
-          density="compact"
-          hide-details
-          color="primary"
-          title="连本地分支、远端跟踪分支与标签一起列，便于看时间线"
-        />
-        <v-btn-toggle
-          v-model="logDiffScope"
-          density="compact"
-          variant="text"
-          divided
-          mandatory
-        >
-          <v-btn value="hunks" size="small" title="只显示改动的片段">差异</v-btn>
-          <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整文件</v-btn>
-        </v-btn-toggle>
-        <v-btn
-          size="small"
-          variant="text"
-          color="primary"
-          prepend-icon="mdi-refresh"
-          :loading="loading"
-          @click="load"
-        >
-          刷新
-        </v-btn>
-      </div>
-    </div>
-
     <p v-if="remote && remote.error" class="hint warn">
       远端没同步上：{{ remote.error }}，下面是上次同步到的记录。
     </p>
@@ -169,9 +106,6 @@
               <span class="author">{{ current.author || '（无作者）' }}</span>
               <span class="date">{{ formatDateTime(current.date) }}</span>
               <v-spacer />
-              <v-btn size="x-small" variant="text" color="primary" @click="wholeCommit">
-                整次提交的差异
-              </v-btn>
             </div>
             <pre class="message">{{ currentMessage }}</pre>
             <div
@@ -303,6 +237,16 @@
                 :error="diffError"
               >
                 <template #actions>
+                  <v-btn-toggle
+                    v-model="logDiffScope"
+                    density="compact"
+                    variant="text"
+                    divided
+                    mandatory
+                  >
+                    <v-btn value="hunks" size="small" title="只显示改动的片段">仅改动</v-btn>
+                    <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整份文件</v-btn>
+                  </v-btn-toggle>
                   <v-btn icon size="x-small" variant="text" title="收起差异" @click="toggleDiff">
                     <v-icon size="18">mdi-chevron-down</v-icon>
                   </v-btn>
@@ -362,8 +306,7 @@ const { logDiffScope, logFilesMode } = storeToRefs(preferences)
 
 const theme = useTheme()
 const dark = computed(() => theme.global.current.value.dark)
-// 时间线默认连所有分支与标签一起列；关掉就只看当前分支与它的上游。
-const logAllBranches = useStoredChoice('idex.log.all-branches', [true, false], true)
+// 时间线只看当前分支与它的上游。
 
 const isGit = computed(() => props.ws.vcs === 'git')
 
@@ -378,7 +321,6 @@ const {
   marked,
   awaitingLoad,
   loading,
-  syncing,
   moreLoading,
   exhausted,
   diffLoading,
@@ -388,12 +330,11 @@ const {
   more,
   select,
   openPath,
-  wholeCommit,
   showDeferred,
 } = useCommitLog({
   wsId: () => props.ws.id,
   refresh: () => props.refresh,
-  allBranches: logAllBranches,
+  allBranches: ref(false),
   diffScope: logDiffScope,
   isGit: () => isGit.value,
 })
@@ -446,7 +387,6 @@ const pathRows = computed(() => {
 })
 
 // SVN 没有待推送这一说，只统计服务器上还没更新到工作副本的版本。
-const pendingCount = computed(() => entries.value.filter((entry) => !entry.local).length)
 // 列表里只放提交说明的第一行，详情取整段；取不到就退回第一行。
 const currentMessage = computed(
   () =>
@@ -504,7 +444,7 @@ function toggleDiff() {
 const diffTitle = computed(() => {
   if (!current.value) return ''
   const rev = revLabel(current.value.revision)
-  return activePath.value ? `${rev}  ${activePath.value}` : `${rev}  整次提交`
+  return activePath.value ? `${rev}  ${activePath.value}` : rev
 })
 
 defineExpose({ load })
@@ -516,32 +456,6 @@ defineExpose({ load })
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-}
-/* 分支、上游这些字可以截断，右边两个切换钮不跟着缩，免得挤成滚动条。 */
-.count {
-  flex: 1 1 180px;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 0.76rem;
-  color: rgb(var(--v-theme-on-surface-variant));
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.bar-actions {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: 4px;
-  margin-left: auto;
 }
 .split {
   flex: 1 1 auto;
@@ -607,13 +521,6 @@ defineExpose({ load })
   font-size: 0.78rem;
   font-weight: 600;
   color: rgb(var(--v-theme-primary));
-}
-.ab {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  margin-left: 4px;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 .refs {
   display: flex;

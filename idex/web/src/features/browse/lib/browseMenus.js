@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:53:01
  * @FilePath: \idex\web\src\features\browse\lib\browseMenus.js
  * @Description: 浏览页的菜单与快捷键登记表，加一项就在表里加一行。
  */
@@ -29,8 +29,11 @@ export const SYMBOL_MENU = [
 
 // shift 表示要按住 Shift；Ctrl（Mac 上 Command）由处理函数统一判断。
 export const SHORTCUTS = [
+  { key: 'f', shift: false, action: 'search' },
+  { key: 'f', shift: true, action: 'search' },
   { key: 'p', shift: false, action: 'quick-open' },
   { key: 'g', shift: false, action: 'goto-line' },
   { key: 'o', shift: true, action: 'outline' },
+  { key: 'm', shift: true, action: 'problems' },
   { key: 'i', shift: false, action: 'hover' },
 ]

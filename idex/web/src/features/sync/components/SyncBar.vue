@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 22:08:05
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:28:38
+ * @LastEditTime: 2026-11-24 22:56:32
  * @FilePath: \idex\web\src\features\sync\components\SyncBar.vue
  * @Description: 源代码管理顶部的分支、拉取、推送与提交条，操作输出放在弹窗里。
 -->
@@ -89,8 +89,6 @@
         @keydown.ctrl.enter.prevent="ask('commit')"
       />
       <div class="commit-side">
-        <span v-if="isGit" class="hint">已暂存 {{ staged.length }} 项</span>
-        <span v-else class="hint">已选 {{ picked.length }} 个</span>
         <v-btn
           color="primary"
           variant="flat"
@@ -299,7 +297,11 @@ async function runPending() {
 }
 
 function openBranch() {
-  branch.pick = ''
+  // 默认选中当前分支，免得每次都要重新挑。
+  const current = (info.value.branches || []).find(
+    (item) => !item.remote && (item.current || item.name === info.value.branch),
+  )
+  branch.pick = current ? `local:${current.name}` : ''
   branch.name = ''
   branch.on = true
 }

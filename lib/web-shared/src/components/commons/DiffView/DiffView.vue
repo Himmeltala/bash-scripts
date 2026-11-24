@@ -112,12 +112,14 @@ const rows = computed(() => {
   }
 
   for (const line of lines) {
-    if (line.startsWith('Index: ') || line.startsWith('====') || line.startsWith('\\ ')) {
-      out.push({ type: 'meta', text: line })
-      continue
-    }
-    if (line.startsWith('---') || line.startsWith('+++')) {
-      out.push({ type: 'meta', text: line })
+    // 文件头、索引与「文件末尾没有换行」这类元信息不在页面上占行，标题已给路径。
+    if (
+      line.startsWith('Index: ') ||
+      line.startsWith('====') ||
+      line.startsWith('\\ ') ||
+      line.startsWith('---') ||
+      line.startsWith('+++')
+    ) {
       continue
     }
     if (line.startsWith('@@')) {
@@ -141,7 +143,6 @@ const rows = computed(() => {
       out.push(code({ type: 'ctx', sign: '', old: oldNo++, new: newNo++, text: line.slice(1) }))
       continue
     }
-    out.push({ type: 'meta', text: line })
   }
   return out
 })
@@ -544,10 +545,6 @@ defineExpose({ collect, resetEdits })
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.06);
   padding: 2px 12px;
-}
-.row.meta {
-  color: rgb(var(--v-theme-on-surface-variant));
-  padding: 1px 12px;
 }
 .ln {
   flex: 0 0 44px;

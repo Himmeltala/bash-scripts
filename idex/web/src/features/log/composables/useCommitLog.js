@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:47:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:46:00
  * @FilePath: \idex\web\src\features\log\composables\useCommitLog.js
  * @Description: 提交日志的取数：首屏、远端同步、加载更多、选中提交与差异。
  */
@@ -145,11 +145,6 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     await loadDiff(path)
   }
 
-  async function wholeCommit() {
-    activePath.value = ''
-    await loadDiff('')
-  }
-
   // 用户在右侧点了“加载差异”：记住这一份，再走正常的取差异流程。
   function showDeferred() {
     if (!activePath.value) return
@@ -225,7 +220,6 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     more,
     select,
     openPath,
-    wholeCommit,
     showDeferred,
   }
 }

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:53:01
  * @FilePath: \idex\web\src\features\browse\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -15,81 +15,6 @@
     @dragleave="onDragLeave"
     @drop="onDropFiles"
   >
-    <div class="bar">
-      <div class="left">
-        <v-text-field
-          :model-value="query"
-          density="compact"
-          variant="outlined"
-          hide-details
-          clearable
-          placeholder="搜索文件名或文件内容"
-          prepend-inner-icon="mdi-magnify"
-          class="search"
-          @update:model-value="query = $event ?? ''"
-          @keyup.enter="runSearch"
-          @keydown.esc="clearSearch"
-        />
-        <v-btn-toggle
-          v-model="mode"
-          density="compact"
-          variant="text"
-          divided
-          mandatory
-          class="modes"
-        >
-          <v-btn value="name" size="small" title="只看文件本身的名字，不看所在目录">文件名</v-btn>
-          <v-btn value="content" size="small">内容</v-btn>
-        </v-btn-toggle>
-      </div>
-      <v-btn
-        v-if="searching"
-        size="small"
-        variant="text"
-        prepend-icon="mdi-arrow-left"
-        title="退出搜索，回到目录树"
-        @click="clearSearch"
-      >
-        返回目录
-      </v-btn>
-      <v-btn
-        icon="mdi-file-find-outline"
-        size="small"
-        variant="text"
-        title="快速打开（Ctrl+P）"
-        @click="openQuickOpen"
-      />
-      <v-btn
-        icon="mdi-format-list-bulleted-type"
-        size="small"
-        variant="text"
-        title="符号大纲（Ctrl+Shift+O）"
-        @click="openOutline"
-      />
-      <v-btn
-        size="small"
-        variant="text"
-        class="problems-btn"
-        :title="`问题（${problems.length}）`"
-        @click="problemsAsk.on = true"
-      >
-        <v-badge :content="problems.length" :model-value="problems.length > 0" color="error">
-          <v-icon>mdi-alert-circle-outline</v-icon>
-        </v-badge>
-      </v-btn>
-      <v-progress-circular v-if="defining" indeterminate size="16" class="busy" />
-      <v-btn
-        size="small"
-        variant="text"
-        color="primary"
-        prepend-icon="mdi-refresh"
-        :loading="refreshing"
-        @click="refresh"
-      >
-        刷新
-      </v-btn>
-    </div>
-
     <div ref="splitRef" class="body" :class="{ resizing }">
       <aside
         class="tree"
@@ -98,15 +23,65 @@
         @mousemove="onRowMove"
         @mouseleave="cancelHover"
       >
-        <div v-if="!searching" class="tree-tools">
+        <div class="tree-head">
+          <div class="tree-tools-row">
+            <v-btn
+              :icon="searchOpen ? 'mdi-close' : 'mdi-magnify'"
+              size="x-small"
+              variant="text"
+              :title="searchOpen ? '关闭搜索（Esc）' : '搜索（Ctrl+F）'"
+              @click="searchOpen ? closeSearch() : openSearch()"
+            />
+            <v-spacer />
+            <v-btn
+              icon="mdi-collapse-all-outline"
+              size="x-small"
+              variant="text"
+              title="全部收起已展开的目录"
+              @click="collapseAll"
+            />
+          </div>
+          <template v-if="searchOpen">
+            <v-text-field
+              ref="searchRef"
+              :model-value="query"
+              density="compact"
+              variant="outlined"
+              hide-details
+              clearable
+              placeholder="搜索文件名或文件内容"
+              prepend-inner-icon="mdi-magnify"
+              class="search"
+              @update:model-value="query = $event ?? ''"
+              @keyup.enter="runSearch"
+              @keydown.esc="closeSearch"
+            />
+            <div class="tree-tools-row">
+              <v-btn-toggle
+                v-model="mode"
+                density="compact"
+                variant="text"
+                divided
+                mandatory
+                class="modes"
+              >
+                <v-btn value="name" size="small" title="只看文件本身的名字，不看所在目录">文件名</v-btn>
+                <v-btn value="content" size="small">内容</v-btn>
+              </v-btn-toggle>
+              <v-spacer />
+              <v-btn
+                v-if="searching"
+                size="small"
+                variant="text"
+                prepend-icon="mdi-arrow-left"
+                title="退出搜索，回到目录树"
+                @click="closeSearch"
+              >
+                返回目录
+              </v-btn>
+            </div>
+          </template>
           <input ref="uploadInput" type="file" multiple hidden @change="onUploadPicked" />
-          <v-btn
-            icon="mdi-collapse-all-outline"
-            size="x-small"
-            variant="text"
-            title="全部收起已展开的目录"
-            @click="collapseAll"
-          />
         </div>
         <template v-if="searching">
           <div class="result-head">
@@ -832,7 +807,6 @@ const {
 const VIEWERS = { image: ImagePreview, sheet: SheetPreview }
 // 预览切回源码的页签；不改源码的类型一直走预览。
 const sourceView = reactive(new Set())
-const refreshing = ref(false)
 // 状态栏的光标位置留在这一侧，代码索引那边只读它。
 const caret = reactive({ line: 1, column: 1 })
 // 代码索引：定义、引用、重命名、悬停、大纲与语言服务器状态。
@@ -1010,6 +984,8 @@ const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useS
 // 搜索：query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
 const preferences = usePreferencesStore()
 const { searchMode: mode } = storeToRefs(preferences)
+const searchOpen = ref(false)
+const searchRef = ref(null)
 const {
   query,
   searching,
@@ -1259,9 +1235,13 @@ function onCaret(position) {
 
 // 快捷键表在 browseMenus；这里只放 action 到处理函数的对应。
 const SHORTCUT_RUN = {
+  search: openSearch,
   'quick-open': openQuickOpen,
   'goto-line': openGotoLine,
   outline: openOutline,
+  problems: () => {
+    problemsAsk.on = true
+  },
   hover: showHoverAtCaret,
 }
 
@@ -1272,6 +1252,21 @@ function onPanelKey(event) {
   if (!hit) return
   event.preventDefault()
   SHORTCUT_RUN[hit.action]()
+}
+
+function openSearch() {
+  searchOpen.value = true
+  nextTick(() => {
+    const input = searchRef.value && searchRef.value.$el
+    const field = input && input.querySelector('input')
+    if (field) field.focus()
+  })
+}
+
+// 关闭搜索行：清掉查询、回到目录树；Ctrl+F 再打开。
+function closeSearch() {
+  clearSearch()
+  searchOpen.value = false
 }
 
 async function openQuickOpen() {
@@ -1527,25 +1522,6 @@ const {
   },
 })
 
-async function refresh() {
-  refreshing.value = true
-  try {
-    if (searching.value) {
-      await runSearch()
-      return
-    }
-    await treeRef.value?.refreshAll()
-    // 有没保存的改动就不重新读，免得草稿被磁盘上的旧内容盖掉。
-    const editor = editorOf(activePath.value)
-    if (editor && !editor.dirty) {
-      await editor.reload()
-      diskSync.markSynced(activePath.value)
-    }
-  } finally {
-    refreshing.value = false
-  }
-}
-
 // 回来时把树摊回原来的层次，读出停着的那一个页签，草稿跟着放回去；其余页签等点开再读。
 onMounted(async () => {
   loadServers()
@@ -1701,21 +1677,6 @@ onBeforeUnmount(() => {
     'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 0.84rem;
   word-break: break-all;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-}
-.left {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .busy {
   flex: 0 0 auto;
@@ -1904,8 +1865,7 @@ onBeforeUnmount(() => {
   background: rgba(var(--v-theme-on-surface), 0.1);
 }
 .search {
-  flex: 0 1 460px;
-  min-width: 180px;
+  width: 100%;
 }
 .modes {
   flex: 0 0 auto;
@@ -2106,28 +2066,24 @@ onBeforeUnmount(() => {
   overflow: auto;
   padding: 6px 4px;
 }
-/* 树顶的按钮浮在树上面：负的下边距把占位抵掉，不占文档流；sticky 让它滚动时也停在原处，
-   平时藏起来，鼠标移进左树才露出来。只有按钮本身接鼠标，底下那行照常能点。 */
-.tree-tools {
+/* 树顶固定搜索区：输入框在上，查看方式与收起按钮在下，滚动时贴住。 */
+.tree-head {
   position: sticky;
   top: 0;
   z-index: 3;
   display: flex;
-  justify-content: flex-end;
-  height: 24px;
-  margin: 0 -4px -24px;
-  padding: 0 4px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.tree:hover .tree-tools {
-  opacity: 1;
-}
-.tree-tools :deep(.v-btn) {
-  pointer-events: auto;
+  flex-direction: column;
+  gap: 4px;
+  margin: -2px -4px 6px;
+  padding: 4px;
   background: rgb(var(--v-theme-surface));
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+.tree-tools-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 .hint {
   margin: 16px;

@@ -2,57 +2,12 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:08:05
+ * @LastEditTime: 2026-11-24 22:55:31
  * @FilePath: \idex\web\src\features\changes\components\ChangesPanel.vue
  * @Description: 列出工作副本的未提交变更，按文件查看差异并直接编辑保存。
 -->
 <template>
   <div class="panel">
-    <div class="bar">
-      <div class="meta">
-        <span class="url mono" :title="info.url || ws.root">{{ info.url || ws.root }}</span>
-        <span v-if="isGit && info.branch" class="rev">{{ info.branch }}</span>
-        <span v-if="info.revision" class="rev">{{ revText }}</span>
-        <span class="count">{{ files.length }} 项变更</span>
-        <span v-if="truncated" class="count warn" title="未纳入版本控制的文件太多">
-          只列了前 200 个未纳入版本控制的文件
-        </span>
-      </div>
-      <div class="bar-actions">
-        <v-btn-toggle
-          v-model="mode"
-          variant="text"
-          divided
-          mandatory
-          class="modes"
-        >
-          <v-btn value="flat" size="small" icon="mdi-view-list-outline" title="平铺列表" />
-          <v-btn value="tree" size="small" icon="mdi-file-tree-outline" title="目录树" />
-        </v-btn-toggle>
-        <v-btn-toggle
-          v-model="diffScope"
-          density="compact"
-          variant="text"
-          divided
-          mandatory
-          class="scopes"
-        >
-          <v-btn value="hunks" size="small" title="只显示改动的片段">差异</v-btn>
-          <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整文件</v-btn>
-        </v-btn-toggle>
-        <v-btn
-          size="small"
-          variant="text"
-          color="primary"
-          prepend-icon="mdi-refresh"
-          :loading="loading"
-          @click="refreshNow"
-        >
-          刷新
-        </v-btn>
-      </div>
-    </div>
-
     <SyncBar
       :ws="ws"
       :files="files"
@@ -63,6 +18,19 @@
 
     <div ref="splitRef" class="split" :class="{ resizing }">
       <aside class="files" :style="{ '--list-width': `${listWidth}px` }">
+        <div class="list-head">
+          <v-spacer />
+          <v-btn-toggle
+            v-model="mode"
+            variant="text"
+            divided
+            mandatory
+            class="modes"
+          >
+            <v-btn value="flat" size="x-small" icon="mdi-view-list-outline" title="平铺列表" />
+            <v-btn value="tree" size="x-small" icon="mdi-file-tree-outline" title="目录树" />
+          </v-btn-toggle>
+        </div>
         <p v-if="!loading && !files.length" class="none">工作副本是干净的，没有未提交的变更。</p>
         <div v-for="group in shownGroups" :key="group.key" class="group">
           <div class="group-head">
@@ -181,6 +149,17 @@
           @dirty="onDirty"
         >
           <template #actions>
+            <v-btn-toggle
+              v-model="diffScope"
+              density="compact"
+              variant="text"
+              divided
+              mandatory
+              class="scopes"
+            >
+              <v-btn value="hunks" size="small" title="只显示改动的片段">仅改动</v-btn>
+              <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整份文件</v-btn>
+            </v-btn-toggle>
             <template v-if="dirty">
               <v-chip size="x-small" variant="flat" color="modified">未保存</v-chip>
               <v-btn size="small" variant="text" color="primary" :loading="saving" @click="saveNow">
@@ -240,7 +219,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['loaded'])
 
-const info = ref({})
 const files = ref([])
 // Git 的索引、工作区与冲突三组；SVN 没有索引，只有 files 一份。
 const status = ref(null)
@@ -305,13 +283,6 @@ const awaitingLoad = computed(() => {
   const { group, path } = selected.value
   return marked(group, path) && !revealed.value.has(keyOf(group, path))
 })
-// SVN 的版本号前面带 r，Git 给的是短 sha，原样显示。
-const revText = computed(() => {
-  const rev = info.value.revision
-  if (!rev) return ''
-  return isGit.value ? rev : `r${rev}`
-})
-
 const diffEditable = computed(
   () => editState.value.editable && !content.value.truncated && !diffLoading.value,
 )
@@ -449,7 +420,6 @@ function firstEntry() {
 }
 
 async function apply(data) {
-  info.value = data.info || {}
   files.value = data.files || []
   status.value = data.status || null
   truncated.value = !!data.truncated
@@ -587,12 +557,6 @@ async function saveNow() {
   return true
 }
 
-async function refreshNow() {
-  const outcome = await confirmLeave()
-  if (!outcome || outcome === 'saved') return
-  await load()
-}
-
 
 function onKeySave(event) {
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
@@ -647,36 +611,6 @@ defineExpose({ load })
   flex: 1 1 auto;
   min-height: 0;
 }
-.bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-}
-.bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.url {
-  font-size: 0.78rem;
-  color: rgb(var(--v-theme-on-surface-variant));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rev,
-.warn {
-  color: rgb(var(--v-theme-modified));
-}
 .count {
   font-size: 0.75rem;
   color: rgb(var(--v-theme-on-surface-variant));
@@ -705,11 +639,25 @@ defineExpose({ load })
 .group + .group {
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
+.list-head {
+  display: flex;
+  align-items: center;
+  padding: 2px 8px 4px;
+}
 .group-head {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px 2px;
+}
+/* 分组右侧的小按钮：图标跟着小号文字缩，别用默认 24px，否则图标与文字不在一条线上。 */
+.group-head :deep(.v-btn__prepend .v-icon) {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+.group-head :deep(.v-btn__prepend) {
+  margin-inline-end: 2px;
 }
 .group-title {
   font-size: 0.75rem;

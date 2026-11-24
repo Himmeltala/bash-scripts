@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:53:01
  * @FilePath: \idex\web\test\browseMenus.test.js
  * @Description: 浏览页菜单与快捷键登记表的结构约束。
  */
@@ -37,7 +37,7 @@ test('快捷键不重复，同一个键的 Shift 组合能分开', () => {
     assert.equal(seen.has(key), false, key)
     seen.add(key)
   }
-  assert.equal(['quick-open', 'goto-line', 'outline', 'hover'].includes(SHORTCUTS[0].action), true)
+  assert.equal(['search', 'quick-open', 'goto-line', 'outline', 'problems', 'hover'].includes(SHORTCUTS[0].action), true)
 })
 
 test('菜单项都有文字与图标', () => {
