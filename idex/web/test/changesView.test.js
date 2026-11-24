@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 01:10:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 01:10:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\changesView.test.js
  * @Description: 变更页的分组、差异口径与行内动作。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { groupsFor, keyOf, rowActionOf, scopeOf } from '../src/components/changes/changesView.js'
+import { groupsFor, keyOf, rowActionOf, scopeOf } from '../src/features/changes/lib/changesView.js'
 
 test('Git 三组，SVN 只有更改一组', () => {
   assert.deepEqual(

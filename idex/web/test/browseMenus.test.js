@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 00:00:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\browseMenus.test.js
  * @Description: 浏览页菜单与快捷键登记表的结构约束。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../src/components/browse/browseMenus.js'
+import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../src/features/browse/lib/browseMenus.js'
 
 const actions = (menu) => menu.filter((item) => !item.sep).map((item) => item.action)
 

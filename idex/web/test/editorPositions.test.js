@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { offsetAt } from '../src/editor/positions.js'
+import { offsetAt } from '../src/features/editor/core/positions.js'
 
 test('行列换算成文档偏移', () => {
   assert.equal(offsetAt('ab\ncd', 1, 1), 4)

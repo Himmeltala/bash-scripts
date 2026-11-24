@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { capabilityText } from '../src/components/engines/capabilities.js'
+import { capabilityText } from '../src/features/engines/lib/capabilities.js'
 
 test('Vue 接上补全与格式化后按能力说明', () => {
   assert.equal(

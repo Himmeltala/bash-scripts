@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\browseCompress.test.js
  * @Description: 目录压缩判定的回归测试。
 */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { compressiblePath } from '../src/components/browse/browseCompress.js'
+import { compressiblePath } from '../src/features/browse/lib/browseCompress.js'
 
 test('只有非根目录才有可压缩路径', () => {
   assert.equal(compressiblePath({ type: 'dir', path: 'pkg' }), 'pkg')

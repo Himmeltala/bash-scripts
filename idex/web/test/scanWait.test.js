@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\scanWait.test.js
  * @Description: 扫描等待时限的回归测试。
 */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createScanWait } from '../src/components/engines/scanWait.js'
+import { createScanWait } from '../src/features/engines/lib/scanWait.js'
 
 test('扫描等待到时限就放开重试', async () => {
   let fired = false

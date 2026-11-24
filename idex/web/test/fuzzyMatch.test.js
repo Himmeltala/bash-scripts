@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-19 02:10:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-19 02:10:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\fuzzyMatch.test.js
  * @Description: 快速打开的模糊匹配与排序。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { filterPaths, fuzzyScore } from '../src/components/browse/fuzzyMatch.js'
+import { filterPaths, fuzzyScore } from '../src/features/browse/lib/fuzzyMatch.js'
 
 test('按顺序命中才算，没命中返回 -1', () => {
   assert.equal(fuzzyScore('ab', 'a/b.js') >= 0, true)

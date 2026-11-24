@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\workspaceTabs.test.js
  * @Description: 工作区页签规则的回归测试。
 */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { needsToolDetection, workspaceTabs } from '../src/components/workspaces/workspaceTabs.js'
+import { needsToolDetection, workspaceTabs } from '../src/features/workspaces/lib/workspaceTabs.js'
 
 test('普通目录没有能力时只给浏览', () => {
   assert.deepEqual(workspaceTabs({ vcs: 'none' }), ['browse'])

@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 02:30:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 02:30:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useBrowseSearch.test.js
  * @Description: 搜索取数、结果归树与清空。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { nextTick, ref } from 'vue'
-import { useBrowseSearch } from '../src/components/browse/useBrowseSearch.js'
+import { useBrowseSearch } from '../src/features/browse/composables/useBrowseSearch.js'
 
 function setup(rows) {
   const calls = []

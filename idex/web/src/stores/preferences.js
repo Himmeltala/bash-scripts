@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\src\stores\preferences.js
  * @Description: idex 的界面偏好：变更、差异、搜索、页签与编辑器配色的本地选择。
 */
 
 import { defineStore } from 'pinia'
 import { useStoredChoice } from '@bash-scripts/web-shared'
-import { EDITOR_THEME_IDS } from '../editor/themeOptions'
+import { EDITOR_THEME_IDS } from '../features/editor/core/themeOptions'
 
 // 变更清单、差异、搜索与页签的查看方式，都记在浏览器里，换工作区保持不变。
 export const usePreferencesStore = defineStore('preferences', () => {

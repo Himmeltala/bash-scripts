@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\toolApi.test.js
  * @Description: 引擎接口表的回归测试。
 */
@@ -17,7 +17,7 @@ globalThis.fetch = async (url, options = {}) => {
   return { ok: true, status: 200, json: async () => ({ ok: true }) }
 }
 
-const { toolApi, nodeApi, jvmApi, toolsApi } = await import('../src/components/engines/toolApi.js')
+const { toolApi, nodeApi, jvmApi, toolsApi } = await import('../src/features/engines/lib/toolApi.js')
 
 function reset() {
   calls.length = 0

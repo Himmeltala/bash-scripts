@@ -1,7 +1,7 @@
 // 浏览页新建与改名的名字校验、过大文件占位的判定。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../src/components/browse/browseOps.js'
+import { PREVIEW_MAX, entryNameProblem, isHeldNode } from '../src/features/browse/lib/browseOps.js'
 
 test('普通名字放行', () => {
   for (const name of ['a.txt', '说明.md', '新 目录', 'a..b']) {

@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-19 23:58:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-19 23:58:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\previewTypes.test.js
  * @Description: 预览类型表按扩展名归类。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SOURCE_LABELS, isSvgPath, previewKindOf } from '../src/editor/previews/previewTypes.js'
+import { SOURCE_LABELS, isSvgPath, previewKindOf } from '../src/features/editor/core/previews/previewTypes.js'
 
 test('图片按扩展名认，大小写都算', () => {
   for (const name of [

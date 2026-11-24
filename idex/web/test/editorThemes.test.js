@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { EDITOR_THEMES, editorThemeExtensions, editorThemeOf } from '../src/editor/themes.js'
+import { EDITOR_THEMES, editorThemeExtensions, editorThemeOf } from '../src/features/editor/core/themes.js'
 
 test('主题表包含五套预设', () => {
   assert.deepEqual(

@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:15:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 00:15:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\diagnostics.test.js
  * @Description: 诊断的行号圆点与分类统计。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { markersOf, statsOf } from '../src/editor/diagnostics.js'
+import { markersOf, statsOf } from '../src/features/editor/core/diagnostics.js'
 
 test('一行取最重的那一级，error 不被后到的覆盖', () => {
   const markers = markersOf([

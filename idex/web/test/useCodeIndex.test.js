@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 02:45:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 02:45:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useCodeIndex.test.js
  * @Description: 代码索引的定义查询、状态栏、重命名与悬停缓存。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reactive, ref } from 'vue'
-import { useCodeIndex } from '../src/editor/useCodeIndex.js'
+import { useCodeIndex } from '../src/features/editor/composables/useCodeIndex.js'
 
 function fakeEditor(path = 'a.js') {
   return {

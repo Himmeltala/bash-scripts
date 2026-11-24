@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 16:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 16:00:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\editorHandlers.test.js
  * @Description: 语言处理器注册表：扩展名分派、服务器对齐、语言名与格式化默认值。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildIndex, handlerOf, handlers } from '../src/editor/handlers/registry.js'
+import { buildIndex, handlerOf, handlers } from '../src/features/editor/core/handlers/registry.js'
 
 test('同一扩展名注册两次直接报错', () => {
   const a = { id: 'a', extensions: ['x'] }

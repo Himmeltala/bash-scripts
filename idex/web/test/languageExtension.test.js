@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 16:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 16:00:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\languageExtension.test.js
  * @Description: CodeMirror 语言键到扩展的映射。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { languageExtension } from '../src/editor/languageExtension.js'
+import { languageExtension } from '../src/features/editor/core/languageExtension.js'
 
 test('语言键都能生成 CodeMirror 扩展', () => {
   for (const key of [

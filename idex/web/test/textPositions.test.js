@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:26:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 00:26:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\textPositions.test.js
  * @Description: 行列与字符偏移的换算。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { offsetOf } from '../src/editor/textPositions.js'
+import { offsetOf } from '../src/features/editor/core/textPositions.js'
 
 test('第一行第一列是 0，换行占一个字符', () => {
   const text = 'abc\ndefg\nh'

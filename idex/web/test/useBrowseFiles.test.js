@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 02:10:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 02:10:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useBrowseFiles.test.js
  * @Description: 浏览页新建、改名、删除的弹窗状态。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
-import { useBrowseFiles } from '../src/components/browse/useBrowseFiles.js'
+import { useBrowseFiles } from '../src/features/browse/composables/useBrowseFiles.js'
 
 function setup() {
   return useBrowseFiles({

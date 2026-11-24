@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\engineEnable.test.js
  * @Description: 引擎启用与扫描等待的回归测试。
 */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createEngineEnable } from '../src/components/engines/engineEnable.js'
+import { createEngineEnable } from '../src/features/engines/lib/engineEnable.js'
 
 function setup(overrides = {}) {
   const calls = []

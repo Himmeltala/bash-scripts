@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-18 23:19:43
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-18 23:19:43
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\browseSearchTree.test.js
  * @Description: 搜索结果按目录归树的归组、排序与收起。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSearchTree, flattenSearchTree } from '../src/components/browse/browseSearchTree.js'
+import { buildSearchTree, flattenSearchTree } from '../src/features/browse/lib/browseSearchTree.js'
 
 const nameHit = (path, size = 1) => ({ path, name: path.split('/').pop(), size })
 

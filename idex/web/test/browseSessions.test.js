@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-18 22:59:31
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-18 22:59:31
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\browseSessions.test.js
  * @Description: 浏览页签按工作区各留一份，验证存取。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { saveSession, sessionOf } from '../src/components/browse/browseSessions.js'
+import { saveSession, sessionOf } from '../src/features/browse/lib/browseSessions.js'
 
 test('没存过的返回空，空工作区 id 不记', () => {
   assert.equal(sessionOf(''), null)

@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 01:10:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 01:10:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useLeaveGuard.test.js
  * @Description: 未保存改动时的离开询问：取消、丢弃、保存。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
-import { useLeaveGuard } from '../src/components/changes/useLeaveGuard.js'
+import { useLeaveGuard } from '../src/features/changes/composables/useLeaveGuard.js'
 
 function makeGuard({ dirty = false, saveOk = true } = {}) {
   const isDirty = ref(dirty)

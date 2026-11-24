@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 17:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 17:00:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\editorForwarders.test.js
  * @Description: 代码编辑器事件转发：事件名映射与 path 注入。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { editorForwarders } from '../src/editor/forwardEvents.js'
+import { editorForwarders } from '../src/features/editor/core/forwardEvents.js'
 
 function collect(path, calls) {
   const emit = (name, payload) => calls.push([name, payload])

@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 00:50:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 00:50:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\logView.test.js
  * @Description: 提交列表的分支标签、推送状态与版本号显示。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { refsOf, revLabel, stateOf, tone } from '../src/components/log/logView.js'
+import { refsOf, revLabel, stateOf, tone } from '../src/features/log/lib/logView.js'
 
 test('分支标签去重，head、tag、upstream 各给各的图标', () => {
   const marks = refsOf(

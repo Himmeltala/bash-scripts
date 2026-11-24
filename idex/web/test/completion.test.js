@@ -6,7 +6,7 @@ import {
   latestRequests,
   snapshotMatches,
   textEditChanges,
-} from '../src/editor/completion.js'
+} from '../src/features/editor/core/completion.js'
 
 test('补全项保留标签与文档', () => {
   const [item] = completionOptions([{ label: 'foo', detail: 'def foo()', documentation: '说明' }])

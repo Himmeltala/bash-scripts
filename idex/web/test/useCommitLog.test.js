@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 02:35:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 02:35:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useCommitLog.test.js
  * @Description: 提交日志的首屏、选中、差异与加载更多。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
-import { useCommitLog } from '../src/components/log/useCommitLog.js'
+import { useCommitLog } from '../src/features/log/composables/useCommitLog.js'
 
 function entry(revision, paths = []) {
   return { revision, paths, message: `${revision} 说明`, date: '', local: true, pushed: true }

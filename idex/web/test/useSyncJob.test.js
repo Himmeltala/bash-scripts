@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 02:40:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 02:40:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useSyncJob.test.js
  * @Description: 同步任务的启动、输出流、收尾与取消。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { useSyncJob } from '../src/components/sync/useSyncJob.js'
+import { useSyncJob } from '../src/features/sync/composables/useSyncJob.js'
 
 class FakeStream {
   constructor(url) {

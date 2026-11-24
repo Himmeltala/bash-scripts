@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 01:55:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 01:55:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\useBrowseEditors.test.js
  * @Description: 浏览页页签、草稿与编辑器实例的配合。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { nextTick } from 'vue'
-import { useBrowseEditors } from '../src/components/browse/useBrowseEditors.js'
+import { useBrowseEditors } from '../src/features/browse/composables/useBrowseEditors.js'
 
 function fakeEditor(path) {
   return {

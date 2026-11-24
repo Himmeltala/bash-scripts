@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 10:30:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 10:30:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\sheetModel.test.js
  * @Description: Excel 只读预览的纯逻辑：列名、值格式、样式、建模与可见行。
  */
@@ -19,7 +19,7 @@ import {
   formatNumber,
   styleOf,
   visibleRows,
-} from '../src/editor/previews/sheetModel.js'
+} from '../src/features/editor/core/previews/sheetModel.js'
 
 test('列名与地址换算', () => {
   assert.equal(columnName(0), 'A')

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 01:25:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-20 01:25:00
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\test\syncView.test.js
  * @Description: 同步页的提交门槛、分支下拉与确认文案。
  */
@@ -17,7 +17,7 @@ import {
   findBranchOf,
   itemLabelOf,
   missingOf,
-} from '../src/components/sync/syncView.js'
+} from '../src/features/sync/lib/syncView.js'
 
 test('Git 只挡冲突，SVN 还挡未纳管与缺失', () => {
   const files = [

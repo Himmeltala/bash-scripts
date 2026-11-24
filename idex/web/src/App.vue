@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 00:59:41
+ * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -82,10 +82,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-import WorkspaceList from './components/workspaces/WorkspaceList.vue'
-import WorkspacePanel from './components/workspaces/WorkspacePanel.vue'
-import StartingServices from './components/workspaces/StartingServices.vue'
-import SettingsDialog from './components/workspaces/SettingsDialog.vue'
+import WorkspaceList from './features/workspaces/components/WorkspaceList.vue'
+import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
+import StartingServices from './features/workspaces/components/StartingServices.vue'
+import SettingsDialog from './features/workspaces/components/SettingsDialog.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
