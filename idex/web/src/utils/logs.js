@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 22:28:38
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:28:38
+ * @LastEditTime: 2026-11-24 22:58:36
  * @FilePath: \idex\web\src\utils\logs.js
  * @Description: 页面内的错误与告警记录：只留最近若干条，存在本地，供顶栏日志面板查看。
  */
@@ -33,6 +33,8 @@ function save() {
   }
 }
 
+const LEVELS = ['error', 'warning', 'info']
+
 export function addLog(level, message, detail = '') {
   const text = String(message || '').trim()
   if (!text) return
@@ -40,7 +42,7 @@ export function addLog(level, message, detail = '') {
   logs.items.unshift({
     id: `${Date.now()}-${seq}`,
     at: Date.now(),
-    level: level === 'warning' ? 'warning' : 'error',
+    level: LEVELS.includes(level) ? level : 'info',
     message: text,
     detail: String(detail || '').slice(-DETAIL_MAX),
   })

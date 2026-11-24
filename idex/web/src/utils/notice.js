@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 22:28:38
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:28:38
+ * @LastEditTime: 2026-11-24 22:58:36
  * @FilePath: \idex\web\src\utils\notice.js
  * @Description: 全页提示条，错误与告警同时写入日志面板。
  */
@@ -18,7 +18,6 @@ export const close = base.close
 
 export function toast(text, color = 'primary', detail = '') {
   base.toast(text, color)
-  if (color === 'error' || color === 'warning') {
-    addLog(color === 'error' ? 'error' : 'warning', text, detail)
-  }
+  const level = color === 'error' ? 'error' : color === 'warning' ? 'warning' : 'info'
+  addLog(level, text, detail)
 }
