@@ -13,7 +13,7 @@ case "$tool" in
     static="$repo/idex/web/dist"
     origin_var=IDEX_WEB_ORIGIN
     backend_port=8771
-    watch_dirs=("$repo/idex/lib" "$repo/lib/py-shared")
+    watch_dirs=("$repo/idex/src" "$repo/lib/py-shared")
     start_backend() {
       "$repo/idex/bin/idex" web --host "$dev_host" -p "$backend_port" --allow-write
     }
