@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 23:09:46
  * @FilePath: \idex\web\src\utils\api.js
  * @Description: idex 的接口封装与 SSE 地址，所有请求都走 /__idex/api。
 */
@@ -126,6 +126,15 @@ export const api = {
   renameApply: (ws, path, text, line, character, newName) =>
     call('POST', '/lsp/rename-apply', { ws, path, text, line, character, newName }),
   lspStatus: () => call('GET', '/lsp/status'),
+
+  // 页面日志：默认取最新 200 条，更多按 before 往前翻。
+  logs: ({ before = '', limit = 200, level = '' } = {}) =>
+    call(
+      'GET',
+      `/logs?limit=${encodeParam(limit)}${before ? `&before=${encodeParam(before)}` : ''}${level ? `&level=${encodeParam(level)}` : ''}`,
+    ),
+  addLog: (payload) => call('POST', '/logs', payload),
+  clearLogs: () => call('POST', '/logs/clear', {}),
   // 整份文件的符号大纲。
   symbols: (ws, path, text) => call('POST', '/lsp/symbols', { ws, path, text }),
   // 悬停信息：类型、函数签名、文档摘要。

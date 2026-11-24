@@ -35,6 +35,29 @@ def inside(root, target):
     return within(target, root)
 
 
-def log(msg):
+# 页面日志存储由网页进程注入；引擎脚本单独运行时没有它。
+_LOG_STORE = None
+
+
+def set_log_store(store):
+    global _LOG_STORE
+    _LOG_STORE = store
+
+
+def _level_of(msg):
+    text = str(msg)
+    if any(word in text for word in ("出错", "失败", "错误", "异常", "Traceback", "Error", "Exception")):
+        return "error"
+    if any(word in text for word in ("警告", "没有起来", "超时")):
+        return "warning"
+    return "info"
+
+
+def log(msg, detail=""):
     print(time.strftime("%H:%M:%S"), msg, file=sys.stderr, flush=True)
+    if _LOG_STORE is not None:
+        try:
+            _LOG_STORE.add(_level_of(msg), msg, detail, source="server")
+        except Exception:
+            pass
 

@@ -2,55 +2,18 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 22:28:38
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:58:36
+ * @LastEditTime: 2026-11-24 23:09:46
  * @FilePath: \idex\web\src\utils\logs.js
- * @Description: 页面内的错误与告警记录：只留最近若干条，存在本地，供顶栏日志面板查看。
+ * @Description: 页面写日志的入口：把前端提示与异常发给服务端持久化，失败不打扰用户。
  */
-import { reactive } from 'vue'
+import { api } from './api'
 
-const KEY = 'idex.logs'
-const MAX = 200
-const DETAIL_MAX = 4000
-
-function load() {
-  try {
-    const items = JSON.parse(localStorage.getItem(KEY) || '[]')
-    return Array.isArray(items) ? items.slice(0, MAX) : []
-  } catch (err) {
-    return []
-  }
-}
-
-export const logs = reactive({ items: load() })
-
-let seq = 0
-
-function save() {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(logs.items))
-  } catch (err) {
-    // 存不下就只在本次页面里保留。
-  }
-}
-
-const LEVELS = ['error', 'warning', 'info']
-
-export function addLog(level, message, detail = '') {
+export function logToServer(level, message, detail = '', source = 'frontend') {
   const text = String(message || '').trim()
   if (!text) return
-  seq += 1
-  logs.items.unshift({
-    id: `${Date.now()}-${seq}`,
-    at: Date.now(),
-    level: LEVELS.includes(level) ? level : 'info',
-    message: text,
-    detail: String(detail || '').slice(-DETAIL_MAX),
-  })
-  if (logs.items.length > MAX) logs.items.length = MAX
-  save()
-}
-
-export function clearLogs() {
-  logs.items.splice(0, logs.items.length)
-  save()
+  api
+    .addLog({ level, message: text, detail: String(detail || ''), source })
+    .catch(() => {
+      // 服务端不可用时退回只有提示条，不在这里再弹错误。
+    })
 }

@@ -2,15 +2,21 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 22:28:38
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:58:36
+ * @LastEditTime: 2026-11-24 23:09:46
  * @FilePath: \idex\web\src\features\log\components\LogCenter.vue
- * @Description: 顶栏的错误与告警入口：数量徽标、按级别筛选、展开查看详情与清空记录。
+ * @Description: 顶栏日志入口：服务端持久化的错误、告警与正常日志，分页查看与清空。
 -->
 <template>
-  <v-menu v-if="items.length" v-model="open" location="bottom end" :close-on-content-click="false" width="460">
+  <v-menu
+    v-if="total"
+    v-model="open"
+    location="bottom end"
+    :close-on-content-click="false"
+    width="480"
+  >
     <template #activator="{ props: menuProps }">
-      <v-btn v-bind="menuProps" icon variant="text" :title="`${items.length} 条错误与告警`">
-        <v-badge :content="items.length" :color="badgeColor">
+      <v-btn v-bind="menuProps" icon variant="text" :title="`${total} 条日志`">
+        <v-badge :content="total" :color="badgeColor">
           <v-icon>mdi-alert-circle-outline</v-icon>
         </v-badge>
       </v-btn>
@@ -30,13 +36,15 @@
           {{ item.title }} {{ item.count }}
         </v-chip>
         <v-spacer />
-        <v-btn size="small" variant="text" :disabled="!items.length" @click="clearAll">清空</v-btn>
+        <v-btn size="small" variant="text" :disabled="!total" @click="clearAll">清空</v-btn>
       </div>
 
       <div class="list">
-        <p v-if="!shown.length" class="none">没有{{ levelText }}。</p>
+        <p v-if="error" class="none bad">{{ error }}</p>
+        <p v-else-if="loading && !items.length" class="none">正在读取…</p>
+        <p v-else-if="!items.length" class="none">没有{{ levelText }}。</p>
         <div
-          v-for="entry in shown"
+          v-for="entry in items"
           :key="entry.id"
           class="item"
           @click="toggle(entry.id)"
@@ -52,10 +60,17 @@
             <template v-if="opened.has(entry.id)">
               <pre v-if="entry.detail" class="detail">{{ entry.detail }}</pre>
               <div class="detail-actions">
+                <span class="source">{{ entry.source }}</span>
+                <v-spacer />
                 <v-btn size="x-small" variant="text" @click.stop="copyEntry(entry)">复制</v-btn>
               </div>
             </template>
           </div>
+        </div>
+        <div v-if="hasMore" class="more">
+          <v-btn size="small" variant="text" color="primary" :loading="loading" @click="more">
+            加载更多
+          </v-btn>
         </div>
       </div>
     </v-card>
@@ -63,31 +78,29 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { copyText } from '@bash-scripts/web-shared'
-import { clearLogs, logs } from '../../../utils/logs'
+import { useLogs } from '../composables/useLogs'
 import { toast } from '../../../utils/notice'
 
-const open = ref(false)
-const level = ref('all')
-const opened = reactive(new Set())
-const items = computed(() => logs.items)
+const { items, counts, total, hasMore, loading, error, level, load, more, clear, startPolling } =
+  useLogs()
 
-const filters = computed(() => {
-  const all = items.value
-  return [
-    { value: 'all', title: '全部', count: all.length },
-    { value: 'error', title: '错误', count: all.filter((item) => item.level === 'error').length },
-    { value: 'warning', title: '告警', count: all.filter((item) => item.level === 'warning').length },
-    { value: 'info', title: '正常', count: all.filter((item) => item.level === 'info').length },
-  ]
-})
+const open = ref(false)
+const opened = reactive(new Set())
 
 const badgeColor = computed(() => {
-  if (items.value.some((item) => item.level === 'error')) return 'failed'
-  if (items.value.some((item) => item.level === 'warning')) return 'warning'
+  if (counts.error) return 'failed'
+  if (counts.warning) return 'warning'
   return 'primary'
 })
+
+const filters = computed(() => [
+  { value: 'all', title: '全部', count: total.value },
+  { value: 'error', title: '错误', count: counts.error },
+  { value: 'warning', title: '告警', count: counts.warning },
+  { value: 'info', title: '正常', count: counts.info },
+])
 
 const LEVEL_STYLE = {
   error: { icon: 'mdi-alert-circle-outline', color: 'failed' },
@@ -95,21 +108,17 @@ const LEVEL_STYLE = {
   info: { icon: 'mdi-information-outline', color: 'info' },
 }
 
-function iconOf(level) {
-  return (LEVEL_STYLE[level] || LEVEL_STYLE.info).icon
-}
-
-function colorOf(level) {
-  return (LEVEL_STYLE[level] || LEVEL_STYLE.info).color
-}
-
 const levelText = computed(
   () => ({ error: '错误', warning: '告警', info: '正常日志' })[level.value] || '日志',
 )
 
-const shown = computed(() =>
-  level.value === 'all' ? items.value : items.value.filter((item) => item.level === level.value),
-)
+function iconOf(itemLevel) {
+  return (LEVEL_STYLE[itemLevel] || LEVEL_STYLE.info).icon
+}
+
+function colorOf(itemLevel) {
+  return (LEVEL_STYLE[itemLevel] || LEVEL_STYLE.info).color
+}
 
 function timeOf(at) {
   const date = new Date(at)
@@ -128,15 +137,24 @@ async function copyEntry(entry) {
   if (ok) toast('已复制', 'primary')
 }
 
-function clearAll() {
-  clearLogs()
+async function clearAll() {
+  await clear()
   opened.clear()
 }
+
+watch(open, (on) => {
+  if (on) load()
+})
+
+onMounted(() => {
+  load()
+  startPolling()
+})
 </script>
 
 <style scoped>
 .card {
-  max-height: 520px;
+  max-height: 560px;
   display: flex;
   flex-direction: column;
 }
@@ -160,6 +178,9 @@ function clearAll() {
   padding: 18px 12px;
   color: rgb(var(--v-theme-on-surface-variant));
   font-size: 0.82rem;
+}
+.none.bad {
+  color: rgb(var(--v-theme-failed));
 }
 .item {
   display: flex;
@@ -200,7 +221,7 @@ function clearAll() {
 .detail {
   margin: 6px 0 0;
   padding: 6px 8px;
-  max-height: 200px;
+  max-height: 220px;
   overflow: auto;
   font-size: 0.72rem;
   white-space: pre-wrap;
@@ -210,6 +231,16 @@ function clearAll() {
 }
 .detail-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  margin-top: 2px;
+}
+.source {
+  font-size: 0.7rem;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.more {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
 }
 </style>

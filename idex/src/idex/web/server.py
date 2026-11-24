@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import traceback
 from pathlib import Path
 
 # 共用骨架在仓库根的 lib/py-shared 下，源码与安装后的相对层级一致。
@@ -31,9 +32,11 @@ from sse import MetricsStream
 from stores import LayoutStore
 from routes_lsp import LspRoutes
 from routes_jvm import JvmRoutes
+from routes_logs import LogRoutes
+from logs_store import LogStore
 from routes_node import NodeRoutes
 from web import ApiError, WebHandler
-from server_common import log
+from server_common import log, set_log_store
 from browse_fs import save_upload
 from routes_browse import BrowseRoutes
 from routes_vcs import VcsRoutes
@@ -300,6 +303,7 @@ READ_ROUTES = {
     "lsp/status": lambda h, m, q, b: h._lsp_status(),
     "download": lambda h, m, q, b: h._download(q, head=(m == "HEAD")),
     "operations": lambda h, m, q, b: h._latest_job(q) if m == "GET" else _NOT_HANDLED,
+    "logs": lambda h, m, q, b: h._logs_read(q) if m == "GET" else _NOT_HANDLED,
 }
 
 WRITE_ROUTES = {
@@ -330,10 +334,12 @@ WRITE_ROUTES = {
     "svn-add": lambda h, m, q, b: h._svn_add(b),
     "svn-unadd": lambda h, m, q, b: h._svn_unadd(b),
     "operations": lambda h, m, q, b: h._start_operation(b),
+    "logs": lambda h, m, q, b: h._logs_add(b),
+    "logs/clear": lambda h, m, q, b: h._logs_clear(b),
 }
 
 
-class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes, LspRoutes, WebHandler):
+class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes, LspRoutes, LogRoutes, WebHandler):
     server_version = "idex-web"
 
     static = None
@@ -350,12 +356,17 @@ class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, 
     state_stream = None
     metrics_stream = None
     api_prefix = "/__idex/api"
+    # 页面日志：读取、追加与清空都走这个文件。
+    logs = None
     # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
     allow_write = False
 
     def _error_log(self, msg):
-        # 这一侧的日志带时间戳，骨架里的默认写法没有。
-        log(msg)
+        # 这一侧的日志带时间戳，骨架里的默认写法没有；接口异常把 traceback 一并留下。
+        detail = ""
+        if sys.exc_info()[0] is not None:
+            detail = traceback.format_exc()
+        log(msg, detail)
 
 
 
@@ -550,6 +561,8 @@ def _make_handler(args, static):
         lambda: {"workspaces": Handler.store.workspaces(), "groups": Handler.groups.nodes()},
     )
     Handler.metrics_stream = MetricsStream(METRICS)
+    Handler.logs = LogStore(Path(args.state).parent / "logs.jsonl")
+    set_log_store(Handler.logs)
 
     node_home = _engine_home("nodex")
     Handler.node_service = _start_engine(
