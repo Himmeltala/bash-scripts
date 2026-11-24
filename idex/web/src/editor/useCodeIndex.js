@@ -9,7 +9,7 @@
 import { computed, reactive, ref } from 'vue'
 import { symbolAt } from '@bash-scripts/web-shared/text'
 import { api } from '../utils/api.js'
-import { extensionOf } from '../utils/browseOps.js'
+import { extensionOf } from '../components/browse/browseOps.js'
 import { LANGUAGES, SERVER_BY_EXT, SYMBOL_ICONS, SYMBOL_TITLES } from '../utils/languageServers.js'
 import { offsetOf } from './textPositions.js'
 

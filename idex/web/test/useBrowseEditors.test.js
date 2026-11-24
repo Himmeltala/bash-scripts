@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { nextTick } from 'vue'
-import { useBrowseEditors } from '../src/composables/useBrowseEditors.js'
+import { useBrowseEditors } from '../src/components/browse/useBrowseEditors.js'
 
 function fakeEditor(path) {
   return {

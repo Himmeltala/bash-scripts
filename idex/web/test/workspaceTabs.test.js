@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { needsToolDetection, workspaceTabs } from '../src/utils/workspaceTabs.js'
+import { needsToolDetection, workspaceTabs } from '../src/components/workspaces/workspaceTabs.js'
 
 test('普通目录没有能力时只给浏览', () => {
   assert.deepEqual(workspaceTabs({ vcs: 'none' }), ['browse'])

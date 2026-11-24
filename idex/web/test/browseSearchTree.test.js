@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSearchTree, flattenSearchTree } from '../src/utils/browseSearchTree.js'
+import { buildSearchTree, flattenSearchTree } from '../src/components/browse/browseSearchTree.js'
 
 const nameHit = (path, size = 1) => ({ path, name: path.split('/').pop(), size })
 

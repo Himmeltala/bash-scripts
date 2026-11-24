@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { compressiblePath } from '../src/utils/browseCompress.js'
+import { compressiblePath } from '../src/components/browse/browseCompress.js'
 
 test('只有非根目录才有可压缩路径', () => {
   assert.equal(compressiblePath({ type: 'dir', path: 'pkg' }), 'pkg')

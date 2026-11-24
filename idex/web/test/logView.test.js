@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { refsOf, revLabel, stateOf, tone } from '../src/utils/logView.js'
+import { refsOf, revLabel, stateOf, tone } from '../src/components/log/logView.js'
 
 test('分支标签去重，head、tag、upstream 各给各的图标', () => {
   const marks = refsOf(

@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
-import { useLeaveGuard } from '../src/composables/useLeaveGuard.js'
+import { useLeaveGuard } from '../src/components/changes/useLeaveGuard.js'
 
 function makeGuard({ dirty = false, saveOk = true } = {}) {
   const isDirty = ref(dirty)

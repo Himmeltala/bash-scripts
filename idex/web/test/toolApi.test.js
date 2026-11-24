@@ -17,7 +17,7 @@ globalThis.fetch = async (url, options = {}) => {
   return { ok: true, status: 200, json: async () => ({ ok: true }) }
 }
 
-const { toolApi, nodeApi, jvmApi, toolsApi } = await import('../src/utils/toolApi.js')
+const { toolApi, nodeApi, jvmApi, toolsApi } = await import('../src/components/engines/toolApi.js')
 
 function reset() {
   calls.length = 0

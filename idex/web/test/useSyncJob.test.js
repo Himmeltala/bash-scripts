@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { useSyncJob } from '../src/composables/useSyncJob.js'
+import { useSyncJob } from '../src/components/sync/useSyncJob.js'
 
 class FakeStream {
   constructor(url) {

@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { jvmKindLabel } from '../src/utils/workspaceTabs.js'
+import { jvmKindLabel } from '../src/components/workspaces/workspaceTabs.js'
 
 test('JVM 类型标签', () => {
   assert.equal(jvmKindLabel('mvn'), 'Maven')

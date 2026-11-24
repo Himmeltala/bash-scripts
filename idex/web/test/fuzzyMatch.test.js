@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { filterPaths, fuzzyScore } from '../src/utils/fuzzyMatch.js'
+import { filterPaths, fuzzyScore } from '../src/components/browse/fuzzyMatch.js'
 
 test('按顺序命中才算，没命中返回 -1', () => {
   assert.equal(fuzzyScore('ab', 'a/b.js') >= 0, true)

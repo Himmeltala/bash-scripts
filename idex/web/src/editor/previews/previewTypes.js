@@ -7,7 +7,7 @@
  * @Description: 预览类型表，扩展名归到哪种预览器，加新类型只在这里登记。
  */
 
-import { extensionOf } from '../../utils/browseOps.js'
+import { extensionOf } from '../../components/browse/browseOps.js'
 
 export const PREVIEW_TYPES = {
   image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'avif'],

@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { nextTick, ref } from 'vue'
-import { useBrowseSearch } from '../src/composables/useBrowseSearch.js'
+import { useBrowseSearch } from '../src/components/browse/useBrowseSearch.js'
 
 function setup(rows) {
   const calls = []

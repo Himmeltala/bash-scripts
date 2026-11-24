@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { pickToolWorkspace } from '../src/composables/useToolWorkspace.js'
+import { pickToolWorkspace } from '../src/components/engines/useToolWorkspace.js'
 
 test('按引擎 id 取工作区', () => {
   const state = { workspaces: [{ id: 'a' }, { id: 'b', root: '/b' }] }

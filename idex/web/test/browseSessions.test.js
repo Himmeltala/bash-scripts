@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { saveSession, sessionOf } from '../src/utils/browseSessions.js'
+import { saveSession, sessionOf } from '../src/components/browse/browseSessions.js'
 
 test('没存过的返回空，空工作区 id 不记', () => {
   assert.equal(sessionOf(''), null)

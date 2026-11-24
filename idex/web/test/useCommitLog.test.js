@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
-import { useCommitLog } from '../src/composables/useCommitLog.js'
+import { useCommitLog } from '../src/components/log/useCommitLog.js'
 
 function entry(revision, paths = []) {
   return { revision, paths, message: `${revision} 说明`, date: '', local: true, pushed: true }

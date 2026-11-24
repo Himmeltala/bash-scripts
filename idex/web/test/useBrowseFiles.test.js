@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
-import { useBrowseFiles } from '../src/composables/useBrowseFiles.js'
+import { useBrowseFiles } from '../src/components/browse/useBrowseFiles.js'
 
 function setup() {
   return useBrowseFiles({

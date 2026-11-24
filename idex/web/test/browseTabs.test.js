@@ -8,7 +8,7 @@ import {
   renameTabs,
   tabOf,
   updateTab,
-} from '../src/utils/browseTabs.js'
+} from '../src/components/browse/browseTabs.js'
 
 const a = { path: 'a.md', name: 'a.md', type: 'file', size: 10, dirty: false }
 const b = { path: 'dir/b.js', name: 'b.js', type: 'file', size: 20, dirty: false }

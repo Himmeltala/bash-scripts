@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../src/utils/browseMenus.js'
+import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../src/components/browse/browseMenus.js'
 
 const actions = (menu) => menu.filter((item) => !item.sep).map((item) => item.action)
 

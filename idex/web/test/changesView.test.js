@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { groupsFor, keyOf, rowActionOf, scopeOf } from '../src/utils/changesView.js'
+import { groupsFor, keyOf, rowActionOf, scopeOf } from '../src/components/changes/changesView.js'
 
 test('Git 三组，SVN 只有更改一组', () => {
   assert.deepEqual(

@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createEngineEnable } from '../src/utils/engineEnable.js'
+import { createEngineEnable } from '../src/components/engines/engineEnable.js'
 
 function setup(overrides = {}) {
   const calls = []

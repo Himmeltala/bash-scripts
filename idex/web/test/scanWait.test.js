@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createScanWait } from '../src/utils/scanWait.js'
+import { createScanWait } from '../src/components/engines/scanWait.js'
 
 test('扫描等待到时限就放开重试', async () => {
   let fired = false
