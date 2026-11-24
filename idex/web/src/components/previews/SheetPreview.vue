@@ -58,18 +58,20 @@
               <col style="width: 48px" />
               <col v-for="(width, col) in colWidths" :key="col" :style="{ width: `${width}px` }" />
             </colgroup>
-            <tr>
-              <th class="sheet-corner"></th>
-              <th
-                v-for="(width, col) in colWidths"
-                :key="col"
-                class="sheet-col-head"
-                :class="{ frozen: col < freezeCols }"
-                :style="frozenStyle(col)"
-              >
-                {{ columnName(col) }}
-              </th>
-            </tr>
+            <tbody>
+              <tr>
+                <th class="sheet-corner"></th>
+                <th
+                  v-for="(width, col) in colWidths"
+                  :key="col"
+                  class="sheet-col-head"
+                  :class="{ frozen: col < freezeCols }"
+                  :style="frozenStyle(col)"
+                >
+                  {{ columnName(col) }}
+                </th>
+              </tr>
+            </tbody>
           </table>
 
           <table
@@ -81,34 +83,9 @@
               <col style="width: 48px" />
               <col v-for="(width, col) in colWidths" :key="col" :style="{ width: `${width}px` }" />
             </colgroup>
-            <tr
-              v-for="row in frozenVisible"
-              :key="row.number"
-              :style="{ height: `${ROW_HEIGHT}px` }"
-            >
-              <th class="sheet-row-no">{{ row.number }}</th>
-              <td
-                v-for="cell in row.cells"
-                :key="cell.col"
-                :rowspan="cell.rowspan"
-                :colspan="cell.colspan"
-                class="sheet-cell"
-                :class="{ frozen: cell.col < freezeCols, selected: isSelected(row.number, cell.col) }"
-                :style="cellStyle(cell)"
-                @click="select(row.number, cell.col)"
-                v-text="cell.text"
-              ></td>
-            </tr>
-          </table>
-
-          <div class="sheet-body" :style="{ top: `${bodyTop}px`, width: `${totalWidth}px` }">
-            <table class="sheet-table" :style="{ width: `${totalWidth}px` }">
-              <colgroup>
-                <col style="width: 48px" />
-                <col v-for="(width, col) in colWidths" :key="col" :style="{ width: `${width}px` }" />
-              </colgroup>
+            <tbody>
               <tr
-                v-for="row in visible"
+                v-for="row in frozenVisible"
                 :key="row.number"
                 :style="{ height: `${ROW_HEIGHT}px` }"
               >
@@ -125,6 +102,35 @@
                   v-text="cell.text"
                 ></td>
               </tr>
+            </tbody>
+          </table>
+
+          <div class="sheet-body" :style="{ top: `${bodyTop}px`, width: `${totalWidth}px` }">
+            <table class="sheet-table" :style="{ width: `${totalWidth}px` }">
+              <colgroup>
+                <col style="width: 48px" />
+                <col v-for="(width, col) in colWidths" :key="col" :style="{ width: `${width}px` }" />
+              </colgroup>
+              <tbody>
+                <tr
+                  v-for="row in visible"
+                  :key="row.number"
+                  :style="{ height: `${ROW_HEIGHT}px` }"
+                >
+                  <th class="sheet-row-no">{{ row.number }}</th>
+                  <td
+                    v-for="cell in row.cells"
+                    :key="cell.col"
+                    :rowspan="cell.rowspan"
+                    :colspan="cell.colspan"
+                    class="sheet-cell"
+                    :class="{ frozen: cell.col < freezeCols, selected: isSelected(row.number, cell.col) }"
+                    :style="cellStyle(cell)"
+                    @click="select(row.number, cell.col)"
+                    v-text="cell.text"
+                  ></td>
+                </tr>
+              </tbody>
             </table>
           </div>
         </div>
@@ -200,9 +206,7 @@ const visible = computed(() =>
 const frozenVisible = computed(() =>
   model.value && freezeRows.value ? visibleRows(model.value, 0, freezeRows.value) : [],
 )
-const bodyTop = computed(
-  () => HEADER_HEIGHT + (freezeRows.value + start.value) * ROW_HEIGHT,
-)
+const bodyTop = computed(() => HEADER_HEIGHT + start.value * ROW_HEIGHT)
 const canvasHeight = computed(() =>
   model.value ? HEADER_HEIGHT + model.value.rowCount * ROW_HEIGHT : 0,
 )
