@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 16:30:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 09:23:31
- * @FilePath: \\src\\components\\browse\\useBrowseDiskSync.js
+ * @FilePath: \idex\web\src\components\browse\useBrowseDiskSync.js
  * @Description: 浏览页跟随磁盘变化：外部改动后只重读改动所在层，打开的文件先比修改时间。
  */
 import { onBeforeUnmount, ref, watch } from 'vue'

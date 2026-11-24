@@ -3,7 +3,7 @@
  * @Date: 2026-11-18 23:19:43
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-18 23:43:35
- * @FilePath: \\src\\components\\workspaces\\SettingsDialog.vue
+ * @FilePath: \idex\web\src\components\workspaces\SettingsDialog.vue
  * @Description: 全局设置：左侧分类、右侧设置项，现在只有搜索一项。
 -->
 <template>

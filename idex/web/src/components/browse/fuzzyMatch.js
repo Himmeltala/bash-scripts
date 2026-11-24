@@ -3,7 +3,7 @@
  * @Date: 2026-11-19 02:10:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-19 02:10:00
- * @FilePath: \\src\\components\\browse\\fuzzyMatch.js
+ * @FilePath: \idex\web\src\components\browse\fuzzyMatch.js
  * @Description: 快速打开的模糊匹配：按子序列命中，命中越靠前越靠前。
  */
 

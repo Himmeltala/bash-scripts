@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 08:43:57
- * @FilePath: \\src\\components\\engines\\toolApi.js
+ * @FilePath: \idex\web\src\components\engines\toolApi.js
  * @Description: Node 与 JVM 引擎的接口表，以及工作区工具能力的探测接口。
 */
 

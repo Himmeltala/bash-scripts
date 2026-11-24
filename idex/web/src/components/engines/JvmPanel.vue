@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 08:46:15
- * @FilePath: \\src\\components\\engines\\JvmPanel.vue
+ * @FilePath: \idex\web\src\components\engines\JvmPanel.vue
  * @Description: JVM 页签：扫描 Maven 或 Gradle 工作区的模块与目标，在同一张表里启动、停止、重启、打包与安装。
 -->
 

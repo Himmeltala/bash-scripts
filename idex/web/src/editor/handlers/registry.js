@@ -15,16 +15,21 @@ import vue from './vue.js'
 import { extensionOf } from './extension.js'
 
 const LIST = [typescript, vue, python, shell, java]
-const BY_EXT = new Map()
 
-for (const handler of LIST) {
-  for (const ext of handler.extensions) {
-    if (BY_EXT.has(ext)) {
-      throw new Error(`扩展名 ${ext} 重复注册`)
+export function buildIndex(list) {
+  const index = new Map()
+  for (const handler of list) {
+    for (const ext of handler.extensions) {
+      if (index.has(ext)) {
+        throw new Error(`扩展名 ${ext} 重复注册`)
+      }
+      index.set(ext, handler)
     }
-    BY_EXT.set(ext, handler)
   }
+  return index
 }
+
+const BY_EXT = buildIndex(LIST)
 
 export function handlers() {
   return [...LIST, generic]

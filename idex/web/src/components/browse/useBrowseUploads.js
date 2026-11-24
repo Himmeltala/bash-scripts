@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 16:30:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 16:30:00
- * @FilePath: \\src\\components\\browse\\useBrowseUploads.js
+ * @FilePath: \idex\web\src\components\browse\useBrowseUploads.js
  * @Description: 浏览页的上传：选文件与拖拽的落点、逐个上传的进度、同名文件的覆盖询问。
  */
 import { reactive, ref } from 'vue'

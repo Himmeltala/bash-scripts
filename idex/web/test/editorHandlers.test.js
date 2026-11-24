@@ -8,7 +8,13 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { handlerOf, handlers } from '../src/editor/handlers/registry.js'
+import { buildIndex, handlerOf, handlers } from '../src/editor/handlers/registry.js'
+
+test('同一扩展名注册两次直接报错', () => {
+  const a = { id: 'a', extensions: ['x'] }
+  const b = { id: 'b', extensions: ['x'] }
+  assert.throws(() => buildIndex([a, b]), /x/)
+})
 
 test('扩展名分派到对应处理器', () => {
   assert.equal(handlerOf('a.ts').id, 'typescript')

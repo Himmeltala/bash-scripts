@@ -3,7 +3,7 @@
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-17 23:14:15
- * @FilePath: \\src\\components\\changes\\ChangesPanel.vue
+ * @FilePath: \idex\web\src\components\changes\ChangesPanel.vue
  * @Description: 列出工作副本的未提交变更，按文件查看差异并直接编辑保存。
 -->
 <template>

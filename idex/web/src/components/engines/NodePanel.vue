@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 08:46:15
- * @FilePath: \\src\\components\\engines\\NodePanel.vue
+ * @FilePath: \idex\web\src\components\engines\NodePanel.vue
  * @Description: Node 页签：扫描 package.json 脚本，在同一张表里启动、停止并管理自定义命令。
 -->
 

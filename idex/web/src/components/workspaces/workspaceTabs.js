@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\workspaces\\workspaceTabs.js
+ * @FilePath: \idex\web\src\components\workspaces\workspaceTabs.js
  * @Description: 工作区页签的生成规则：按版本库类型与探测到的引擎能力决定显示哪些页签。
 */
 

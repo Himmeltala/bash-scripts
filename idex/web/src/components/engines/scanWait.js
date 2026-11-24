@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 20:30:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\engines\\scanWait.js
+ * @FilePath: \idex\web\src\components\engines\scanWait.js
  * @Description: 引擎扫描的等待时限：结果靠状态推送回来，等太久或换了工作区就放开按钮让用户重试。
  */
 

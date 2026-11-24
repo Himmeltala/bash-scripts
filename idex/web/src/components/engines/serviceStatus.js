@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 21:40:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\engines\\serviceStatus.js
+ * @FilePath: \idex\web\src\components\engines\serviceStatus.js
  * @Description: 服务运行状态在 Node 与 JVM 页签上的同一套文案与颜色。
  */
 

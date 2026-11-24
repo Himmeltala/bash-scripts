@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 01:40:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 01:40:00
- * @FilePath: \\src\\components\\browse\\useBrowseSearch.js
+ * @FilePath: \idex\web\src\components\browse\useBrowseSearch.js
  * @Description: 浏览页的文件名与内容搜索：防抖、结果归树、目录收起。
  */
 import { computed, getCurrentInstance, onBeforeUnmount, reactive, ref, watch } from 'vue'

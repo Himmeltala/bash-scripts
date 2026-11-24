@@ -3,7 +3,7 @@
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 08:43:57
- * @FilePath: \\src\\components\\workspaces\\StartingServices.vue
+ * @FilePath: \idex\web\src\components\workspaces\StartingServices.vue
  * @Description: 顶栏的运行中数量：定时取两个引擎的状态，点开列出服务，点一条跳到对应工作区与页签。
 -->
 <template>

@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 02:05:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 02:05:00
- * @FilePath: \\src\\components\\browse\\useBrowseFiles.js
+ * @FilePath: \idex\web\src\components\browse\useBrowseFiles.js
  * @Description: 浏览页的新建、改名与删除：弹窗状态、页签跟随与落盘。
  */
 import { computed, nextTick, reactive } from 'vue'

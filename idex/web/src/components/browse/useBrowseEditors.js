@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 01:50:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 01:50:00
- * @FilePath: \\src\\components\\browse\\useBrowseEditors.js
+ * @FilePath: \idex\web\src\components\browse\useBrowseEditors.js
  * @Description: 浏览页的页签、编辑器实例与未保存草稿，按工作区恢复。
  */
 import { computed, nextTick, ref } from 'vue'

@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\browse\\browseCompress.js
+ * @FilePath: \idex\web\src\components\browse\browseCompress.js
  * @Description: 目录压缩的判定：右键时判断节点能否压成同级 zip。
 */
 

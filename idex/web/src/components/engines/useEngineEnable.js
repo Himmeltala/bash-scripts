@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 21:40:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\engines\\useEngineEnable.js
+ * @FilePath: \idex\web\src\components\engines\useEngineEnable.js
  * @Description: 把引擎启用流程接到组件生命周期：登记或报错时放开等待，换工作区与卸载时作废旧请求。
  */
 import { onBeforeUnmount, watch } from 'vue'

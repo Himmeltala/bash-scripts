@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 01:07:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 01:07:00
- * @FilePath: \\src\\components\\changes\\useLeaveGuard.js
+ * @FilePath: \idex\web\src\components\changes\useLeaveGuard.js
  * @Description: 有未保存改动时离开前先问一句：取消、丢弃或保存。
  */
 import { ref } from 'vue'

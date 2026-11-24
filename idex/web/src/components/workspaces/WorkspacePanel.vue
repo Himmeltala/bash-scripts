@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 00:59:41
- * @FilePath: \\src\\components\\workspaces\\WorkspacePanel.vue
+ * @FilePath: \idex\web\src\components\workspaces\WorkspacePanel.vue
  * @Description: 工作区右侧的页签容器：按版本库与引擎能力切换变更、日志、同步、浏览与引擎页面。
 -->
 

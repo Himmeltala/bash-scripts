@@ -3,7 +3,7 @@
  * @Date: 2026-11-18 23:19:43
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-18 23:19:43
- * @FilePath: \\src\\components\\browse\\browseSearchTree.js
+ * @FilePath: \idex\web\src\components\browse\browseSearchTree.js
  * @Description: 把搜索命中的平铺结果按目录归成树，并摊平成能逐行渲染的列表。
  */
 

@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 21:40:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\engines\\EngineRegisterState.vue
+ * @FilePath: \idex\web\src\components\engines\EngineRegisterState.vue
  * @Description: 引擎页签未登记时的状态块：引擎不可用、正在连接与启用扫描三种，文案由调用方给。
 -->
 <template>

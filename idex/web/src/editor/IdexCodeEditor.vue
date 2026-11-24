@@ -24,21 +24,15 @@
       :theme="theme"
       :diff="diff"
       @update:model-value="$emit('update:modelValue', $event)"
-      @symbol="$emit('symbol', $event)"
-      @menu="$emit('menu', $event)"
-      @rename="$emit('rename', $event)"
-      @caret="$emit('caret', $event)"
-      @edit="$emit('edit', $event)"
-      @hover="$emit('hover', $event)"
-      @hover-end="$emit('hover-end', $event)"
-      @diffhunk="$emit('diffhunk', $event)"
+      v-on="forwarders"
     />
   </div>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { LoadingState } from '@bash-scripts/web-shared/layouts'
+import { editorForwarders } from './forwardEvents.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -54,9 +48,9 @@ const props = defineProps({
   register: { type: Function, default: null },
 })
 
-defineEmits([
+const emit = defineEmits([
   'update:modelValue',
-  'symbol',
+  'definition',
   'menu',
   'rename',
   'caret',
@@ -71,6 +65,14 @@ const innerRef = ref(null)
 const loading = ref(true)
 const loadError = ref('')
 let pendingLine = 0
+const forwarders = computed(() => editorForwarders(emit, props.path))
+
+function flushPending() {
+  if (!pendingLine || !innerRef.value) return
+  const line = pendingLine
+  pendingLine = 0
+  innerRef.value.locate(line)
+}
 
 function locate(line) {
   if (!innerRef.value) {
@@ -80,6 +82,11 @@ function locate(line) {
   innerRef.value.locate(line)
 }
 
+// 内层组件真正挂上之后再补发跳行，避免注册时 innerRef 还是空。
+watch(innerRef, (el) => {
+  if (el) flushPending()
+}, { flush: 'post' })
+
 function resetScroll() {
   innerRef.value?.resetScroll()
 }
@@ -88,18 +95,15 @@ onMounted(async () => {
   try {
     const mod = await import('./CodeEditorCm.vue')
     Inner.value = mod.default
+    // 先关掉加载态，内层才会渲染出 innerRef，再等一帧后注册定位方法。
+    loading.value = false
     await nextTick()
   } catch (error) {
     loadError.value = '代码视图加载失败，刷新页面再试。'
     loading.value = false
     return
   }
-  loading.value = false
-  if (pendingLine) {
-    const line = pendingLine
-    pendingLine = 0
-    innerRef.value?.locate(line)
-  }
+  flushPending()
   if (props.register) props.register({ locate, resetScroll })
 })
 

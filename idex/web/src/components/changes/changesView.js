@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 01:05:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 01:05:00
- * @FilePath: \\src\\components\\changes\\changesView.js
+ * @FilePath: \idex\web\src\components\changes\changesView.js
  * @Description: 变更页的分组、差异口径与行内动作，纯函数。
  */
 

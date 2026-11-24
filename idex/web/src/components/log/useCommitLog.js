@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 00:47:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:47:00
- * @FilePath: \\src\\components\\log\\useCommitLog.js
+ * @FilePath: \idex\web\src\components\log\useCommitLog.js
  * @Description: 提交日志的取数：首屏、远端同步、加载更多、选中提交与差异。
  */
 import { computed, onMounted, ref, watch } from 'vue'

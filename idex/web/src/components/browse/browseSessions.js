@@ -3,7 +3,7 @@
  * @Date: 2026-11-18 22:59:31
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-18 22:59:31
- * @FilePath: \\src\\components\\browse\\browseSessions.js
+ * @FilePath: \idex\web\src\components\browse\browseSessions.js
  * @Description: 按工作区记住浏览页的页签、停的位置与没保存的草稿。
  */
 

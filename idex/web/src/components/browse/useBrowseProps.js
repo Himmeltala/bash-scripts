@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 16:30:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 16:30:00
- * @FilePath: \\src\\components\\browse\\useBrowseProps.js
+ * @FilePath: \idex\web\src\components\browse\useBrowseProps.js
  * @Description: 浏览页的右键属性：文件或目录的类型、大小、修改时间、权限与所有者。
  */
 import { computed, reactive } from 'vue'

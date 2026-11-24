@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 01:22:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 01:22:00
- * @FilePath: \\src\\components\\sync\\useSyncJob.js
+ * @FilePath: \idex\web\src\components\sync\useSyncJob.js
  * @Description: 后台同步任务的启动、输出流、断线接回与取消。
  */
 import { computed, ref } from 'vue'

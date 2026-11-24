@@ -3,7 +3,7 @@
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-17 23:14:15
- * @FilePath: \\src\\components\\log\\LogPanel.vue
+ * @FilePath: \idex\web\src\components\log\LogPanel.vue
  * @Description: 按时间线列出提交历史，查看提交说明与逐文件差异。
 -->
 <template>

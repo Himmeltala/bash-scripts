@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 00:45:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:45:00
- * @FilePath: \\src\\components\\log\\logView.js
+ * @FilePath: \idex\web\src\components\log\logView.js
  * @Description: 提交列表上的分支标签、推送状态、版本号与文件动作配色。
  */
 import { actionOf } from '../../utils/format.js'

@@ -3,7 +3,7 @@
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 09:23:31
- * @FilePath: \\src\\components\\browse\\BrowsePanel.vue
+ * @FilePath: \idex\web\src\components\browse\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
 <template>

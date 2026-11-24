@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 01:20:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 01:20:00
- * @FilePath: \\src\\components\\sync\\syncView.js
+ * @FilePath: \idex\web\src\components\sync\syncView.js
  * @Description: 同步页的提交门槛、分支下拉与确认文案，纯函数。
  */
 import { statusOf } from '../../utils/format.js'

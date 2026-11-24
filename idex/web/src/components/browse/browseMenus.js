@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 00:00:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:00:00
- * @FilePath: \\src\\components\\browse\\browseMenus.js
+ * @FilePath: \idex\web\src\components\browse\browseMenus.js
  * @Description: 浏览页的菜单与快捷键登记表，加一项就在表里加一行。
  */
 

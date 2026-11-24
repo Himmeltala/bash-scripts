@@ -3,7 +3,7 @@
  * @Date: 2026-11-23 21:00:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-23 23:09:19
- * @FilePath: \\src\\components\\engines\\JvmSettingsDialog.vue
+ * @FilePath: \idex\web\src\components\engines\JvmSettingsDialog.vue
  * @Description: JVM 服务的参数与运行日志弹窗：模块、启动方式、附加参数与依赖刷新，改完保存到这一行。
 -->
 <template>
