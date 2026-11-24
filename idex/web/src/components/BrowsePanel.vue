@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 09:23:31
  * @FilePath: \idex\web\src\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -1306,7 +1306,7 @@ watch(activePath, (path) => {
   refreshDiagnostics(path)
   locate(path)
   // 换到一个在外部被改过的页签：只打标记，点它才换内容。
-  markActiveStale()
+  diskSync.markActiveStale()
 })
 watch(searching, (on) => {
   if (!on) {

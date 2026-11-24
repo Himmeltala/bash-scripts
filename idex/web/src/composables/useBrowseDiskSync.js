@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-20 16:30:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-21 00:00:00
+ * @LastEditTime: 2026-11-24 09:23:31
  * @FilePath: \idex\web\src\composables\useBrowseDiskSync.js
  * @Description: 浏览页跟随磁盘变化：外部改动后只重读改动所在层，打开的文件先比修改时间。
  */
@@ -148,5 +148,5 @@ export function useBrowseDiskSync({
     clearTimeout(refreshTimer)
   })
 
-  return { markSynced, loadIfChanged, activateTab, flushSearchStale }
+  return { markSynced, markActiveStale, loadIfChanged, activateTab, flushSearchStale }
 }
