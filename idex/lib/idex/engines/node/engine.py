@@ -351,6 +351,16 @@ class NodeService:
     def stop(self, run):
         self.engine.stop(str(run or ""))
 
+    def restart(self, run):
+        """停掉再按原参数起一份：stop 会等进程组退干净，随后 start 才能占回端口。"""
+        runid = str(run or "").strip()
+        row = self.state.find(RUN_KIND, runid)
+        if row is None or row[RUN_STATUS] not in LIVE:
+            raise ApiError(409, "这个服务没有在跑")
+        svc = RUN_PREFIX_RE.sub("", row[CO_ID])
+        self.stop(runid)
+        return self.start({"svc": svc})
+
     def update(self, svc, args):
         self.engine.call("update", str(svc or "").strip(), one_line(args))
 

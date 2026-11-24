@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 00:59:41
  * @FilePath: \idex\web\src\components\WorkspacePanel.vue
  * @Description: 工作区右侧的页签容器：按版本库与引擎能力切换变更、日志、同步、浏览与引擎页面。
 -->
@@ -35,8 +35,8 @@
       />
       <LogPanel v-else-if="shownTab === 'log'" :ws="ws" :refresh="repoKey" />
       <SyncPanel v-else-if="shownTab === 'sync'" :ws="ws" :refresh="repoKey" />
-      <NodePanel v-else-if="shownTab === 'node'" :ws="ws" />
-      <JvmPanel v-else-if="shownTab === 'jvm'" :ws="ws" />
+      <NodePanel v-else-if="shownTab === 'node'" :ws="ws" :focus="focus" />
+      <JvmPanel v-else-if="shownTab === 'jvm'" :ws="ws" :focus="focus" />
       <BrowsePanel v-else :ws="ws" :refresh="changesKey" :changed-paths="changedPaths" />
     </div>
   </div>
@@ -66,6 +66,8 @@ import { usePreferencesStore } from '../stores/preferences'
 
 const props = defineProps({
   ws: { type: Object, required: true },
+  // 顶栏跳转带来的定位信息，交给引擎页签高亮对应行。
+  focus: { type: Object, default: null },
 })
 
 // 页签标题与图标；顺序由 workspaceTabs 决定，这里只管怎么显示。

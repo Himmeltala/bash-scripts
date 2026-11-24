@@ -18,6 +18,7 @@ class FakeService:
     def state_payload(self): return {"workspaces": [{"id": "n1", "root": "/r"}]}
     def start(self, body): self.calls.append(("start", body)); return {"run": "r1"}
     def stop(self, run): self.calls.append(("stop", run))
+    def restart(self, run): self.calls.append(("restart", run)); return {"run": "r2"}
     def add_workspace(self, root): self.calls.append(("add", root))
 
 class BlockingService(FakeService):
@@ -73,6 +74,11 @@ class NodeDispatchTest(unittest.TestCase):
 
     def test_start(self):
         self.assertEqual(self.make()._node_dispatch("POST", "start", {}, {"svc": "s1"}), {"run": "r1"})
+
+    def test_restart(self):
+        h = self.make()
+        self.assertEqual(h._node_dispatch("POST", "restart", {}, {"run": "r1"}), {"run": "r2"})
+        self.assertEqual(h.node_service.calls, [("restart", "r1")])
 
     def test_unregistered_is_409(self):
         with self.assertRaises(ApiError) as ctx:

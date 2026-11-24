@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 08:43:57
  * @FilePath: \idex\web\src\utils\toolApi.js
  * @Description: Node 与 JVM 引擎的接口表，以及工作区工具能力的探测接口。
 */
@@ -22,6 +22,7 @@ export const nodeApi = {
   ...nodeClient.api,
   nodes: () => nodeClient.call('GET', '/nodes'),
   rescanStatus: (ws) => nodeClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
+  restart: (run) => nodeClient.call('POST', '/restart', { run }),
   setNode: (ws, node) => nodeClient.call('POST', '/node', { ws, node }),
   addCommand: (payload) => nodeClient.call('POST', '/addcmd', payload),
   removeCommand: (svc) => nodeClient.call('POST', '/delcmd', { svc }),

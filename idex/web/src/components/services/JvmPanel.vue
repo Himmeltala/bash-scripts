@@ -2,9 +2,9 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 00:59:41
  * @FilePath: \idex\web\src\components\services\JvmPanel.vue
- * @Description: JVM 页签：扫描 Maven 或 Gradle 工作区的模块与目标，启动、停止与重启服务。
+ * @Description: JVM 页签：扫描 Maven 或 Gradle 工作区的模块与目标，在同一张表里启动、停止、重启、打包与安装。
 -->
 
 <template>
@@ -62,51 +62,16 @@
         <v-btn size="small" variant="text" @click="retry">重试</v-btn>
       </div>
 
-      <div class="tabs">
-        <v-tabs v-model="tab" density="compact" color="primary" mandatory show-arrows class="tab-row">
-          <v-tab v-for="t in tabs" :key="t.value" :value="t.value">
-            {{ t.title }}
-            <v-chip v-if="count(t.value)" size="x-small" class="count" variant="text">{{ count(t.value) }}</v-chip>
-          </v-tab>
-        </v-tabs>
-        <v-spacer />
-        <v-text-field
-          v-model="filter"
-          density="compact"
-          variant="solo"
-          flat
-          hide-details
-          placeholder="按模块名筛"
-          prepend-inner-icon="mdi-magnify"
-          clearable
-          class="filter"
-        />
-      </div>
-
       <div v-if="!rows.length" class="none">
-        <template v-if="tab === 'poms'">没扫到 pom</template>
-        <template v-else>这一栏没有可执行的模块，换个栏目看看，或点重新扫描。</template>
+        没扫到可执行的模块，或点重新扫描。
       </div>
-
-      <v-table v-else-if="tab === 'poms'" density="compact" class="table">
-        <thead>
-          <tr>
-            <th>模块</th>
-            <th>路径</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in rows" :key="row.key">
-            <td class="svc-name">{{ row.title }}</td>
-            <td class="svc-path" :title="row.path">{{ row.path }}</td>
-          </tr>
-        </tbody>
-      </v-table>
 
       <ServiceTable
         v-else
         :rows="rows"
         name-title="模块"
+        :focus-id="focus && focus.kind === 'jvm' ? focus.svcId : ''"
+        :focus-seq="focus ? focus.seq : 0"
         show-restart
         @start="start"
         @stop="stop"
@@ -169,7 +134,7 @@ import {
 } from '@bash-scripts/web-shared'
 import { formatAgo as ago } from '@bash-scripts/web-shared/format'
 import { baseName } from '../../utils/format'
-import { TYPE_TEXT, moduleOf } from '../../utils/jvmFormat'
+import { TYPE_TEXT } from '../../utils/jvmFormat'
 import { STATUS_COLOR, STATUS_TEXT } from '../../utils/serviceStatus'
 import { jvmKindLabel } from '../../utils/workspaceTabs'
 import { jvmApi, toolsApi } from '../../utils/toolApi'
@@ -180,6 +145,8 @@ import { toast } from '../../utils/notice'
 const props = defineProps({
   ws: { type: Object, required: true },
   dark: { type: Boolean, default: false },
+  // 顶栏点「正在启动」跳过来时，定位到具体一行。
+  focus: { type: Object, default: null },
 })
 
 const LIVE = LIVE_STATUSES
@@ -234,37 +201,11 @@ const { enabling, waiting, enableError, enable, retry } = useEngineEnable({
 })
 
 const scanning = ref(false)
-const filter = ref('')
-const tab = ref('service')
 const custom = reactive({ on: false, path: '' })
 
 // JDK 候选随引擎状态推送过来，不再单独请求 jdks：离本机打开页面时那个接口是 403。
 const jdks = computed(() => engineState.value.jdks || [])
 const currentJdk = computed(() => engineState.value.currentJdk || '')
-
-// Maven 与 Gradle 的命令不同，页签跟着工作区类型走。
-const tabs = computed(() =>
-  kind.value === 'gradle'
-    ? [
-        { value: 'run', title: '启动' },
-        { value: 'build', title: '构建' },
-      ]
-    : [
-        { value: 'service', title: '启动服务' },
-        { value: 'package', title: '打包' },
-        { value: 'install', title: '安装' },
-        { value: 'poms', title: '模块清单' },
-      ],
-)
-
-// 换类型时如果当前栏不存在，回到第一条；同一个工作区内切来切去则保持原处。
-watch(
-  kind,
-  () => {
-    if (!tabs.value.some((item) => item.value === tab.value)) tab.value = tabs.value[0].value
-  },
-  { immediate: true },
-)
 
 // 启动、停止与设置弹窗走共享流程，启动载荷带本应用的启动方式与刷新选项。
 const {
@@ -398,32 +339,9 @@ async function restart(row) {
   }
 }
 
-function typeTab(type) {
-  if (kind.value === 'gradle') return type
-  return type === 'run' || type === 'war' ? 'service' : type
-}
-
-function matches(text) {
-  const q = filter.value.trim()
-  return !q || String(text || '').includes(q)
-}
-
-function count(value) {
-  if (value === 'poms') return 0
-  return services.value.filter((s) => typeTab(s.type) === value && matches(s.tag)).length
-}
-
-// 列表按栏目拼：每个动作只看自己的模块，日志也从这一行打开。
+// 一张表列出所有动作：启动、打包、安装混在一起，靠类型标签区分。
 const rows = computed(() => {
-  if (tab.value === 'poms') {
-    return poms.value
-      .filter(matches)
-      .map((rel) => ({ key: rel, title: moduleOf(rel), path: rel }))
-  }
-
   return services.value
-    .filter((s) => typeTab(s.type) === tab.value)
-    .filter((s) => matches(s.tag) || matches(s.display))
     .map((svc) => {
       const run = svc.run
       const live = !!run && LIVE.includes(run.status)
@@ -438,6 +356,7 @@ const rows = computed(() => {
         title: svc.tag,
         path: svc.display,
         cmd: svc.cmd,
+        typeText: TYPE_TEXT[svc.type] || '',
         action: TYPE_TEXT[svc.type] || '执行',
         live,
         blocked,
@@ -472,12 +391,10 @@ async function onSave({ args, mode, refresh: refreshDeps }) {
   }
 }
 
-// 换工作区时筛选回到全部，否则表里只剩空行，看着像模块丢了；
-// 启用请求与等待由共享流程按工作区作废。
+// 换工作区时收起自定义 JDK 弹窗；启用请求与等待由共享流程按工作区作废。
 watch(
   () => props.ws.id,
   () => {
-    filter.value = ''
     custom.on = false
   },
 )
@@ -521,26 +438,9 @@ watch(
   max-width: 240px;
   min-width: 170px;
 }
-.tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 14px 0 10px;
-  flex-wrap: wrap;
-}
-/* 栏目条与右侧筛选框同一行：页签条自己按内容宽，窄窗口里横向滚动不折行。 */
-.tab-row {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-.count {
-  margin-left: 6px;
-}
-.filter {
-  max-width: 220px;
-}
 .table {
   flex: 1 1 auto;
+  margin-top: 10px;
   min-height: 0;
   background: rgb(var(--v-theme-surface));
   border-radius: 10px;

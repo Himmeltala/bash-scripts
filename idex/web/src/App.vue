@@ -1,3 +1,12 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-24 00:56:55
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-24 00:59:41
+ * @FilePath: \idex\web\src\App.vue
+ * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
+-->
+
 <template>
   <v-app>
     <v-app-bar density="comfortable" flat border="b" class="app-bar">
@@ -9,6 +18,7 @@
         <span class="brand">idex</span>
       </v-app-bar-title>
       <v-spacer />
+      <StartingServices :workspaces="state.workspaces" @open="openService" />
       <Metrics :dark="dark" :metrics="metrics" />
       <v-btn
         :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
@@ -53,7 +63,7 @@
         />
         <main class="content">
           <div v-if="current" class="panelwrap">
-            <WorkspacePanel :key="current.id" :ws="current" />
+            <WorkspacePanel :key="current.id" :ws="current" :focus="focus" />
           </div>
           <EmptyState
             v-else
@@ -74,6 +84,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './components/WorkspaceList.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
+import StartingServices from './components/StartingServices.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
@@ -83,6 +94,7 @@ import { useSplitPane } from '@bash-scripts/web-shared'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api, metricsEventsUrl, stateEventsUrl } from './utils/api'
 import { snack, toast } from './utils/notice'
+import { usePreferencesStore } from './stores/preferences'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'idex-ws'
@@ -92,6 +104,8 @@ const state = reactive({ workspaces: [], groups: [] })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
 const adding = ref(false)
 const settingsOpen = ref(false)
+// 顶栏点正在启动的服务时记下目标，右侧页签据此滚动并高亮那一行。
+const focus = ref(null)
 
 // 左侧工作副本列表的宽度随分隔条拖动改变，双击分隔条还原；记在本地下次打开接着用。
 const shellRef = ref(null)
@@ -113,6 +127,16 @@ let metricsSource = null
 
 function select(id) {
   currentId.value = id || ''
+}
+
+const preferences = usePreferencesStore()
+
+// 顶栏点一条正在启动的服务：切到它的工作区与 Node / JVM 页签。
+function openService(item) {
+  if (!item || !item.wsId) return
+  select(item.wsId)
+  preferences.activeTab = item.kind
+  focus.value = { kind: item.kind, svcId: item.svcId, seq: Date.now() }
 }
 
 // 分组结构先照着页面的改法摆上，存失败再退回服务端那一份。

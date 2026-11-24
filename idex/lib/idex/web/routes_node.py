@@ -13,7 +13,7 @@ from sse import SSEMixin
 from web import ApiError, STREAMED, log
 
 # 这些路由要写状态文件或动进程，POST 之外的方法一律不接。
-_WRITE_ROUTES = ("start", "stop", "update", "rescan", "addcmd", "delcmd", "node")
+_WRITE_ROUTES = ("start", "stop", "restart", "update", "rescan", "addcmd", "delcmd", "node")
 
 
 class NodeRoutes(SSEMixin):
@@ -89,6 +89,8 @@ class NodeRoutes(SSEMixin):
         if route == "stop":
             self.node_service.stop(str(body.get("run", "") or ""))
             return {"ok": True}
+        if route == "restart":
+            return self.node_service.restart(str(body.get("run", "") or ""))
         if route == "update":
             self.node_service.update(
                 str(body.get("svc", "") or ""), str(body.get("args", "") or "")

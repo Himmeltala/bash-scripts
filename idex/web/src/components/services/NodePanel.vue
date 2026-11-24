@@ -2,9 +2,9 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 08:43:57
  * @FilePath: \idex\web\src\components\services\NodePanel.vue
- * @Description: Node 页签：扫描 package.json 脚本，启动、停止服务并管理自定义命令。
+ * @Description: Node 页签：扫描 package.json 脚本，在同一张表里启动、停止并管理自定义命令。
 -->
 
 <template>
@@ -63,22 +63,8 @@
         <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">添加命令</v-btn>
       </div>
 
-      <!-- 脚本一多，一堆 dev 变体与同名 build 混在一张表里不好找；超过两屏再给一排按类型的筛选。 -->
-      <div v-if="filterable" class="filters">
-        <v-chip
-          v-for="item in filters"
-          :key="item.value"
-          size="small"
-          :variant="filter === item.value ? 'flat' : 'text'"
-          :color="filter === item.value ? 'primary' : undefined"
-          @click="filter = item.value"
-        >
-          {{ item.title }}<span class="filter-count">{{ item.count }}</span>
-        </v-chip>
-      </div>
-
       <div v-if="!rows.length" class="none">
-        这个工作区没有可执行的脚本；换一条筛选看看，或者添加一条自己的命令。
+        这个工作区没有可执行的脚本；可以添加一条自己的命令。
       </div>
 
       <ServiceTable
@@ -86,8 +72,12 @@
         :rows="rows"
         name-title="脚本"
         :show-path="false"
+        show-restart
+        :focus-id="focus && focus.kind === 'node' ? focus.svcId : ''"
+        :focus-seq="focus ? focus.seq : 0"
         @start="start"
         @stop="stop"
+        @restart="restart"
         @settings="openSettings"
         @log="openLog"
       >
@@ -220,6 +210,8 @@ import { toast } from '../../utils/notice'
 const props = defineProps({
   ws: { type: Object, required: true },
   dark: { type: Boolean, default: false },
+  // 顶栏点「正在启动」跳过来时，定位到具体一行。
+  focus: { type: Object, default: null },
 })
 
 // Node 的脚本不分栏：dev/build/install 只是扫描时的归类，一张表加类型标签就够。
@@ -273,7 +265,6 @@ const { enabling, waiting, enableError, enable, retry } = useEngineEnable({
   timeoutText: '扫描超过两分钟还没回来；检查 Node 引擎后重试。',
 })
 
-const filter = ref('')
 const scanning = ref(false)
 const custom = reactive({ on: false, path: '' })
 const add = reactive({ on: false, saving: false, error: '', type: 'dev', tag: '', rel: '.', args: '' })
@@ -404,17 +395,23 @@ async function stopService(runId) {
   }
 }
 
-// 超过两屏才给筛选，三五行的时候多一排按钮反而添乱。
-const filterable = computed(() => services.value.length > 8)
+// 重启按钮的短暂忙碌态；真正的停止与重新启动在引擎里完成，状态由推送补上。
+const restarting = ref({})
 
-const filters = computed(() => {
-  const items = [{ value: '', title: '全部', count: services.value.length }]
-  for (const type of TYPE_ORDER) {
-    const count = services.value.filter((s) => s.type === type).length
-    if (count) items.push({ value: type, title: TYPE_TEXT[type], count })
+async function restart(row) {
+  restarting.value[row.svc.id] = true
+  try {
+    await nodeApi.restart(row.run.id)
+    toast('已发出重启', 'primary')
+    await refresh()
+  } catch (err) {
+    toast(`重启失败：${err.message}`, 'error')
+  } finally {
+    setTimeout(() => {
+      delete restarting.value[row.svc.id]
+    }, 3000)
   }
-  return items
-})
+}
 
 function typeRank(type) {
   const rank = TYPE_ORDER.indexOf(type)
@@ -424,7 +421,6 @@ function typeRank(type) {
 // 一张表按类型分组排：启动在前、构建其次、安装最后，同类型按名字。
 const rows = computed(() => {
   return services.value
-    .filter((s) => !filter.value || s.type === filter.value)
     .slice()
     .sort((a, b) => typeRank(a.type) - typeRank(b.type) || String(a.tag).localeCompare(String(b.tag), 'zh-CN'))
     .map((svc) => {
@@ -449,6 +445,7 @@ const rows = computed(() => {
         ago: run ? ago(run.started) : '',
         stopping: !!stopping.value[svc.id],
         starting: !!starting.value[svc.id],
+        restarting: !!restarting.value[svc.id],
       }
     })
 })
@@ -504,12 +501,10 @@ async function onSave({ args }) {
   }
 }
 
-// 换工作区时筛选回到全部，否则表里只剩空行，看着像脚本丢了；
-// 启用请求与等待由共享流程按工作区作废。
+// 换工作区时收起自定义 Node 弹窗；启用请求与等待由共享流程按工作区作废。
 watch(
   () => props.ws.id,
   () => {
-    filter.value = ''
     custom.on = false
   },
 )
@@ -564,16 +559,6 @@ onMounted(loadNodes)
 .section {
   font-size: 0.85rem;
   font-weight: 500;
-}
-.filters {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin: -2px 0 8px;
-}
-.filter-count {
-  margin-left: 6px;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 .banner {
   display: flex;

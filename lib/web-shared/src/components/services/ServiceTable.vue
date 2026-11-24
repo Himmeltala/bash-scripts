@@ -2,13 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-24 00:59:41
  * @FilePath: \lib\web-shared\src\components\services\ServiceTable.vue
  * @Description: 服务清单表格：模块、命令、状态，以及启动、停止、重启与日志等行操作。
 -->
 
 <template>
-  <v-table density="compact" class="table">
+  <v-table ref="tableEl" density="compact" class="table">
     <thead>
       <tr>
         <th style="width: 42%">{{ nameTitle }}</th>
@@ -18,7 +18,12 @@
       </tr>
     </thead>
     <tbody>
-      <tr v-for="row in rows" :key="row.key">
+      <tr
+      v-for="row in rows"
+      :key="row.key"
+      :data-svc="row.svc ? row.svc.id : ''"
+      :class="{ 'focus-row': focusId && row.svc && row.svc.id === focusId }"
+    >
         <td>
           <div class="svc-name">
             <span>{{ row.title }}</span>
@@ -102,7 +107,9 @@
 </template>
 
 <script setup>
-defineProps({
+import { nextTick, ref, watch } from 'vue'
+
+const props = defineProps({
   rows: { type: Array, required: true },
   // 第一列的表头，idex 的 Node 引擎叫脚本，mvnx 叫模块，由调用方给。
   nameTitle: { type: String, required: true },
@@ -110,9 +117,29 @@ defineProps({
   showPath: { type: Boolean, default: true },
   // 运行中的行要不要给重启按钮；只有实现 restart 接口的工具打开它。
   showRestart: { type: Boolean, default: false },
+  // 从顶栏跳过来时高亮并滚到这一行；seq 变化时重新滚动。
+  focusId: { type: String, default: '' },
+  focusSeq: { type: Number, default: 0 },
 })
 
 defineEmits(['start', 'stop', 'restart', 'settings', 'log'])
+
+const tableEl = ref(null)
+
+watch(
+  [() => props.focusId, () => props.focusSeq],
+  ([id]) => {
+    if (!id) return
+    nextTick(() => {
+      const root = tableEl.value && tableEl.value.$el
+      if (!root) return
+      const row = Array.from(root.querySelectorAll('tr[data-svc]')).find(
+        (item) => item.dataset.svc === id,
+      )
+      if (row) row.scrollIntoView({ block: 'center' })
+    })
+  },
+)
 </script>
 
 <style scoped>
@@ -121,6 +148,10 @@ defineEmits(['start', 'stop', 'restart', 'settings', 'log'])
   min-height: 0;
   background: rgb(var(--v-theme-surface));
   border-radius: 10px;
+}
+.focus-row {
+  background: rgba(var(--v-theme-primary), 0.12);
+  transition: background 0.2s ease;
 }
 .status-line {
   display: flex;
