@@ -8,27 +8,53 @@
 -->
 <template>
   <div class="sheet-pane">
-    <div v-if="state === 'loading' || state === 'building'" class="sheet-state">
-      {{ state === 'loading' ? '正在解析表格…' : '正在生成表格…' }}
-    </div>
+    <LoadingState
+      v-if="state === 'loading' || state === 'building'"
+      :hint="state === 'loading' ? '正在解析表格…' : '正在生成表格…'"
+    />
 
-    <div v-else-if="state === 'oversize'" class="sheet-state">
-      <p>这个文件有 {{ formatBytes(size) }}，超过表格预览上限，请下载后查看。</p>
-      <a class="sheet-act" :href="url" download>下载文件</a>
-    </div>
+    <EmptyState
+      v-else-if="state === 'oversize'"
+      icon="mdi-file-hidden"
+      :icon-size="40"
+      :path="path"
+      :hint="`这个文件有 ${formatBytes(size)}，超过表格预览上限，请下载后查看。`"
+    >
+      <template #actions>
+        <v-btn color="primary" variant="flat" prepend-icon="mdi-download" :href="url" download>
+          下载文件
+        </v-btn>
+      </template>
+    </EmptyState>
 
-    <div v-else-if="state === 'error'" class="sheet-state">
-      <p>无法解析这个表格。</p>
-      <div class="sheet-actions">
-        <button type="button" class="sheet-act" @click="load">重试</button>
-        <a class="sheet-act" :href="url" download>下载文件</a>
-      </div>
-    </div>
+    <EmptyState
+      v-else-if="state === 'error'"
+      icon="mdi-alert-circle-outline"
+      :icon-size="40"
+      :path="path"
+      hint="无法解析这个表格，文件可能已损坏或加密。"
+    >
+      <template #actions>
+        <v-btn variant="text" prepend-icon="mdi-refresh" @click="load">重试</v-btn>
+        <v-btn color="primary" variant="flat" prepend-icon="mdi-download" :href="url" download>
+          下载文件
+        </v-btn>
+      </template>
+    </EmptyState>
 
-    <div v-else-if="state === 'empty'" class="sheet-state">
-      <p>这个工作簿没有工作表。</p>
-      <a class="sheet-act" :href="url" download>下载文件</a>
-    </div>
+    <EmptyState
+      v-else-if="state === 'empty'"
+      icon="mdi-table-off"
+      :icon-size="40"
+      :path="path"
+      hint="这个工作簿没有工作表。"
+    >
+      <template #actions>
+        <v-btn color="primary" variant="flat" prepend-icon="mdi-download" :href="url" download>
+          下载文件
+        </v-btn>
+      </template>
+    </EmptyState>
 
     <template v-else-if="state === 'ready' && model">
       <div v-if="sheets.length > 1" class="sheet-tabs">
@@ -172,6 +198,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { EmptyState, LoadingState } from '@bash-scripts/web-shared/layouts'
 import { formatBytes } from '@bash-scripts/web-shared/format'
 import {
   SHEET_LIMITS,
@@ -364,34 +391,6 @@ function observeScroller() {
   background: rgb(var(--v-theme-surface));
   color: rgb(var(--v-theme-on-surface));
   font-size: 0.78rem;
-}
-.sheet-state {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 24px;
-  color: rgb(var(--v-theme-on-surface-variant));
-  text-align: center;
-}
-.sheet-actions {
-  display: flex;
-  gap: 8px;
-}
-.sheet-act {
-  padding: 4px 12px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.2);
-  border-radius: 4px;
-  background: rgb(var(--v-theme-surface));
-  color: rgb(var(--v-theme-primary));
-  font-size: 0.78rem;
-  text-decoration: none;
-  cursor: pointer;
-}
-.sheet-act:hover {
-  background: rgba(var(--v-theme-primary), 0.1);
 }
 .sheet-tabs {
   display: flex;
