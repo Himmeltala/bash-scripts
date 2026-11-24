@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 00:59:41
+ * @LastEditTime: 2026-11-24 08:46:15
  * @FilePath: \lib\web-shared\src\components\services\ServiceTable.vue
  * @Description: 服务清单表格：模块、命令、状态，以及启动、停止、重启与日志等行操作。
 -->
@@ -72,11 +72,19 @@
               size="small"
               variant="tonal"
               :loading="row.restarting"
+              :disabled="row.stopping"
               @click="$emit('restart', row)"
             >
               重启
             </v-btn>
-            <v-btn size="small" color="error" variant="tonal" :loading="row.stopping" @click="$emit('stop', row)">
+            <v-btn
+              size="small"
+              color="error"
+              variant="tonal"
+              :loading="row.stopping"
+              :disabled="row.restarting"
+              @click="$emit('stop', row)"
+            >
               停止
             </v-btn>
           </template>
@@ -87,14 +95,29 @@
               variant="flat"
               :disabled="row.blocked"
               :loading="row.starting"
+              :title="row.blocked ? '同一模块有任务在跑，先停下' : ''"
               @click="$emit('start', row)"
             >
               {{ row.action }}
             </v-btn>
-            <v-btn size="small" variant="text" :icon="true" title="参数" @click="$emit('settings', row)">
+            <v-btn
+              size="small"
+              variant="text"
+              :icon="true"
+              title="参数"
+              :disabled="row.starting"
+              @click="$emit('settings', row)"
+            >
               <v-icon size="20">mdi-tune</v-icon>
             </v-btn>
-            <v-btn v-if="row.run" size="small" variant="text" prepend-icon="mdi-text-box-outline" @click="$emit('log', row)">
+            <v-btn
+              v-if="row.run"
+              size="small"
+              variant="text"
+              prepend-icon="mdi-text-box-outline"
+              :disabled="row.starting"
+              @click="$emit('log', row)"
+            >
               日志
             </v-btn>
           </template>

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 00:59:41
+ * @LastEditTime: 2026-11-24 08:46:15
  * @FilePath: \idex\web\src\components\services\JvmPanel.vue
  * @Description: JVM 页签：扫描 Maven 或 Gradle 工作区的模块与目标，在同一张表里启动、停止、重启、打包与安装。
 -->
@@ -325,7 +325,8 @@ async function stopService(runId) {
 const restarting = ref({})
 
 async function restart(row) {
-  restarting.value[row.svc.id] = true
+  const id = row.svc.id
+  restarting.value[id] = true
   try {
     await jvmApi.restart(row.run.id)
     toast('已发出重启', 'primary')
@@ -333,9 +334,7 @@ async function restart(row) {
   } catch (err) {
     toast(`重启失败：${err.message}`, 'error')
   } finally {
-    setTimeout(() => {
-      delete restarting.value[row.svc.id]
-    }, 3000)
+    delete restarting.value[id]
   }
 }
 

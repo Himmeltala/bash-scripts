@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 08:43:57
+ * @LastEditTime: 2026-11-24 08:46:15
  * @FilePath: \idex\web\src\components\services\NodePanel.vue
  * @Description: Node 页签：扫描 package.json 脚本，在同一张表里启动、停止并管理自定义命令。
 -->
@@ -399,7 +399,8 @@ async function stopService(runId) {
 const restarting = ref({})
 
 async function restart(row) {
-  restarting.value[row.svc.id] = true
+  const id = row.svc.id
+  restarting.value[id] = true
   try {
     await nodeApi.restart(row.run.id)
     toast('已发出重启', 'primary')
@@ -407,9 +408,7 @@ async function restart(row) {
   } catch (err) {
     toast(`重启失败：${err.message}`, 'error')
   } finally {
-    setTimeout(() => {
-      delete restarting.value[row.svc.id]
-    }, 3000)
+    delete restarting.value[id]
   }
 }
 
@@ -420,6 +419,10 @@ function typeRank(type) {
 
 // 一张表按类型分组排：启动在前、构建其次、安装最后，同类型按名字。
 const rows = computed(() => {
+  // 同一工作区里的安装只能串行：包管理器的存储与锁文件只有一份。
+  const installLive = services.value.some(
+    (svc) => svc.type === 'install' && svc.run && LIVE.includes(svc.run.status),
+  )
   return services.value
     .slice()
     .sort((a, b) => typeRank(a.type) - typeRank(b.type) || String(a.tag).localeCompare(String(b.tag), 'zh-CN'))
@@ -436,6 +439,7 @@ const rows = computed(() => {
         typeText: TYPE_TEXT[svc.type] || '',
         action: TYPE_TEXT[svc.type] || '执行',
         live,
+        blocked: svc.type === 'install' && installLive,
         statusText: run ? STATUS_TEXT[run.status] || run.status : '',
         color: run ? STATUS_COLOR[run.status] || 'grey' : 'grey',
         icon: run ? serviceIcon(run.status) : 'mdi-circle-outline',
