@@ -337,7 +337,7 @@ class SvnWorkspace(unittest.TestCase):
                 self.call("/forget", {"ws": wid})
 
     def test_api_accepts_plain_dir(self):
-        # 仓库之外的临时目录既不在 SVN 里，也不在 Git 里，按普通目录收下，只给浏览目录。
+        # 仓库之外的临时目录既不在 SVN 里，也不在 Git 里，按普通目录收下，只给资源管理器页签。
         with tempfile.TemporaryDirectory() as tmp:
             status, data = self.call("/workspaces", {"root": tmp})
             self.assertEqual(status, 200, data)

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:19:40
  * @FilePath: \idex\web\src\features\workspaces\components\WorkspacePanel.vue
  * @Description: 工作区右侧的页签容器：按版本库与引擎能力切换变更、日志、同步、浏览与引擎页面。
 -->
@@ -34,7 +34,6 @@
         @loaded="count = $event"
       />
       <LogPanel v-else-if="shownTab === 'log'" :ws="ws" :refresh="repoKey" />
-      <SyncPanel v-else-if="shownTab === 'sync'" :ws="ws" :refresh="repoKey" />
       <NodePanel v-else-if="shownTab === 'node'" :ws="ws" :focus="focus" />
       <JvmPanel v-else-if="shownTab === 'jvm'" :ws="ws" :focus="focus" />
       <BrowsePanel v-else :ws="ws" :refresh="changesKey" :changed-paths="changedPaths" />
@@ -55,7 +54,6 @@ import BrowsePanel from '../../browse/components/BrowsePanel.vue'
 
 const ChangesPanel = defineAsyncComponent(() => import('../../changes/components/ChangesPanel.vue'))
 const LogPanel = defineAsyncComponent(() => import('../../log/components/LogPanel.vue'))
-const SyncPanel = defineAsyncComponent(() => import('../../sync/components/SyncPanel.vue'))
 // 引擎页签只在工作区真有这项能力时出现，面板按需再拉。
 const NodePanel = defineAsyncComponent(() => import('../../engines/components/NodePanel.vue'))
 const JvmPanel = defineAsyncComponent(() => import('../../engines/components/JvmPanel.vue'))
@@ -72,10 +70,9 @@ const props = defineProps({
 
 // 页签标题与图标；顺序由 workspaceTabs 决定，这里只管怎么显示。
 const TAB_META = {
-  changes: { icon: 'mdi-file-compare', label: '变更' },
-  log: { icon: 'mdi-history', label: '提交日志' },
-  sync: { icon: 'mdi-cloud-sync-outline', label: '同步' },
-  browse: { icon: 'mdi-folder-open-outline', label: '浏览目录' },
+  changes: { icon: 'mdi-source-branch', label: '源代码管理' },
+  log: { icon: 'mdi-history', label: '提交记录' },
+  browse: { icon: 'mdi-folder-open-outline', label: '资源管理器' },
   node: { icon: 'mdi-nodejs', label: 'Node' },
   jvm: { icon: 'mdi-language-java', label: 'JVM' },
 }
@@ -83,9 +80,9 @@ const TAB_META = {
 // 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
 const preferences = usePreferencesStore()
 const { activeTab: tab } = storeToRefs(preferences)
-// 不是 SVN 工作副本或 Git 仓库时留浏览目录，探测到 Node 或 JVM 工程再加对应页签。
+// 不是 SVN 工作副本或 Git 仓库时留资源管理器，探测到 Node 或 JVM 工程再加对应页签。
 const tabs = computed(() => workspaceTabs(props.ws))
-// 当前页签不可用时回到浏览目录；普通目录默认停在它，引擎页签按探测结果追加。
+// 当前页签不可用时回到资源管理器；普通目录默认停在它，引擎页签按探测结果追加。
 const shownTab = computed(() => {
   if (tabs.value.includes(tab.value)) return tab.value
   return tabs.value.includes('browse') ? 'browse' : tabs.value[0]

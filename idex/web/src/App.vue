@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:28:38
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -18,6 +18,7 @@
         <span class="brand">idex</span>
       </v-app-bar-title>
       <v-spacer />
+      <LogCenter />
       <StartingServices :workspaces="state.workspaces" @open="openService" />
       <Metrics :dark="dark" :metrics="metrics" />
       <v-btn
@@ -69,7 +70,7 @@
             v-else
             icon="mdi-source-branch"
             title="先加一个工作副本"
-            hint="选一个 SVN 工作副本、Git 仓库或普通目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、切换分支、更新、提交和浏览目录看代码；普通目录只能浏览和编辑文件。"
+            hint="选一个 SVN 工作副本、Git 仓库或普通目录，加了之后这里列出它的未提交变更、最近的提交日志，也能拉取、推送、切换分支、更新、提交，以及在资源管理器里看代码；普通目录只有资源管理器。"
             action="添加工作副本"
             @action="addWorkspace()"
           />
@@ -85,6 +86,7 @@ import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './features/workspaces/components/WorkspaceList.vue'
 import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
 import StartingServices from './features/workspaces/components/StartingServices.vue'
+import LogCenter from './features/log/components/LogCenter.vue'
 import SettingsDialog from './features/workspaces/components/SettingsDialog.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'

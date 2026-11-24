@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:08:05
  * @FilePath: \idex\web\src\features\changes\components\ChangesPanel.vue
  * @Description: 列出工作副本的未提交变更，按文件查看差异并直接编辑保存。
 -->
@@ -52,6 +52,14 @@
         </v-btn>
       </div>
     </div>
+
+    <SyncBar
+      :ws="ws"
+      :files="files"
+      :staged="stagedFiles"
+      :refresh="refresh"
+      @done="load"
+    />
 
     <div ref="splitRef" class="split" :class="{ resizing }">
       <aside class="files" :style="{ '--list-width': `${listWidth}px` }">
@@ -218,6 +226,7 @@ import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { fileIcon } from '@bash-scripts/web-shared'
 import { baseName, dirName, statusOf } from '../../../utils/format'
 import { groupsFor, keyOf, rowActionOf, scopeOf } from '../lib/changesView'
+import SyncBar from '../../sync/components/SyncBar.vue'
 import { useLeaveGuard } from '../composables/useLeaveGuard'
 import { isDeferred } from '../../../utils/deferred'
 import { toast } from '../../../utils/notice'
@@ -318,7 +327,7 @@ function tone(file) {
   return `rgb(var(--v-theme-${statusOf(file.item).color}))`
 }
 
-// 与浏览目录共用同一套文件类型图标。
+// 与资源管理器共用同一套文件类型图标。
 function iconOf(file) {
   return fileIcon(file.path)
 }
@@ -331,6 +340,8 @@ function groupList(key) {
 }
 
 const shownGroups = computed(() => groups.value.filter((group) => groupList(group.key).length))
+// 提交条只关心已暂存列表；SVN 没有索引，按工作区文件展示。
+const stagedFiles = computed(() => (isGit.value ? groupList('staged') : []))
 
 // 每组一棵树，收起状态互不影响；SVN 只有“更改”组，复用这棵。
 const trees = {

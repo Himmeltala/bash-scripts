@@ -27,12 +27,12 @@ test('普通目录探测到能力也给引擎页签', () => {
 
 test('前端工程追加 Node', () => {
   assert.deepEqual(workspaceTabs({ vcs: 'git', tools: { node: { root: '/a' } } }),
-    ['changes', 'log', 'sync', 'browse', 'node'])
+    ['changes', 'log', 'browse', 'node'])
 })
 
 test('后端工程追加 JVM', () => {
   assert.deepEqual(workspaceTabs({ vcs: 'svn', tools: { jvm: { root: '/b', kind: 'mvn' } } }),
-    ['changes', 'log', 'sync', 'browse', 'jvm'])
+    ['changes', 'log', 'browse', 'jvm'])
 })
 
 test('未检测过的工作区需要探测一次', () => {

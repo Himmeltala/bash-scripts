@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-24 22:08:05
  * @FilePath: \idex\web\src\features\workspaces\lib\workspaceTabs.js
  * @Description: 工作区页签的生成规则：按版本库类型与探测到的引擎能力决定显示哪些页签。
 */
@@ -13,7 +13,7 @@
 export function workspaceTabs(ws) {
   if (!ws) return ['browse']
   const vcs = ws.vcs === 'git' || ws.vcs === 'svn'
-  const tabs = vcs ? ['changes', 'log', 'sync', 'browse'] : ['browse']
+  const tabs = vcs ? ['changes', 'log', 'browse'] : ['browse']
   // 旧记录没有 tools 字段时为 null，探测过但没有能力时是空对象。
   if (ws.tools && ws.tools.node) tabs.push('node')
   if (ws.tools && ws.tools.jvm) tabs.push('jvm')
