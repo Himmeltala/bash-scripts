@@ -1,8 +1,8 @@
-# idex/test/test_node_detect.py
+# idex/tests/test_node_detect.py
 import subprocess, tempfile, unittest
 from pathlib import Path
 
-ENGINE = Path(__file__).resolve().parents[1] / "lib" / "idex" / "engines" / "node" / "engine.sh"
+ENGINE = Path(__file__).resolve().parents[1] / "src" / "idex" / "engines" / "node" / "engine.sh"
 
 class DetectTest(unittest.TestCase):
     def test_prints_workspace_root(self):

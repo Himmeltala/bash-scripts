@@ -2,7 +2,7 @@ import sys, tempfile, unittest
 from pathlib import Path
 
 sys.path[:0] = [
-    str(Path(__file__).resolve().parents[1] / "lib" / "idex"),
+    str(Path(__file__).resolve().parents[1] / "src" / "idex"),
     str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "commons"),
     str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "services"),
 ]

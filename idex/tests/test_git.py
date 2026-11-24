@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SERVER_PY = HERE.parent / "lib" / "idex" / "web" / "server.py"
+SERVER_PY = HERE.parent / "src" / "idex" / "web" / "server.py"
 
 # 测试按 python3 -I 跑，共享层不在 sys.path 上，显式加进去。
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 gitmod = load_module("idex_server", SERVER_PY)
-WEB = HERE.parent / "lib" / "idex" / "web"
+WEB = HERE.parent / "src" / "idex" / "web"
 sys.path.insert(0, str(WEB))
 # 重构后函数分散到各模块；用例仍从一个命名空间取，测试侧合并，产品代码不加重导出。
 for _name in ("browse_fs", "git_query", "vcs_ops", "vcs_summary", "server_common", "server_stores", "vcs_common"):

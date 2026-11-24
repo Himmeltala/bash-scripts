@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SERVER = HERE.parent / "lib" / "idex" / "web" / "server.py"
+SERVER = HERE.parent / "src" / "idex" / "web" / "server.py"
 
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))

@@ -15,8 +15,8 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [
     str(REPO / "lib" / "py-shared" / "commons"),
     str(REPO / "lib" / "py-shared" / "services"),
-    str(REPO / "idex" / "lib" / "idex"),
-    str(REPO / "idex" / "lib" / "idex" / "web"),
+    str(REPO / "idex" / "src" / "idex"),
+    str(REPO / "idex" / "src" / "idex" / "web"),
 ]
 from testkit import json_call, read_sse_event, serve
 
@@ -329,7 +329,7 @@ class EngineStartupTest(WiringTestBase):
 
             node = FakeNodeEngine.instances[0]
             jvm = FakeJvmEngine.instances[0]
-            script = str(REPO / "idex/lib/idex/engines/node/engine.sh")
+            script = str(REPO / "idex/src/idex/engines/node/engine.sh")
             node_home = cache / "nodex" / "web"
             self.assertEqual(node.args, (script, node_home, node_home / "custom.tsv"))
             self.assertEqual(jvm.args, (cache / "jvmx" / "web",))

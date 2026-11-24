@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-WEB = HERE.parent / "lib" / "idex" / "web"
+WEB = HERE.parent / "src" / "idex" / "web"
 FAKE = HERE / "fake_lsp.py"
 FAKE_TS = HERE / "fake_tsserver.py"
 

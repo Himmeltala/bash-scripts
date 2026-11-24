@@ -1,6 +1,6 @@
 # idex 网页前端
 
-源码在 `src/`，Vite 打包到 `../lib/idex/web/static`。`idex web` 跑的是 `static/` 里的产物。
+源码在 `src/`，Vite 打包到 `dist/`。`idex web` 跑的是 `dist/` 里的产物。
 
 ## 打包
 

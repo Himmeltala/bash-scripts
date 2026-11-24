@@ -22,7 +22,7 @@ web_command() {
   [[ "$RV_PORT" =~ ^[0-9]+$ ]] && ((RV_PORT >= 0 && RV_PORT <= 65535)) ||
     { web_fail "端口不对：$RV_PORT" "$EXIT_USAGE"; return; }
   # 报错里用 <工具>/web/... 的短路径：WEB_STATIC_DIR 往上三级是 <工具> 目录。
-  page_rel=${WEB_PAGE#"${WEB_STATIC_DIR%/*/*/*}/"}
+  page_rel=${WEB_PAGE#"${WEB_STATIC_DIR%/*/*}/"}
   [[ -f "$WEB_PAGE" ]] ||
     { web_fail "缺 $page_rel，前端还没打包（见 $WEB_TOOL/web/README.md）" "$EXIT_USAGE"; return; }
   if declare -F web_command_precheck >/dev/null; then

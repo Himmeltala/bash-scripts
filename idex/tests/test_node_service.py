@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib" / "idex"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "idex"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "services"))
 
@@ -22,7 +22,7 @@ from stores import AliasStore, LayoutStore
 from web import ApiError
 
 FS = "\x1f"
-ENGINE_SH = Path(__file__).resolve().parents[1] / "lib" / "idex" / "engines" / "node" / "engine.sh"
+ENGINE_SH = Path(__file__).resolve().parents[1] / "src" / "idex" / "engines" / "node" / "engine.sh"
 
 
 def make_node(home):

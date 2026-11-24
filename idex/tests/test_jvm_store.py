@@ -8,7 +8,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(REPO / "lib" / "py-shared" / "services"))
-sys.path.insert(0, str(REPO / "idex" / "lib" / "idex"))
+sys.path.insert(0, str(REPO / "idex" / "src" / "idex"))
 
 from fileio import read_json, write_json
 from engines.jvm.engine import App

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "idex 的网页界面，由 vite 打包进 idex/lib/idex/web/static",
+  "description": "idex 的网页界面，由 vite 打包进 idex/web/dist",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

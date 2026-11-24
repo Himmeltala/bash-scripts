@@ -12,7 +12,7 @@ readonly WEB_ATTACH_TIMEOUT=20
 readonly WEB_HOME="$CACHE_DIR/web"
 readonly WEB_STATE_FILE="$WEB_HOME/state.json"
 readonly WEB_API_PREFIX='/__idex/api'
-readonly WEB_PAGE="$idex_dir/idex/web/static/index.html"
+readonly WEB_PAGE="$idex_dir/../web/dist/index.html"
 
 # idex 不接网页状态层，web_fail 与 web_python 留在这里供共享的 web_command 用。
 web_fail() {
@@ -33,9 +33,9 @@ web_python() {
 
 # web_command 的公共流程在 lib/shell-shared/services/web-command.sh，这里只给参数。
 WEB_TOOL='idex'
-WEB_ROOT="$idex_dir/idex/web"
+WEB_ROOT="$idex_dir/../src/idex/web"
 WEB_SERVER_PY="$WEB_ROOT/server.py"
-WEB_STATIC_DIR="$WEB_ROOT/static"
+WEB_STATIC_DIR="$idex_dir/../web/dist"
 WEB_READY_MARKER='IDEX_WEB_READY'
 WEB_PYTHON_ENV='IDEX_PYTHON'
 # --json 时只打一行 JSON；idex 要等转发进程退出，脚本拿到的服务才算收尾。

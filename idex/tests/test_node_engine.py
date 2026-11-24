@@ -1,7 +1,7 @@
 import sys, unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib" / "idex"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "idex"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib" / "py-shared" / "services"))
 from engines.node import engine

@@ -9,14 +9,14 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SERVER = HERE.parent / "lib" / "idex" / "web" / "server.py"
+SERVER = HERE.parent / "src" / "idex" / "web" / "server.py"
 
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import json_call, load_module, serve
 
 web = load_module("idex_web_server_plain", SERVER)
-vcs_mod = load_module("idex_vcs_summary_plain", HERE.parent / "lib" / "idex" / "web" / "vcs_summary.py")
+vcs_mod = load_module("idex_vcs_summary_plain", HERE.parent / "src" / "idex" / "web" / "vcs_summary.py")
 
 
 class PlainDirTest(unittest.TestCase):

@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SERVER = HERE.parent / "lib" / "idex" / "web" / "server.py"
+SERVER = HERE.parent / "src" / "idex" / "web" / "server.py"
 
 # 测试按 python3 -I 跑，共享层不在 sys.path 上，显式加进去。
 sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "commons"))
@@ -18,7 +18,7 @@ sys.path.insert(0, str(HERE.parent.parent / "lib" / "py-shared" / "services"))
 from testkit import load_module, read_sse_event, serve
 
 web = load_module("idex_web_server", SERVER)
-hub = load_module("idex_event_hub", HERE.parent / "lib" / "idex" / "web" / "event_hub.py")
+hub = load_module("idex_event_hub", HERE.parent / "src" / "idex" / "web" / "event_hub.py")
 
 
 def workspace(wid, root):

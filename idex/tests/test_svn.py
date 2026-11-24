@@ -16,7 +16,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SERVER_PY = HERE.parent / "lib" / "idex" / "web" / "server.py"
+SERVER_PY = HERE.parent / "src" / "idex" / "web" / "server.py"
 
 
 def load_server():
@@ -27,7 +27,7 @@ def load_server():
 
 
 svnmod = load_server()
-WEB = HERE.parent / "lib" / "idex" / "web"
+WEB = HERE.parent / "src" / "idex" / "web"
 sys.path.insert(0, str(WEB))
 # 重构后函数分散到各模块；用例仍从一个命名空间取，测试侧合并，产品代码不加重导出。
 for _name in ("svn_query", "vcs_ops", "vcs_common", "vcs_summary", "vcs_cli", "browse_fs", "server_common", "server_stores"):

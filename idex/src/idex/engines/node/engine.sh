@@ -6,7 +6,7 @@
 
 set -uo pipefail
 
-# 本文件在 <仓库>/idex/lib/idex/engines/node/，向上五级是仓库根。
+# 本文件在 <仓库>/idex/src/idex/engines/node/，向上五级是仓库根。
 engine_dir=${BASH_SOURCE[0]%/*}
 [[ "$engine_dir" == "${BASH_SOURCE[0]}" ]] && engine_dir='.'
 engine_dir=$(cd "$engine_dir" && pwd)

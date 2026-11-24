@@ -7,7 +7,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [
     str(REPO / "lib" / "py-shared" / "commons"),
     str(REPO / "lib" / "py-shared" / "services"),
-    str(REPO / "idex" / "lib" / "idex" / "web"),
+    str(REPO / "idex" / "src" / "idex" / "web"),
 ]
 from server_stores import Workspaces
 from web import ApiError

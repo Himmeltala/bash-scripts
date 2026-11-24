@@ -10,7 +10,7 @@ dev_host=${DEV_HOST:-127.0.0.1}
 case "$tool" in
   idex)
     web_dir="$repo/idex/web"
-    static="$repo/idex/lib/idex/web/static"
+    static="$repo/idex/web/dist"
     origin_var=IDEX_WEB_ORIGIN
     backend_port=8771
     watch_dirs=("$repo/idex/lib" "$repo/lib/py-shared")
