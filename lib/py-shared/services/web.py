@@ -6,12 +6,9 @@
 # @Description: 网页进程的公共骨架：请求路由、JSON 回话、静态页面、监听地址。
 
 import json
-import os
 import shutil
 import socket
 import sys
-import tempfile
-import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -72,31 +69,6 @@ CONTENT_TYPES = {
     ".zip": "application/zip",
     ".map": "application/json; charset=utf-8",
 }
-
-
-def zip_dir(src, skip=()):
-    """把目录压进临时 zip，返回 (临时路径, 字节数)；子项名字在 skip 里的跳过。"""
-    src = Path(src)
-    top = src.name or "download"
-    handle = tempfile.NamedTemporaryFile(prefix="web-", suffix=".zip", delete=False)
-    try:
-        with handle, zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as bundle:
-            added = False
-            for dirpath, dirnames, filenames in os.walk(src):
-                dirnames[:] = sorted(d for d in dirnames if d not in skip)
-                for name in sorted(filenames):
-                    full = os.path.join(dirpath, name)
-                    if os.path.islink(full) or not os.path.isfile(full):
-                        continue
-                    bundle.write(full, os.path.join(top, os.path.relpath(full, src)))
-                    added = True
-            if not added:
-                bundle.writestr(top + "/", b"")
-    except BaseException:
-        if os.path.exists(handle.name):
-            os.unlink(handle.name)
-        raise
-    return handle.name, os.path.getsize(handle.name)
 
 
 class WebServer(ThreadingHTTPServer):

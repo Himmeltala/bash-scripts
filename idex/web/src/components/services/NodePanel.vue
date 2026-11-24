@@ -220,6 +220,12 @@ const TYPE_TEXT = {
   build: '打包',
   install: '安装',
 }
+// 类型列的颜色：启动蓝、打包橙、安装绿。
+const TYPE_COLOR = {
+  dev: 'primary',
+  build: 'warning',
+  install: 'success',
+}
 const LIVE = LIVE_STATUSES
 
 const ENGINE_LABELS = {
@@ -437,6 +443,7 @@ const rows = computed(() => {
         path: svc.display,
         cmd: svc.cmd,
         typeText: TYPE_TEXT[svc.type] || '',
+        typeColor: TYPE_COLOR[svc.type] || 'grey',
         action: TYPE_TEXT[svc.type] || '执行',
         live,
         blocked: svc.type === 'install' && installLive,

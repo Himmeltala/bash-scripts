@@ -8,8 +8,8 @@ sys.path[:0] = [
     str(REPO / "lib" / "py-shared" / "services"),
     str(REPO / "idex" / "src" / "idex" / "web"),
 ]
-from web import ApiError
-from routes_browse import _browse_compress
+from web import ApiError, STREAMED
+from routes_browse import BrowseRoutes, _browse_compress
 
 class CompressTest(unittest.TestCase):
     def setUp(self):
@@ -122,6 +122,25 @@ class CompressTest(unittest.TestCase):
                 _browse_compress(self.handler, {"ws": "i1", "path": "pkg"})
         self.assertEqual(ctx.exception.status, 400)
         self.assertIn("没有生成包文件", ctx.exception.message)
+        self.assertFalse((self.root / "pkg.zip").exists())
+
+    def test_directory_download_uses_zipx(self):
+        """下载目录与「压缩」共用 zipx，包只走临时文件，不落到工作区里。"""
+        fake, recorder = self.make_zipx()
+        sent = {}
+        handler = type("H", (), {})()
+        handler._ws = lambda query: {"id": "i1", "root": str(self.root)}
+        handler._send_download = lambda path, name, head=False: sent.update(
+            path=path, name=name, exists=Path(path).exists()
+        )
+        with mock.patch("routes_browse.zipx_command", return_value=fake):
+            result = BrowseRoutes._download(handler, {"path": ["pkg"]})
+        self.assertIs(result, STREAMED)
+        self.assertEqual(sent["name"], "pkg.zip")
+        self.assertTrue(sent["exists"])
+        self.assertEqual((recorder / "cwd").read_text().strip(), str(self.root))
+        self.assertEqual((recorder / "argv").read_text().splitlines()[:2], ["pack", "pkg"])
+        self.assertFalse(Path(sent["path"]).exists())
         self.assertFalse((self.root / "pkg.zip").exists())
 
     def test_exec_failure_is_503(self):

@@ -12,6 +12,7 @@
     <thead>
       <tr>
         <th style="width: 42%">{{ nameTitle }}</th>
+        <th v-if="hasTypes" style="width: 92px">类型</th>
         <th>参数</th>
         <th style="width: 200px">状态</th>
         <th style="width: 230px"></th>
@@ -27,10 +28,14 @@
         <td>
           <div class="svc-name">
             <span>{{ row.title }}</span>
-            <!-- 同一张表里混着启动、构建、安装时靠它区分；不分栏的调用方不用给。 -->
-            <v-chip v-if="row.typeText" size="x-small" variant="tonal" class="type-chip">{{ row.typeText }}</v-chip>
           </div>
           <div v-if="showPath && row.path" class="svc-path" :title="row.path">{{ row.path }}</div>
+        </td>
+        <td v-if="hasTypes">
+          <!-- 启动、打包、安装各用一种颜色；不分类型的调用方这一列不出现。 -->
+          <v-chip size="small" variant="tonal" :color="row.typeColor || 'grey'">
+            {{ row.typeText }}
+          </v-chip>
         </td>
         <td>
           <div class="cmd" :title="row.cmd">{{ row.cmd }}</div>
@@ -130,7 +135,7 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   rows: { type: Array, required: true },
@@ -148,6 +153,8 @@ const props = defineProps({
 defineEmits(['start', 'stop', 'restart', 'settings', 'log'])
 
 const tableEl = ref(null)
+// 同一张表里混着启动、打包、安装时才有类型列。
+const hasTypes = computed(() => props.rows.some((row) => row.typeText))
 
 watch(
   [() => props.focusId, () => props.focusSeq],
@@ -197,10 +204,6 @@ watch(
   align-items: center;
   gap: 8px;
   font-weight: 500;
-}
-.type-chip {
-  font-size: 0.7rem;
-  height: 18px;
 }
 .svc-path,
 .meta {

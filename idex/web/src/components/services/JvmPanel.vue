@@ -78,7 +78,20 @@
         @restart="restart"
         @settings="openSettings"
         @log="openLog"
-      />
+      >
+        <template #row-extra="{ row }">
+          <v-btn
+            v-if="row.run && row.run.artifact"
+            size="small"
+            variant="text"
+            prepend-icon="mdi-download"
+            :href="jvmApi.downloadUrl(row.run.id)"
+            :title="`${row.run.artifact.name} · ${formatBytes(row.run.artifact.size)}`"
+          >
+            下载
+          </v-btn>
+        </template>
+      </ServiceTable>
     </template>
 
     <JvmSettingsDialog
@@ -132,9 +145,9 @@ import {
   serviceIcon,
   useServiceActions,
 } from '@bash-scripts/web-shared'
-import { formatAgo as ago } from '@bash-scripts/web-shared/format'
+import { formatAgo as ago, formatBytes } from '@bash-scripts/web-shared/format'
 import { baseName } from '../../utils/format'
-import { TYPE_TEXT } from '../../utils/jvmFormat'
+import { TYPE_COLOR, TYPE_TEXT } from '../../utils/jvmFormat'
 import { STATUS_COLOR, STATUS_TEXT } from '../../utils/serviceStatus'
 import { jvmKindLabel } from '../../utils/workspaceTabs'
 import { jvmApi, toolsApi } from '../../utils/toolApi'
@@ -356,6 +369,7 @@ const rows = computed(() => {
         path: svc.display,
         cmd: svc.cmd,
         typeText: TYPE_TEXT[svc.type] || '',
+        typeColor: TYPE_COLOR[svc.type] || 'grey',
         action: TYPE_TEXT[svc.type] || '执行',
         live,
         blocked,

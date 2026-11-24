@@ -4,10 +4,11 @@ import os
 import posixpath
 import shutil
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 
-from web import ApiError, STREAMED, zip_dir
+from web import ApiError, STREAMED
 
 from browse_fs import (
     browse_file_info,
@@ -51,6 +52,37 @@ def _discard_archive(path):
         pass
 
 
+def _zipx_pack(target, archive):
+    """用 zipx 把目录打成 zip（archive 是绝对路径）。压缩与目录下载共用这一条。"""
+    zipx = zipx_command()
+    if not zipx:
+        raise ApiError(503, "找不到可执行的 zipx 命令，装好 zipx 或用同级检出的再试")
+    # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
+    parent = os.path.dirname(target)
+    try:
+        proc = subprocess.run(
+            [zipx, "pack", os.path.basename(target), "-o", archive],
+            cwd=parent,
+            capture_output=True,
+            text=True,
+            timeout=COMPRESS_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        _discard_archive(archive)
+        raise ApiError(504, "压缩超时：%s" % os.path.basename(target))
+    except OSError as exc:
+        _discard_archive(archive)
+        raise ApiError(503, "起 zipx 失败：%s" % exc)
+    if proc.returncode != 0:
+        _discard_archive(archive)
+        message = (proc.stderr or proc.stdout or "").strip()
+        raise ApiError(400, message or "zipx 打包失败")
+    if not os.path.isfile(archive):
+        _discard_archive(archive)
+        raise ApiError(400, "zipx 没有生成包文件")
+    return archive
+
+
 # 同一个包文件同时只让一个请求读写：两个请求压同一目录时，失败的清理不能删掉
 # 另一个刚打好的包。Handler 每个请求一个新实例，所以锁放模块上。
 _COMPRESS_LOCKS = {}
@@ -91,31 +123,7 @@ def _browse_compress(handler, body):
         # 断链的符号链接也算已存在；否则 zipx 会顺着它写到别处。
         if os.path.lexists(archive):
             raise ApiError(409, "「%s」已存在" % os.path.basename(archive))
-        zipx = zipx_command()
-        if not zipx:
-            raise ApiError(503, "找不到可执行的 zipx 命令，装好 zipx 或用同级检出的再试")
-        # 在父目录里按条目名打包，包内路径才是相对目录名；选项放在条目后面 zipx 也认。
-        try:
-            proc = subprocess.run(
-                [zipx, "pack", os.path.basename(target), "-o", archive],
-                cwd=parent,
-                capture_output=True,
-                text=True,
-                timeout=COMPRESS_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
-            _discard_archive(archive)
-            raise ApiError(504, "压缩超时：%s" % rel)
-        except OSError as exc:
-            _discard_archive(archive)
-            raise ApiError(503, "起 zipx 失败：%s" % exc)
-        if proc.returncode != 0:
-            _discard_archive(archive)
-            message = (proc.stderr or proc.stdout or "").strip()
-            raise ApiError(400, message or "zipx 打包失败")
-        if not os.path.isfile(archive):
-            _discard_archive(archive)
-            raise ApiError(400, "zipx 没有生成包文件")
+        _zipx_pack(target, archive)
         if not inside(root, archive):
             _discard_archive(archive)
             raise ApiError(400, "包文件落在工作副本外：%s" % os.path.basename(archive))
@@ -156,12 +164,17 @@ class BrowseRoutes:
         if not inside(root, target):
             raise ApiError(400, "路径要在工作副本里：%s" % rel)
         if os.path.isdir(target):
-            path, _ = zip_dir(target)
+            # 目录下载和「压缩」走同一个 zipx，别一边 Python 一边 zipx。
+            handle = tempfile.NamedTemporaryFile(prefix="idex-", suffix=".zip", delete=False)
+            path = handle.name
+            handle.close()
+            os.unlink(path)
             name = (os.path.basename(target.rstrip("/")) or "download") + ".zip"
             try:
+                _zipx_pack(target, path)
                 self._send_download(path, name, head=head)
             finally:
-                os.unlink(path)
+                _discard_archive(path)
             return STREAMED
         if not os.path.isfile(target):
             raise ApiError(404, "没有这个文件：%s" % (rel or "根目录"))

@@ -35,5 +35,7 @@ export const jvmApi = {
   rescanStatus: (ws) => jvmClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
   setJdk: (ws, jdk) => jvmClient.call('POST', '/jdk', { ws, jdk }),
   restart: (run) => jvmClient.call('POST', '/restart', { run }),
+  // 下载走浏览器直接取，地址给 <a href> 用。
+  downloadUrl: (run) => `/__idex/api/jvm/download?run=${encodeURIComponent(run ?? '')}`,
 }
 export const toolsApi = toolApi('/__idex/api/tools')

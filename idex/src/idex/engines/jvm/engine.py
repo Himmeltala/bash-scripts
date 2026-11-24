@@ -41,6 +41,7 @@ RUN_FIELDS = (
     "code",
     "err",
     "display",
+    "artifact",
 )
 
 # 自动扫描的两处：SDKMAN 装的与发行版软件包装的。别处的 JDK 由页面手填路径。
@@ -92,7 +93,12 @@ def public_run(run):
     """运行记录去掉内部字段；页面只拿与 mvnx 一致的那一份。"""
     if not run:
         return None
-    return dict((key, run.get(key, "")) for key in RUN_FIELDS)
+    out = dict((key, run.get(key, "")) for key in RUN_FIELDS)
+    artifact = run.get("artifact")
+    # 磁盘路径留在服务端，页面只需要文件名与大小。
+    if isinstance(artifact, dict):
+        out["artifact"] = {"name": artifact.get("name", ""), "size": artifact.get("size", 0)}
+    return out
 
 
 class App:
@@ -351,6 +357,22 @@ class App:
 
     def stop_service(self, runid):
         self.runs.stop(str(runid or ""))
+
+    def artifact_path(self, runid):
+        """下载入口按运行号反查，只认该运行 target 目录里记下的那个文件。"""
+        run = self.runs.find(str(runid or ""))
+        artifact = (run or {}).get("artifact") or {}
+        if not isinstance(artifact, dict) or not artifact.get("path"):
+            return None
+        path = Path(str(artifact["path"])).resolve()
+        base = (
+            Path(str(run.get("path") or "")) / str(run.get("module") or "") / "target"
+        ).resolve()
+        try:
+            path.relative_to(base)
+        except ValueError:
+            return None
+        return path if path.is_file() else None
 
     def restart_service(self, body):
         """停掉再按原参数起一份：stop 会等进程组退干净，随后 start 才能占回端口。"""

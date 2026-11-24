@@ -15,6 +15,14 @@ export const TYPE_TEXT = {
   install: '安装',
   build: '构建',
 }
+// 类型列的颜色：启动蓝、打包/构建橙、安装绿。
+export const TYPE_COLOR = {
+  run: 'primary',
+  war: 'primary',
+  package: 'warning',
+  build: 'warning',
+  install: 'success',
+}
 
 export const MODE_ITEMS = [
   { value: 'auto', title: '自动判编译', hint: '源码、生成源与构建入口都没更新就跳过编译' },

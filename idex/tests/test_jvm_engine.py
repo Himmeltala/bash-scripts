@@ -196,6 +196,33 @@ class JvmEngineServiceTest(unittest.TestCase):
 
         self.assertEqual(self.app.scan(ws["id"]), "")
 
+    def test_package_success_records_artifact(self):
+        self.add(self.mvn_root)
+        ws = self.workspace("mvn")
+        svc = self.service(ws, "package")
+        # 假 mvn 不产 jar，先摆一个让扫描认出来。
+        target = self.mvn_root / "target"
+        target.mkdir(exist_ok=True)
+        jar = target / "demo-app.jar"
+        jar.write_bytes(b"jar")
+        (target / "demo-app.jar.original").write_bytes(b"old")
+
+        # 默认的假 mvn 会 sleep 60，这里换成立刻退出的，好等打包结束。
+        fast = self.tmp / "fastbin"
+        fast.mkdir(exist_ok=True)
+        (fast / "mvn").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        (fast / "mvn").chmod(0o755)
+        old_path = os.environ["PATH"]
+        os.environ["PATH"] = "%s:%s" % (fast, old_path)
+        try:
+            self.app.start_service({"svc": svc["id"], "mode": "compile"})
+            run = self.wait_run(ws["id"], svc["id"], ("exited", "failed"))
+        finally:
+            os.environ["PATH"] = old_path
+        self.assertEqual(run["status"], "exited", run)
+        self.assertEqual(run["artifact"]["name"], "demo-app.jar")
+        self.assertEqual(self.app.artifact_path(run["id"]), jar.resolve())
+
     def test_add_gradle_workspace(self):
         self.add(self.gradle_root)
         ws = self.workspace("gradle")

@@ -67,6 +67,27 @@ def error_text(path):
     return ""
 
 
+def find_artifact(run):
+    """打包成功后 target 里最能代表这次的 jar；跳过 original 与源码包。"""
+    base = Path(str(run.get("path") or "")) / str(run.get("module") or "") / "target"
+    try:
+        if not base.is_dir():
+            return None
+        jars = [
+            path
+            for path in base.glob("*.jar")
+            if path.is_file()
+            and not path.name.endswith((".original", "-sources.jar", "-javadoc.jar"))
+        ]
+        if not jars:
+            return None
+        latest = max(jars, key=lambda path: path.stat().st_mtime)
+        stat = latest.stat()
+    except OSError:
+        return None
+    return {"name": latest.name, "path": str(latest), "size": stat.st_size}
+
+
 def read_code(path):
     """Sessions 写在日志旁边的退出码；还没写或不是数字时返回 None。"""
     try:
@@ -250,6 +271,13 @@ class RunRegistry:
                 run["code"] = str(code)
                 run["status"] = "exited" if code == 0 else "failed"
                 run["err"] = "" if code == 0 else error_text(log_path)
+                if code == 0 and run.get("type") == "package":
+                    # 装成功才记产物；失败了不留下上一次的下载入口。
+                    artifact = find_artifact(run)
+                    if artifact:
+                        run["artifact"] = artifact
+                    else:
+                        run.pop("artifact", None)
                 run["miss"] = 0
                 changed = True
             if changed:

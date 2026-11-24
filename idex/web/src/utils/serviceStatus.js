@@ -15,10 +15,11 @@ export const STATUS_TEXT = {
   stopped: '已停止',
 }
 
+// 五种状态各用一色，别让「已结束」和「已停止」混成同一个灰。
 export const STATUS_COLOR = {
   starting: 'warning',
   ready: 'ready',
-  exited: 'grey',
+  exited: 'info',
   failed: 'failed',
   stopped: 'grey',
 }
