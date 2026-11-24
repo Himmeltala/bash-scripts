@@ -91,15 +91,14 @@
     </div>
 
     <div ref="splitRef" class="body" :class="{ resizing }">
-      <aside class="tree" :style="{ '--tree-width': `${treeWidth}px` }">
+      <aside
+        class="tree"
+        :style="{ '--tree-width': `${treeWidth}px` }"
+        @mouseover="onRowHover"
+        @mousemove="onRowMove"
+        @mouseleave="cancelHover"
+      >
         <div v-if="!searching" class="tree-tools">
-          <v-btn
-            icon="mdi-upload"
-            size="x-small"
-            variant="text"
-            title="上传文件到当前目录（也可以直接拖文件进来）"
-            @click="pickUpload()"
-          />
           <input ref="uploadInput" type="file" multiple hidden @change="onUploadPicked" />
           <v-btn
             icon="mdi-collapse-all-outline"
@@ -129,7 +128,6 @@
                 active: row.type === 'file' && activePath === row.path,
               }"
               :style="{ paddingLeft: `${10 + row.depth * 14}px` }"
-              :title="row.path"
               @click="onResultRow(row)"
             >
               <v-icon v-if="row.type === 'dir'" size="16" class="sicon">
@@ -576,9 +574,16 @@
       </template>
     </FloatingDialog>
 
-    <div v-if="dragOn" class="drop-mask">
-      <v-icon size="40">mdi-cloud-upload-outline</v-icon>
-      <p>{{ dropHint }}</p>
+    <!-- 悬浮 1.5 秒给的基础信息；位置跟着鼠标指针走，不挡操作。 -->
+    <div v-if="hoverInfo.on" class="hover-card" :style="{ left: `${hoverInfo.x}px`, top: `${hoverInfo.y}px` }">
+      <template v-if="hoverInfo.loading">正在读取…</template>
+      <template v-else-if="hoverInfo.error">{{ hoverInfo.error }}</template>
+      <template v-else>
+        <div v-for="row in hoverInfo.rows" :key="row.label" class="hover-row">
+          <span class="hover-key">{{ row.label }}</span>
+          <span class="hover-val" :class="{ mono: row.mono }">{{ row.value }}</span>
+        </div>
+      </template>
     </div>
 
     <div v-if="uploads.length" class="upload-panel">
@@ -755,7 +760,7 @@ import { useBrowseDiskSync } from '../composables/useBrowseDiskSync'
 import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
-import { formatBytes } from '@bash-scripts/web-shared/format'
+import { formatBytes, formatTimestamp } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, isHeldNode } from '../utils/browseOps'
 import { compressiblePath } from '../utils/browseCompress'
 import { SOURCE_LABELS, previewKindOf } from '../utils/previewTypes'
@@ -1007,8 +1012,84 @@ const rootNode = computed(() => ({ name: rootName.value, path: '', type: 'dir' }
 // 取数函数与行内状态由这一侧给，树的展开与缓存交给共用组件。
 const loadLayer = (path) => api.tree(props.ws.id, path)
 const downloadOf = (node) => api.downloadUrl(props.ws.id, node.path)
-const rowClass = (node) => ({ selected: node.type === 'file' && node.path === activePath.value })
+const rowClass = (node) => ({
+  selected: node.type === 'file' && node.path === activePath.value,
+  // 拖拽时给落点目录描虚线，让人一眼看到文件会传进哪一层。
+  'drop-target': dragOn.value && node.type === 'dir' && node.path === dropDir.value,
+})
 const treeTexts = { truncated: '这一层文件太多，只列了前面一部分。' }
+
+// 悬浮 1.5 秒显示基础信息：停在同一行不重置计时，换行或移出目录树就取消。
+const HOVER_DELAY = 1500
+const HOVER_TYPE = { file: '文件', dir: '目录', link: '符号链接' }
+const hoverInfo = reactive({ on: false, loading: false, error: '', x: 0, y: 0, rows: [] })
+let hoverTimer = 0
+let hoverSeq = 0
+let hoverPath = ''
+// 卡片跟手：位置按鼠标指针算，出现后继续跟着走。
+const hoverPoint = { x: 0, y: 0 }
+
+// 贴着指针右下摆；右边或下边放不开就翻到另一侧，再夹进窗口。
+function placeHover(x, y) {
+  const width = 280
+  const height = 200
+  hoverInfo.x = x + 16 + width > window.innerWidth ? Math.max(8, x - width - 16) : x + 16
+  hoverInfo.y = y + 18 + height > window.innerHeight ? Math.max(8, y - height - 18) : y + 18
+}
+
+function cancelHover() {
+  clearTimeout(hoverTimer)
+  hoverTimer = 0
+  hoverPath = ''
+  hoverInfo.on = false
+}
+
+function onRowHover(event) {
+  const row = event.target instanceof Element ? event.target.closest('.row[data-path]') : null
+  if (!row) {
+    cancelHover()
+    return
+  }
+  hoverPoint.x = event.clientX
+  hoverPoint.y = event.clientY
+  const path = row.dataset.path || ''
+  if (!path || path === hoverPath) return
+  cancelHover()
+  hoverPath = path
+  hoverTimer = setTimeout(() => showHover(path), HOVER_DELAY)
+}
+
+function onRowMove(event) {
+  hoverPoint.x = event.clientX
+  hoverPoint.y = event.clientY
+  if (hoverInfo.on) placeHover(hoverPoint.x, hoverPoint.y)
+}
+
+async function showHover(path) {
+  const mine = ++hoverSeq
+  hoverInfo.on = true
+  hoverInfo.loading = true
+  hoverInfo.error = ''
+  hoverInfo.rows = []
+  placeHover(hoverPoint.x, hoverPoint.y)
+  try {
+    const data = await api.stat(props.ws.id, path)
+    if (mine !== hoverSeq) return
+    hoverInfo.rows = [
+      { label: '名称', value: data.name },
+      { label: '类型', value: HOVER_TYPE[data.type] || data.type },
+      { label: '大小', value: data.size == null ? '—' : formatBytes(data.size) },
+      { label: '修改时间', value: formatTimestamp(data.mtime, { unit: 's', fallback: '—' }) },
+      { label: '路径', value: data.abs, mono: true },
+    ]
+  } catch (err) {
+    if (mine === hoverSeq) hoverInfo.error = err.message
+  } finally {
+    if (mine === hoverSeq) hoverInfo.loading = false
+  }
+}
+
+onBeforeUnmount(() => clearTimeout(hoverTimer))
 
 function tabIcon(tab) {
   return fileIcon(tab.name)
@@ -1410,7 +1491,7 @@ const {
   uploads,
   uploadBusy,
   dragOn,
-  dropHint,
+  dropDir,
   uploadAsk,
   pickUpload,
   onUploadPicked,
@@ -1482,22 +1563,43 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
 }
-/* 拖文件进来时盖住整块浏览区，提示会传到哪个目录。 */
-.drop-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 2px dashed rgb(var(--v-theme-primary));
+/* 悬浮信息卡：跟着行定位，不挡鼠标，也不吃目录树的点击。 */
+.hover-card {
+  position: fixed;
+  z-index: 30;
+  width: 280px;
+  max-height: 220px;
+  overflow: hidden;
+  padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(var(--v-theme-surface), 0.86);
-  color: rgb(var(--v-theme-primary));
-  font-size: 0.9rem;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  font-size: 0.76rem;
+  color: rgb(var(--v-theme-on-surface-variant));
   pointer-events: none;
+}
+.hover-row {
+  display: flex;
+  gap: 8px;
+  line-height: 1.5;
+}
+.hover-key {
+  flex: 0 0 56px;
+}
+.hover-val {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(var(--v-theme-on-surface));
+}
+/* 落点目录的虚线只在那一行上。 */
+.panel :deep(.row.drop-target) {
+  outline: 2px dashed rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-primary), 0.08);
 }
 /* 上传进度：右下角小卡片，不挡目录树的操作。 */
 .upload-panel {

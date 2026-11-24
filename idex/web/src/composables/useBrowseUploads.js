@@ -15,7 +15,8 @@ export function useBrowseUploads({ wsId, activeDir, reload }) {
   const uploads = ref([])
   const uploadBusy = ref(false)
   const dragOn = ref(false)
-  const dropHint = ref('')
+  // 当前拖拽落点目录，目录树据此给目标行描虚线。
+  const dropDir = ref('')
   const uploadAsk = reactive({ on: false, name: '' })
   let uploadSeq = 0
   let uploadAnswer = null
@@ -49,18 +50,20 @@ export function useBrowseUploads({ wsId, activeDir, reload }) {
     if (![...(event.dataTransfer?.types || [])].includes('Files')) return
     event.preventDefault()
     dragOn.value = true
-    dropHint.value = `上传到 ${dropTargetDir(event) || '/'}`
+    dropDir.value = dropTargetDir(event)
   }
 
   function onDragLeave(event) {
     if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return
     dragOn.value = false
+    dropDir.value = ''
   }
 
   function onDropFiles(event) {
     if (!event.dataTransfer) return
     const files = [...event.dataTransfer.files]
     dragOn.value = false
+    dropDir.value = ''
     if (!files.length) return
     event.preventDefault()
     startUpload(files, dropTargetDir(event))
@@ -157,7 +160,7 @@ export function useBrowseUploads({ wsId, activeDir, reload }) {
     uploads,
     uploadBusy,
     dragOn,
-    dropHint,
+    dropDir,
     uploadAsk,
     pickUpload,
     onUploadPicked,

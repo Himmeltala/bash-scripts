@@ -33,7 +33,7 @@
         {{ icon }}
       </v-icon>
       <slot name="row-before-label" :node="node" :open="open" :state="state" />
-      <span class="label" :class="labelClass" :title="key">{{ nameOf(node) }}</span>
+      <span class="label" :class="labelClass">{{ nameOf(node) }}</span>
       <slot name="row-after-label" :node="node" :open="open" :state="state" />
     </div>
 
