@@ -3,7 +3,7 @@
  * @Date: 2026-11-19 23:58:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-19 23:58:00
- * @FilePath: \idex\web\src\components\previews\ImagePreview.vue
+ * @FilePath: \idex\web\src\editor\previews\ImagePreview.vue
  * @Description: 图片预览：默认缩进窗口，点一下看原始大小，角上标出尺寸与文件大小。
 -->
 <template>
@@ -26,7 +26,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { formatBytes } from '@bash-scripts/web-shared/format'
-import { isSvgPath } from '../../utils/previewTypes'
+import { isSvgPath } from './previewTypes'
 
 const props = defineProps({
   url: { type: String, required: true },

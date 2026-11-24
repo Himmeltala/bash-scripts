@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SOURCE_LABELS, isSvgPath, previewKindOf } from '../src/utils/previewTypes.js'
+import { SOURCE_LABELS, isSvgPath, previewKindOf } from '../src/editor/previews/previewTypes.js'
 
 test('图片按扩展名认，大小写都算', () => {
   for (const name of [

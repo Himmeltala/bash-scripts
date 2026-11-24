@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reactive, ref } from 'vue'
-import { useCodeIndex } from '../src/composables/useCodeIndex.js'
+import { useCodeIndex } from '../src/editor/useCodeIndex.js'
 
 function fakeEditor(path = 'a.js') {
   return {

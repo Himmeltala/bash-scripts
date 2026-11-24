@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 00:22:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:22:00
- * @FilePath: \idex\web\src\composables\useCodeIndex.js
+ * @FilePath: \idex\web\src\editor\useCodeIndex.js
  * @Description: 代码索引：定义、引用、重命名、悬停、符号大纲与语言服务器状态。
  */
 import { computed, reactive, ref } from 'vue'
@@ -11,7 +11,7 @@ import { symbolAt } from '@bash-scripts/web-shared/text'
 import { api } from '../utils/api.js'
 import { extensionOf } from '../utils/browseOps.js'
 import { LANGUAGES, SERVER_BY_EXT, SYMBOL_ICONS, SYMBOL_TITLES } from '../utils/languageServers.js'
-import { offsetOf } from '../utils/textPositions.js'
+import { offsetOf } from './textPositions.js'
 
 export function useCodeIndex({
   wsId,

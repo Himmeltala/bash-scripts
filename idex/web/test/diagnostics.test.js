@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { markersOf, statsOf } from '../src/utils/diagnostics.js'
+import { markersOf, statsOf } from '../src/editor/diagnostics.js'
 
 test('一行取最重的那一级，error 不被后到的覆盖', () => {
   const markers = markersOf([

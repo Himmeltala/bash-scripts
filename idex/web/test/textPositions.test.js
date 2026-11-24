@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { offsetOf } from '../src/utils/textPositions.js'
+import { offsetOf } from '../src/editor/textPositions.js'
 
 test('第一行第一列是 0，换行占一个字符', () => {
   const text = 'abc\ndefg\nh'

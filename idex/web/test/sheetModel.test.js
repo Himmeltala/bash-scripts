@@ -19,7 +19,7 @@ import {
   formatNumber,
   styleOf,
   visibleRows,
-} from '../src/utils/sheetModel.js'
+} from '../src/editor/previews/sheetModel.js'
 
 test('列名与地址换算', () => {
   assert.equal(columnName(0), 'A')

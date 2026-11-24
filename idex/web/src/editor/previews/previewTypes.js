@@ -3,11 +3,11 @@
  * @Date: 2026-11-19 23:55:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-19 23:55:00
- * @FilePath: \idex\web\src\composables\previewTypes.js
+ * @FilePath: \idex\web\src\editor\previews\previewTypes.js
  * @Description: 预览类型表，扩展名归到哪种预览器，加新类型只在这里登记。
  */
 
-import { extensionOf } from './browseOps.js'
+import { extensionOf } from '../../utils/browseOps.js'
 
 export const PREVIEW_TYPES = {
   image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'avif'],

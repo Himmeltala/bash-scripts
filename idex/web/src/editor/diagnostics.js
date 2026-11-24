@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 00:15:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:15:00
- * @FilePath: \idex\web\src\composables\diagnostics.js
+ * @FilePath: \idex\web\src\editor\diagnostics.js
  * @Description: 诊断的级别表与行号圆点、分类统计的纯函数。
  */
 

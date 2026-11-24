@@ -3,7 +3,7 @@
  * @Date: 2026-11-20 00:26:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:26:00
- * @FilePath: \idex\web\src\composables\textPositions.js
+ * @FilePath: \idex\web\src\editor\textPositions.js
  * @Description: 文本行列与字符偏移的换算。
  */
 

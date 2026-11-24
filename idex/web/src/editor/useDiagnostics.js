@@ -3,12 +3,12 @@
  * @Date: 2026-11-20 00:12:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-20 00:12:00
- * @FilePath: \idex\web\src\composables\useDiagnostics.js
+ * @FilePath: \idex\web\src\editor\useDiagnostics.js
  * @Description: 当前文件的诊断：取数、防抖、行号圆点与问题列表的统计。
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { api } from '../utils/api.js'
-import { markersOf, statsOf } from '../utils/diagnostics.js'
+import { markersOf, statsOf } from './diagnostics.js'
 
 export function useDiagnostics({ wsId, activePath, editorOf, onOpen }) {
   const problems = ref([])

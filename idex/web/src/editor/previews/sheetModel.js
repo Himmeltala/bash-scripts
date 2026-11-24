@@ -3,7 +3,7 @@
  * @Date: 2026-11-24 10:30:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 10:30:00
- * @FilePath: \idex\web\src\utils\sheetModel.js
+ * @FilePath: \idex\web\src\editor\previews\sheetModel.js
  * @Description: Excel 只读预览的纯逻辑，负责取字节之后的格式化、建模与可见行切片。
  */
 

@@ -3,7 +3,7 @@
  * @Date: 2026-11-24 11:00:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 11:00:00
- * @FilePath: \idex\web\src\components\previews\SheetPreview.vue
+ * @FilePath: \idex\web\src\editor\previews\SheetPreview.vue
  * @Description: Excel 只读预览：动态加载 ExcelJS，多工作表、虚拟滚动与常用格式。
 -->
 <template>
@@ -206,7 +206,7 @@ import {
   cellAddress,
   columnName,
   visibleRows,
-} from '../../utils/sheetModel'
+} from './sheetModel'
 
 const props = defineProps({
   url: { type: String, required: true },
