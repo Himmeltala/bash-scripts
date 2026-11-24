@@ -128,6 +128,114 @@ export function styleOf(cell) {
   return style
 }
 
+function parseRange(range) {
+  const match = /^\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)$/i.exec(String(range).trim())
+  if (!match) return null
+  const row1 = Number(match[2]) - 1
+  const row2 = Number(match[4]) - 1
+  const col1 = columnIndex(match[1])
+  const col2 = columnIndex(match[3])
+  return {
+    top: Math.min(row1, row2),
+    left: Math.min(col1, col2),
+    bottom: Math.max(row1, row2),
+    right: Math.max(col1, col2),
+  }
+}
+
+// actualRowCount / actualColumnCount 只算有值的格子；只有样式的空格要从稀疏行里补出来。
+function usedExtent(worksheet) {
+  let rows = Number(worksheet.actualRowCount) || 0
+  let cols = Number(worksheet.actualColumnCount) || 0
+  for (const row of (worksheet.model && worksheet.model.rows) || []) {
+    rows = Math.max(rows, Number(row.number) || 0)
+    for (const cell of row.cells || []) {
+      const letters = /^[A-Z]+/i.exec(cell.address || '')
+      if (letters) cols = Math.max(cols, columnIndex(letters[0]) + 1)
+    }
+  }
+  return { rows, cols }
+}
+
+export function buildSheetModel(worksheet, limits = SHEET_LIMITS) {
+  const extent = usedExtent(worksheet)
+  const rawRows = extent.rows
+  const rawCols = extent.cols
+  const rowLimit = Math.min(rawRows, limits.rows)
+  const colLimit = Math.min(rawCols, limits.columns)
+  let truncated = rawRows > rowLimit || rawCols > colLimit
+
+  const merges = []
+  const anchors = new Map()
+  const covered = new Set()
+  for (const range of (worksheet.model && worksheet.model.merges) || []) {
+    const parsed = parseRange(range)
+    if (!parsed) continue
+    const merge = {
+      top: Math.max(0, parsed.top),
+      left: Math.max(0, parsed.left),
+      bottom: Math.min(parsed.bottom, rowLimit - 1),
+      right: Math.min(parsed.right, colLimit - 1),
+    }
+    if (merge.bottom < merge.top || merge.right < merge.left) continue
+    merges.push(merge)
+    anchors.set(`${merge.top}:${merge.left}`, merge)
+    for (let row = merge.top; row <= merge.bottom; row += 1) {
+      for (let col = merge.left; col <= merge.right; col += 1) {
+        if (row !== merge.top || col !== merge.left) covered.add(`${row}:${col}`)
+      }
+    }
+  }
+
+  const rows = []
+  let used = 0
+  let keptRows = rowLimit
+  for (let row = 1; row <= rowLimit; row += 1) {
+    const cells = []
+    let full = false
+    for (let col = 1; col <= colLimit; col += 1) {
+      const key = `${row - 1}:${col - 1}`
+      if (covered.has(key)) continue
+      used += 1
+      if (used > limits.cells) {
+        truncated = true
+        keptRows = row - 1
+        full = true
+        break
+      }
+      const cell = worksheet.getCell(row, col)
+      const value = formatCellValue(cell)
+      const style = styleOf(cell)
+      const anchor = anchors.get(key)
+      if (!value.text && !anchor && !Object.keys(style).length) continue
+      cells.push({
+        col: col - 1,
+        text: value.text,
+        formula: value.formula,
+        style,
+        colspan: anchor ? anchor.right - anchor.left + 1 : 1,
+        rowspan: anchor ? anchor.bottom - anchor.top + 1 : 1,
+      })
+    }
+    if (cells.length) rows.push({ number: row, cells })
+    if (full) break
+  }
+
+  const view = (worksheet.views && worksheet.views[0]) || {}
+  return {
+    name: worksheet.name || '',
+    rowCount: keptRows,
+    colCount: colLimit,
+    rows,
+    merges,
+    freeze: {
+      rows: Number(view.ySplit) || 0,
+      cols: Number(view.xSplit) || 0,
+    },
+    truncated,
+  }
+}
+
 export function formatCellValue(cell) {
   const value = cell ? cell.value : null
   const numFmt = (cell && cell.numFmt) || ''

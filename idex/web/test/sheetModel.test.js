@@ -8,8 +8,10 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import ExcelJS from 'exceljs'
 import {
   SHEET_LIMITS,
+  buildSheetModel,
   cellAddress,
   columnIndex,
   columnName,
@@ -99,6 +101,60 @@ test('边框映射线型，无样式与主题色不输出', () => {
   assert.equal(style.borderBottom, '3px double #000000')
   assert.equal(style.color, undefined)
   assert.deepEqual(styleOf({}), {})
+})
+
+function sheetOf(build) {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Sheet1')
+  build(sheet)
+  return sheet
+}
+
+test('建模：值、样式、合并、冻结与空格省略', () => {
+  const sheet = sheetOf((ws) => {
+    ws.getCell('A1').value = '标题'
+    ws.getCell('A1').font = { bold: true }
+    ws.getCell('B2').value = 3.14159
+    ws.getCell('B2').numFmt = '0.00'
+    ws.mergeCells('A1:B2')
+    ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }]
+  })
+  const model = buildSheetModel(sheet)
+  assert.equal(model.name, 'Sheet1')
+  assert.deepEqual(model.merges, [{ top: 0, left: 0, bottom: 1, right: 1 }])
+  assert.deepEqual(model.freeze, { rows: 2, cols: 1 })
+  assert.equal(model.rows[0].cells.length, 1)
+  assert.equal(model.rows[0].cells[0].text, '标题')
+  assert.equal(model.rows[0].cells[0].colspan, 2)
+  assert.equal(model.rows[0].cells[0].rowspan, 2)
+  assert.equal(model.rows[0].cells[0].style.fontWeight, '700')
+})
+
+test('建模：只保留有值或有样式的单元格', () => {
+  const sheet = sheetOf((ws) => {
+    ws.getCell('A1').value = 'x'
+    ws.getCell('C3').border = { top: { style: 'thin', color: { argb: 'FF000000' } } }
+  })
+  const model = buildSheetModel(sheet)
+  const kept = model.rows.flatMap((row) => row.cells.map((cell) => `${row.number}:${cell.col}`))
+  assert.deepEqual(kept, ['1:0', '3:2'])
+})
+
+test('建模：超过单元格上限时截断并标记', () => {
+  const sheet = sheetOf((ws) => {
+    for (let r = 1; r <= 5; r += 1) {
+      for (let c = 1; c <= 5; c += 1) ws.getCell(r, c).value = `${r}-${c}`
+    }
+  })
+  const model = buildSheetModel(sheet, { ...SHEET_LIMITS, cells: 7 })
+  assert.equal(model.truncated, true)
+  const kept = model.rows.reduce((sum, row) => sum + row.cells.length, 0)
+  assert.ok(kept <= 7)
+})
+
+test('建模：没有冻结设置时 freeze 为零', () => {
+  const model = buildSheetModel(sheetOf((ws) => { ws.getCell('A1').value = 1 }))
+  assert.deepEqual(model.freeze, { rows: 0, cols: 0 })
 })
 
 test('上限常量与设计一致', () => {
