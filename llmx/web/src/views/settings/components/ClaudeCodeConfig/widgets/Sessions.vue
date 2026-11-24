@@ -24,6 +24,9 @@
       <v-btn variant="text" prepend-icon="mdi-refresh" :loading="busy" @click="refresh">
         刷新
       </v-btn>
+      <v-btn variant="text" prepend-icon="mdi-trash-can-outline" @click="garbageOpen = true">
+        回收站
+      </v-btn>
       <v-spacer />
       <span class="hint">
         已选 {{ selectedIds.length }} 个 · {{ formatBytes(selectedSize) }}
@@ -72,9 +75,12 @@
       </v-data-table>
     </div>
 
-    <p class="hint foot">
-      文件目录 {{ sessions.dir }}；移走的文件进 {{ sessions.garbage }}，账本记录保留。
-    </p>
+    <GarbageDialog
+      v-model="garbageOpen"
+      :load="sessions.garbageList"
+      :restore="sessions.restore"
+      :purge="sessions.purge"
+    />
 
     <DeleteSessionsDialog
       v-model="deleteOpen"
@@ -93,6 +99,7 @@ import { toast } from '../../../../../composables/notice'
 import { formatBytes, formatCompact, formatMoney } from '@bash-scripts/web-shared/format'
 import { useClaudeSessions } from '../../../composables/ClaudeCodeConfig/useClaudeSessions'
 import DeleteSessionsDialog from '../../../modals/ClaudeCodeConfig/DeleteSessionsDialog.vue'
+import GarbageDialog from '../../../modals/ClaudeCodeConfig/GarbageDialog.vue'
 import SessionDetailDialog from '../../../modals/ClaudeCodeConfig/SessionDetailDialog.vue'
 
 const sessions = useClaudeSessions()
@@ -108,6 +115,7 @@ watch(
   }
 )
 const deleteOpen = ref(false)
+const garbageOpen = ref(false)
 const detailId = ref('')
 
 const detailOpen = computed({
@@ -120,12 +128,12 @@ const detailOpen = computed({
 const headers = [
   { title: '会话', key: 'id', width: '18%' },
   { title: '项目', key: 'project' },
-  { title: '开始', key: 'started', width: 130 },
-  { title: '最后活动', key: 'ended', width: 130 },
-  { title: '请求', key: 'requests', width: 80 },
+  { title: '开始', key: 'started', width: 160 },
+  { title: '最后活动', key: 'ended', width: 160 },
+  { title: '请求', key: 'requests', width: 110 },
   { title: 'token', key: 'tokensText', width: 100 },
   { title: '费用', key: 'costText', width: 100 },
-  { title: '大小', key: 'sizeText', width: 90 },
+  { title: '大小', key: 'sizeText', width: 120 },
   { title: '', key: 'actions', sortable: false, width: 80 },
 ]
 
@@ -232,12 +240,6 @@ onMounted(refresh)
 
 .hint.bad {
   color: rgb(var(--v-theme-error));
-}
-
-.foot {
-  flex: none;
-  padding-top: 0.5rem;
-  word-break: break-all;
 }
 
 .mono {

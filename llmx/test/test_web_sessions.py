@@ -122,16 +122,41 @@ class SessionApiTest(unittest.TestCase):
         self.assertEqual(body["moved"], 2)
         self.assertFalse(first.exists())
         self.assertFalse(second.exists())
-        targets = sorted(Path(item["to"]).name for item in body["files"])
-        self.assertTrue(all(name.endswith(".jsonl") for name in targets))
-        self.assertTrue(all("-20" in name for name in targets))
-        self.assertEqual({Path(item["to"]).parent for item in body["files"]}, {Path(body["garbage"])})
+        targets = [Path(item["to"]) for item in body["files"]]
+        garbage = Path(body["garbage"])
+        self.assertTrue(all(path.name.endswith(".jsonl") for path in targets))
+        # 一批一个时间戳目录，里面保持原来的项目/会话相对路径。
+        batches = {path.relative_to(garbage).parts[0] for path in targets}
+        self.assertEqual(len(batches), 1)
+        self.assertRegex(batches.pop(), r"^\d{8}-\d{6}(-\d+)?$")
+        rels = sorted(path.relative_to(garbage).as_posix().split("/", 1)[1] for path in targets)
+        self.assertEqual(rels, ["p1/sess-a.jsonl", "p1/sess-a/subagents/agent-1.jsonl"])
 
         body, rows = self.list()
         self.assertEqual(sorted(rows), ["sess-b"])
 
         with Store(self.config.store.db, self.config.book.tz) as store:
             self.assertEqual(store.stats()["requests"], 2)
+
+    def test_garbage_lists_moved_files(self):
+        self.write("p1", "sess-a.jsonl", size=12)
+        # 还没移走时回收站是空的。
+        status, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["files"], [])
+
+        testkit.json_call(self.server.base, "/claude/sessions/delete", {"ids": ["sess-a"]})
+        status, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["files"]), 1)
+        row = body["files"][0]
+        self.assertEqual(row["name"], "sess-a")
+        self.assertEqual(row["project"], "p1")
+        self.assertEqual(row["files"], 1)
+        self.assertTrue(row["restorable"])
+        self.assertEqual(row["size"], 12)
+        self.assertRegex(row["moved"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
+        self.assertEqual(Path(body["dir"]).name, "claude")
 
     def test_missing_session_is_ignored(self):
         status, body = testkit.json_call(
@@ -150,10 +175,70 @@ class SessionApiTest(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["moved"], 2)
-        names = {Path(item["to"]).name for item in body["files"]}
-        self.assertEqual(len(names), 2)
+        garbage = Path(body["garbage"])
+        rels = {Path(item["to"]).relative_to(garbage).as_posix().split("/", 1)[1] for item in body["files"]}
+        self.assertEqual(rels, {"p1/sess-x.jsonl", "p2/sess-x.jsonl"})
         self.assertFalse(first.exists())
         self.assertFalse(second.exists())
+
+    def test_restore_moves_files_back(self):
+        first = self.write("p1", "sess-a.jsonl")
+        second = self.write("p1", "sess-a", "subagents", "agent-1.jsonl")
+        testkit.json_call(self.server.base, "/claude/sessions/delete", {"ids": ["sess-a"]})
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        key = body["files"][0]["id"]
+
+        status, data = testkit.json_call(
+            self.server.base, "/claude/sessions/restore", {"ids": [key]}
+        )
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["restored"], 2)
+        self.assertTrue(first.exists())
+        self.assertTrue(second.exists())
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        self.assertEqual(body["files"], [])
+
+    def test_restore_refuses_to_overwrite(self):
+        path = self.write("p1", "sess-a.jsonl")
+        testkit.json_call(self.server.base, "/claude/sessions/delete", {"ids": ["sess-a"]})
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        key = body["files"][0]["id"]
+        # 原位置又出现了同名文件，撤回要整批拒绝。
+        path.write_text("{}\n", encoding="utf-8")
+        status, data = testkit.json_call(
+            self.server.base, "/claude/sessions/restore", {"ids": [key]}
+        )
+        self.assertEqual(status, 400)
+        self.assertTrue(path.exists())
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        self.assertEqual(len(body["files"]), 1)
+
+    def test_purge_removes_files_for_good(self):
+        path = self.write("p1", "sess-a.jsonl")
+        testkit.json_call(self.server.base, "/claude/sessions/delete", {"ids": ["sess-a"]})
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        key = body["files"][0]["id"]
+
+        status, data = testkit.json_call(
+            self.server.base, "/claude/sessions/purge", {"ids": [key]}
+        )
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["removed"], 1)
+        self.assertFalse(path.exists())
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        self.assertEqual(body["files"], [])
+
+    def test_old_flat_garbage_cannot_be_restored(self):
+        garbage = Path(self.home / "cache" / "llmx" / "garbage" / "claude")
+        garbage.mkdir(parents=True)
+        (garbage / "sess-old-20260101-030000.jsonl").write_text("{}\n", encoding="utf-8")
+        _, body = testkit.json_call(self.server.base, "/claude/sessions/garbage")
+        row = body["files"][0]
+        self.assertFalse(row["restorable"])
+        status, _ = testkit.json_call(
+            self.server.base, "/claude/sessions/restore", {"ids": [row["id"]]}
+        )
+        self.assertEqual(status, 400)
 
     def test_symlink_outside_projects_is_refused(self):
         outside = self.home / "outside.jsonl"

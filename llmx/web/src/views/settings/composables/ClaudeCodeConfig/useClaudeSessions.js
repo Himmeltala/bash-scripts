@@ -30,6 +30,22 @@ export function useClaudeSessions() {
     return get(`/claude/sessions/detail?id=${encodeURIComponent(id)}`)
   }
 
+  // 回收目录里的会话清单，打开回收站弹窗时才读。
+  function garbageList() {
+    return get('/claude/sessions/garbage')
+  }
+
+  async function restore(ids) {
+    const data = await post('/claude/sessions/restore', { ids })
+    await refresh()
+    return data
+  }
+
+  async function purge(ids) {
+    const data = await post('/claude/sessions/purge', { ids })
+    return data
+  }
+
   async function trash(ids) {
     const data = await post('/claude/sessions/delete', { ids })
     await refresh()
@@ -37,5 +53,18 @@ export function useClaudeSessions() {
   }
 
   // 与配置档一样用 reactive 包，模板里直接写 sessions.items。
-  return reactive({ items, dir, garbage, writable, loaded, error, refresh, detail, trash })
+  return reactive({
+    items,
+    dir,
+    garbage,
+    writable,
+    loaded,
+    error,
+    refresh,
+    detail,
+    garbageList,
+    restore,
+    purge,
+    trash,
+  })
 }

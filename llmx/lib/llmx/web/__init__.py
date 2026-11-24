@@ -383,6 +383,12 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                 data = _manage(lambda: sessions.list_sessions(current))
                 data["writable"] = self._is_local()
                 return data
+            if rest[0] == "garbage" and method == "GET":
+                return _manage(lambda: sessions.garbage_list(current))
+            if rest[0] == "restore" and method == "POST":
+                return _manage(lambda: sessions.garbage_restore(current, body.get("ids")))
+            if rest[0] == "purge" and method == "POST":
+                return _manage(lambda: sessions.garbage_purge(current, body.get("ids")))
             if rest[0] == "detail" and method == "GET":
                 session_id = _first(query, "id")
                 return _manage(lambda: sessions.detail(current, session_id))

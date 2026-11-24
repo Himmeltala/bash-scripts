@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 from .config import Config
@@ -188,6 +189,151 @@ def list_sessions(config: Config) -> dict:
     }
 
 
+def _garbage_groups(config: Config) -> dict[str, dict]:
+    """回收目录按「批次/项目/会话」归组。
+
+    新布局是 ``<时间戳>/<项目>/<会话>.jsonl``，子代理文件在 ``<会话>/`` 下，原相对路径还在；
+    旧版本平铺成 ``<名字>-<时间戳>.jsonl``，原路径丢了，只能彻底删除，不能撤回。
+    """
+    root = garbage_dir(config)
+    groups: dict[str, dict] = {}
+    try:
+        paths = list(root.rglob("*.jsonl")) if root.is_dir() else []
+    except OSError:
+        paths = []
+    for path in paths:
+        try:
+            stat = path.stat()
+            rel = path.relative_to(root)
+        except (OSError, ValueError):
+            continue
+        parts = rel.parts
+        if len(parts) >= 3:
+            session = parts[2] if len(parts) > 3 else Path(parts[2]).stem
+            key = "/".join((parts[0], parts[1], session))
+            restore_parts: tuple[str, ...] = parts[1:]
+            restorable = True
+            name, project = session, parts[1]
+        else:
+            # 旧布局没记原路径，不猜。
+            key = rel.as_posix()
+            restore_parts = ()
+            restorable = False
+            name, project = rel.name, ""
+        item = groups.setdefault(
+            key,
+            {
+                "id": key,
+                "name": name,
+                "project": project,
+                "files": [],
+                "restore": [],
+                "size": 0,
+                "updated": 0.0,
+                "restorable": restorable,
+            },
+        )
+        item["files"].append(path)
+        item["restore"].append(restore_parts)
+        item["size"] += stat.st_size
+        item["updated"] = max(item["updated"], stat.st_mtime)
+    return groups
+
+
+def garbage_list(config: Config) -> dict:
+    root = garbage_dir(config)
+    rows = []
+    for group in _garbage_groups(config).values():
+        rows.append(
+            {
+                "id": group["id"],
+                "name": group["name"],
+                "project": group["project"],
+                "files": len(group["files"]),
+                "size": group["size"],
+                "moved": datetime.fromtimestamp(group["updated"], config.book.tz).strftime(
+                    "%Y-%m-%d %H:%M"
+                ),
+                "restorable": group["restorable"],
+            }
+        )
+    rows.sort(key=lambda row: (row["moved"], row["id"]), reverse=True)
+    return {"dir": str(root), "files": rows}
+
+
+def _wanted_ids(ids: object, what: str) -> list[str]:
+    if not isinstance(ids, list) or not ids:
+        raise SessionError(f"没有选{what}")
+    return [item for item in ids if isinstance(item, str) and item]
+
+
+def garbage_restore(config: Config, ids: object) -> dict:
+    """把回收目录里的会话搬回原来的项目目录；目标已存在就整批不动，绝不覆盖。"""
+    wanted = _wanted_ids(ids, "要撤回的会话")
+    groups = _garbage_groups(config)
+    root = projects_dir(config)
+    plan = []
+    for key in wanted:
+        group = groups.get(key)
+        if group is None:
+            continue
+        if not group["restorable"]:
+            raise SessionError(f"「{group['name']}」是旧版本移入的，原路径已丢失，不能撤回")
+        for path, parts in zip(group["files"], group["restore"]):
+            target = root.joinpath(*parts)
+            try:
+                target.resolve().relative_to(root.resolve())
+            except ValueError as exc:
+                raise SessionError(f"拒绝还原到项目目录之外 {target}") from exc
+            if target.exists():
+                raise SessionError(f"原位置已有文件 {target}，没撤回；先处理同名文件再试")
+            plan.append((path, target))
+    if not plan:
+        return {"restored": 0, "garbage": str(garbage_dir(config))}
+    for path, target in plan:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            path.rename(target)
+        except OSError as exc:
+            raise SessionError(f"撤回 {path} 失败：{exc}") from exc
+    _prune_empty(config)
+    return {"restored": len(plan), "garbage": str(garbage_dir(config))}
+
+
+def garbage_purge(config: Config, ids: object) -> dict:
+    """彻底删除回收目录里的会话文件，删掉就找不回来。"""
+    wanted = _wanted_ids(ids, "要彻底删除的会话")
+    groups = _garbage_groups(config)
+    removed = 0
+    for key in wanted:
+        group = groups.get(key)
+        if group is None:
+            continue
+        for path in group["files"]:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise SessionError(f"删除 {path} 失败：{exc}") from exc
+            removed += 1
+    _prune_empty(config)
+    return {"removed": removed, "garbage": str(garbage_dir(config))}
+
+
+def _prune_empty(config: Config) -> None:
+    """删掉回收目录里空掉的批次与项目目录，不碰回收根。"""
+    root = garbage_dir(config)
+    if not root.is_dir():
+        return
+    for path in sorted(root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+        if path.is_dir():
+            try:
+                path.rmdir()
+            except OSError:
+                continue
+
+
 def detail(config: Config, session_id: object) -> dict:
     if not isinstance(session_id, str) or not session_id:
         raise SessionError("会话 id 要是文本")
@@ -225,7 +371,13 @@ def trash(config: Config, ids: object) -> dict:
     except OSError as exc:
         raise SessionError(f"建不了回收目录 {target_dir}: {exc}") from exc
 
+    # 一批放一个时间戳目录，里面保持原来的项目/会话相对路径，撤回时原样搬回。
     stamp = time.strftime("%Y%m%d-%H%M%S")
+    batch = target_dir / stamp
+    index = 1
+    while batch.exists():
+        batch = target_dir / f"{stamp}-{index}"
+        index += 1
     moved = []
     for session_id in ids:
         if not isinstance(session_id, str):
@@ -238,12 +390,9 @@ def trash(config: Config, ids: object) -> dict:
             path = Path(text).resolve()
             if not _inside(path, root) or path.suffix != ".jsonl":
                 raise SessionError(f"拒绝移动会话目录之外的文件 {path}")
-            target = target_dir / f"{path.stem}-{stamp}{path.suffix}"
-            index = 1
-            while target.exists():
-                target = target_dir / f"{path.stem}-{stamp}-{index}{path.suffix}"
-                index += 1
+            target = batch / path.relative_to(root)
             try:
+                target.parent.mkdir(parents=True, exist_ok=True)
                 path.rename(target)
             except OSError as exc:
                 raise SessionError(f"移动 {path} 失败：{exc}") from exc
