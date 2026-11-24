@@ -15,6 +15,7 @@ import {
   columnName,
   formatCellValue,
   formatNumber,
+  styleOf,
 } from '../src/utils/sheetModel.js'
 
 test('列名与地址换算', () => {
@@ -68,6 +69,36 @@ test('单元格值：文本、布尔、错误、公式、富文本、日期', ()
     formula: '',
   })
   assert.deepEqual(formatCellValue({ value: null, numFmt: '' }), { text: '', formula: '' })
+})
+
+test('字体、填充、对齐映射成内联样式', () => {
+  const style = styleOf({
+    font: { bold: true, italic: true, underline: true, strike: true, color: { argb: 'FF112233' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEE00' } },
+    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+  })
+  assert.equal(style.fontWeight, '700')
+  assert.equal(style.fontStyle, 'italic')
+  assert.equal(style.textDecoration, 'underline line-through')
+  assert.equal(style.color, '#112233')
+  assert.equal(style.backgroundColor, '#FFEE00')
+  assert.equal(style.textAlign, 'center')
+  assert.equal(style.verticalAlign, 'middle')
+  assert.equal(style.whiteSpace, 'pre-wrap')
+})
+
+test('边框映射线型，无样式与主题色不输出', () => {
+  const style = styleOf({
+    border: {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'double', color: { argb: 'FF000000' } },
+    },
+    font: { color: { theme: 1 } },
+  })
+  assert.equal(style.borderTop, '1px solid #000000')
+  assert.equal(style.borderBottom, '3px double #000000')
+  assert.equal(style.color, undefined)
+  assert.deepEqual(styleOf({}), {})
 })
 
 test('上限常量与设计一致', () => {

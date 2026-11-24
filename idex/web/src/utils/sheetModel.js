@@ -72,6 +72,62 @@ export function formatNumber(value, numFmt) {
   return String(value)
 }
 
+function argbColor(color) {
+  if (!color || typeof color.argb !== 'string' || color.argb.length !== 8) return ''
+  return `#${color.argb.slice(2)}`
+}
+
+const BORDER_STYLES = {
+  thin: '1px solid',
+  medium: '2px solid',
+  thick: '3px solid',
+  double: '3px double',
+  dashed: '1px dashed',
+  dotted: '1px dotted',
+  hair: '1px solid',
+}
+
+function borderCss(side) {
+  if (!side || !side.style) return ''
+  const line = BORDER_STYLES[side.style] || '1px solid'
+  const color = argbColor(side.color)
+  return color ? `${line} ${color}` : line
+}
+
+export function styleOf(cell) {
+  const style = {}
+  const font = cell && cell.font
+  if (font) {
+    if (font.bold) style.fontWeight = '700'
+    if (font.italic) style.fontStyle = 'italic'
+    const decoration = []
+    if (font.underline) decoration.push('underline')
+    if (font.strike) decoration.push('line-through')
+    if (decoration.length) style.textDecoration = decoration.join(' ')
+    const color = argbColor(font.color)
+    if (color) style.color = color
+  }
+  const fill = cell && cell.fill
+  if (fill && fill.pattern === 'solid') {
+    const background = argbColor(fill.fgColor)
+    if (background) style.backgroundColor = background
+  }
+  const border = cell && cell.border
+  if (border) {
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      const css = borderCss(border[side])
+      if (css) style[`border${side[0].toUpperCase()}${side.slice(1)}`] = css
+    }
+  }
+  const alignment = cell && cell.alignment
+  if (alignment) {
+    if (alignment.horizontal) style.textAlign = alignment.horizontal
+    if (alignment.vertical) style.verticalAlign = alignment.vertical
+    if (alignment.wrapText) style.whiteSpace = 'pre-wrap'
+  }
+  return style
+}
+
 export function formatCellValue(cell) {
   const value = cell ? cell.value : null
   const numFmt = (cell && cell.numFmt) || ''
