@@ -774,6 +774,7 @@ import { useBrowseSearch } from '../composables/useBrowseSearch'
 import { useBrowseEditors } from '../composables/useBrowseEditors'
 import { useBrowseFiles } from '../composables/useBrowseFiles'
 import ImagePreview from './previews/ImagePreview.vue'
+import SheetPreview from './previews/SheetPreview.vue'
 import { tabOf, updateTab } from '../utils/browseTabs'
 import { saveSession, sessionOf } from '../utils/browseSessions'
 import { filterPaths } from '../utils/fuzzyMatch'
@@ -819,7 +820,7 @@ const {
   onLoaded: (path) => diskSync.markSynced(path),
 })
 // 按扩展名挑预览器；加新类型在 previewTypes 里登记，再补一个组件挂进这张表。
-const VIEWERS = { image: ImagePreview }
+const VIEWERS = { image: ImagePreview, sheet: SheetPreview }
 // 预览切回源码的页签；不改源码的类型一直走预览。
 const sourceView = reactive(new Set())
 const refreshing = ref(false)

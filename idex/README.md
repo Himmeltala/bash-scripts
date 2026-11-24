@@ -37,6 +37,7 @@ idex web             同上
 - **JVM**：识别 Maven 与 Gradle 工程，扫描模块与目标；可启动、停止、重启并查看运行日志。
 - **代码索引**：按住 Ctrl 点标识符跳到定义，右键可查找引用、重命名、复制标识符；Ctrl+P 快速打开文件，Ctrl+Shift+O 看符号大纲，Ctrl+I 看悬停，Ctrl+G 跳到指定行。
 - **图片**：`png`、`jpg`、`jpeg`、`gif`、`webp`、`bmp`、`ico`、`svg`、`avif` 直接预览；`svg` 可切回编辑器改源码。超过 512KB 的文本文件给下载入口。
+- **表格**：`xlsx`、`xlsm` 以只读表格预览，支持多工作表、合并单元格与常用格式；超过 20MB 只提供下载。
 
 搜索默认跳过 `.git`、`.svn`、`.hg`、`node_modules`、`__pycache__`、`dist`、`build`、`target`，名单在右上角设置里改。
 
