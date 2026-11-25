@@ -50,6 +50,8 @@ const props = defineProps({
   collapse: { type: Boolean, default: false },
   theme: { type: String, default: 'auto' },
   minimap: { type: Boolean, default: false },
+  // 只看历史版本时不需要补全、格式化与定义跳转。
+  lsp: { type: Boolean, default: true },
   markers: { type: Object, default: () => ({}) },
   complete: { type: Function, default: null },
   format: { type: Function, default: null },
@@ -229,6 +231,10 @@ const keys = [
   },
 ]
 
+function editorKeys() {
+  return props.lsp ? keys : [indentWithTab]
+}
+
 const updateListener = EditorView.updateListener.of((update) => {
   if (update.docChanged) {
     const text = update.state.doc.toString()
@@ -237,16 +243,22 @@ const updateListener = EditorView.updateListener.of((update) => {
   }
 })
 
+// 并排模式下滚动发生在外层 .cm-mergeView，单栏编辑器的滚动器不滚动，
+// minimap 量不到可视范围，所以只在单栏内联时挂载。
+function minimapOn() {
+  return props.minimap && props.inline
+}
+
 function editorExtensions(readonly) {
   const extensions = [
     basicSetup,
     appearance.of(editorThemeExtensions(props.theme)),
-    minimapConf.of(readonly ? [] : minimapExtension(props.minimap)),
+    minimapConf.of(minimapOn() ? minimapExtension(true) : []),
     indentUnit.of('    '),
-    keymap.of(keys),
+    keymap.of(editorKeys()),
     lintGutter(),
     languageExtension(handlerOf(props.path).cmLanguage(props.path)),
-    autocompletion({ override: [completionSource], activateOnTyping: true }),
+    ...(props.lsp ? [autocompletion({ override: [completionSource], activateOnTyping: true })] : []),
     SEARCH_PHRASES,
   ]
   if (readonly) {
@@ -291,6 +303,21 @@ function restoreState(state) {
   view.scrollDOM.scrollLeft = state.left
 }
 
+// 内联差异自带的 Accept 只抹掉当前标记，文件与 git 里的改动都还在；只留真正还原内容的按钮。
+function chunkControls(type, action) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  if (type === 'accept') {
+    button.hidden = true
+    button.style.display = 'none'
+    return button
+  }
+  button.textContent = '还原此块'
+  button.title = '把这一块恢复成原来的内容'
+  button.onmousedown = action
+  return button
+}
+
 function build() {
   const state = captureState()
   destroy()
@@ -304,7 +331,11 @@ function build() {
         doc: modified,
         extensions: [
           ...editorExtensions(!props.writable),
-          unifiedMergeView({ original, ...unifiedOptions(props) }),
+          unifiedMergeView({
+            original,
+            ...unifiedOptions(props),
+            ...(props.writable ? { mergeControls: chunkControls } : {}),
+          }),
         ],
       }),
     })
@@ -366,7 +397,7 @@ watch(
   () => {
     const views = merge.value ? [merge.value.b] : single.value ? [single.value] : []
     for (const view of views) {
-      view.dispatch({ effects: minimapConf.reconfigure(minimapExtension(props.minimap)) })
+      view.dispatch({ effects: minimapConf.reconfigure(minimapExtension(minimapOn())) })
     }
   },
 )
@@ -385,9 +416,16 @@ defineExpose({ locate, resetScroll })
 <style scoped>
 .merge-diff {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   overflow: hidden;
+}
+/* 内联时编辑器是 flex 子项，不撑开就会缩到内容宽度。 */
+.merge-diff > :deep(.cm-editor) {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
 }
 .merge-diff :deep(.cm-mergeView) {
   flex: 1 1 auto;

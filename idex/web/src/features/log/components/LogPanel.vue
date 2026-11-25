@@ -226,6 +226,60 @@
                 action-icon="mdi-eye-outline"
                 @action="showDeferred"
               />
+              <template v-else-if="!diffCollapsed && texts.ready">
+                <div class="rich-actions">
+                  <v-btn
+                    size="small"
+                    :variant="logDiffScope === 'hunks' ? 'flat' : 'text'"
+                    :color="logDiffScope === 'hunks' ? 'primary' : undefined"
+                    title="只显示改动的片段"
+                    @click="logDiffScope = 'hunks'"
+                  >
+                    仅改动
+                  </v-btn>
+                  <v-btn
+                    size="small"
+                    :variant="logDiffScope === 'file' ? 'flat' : 'text'"
+                    :color="logDiffScope === 'file' ? 'primary' : undefined"
+                    title="显示整份文件，改动的行照样标出来"
+                    @click="logDiffScope = 'file'"
+                  >
+                    整份文件
+                  </v-btn>
+                  <v-btn
+                    size="small"
+                    :variant="mergeInline ? 'text' : 'flat'"
+                    :color="mergeInline ? undefined : 'primary'"
+                    title="左右对照"
+                    @click="mergeInline = false"
+                  >
+                    并排
+                  </v-btn>
+                  <v-btn
+                    size="small"
+                    :variant="mergeInline ? 'flat' : 'text'"
+                    :color="mergeInline ? 'primary' : undefined"
+                    title="单栏内联差异"
+                    @click="mergeInline = true"
+                  >
+                    内联
+                  </v-btn>
+                  <v-spacer />
+                  <v-btn icon size="x-small" variant="text" title="收起差异" @click="toggleDiff">
+                    <v-icon size="18">mdi-chevron-down</v-icon>
+                  </v-btn>
+                </div>
+                <MergeDiffEditor
+                  :original="texts.original"
+                  :model-value="texts.current"
+                  :path="activePath"
+                  :inline="mergeInline"
+                  :collapse="logDiffScope === 'hunks'"
+                  :theme="preferences.editorTheme"
+                  :minimap="preferences.minimap"
+                  :lsp="false"
+                />
+              </template>
               <DiffView
                 v-else-if="!diffCollapsed"
                 :title="diffTitle"
@@ -291,6 +345,7 @@ import {
   tone,
 } from '../lib/logView'
 import { useCommitLog } from '../composables/useCommitLog'
+import MergeDiffEditor from '../../editor/components/MergeDiffEditor.vue'
 import { toast } from '../../../utils/notice'
 import { usePreferencesStore } from '../../../stores/preferences'
 import { useFileTree, useSplitPane } from '@bash-scripts/web-shared'
@@ -318,6 +373,7 @@ const {
   remote,
   activePath,
   content,
+  texts,
   marked,
   awaitingLoad,
   loading,
@@ -346,6 +402,8 @@ watch(error, (text) => {
 const bodyRef = ref(null)
 const filesCollapsed = ref(false)
 const diffCollapsed = ref(false)
+// 提交里的差异默认左右对照，也可以收成单栏内联。
+const mergeInline = ref(false)
 // 文件列表占详情区的高度比例，拖动中间的分隔条改它。
 const { size: filePct, resizing: dragging, start: startDrag, reset: resetFiles } = useSplitPane({
   area: bodyRef,
@@ -710,6 +768,14 @@ defineExpose({ load })
 }
 .diffpane.collapsed {
   flex: 0 0 auto;
+}
+.rich-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 .path {
   display: flex;

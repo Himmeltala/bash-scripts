@@ -17,6 +17,9 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
   const remote = ref(null)
   const activePath = ref('')
   const content = ref({ text: '', truncated: false })
+  // 提交里的整份文件文本：原版本与本版本，供差异编辑器并排/内联使用。
+  const texts = ref({ original: '', current: '', ready: false })
+  const textCache = new Map()
   // 锁文件与构建产物不自动取差异。同一提交里点过“加载差异”的路径记下来，换回来不再拦；
   // 换提交要重新拦一次，同一个路径在不同提交里的差异是另一份。
   const revealed = ref(new Set())
@@ -112,6 +115,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     detail.value = null
     activePath.value = ''
     content.value = { text: '', truncated: false }
+    texts.value = { original: '', current: '', ready: false }
     diffError.value = ''
     if (!entry) return
     if (!entry.paths.length) {
@@ -152,6 +156,40 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     loadDiff(activePath.value)
   }
 
+  // 差异编辑器的两栏内容：父提交里的旧路径与本提交里的新路径。
+  // 改名取 copyfrom，根提交没有父版本，只取得到一侧时按新增或删除处理。
+  async function loadTexts(path, seq) {
+    const entry = current.value
+    texts.value = { original: '', current: '', ready: false }
+    if (!entry || !path || !client.original) return
+    const key = `${entry.revision}\n${path}`
+    const hit = textCache.get(key)
+    if (hit) {
+      texts.value = hit
+      return
+    }
+    const info = (entry.paths || []).find((item) => item.path === path)
+    const oldPath = (info && info.copyfrom) || path
+    let parentRev = ''
+    if (isGit()) parentRev = (detail.value && detail.value.parents && detail.value.parents[0]) || ''
+    else if (Number(entry.revision) > 1) parentRev = String(Number(entry.revision) - 1)
+    const at = (rel, rev) =>
+      client.original(wsId(), rel, 'head', rev).catch(() => null)
+    const [now, before] = await Promise.all([
+      at(path, entry.revision),
+      parentRev ? at(oldPath, parentRev) : Promise.resolve({ text: '', truncated: false }),
+    ])
+    if (seq !== diffSeq || !now && !before) return
+    const value = {
+      original: before ? before.text : '',
+      current: now ? now.text : '',
+      // 内容被截断就不拿它画差异，退回普通差异文本。
+      ready: !(before && before.truncated) && !(now && now.truncated),
+    }
+    if (value.ready) textCache.set(key, value)
+    texts.value = value
+  }
+
   async function loadDiff(path) {
     if (path && held(path)) {
       // 大文件连差异接口都不请求：记下序号让在途的旧结果作废，页面只显示占位。
@@ -159,11 +197,13 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
       diffLoading.value = false
       diffError.value = ''
       content.value = { text: '', truncated: false }
+      texts.value = { original: '', current: '', ready: false }
       return
     }
     const mine = ++diffSeq
     diffLoading.value = true
     diffError.value = ''
+    loadTexts(path, mine)
     try {
       const data = await client.revision(
         wsId(),
@@ -207,6 +247,7 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     remote,
     activePath,
     content,
+    texts,
     marked,
     awaitingLoad,
     loading,
