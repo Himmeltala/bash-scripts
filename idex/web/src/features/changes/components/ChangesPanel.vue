@@ -195,7 +195,14 @@
             :notice="(text) => toast(text, 'warning')"
             @edit="onMergeTyping"
             @definition="onMergeDefinition"
+            @hover="onMergeHover"
+            @hover-end="onMergeHoverEnd"
           />
+          <pre
+            v-if="mergeHover.on"
+            class="merge-hover mono"
+            :style="{ left: `${mergeHover.x}px`, top: `${mergeHover.y}px` }"
+          >{{ mergeHover.text }}</pre>
         </div>
         <DiffView
           v-else
@@ -266,7 +273,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from '@bash-scripts/web-shared/diff'
 import MergeDiffEditor from '../../editor/components/MergeDiffEditor.vue'
@@ -310,6 +317,7 @@ const richText = ref('')
 const mergeInline = ref(false)
 const originalState = ref({ text: '', truncated: false, error: false })
 const servers = ref([])
+const mergeHover = reactive({ on: false, x: 0, y: 0, text: '' })
 // 差异行里直接改：工作副本快照给行内容与写回位置，读不出来就只能看。
 const editState = ref({ editable: false, baseText: '', reason: '' })
 const dirty = ref(false)
@@ -367,6 +375,7 @@ const useRichDiff = computed(
   () =>
     !!selected.value &&
     selected.value.group !== 'staged' &&
+    selected.value.file.item !== 'conflicted' &&
     editState.value.editable &&
     !content.value.truncated &&
     !!content.value.text &&
@@ -435,6 +444,25 @@ function capabilities(path) {
   const id = handlerOf(path).server
   const info = id ? servers.value.find((item) => item.id === id) : null
   return (info && info.capabilities) || {}
+}
+
+function onMergeHover(payload) {
+  if (!selected.value || !payload) return
+  const left = Math.max(8, Math.min(payload.x + 14, window.innerWidth - 448))
+  const top = Math.max(8, Math.min(payload.y + 14, window.innerHeight - 228))
+  Object.assign(mergeHover, { on: true, x: left, y: top, text: '读取悬停…' })
+  api
+    .hover(props.ws.id, selected.value.path, richText.value, payload.line, payload.character)
+    .then((data) => {
+      if (mergeHover.on) mergeHover.text = (data && data.hover && data.hover.text) || ''
+    })
+    .catch(() => {
+      if (mergeHover.on) mergeHover.text = ''
+    })
+}
+
+function onMergeHoverEnd() {
+  mergeHover.on = false
 }
 
 async function onMergeDefinition(symbol) {
@@ -677,6 +705,7 @@ async function pick(file, group, { skipGuard = false } = {}) {
     }
     content.value = data
     originalState.value = original || { text: '', truncated: false, error: false }
+    if (originalState.value.error) toast('原始版本取不到，已退回普通差异', 'warning')
     if (group === 'staged') {
       editState.value = { editable: false, baseText: '', reason: '' }
     } else if (data.truncated) {
@@ -808,6 +837,8 @@ watch(diffScope, async (now, before) => {
     return
   }
   if (!selected.value) return
+  // 合并差异编辑器的折叠只是视图开关，不重新取差异，也不打断编辑。
+  if (useRichDiff.value) return
   const outcome = await confirmLeave()
   if (!outcome) {
     revertingScope = true
@@ -1024,5 +1055,20 @@ defineExpose({ load })
 }
 .hint.bad {
   color: rgb(var(--v-theme-error));
+}
+.merge-hover {
+  position: fixed;
+  z-index: 20;
+  max-width: 420px;
+  max-height: 210px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: 0.74rem;
+  white-space: pre-wrap;
+  pointer-events: none;
 }
 </style>

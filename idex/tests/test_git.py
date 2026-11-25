@@ -611,6 +611,11 @@ class GitOriginal(unittest.TestCase):
         run(["git", "add", "-A"], cwd=self.repo)
         self.assertEqual(self.original(scope="staged")["text"], "one\n")
 
+    def test_head_scope_is_head_version(self):
+        (self.repo / "web" / "a.txt").write_text("two\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.repo)
+        self.assertEqual(self.original(scope="head")["text"], "one\n")
+
     def test_untracked_file_has_empty_original(self):
         (self.repo / "web" / "new.txt").write_text("new\n", "utf-8")
         self.assertEqual(self.original("new.txt")["text"], "")

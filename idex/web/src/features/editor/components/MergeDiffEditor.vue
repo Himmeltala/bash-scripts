@@ -308,13 +308,13 @@ function editorExtensions({ readonly, original }) {
     autocompletion({ override: [completionSource], activateOnTyping: true }),
     phrases,
   ]
+  if (props.inline) {
+    extensions.push(unifiedMergeView({ original, ...unifiedOptions(props) }))
+  }
   if (readonly) {
     extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false))
   } else {
     extensions.push(domEvents, updateListener, minimapExtension())
-    if (props.inline) {
-      extensions.push(unifiedMergeView({ original, ...unifiedOptions(props) }))
-    }
   }
   return extensions
 }
@@ -331,7 +331,31 @@ function destroy() {
   if (host.value) host.value.innerHTML = ''
 }
 
+function captureState() {
+  const view = activeView()
+  if (!view) return null
+  const selection = view.state.selection.main
+  return {
+    anchor: selection.anchor,
+    head: selection.head,
+    top: view.scrollDOM.scrollTop,
+    left: view.scrollDOM.scrollLeft,
+  }
+}
+
+function restoreState(state) {
+  const view = activeView()
+  if (!view || !state) return
+  const length = view.state.doc.length
+  view.dispatch({
+    selection: { anchor: Math.min(state.anchor, length), head: Math.min(state.head, length) },
+  })
+  view.scrollDOM.scrollTop = state.top
+  view.scrollDOM.scrollLeft = state.left
+}
+
 function build() {
+  const state = captureState()
   destroy()
   if (!host.value) return
   const original = String(props.original ?? '')
@@ -362,13 +386,14 @@ function build() {
     })
   }
   pushDiagnostics()
+  if (state) requestAnimationFrame(() => restoreState(state))
 }
 
 onMounted(() => build())
 onBeforeUnmount(destroy)
 
 watch(
-  () => [props.inline, props.collapse, props.writable, props.path, props.theme],
+  () => [props.inline, props.collapse, props.writable, props.path, props.theme, props.minimap],
   () => nextTick(build),
 )
 watch(
@@ -405,7 +430,7 @@ function resetScroll() {
   if (view) view.scrollDOM.scrollTop = 0
 }
 
-defineExpose({ locate, resetScroll, save: () => true })
+defineExpose({ locate, resetScroll })
 </script>
 
 <style scoped>

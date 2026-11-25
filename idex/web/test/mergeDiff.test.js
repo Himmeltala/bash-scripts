@@ -11,13 +11,11 @@ import assert from 'node:assert/strict'
 import { mergeViewOptions, unifiedOptions } from '../src/features/editor/core/mergeDiff.js'
 
 test('并排模式按可写状态给还原方向，只改动时折叠未变区域', () => {
-  assert.deepEqual(mergeViewOptions({ inline: false, collapse: true, writable: true }), {
-    inline: false,
+  assert.deepEqual(mergeViewOptions({ collapse: true, writable: true }), {
     revertControls: 'a-to-b',
     collapseUnchanged: { margin: 3 },
   })
-  assert.deepEqual(mergeViewOptions({ inline: false, collapse: false, writable: false }), {
-    inline: false,
+  assert.deepEqual(mergeViewOptions({ collapse: false, writable: false }), {
     revertControls: undefined,
     collapseUnchanged: undefined,
   })

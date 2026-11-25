@@ -7,6 +7,7 @@ from urllib.parse import unquote, urlparse
 from vcs_cli import svn
 
 from vcs_common import (
+    MAX_TEXT,
     STATUS_ORDER,
     clean_paths,
     clip,
@@ -222,8 +223,10 @@ def svn_original(root, rel, rev=None):
         if not rev:
             return {"text": "", "truncated": False}
         raise ApiError(400, err or "取原始版本失败")
-    text, truncated = clip(out.decode("utf-8", "replace"))
-    return {"text": text, "truncated": truncated}
+    text = out.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+    if len(text) > MAX_TEXT:
+        return {"text": text[:MAX_TEXT] + "\n…（文件太长，后面的没有显示）\n", "truncated": True}
+    return {"text": text, "truncated": False}
 
 
 def svn_unadd_args(root, paths):

@@ -7,9 +7,8 @@
  * @Description: 合并差异编辑器的模式选项，纯函数便于测试。
  */
 
-export function mergeViewOptions({ inline, collapse, writable }) {
+export function mergeViewOptions({ collapse, writable }) {
   return {
-    inline: !!inline,
     // 只读差异不显示块还原按钮；可写时把左侧原文还原到右侧工作副本。
     revertControls: writable ? 'a-to-b' : undefined,
     collapseUnchanged: collapse ? { margin: 3 } : undefined,
