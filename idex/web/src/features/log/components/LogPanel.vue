@@ -226,7 +226,7 @@
                 action-icon="mdi-eye-outline"
                 @action="showDeferred"
               />
-              <template v-else-if="!diffCollapsed && texts.ready">
+              <template v-else-if="!diffCollapsed">
                 <div class="rich-actions">
                   <v-btn
                     size="small"
@@ -280,32 +280,6 @@
                   :lsp="false"
                 />
               </template>
-              <DiffView
-                v-else-if="!diffCollapsed"
-                :title="diffTitle"
-                :path="activePath"
-                :text="content.text"
-                kind="diff"
-                :truncated="content.truncated"
-                :loading="diffLoading"
-                :error="diffError"
-              >
-                <template #actions>
-                  <v-btn-toggle
-                    v-model="logDiffScope"
-                    density="compact"
-                    variant="text"
-                    divided
-                    mandatory
-                  >
-                    <v-btn value="hunks" size="small" title="只显示改动的片段">仅改动</v-btn>
-                    <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整份文件</v-btn>
-                  </v-btn-toggle>
-                  <v-btn icon size="x-small" variant="text" title="收起差异" @click="toggleDiff">
-                    <v-icon size="18">mdi-chevron-down</v-icon>
-                  </v-btn>
-                </template>
-              </DiffView>
               <div v-else class="pane-head">
                 <div class="head-left">
                   <span class="pane-title mono folded-title" :title="diffTitle">{{ diffTitle }}</span>
@@ -331,7 +305,6 @@ import { storeToRefs } from 'pinia'
 
 import { useTheme } from 'vuetify'
 import { useStoredChoice } from '@bash-scripts/web-shared'
-import DiffView from '@bash-scripts/web-shared/diff'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { buildGraph, DOT_Y } from '../lib/gitGraph'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'

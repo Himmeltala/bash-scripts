@@ -1701,8 +1701,7 @@ onBeforeUnmount(() => {
 }
 .up-conflict {
   margin: 0;
-  font-family: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
-    'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--bash-font-mono);
   font-size: 0.84rem;
   word-break: break-all;
 }

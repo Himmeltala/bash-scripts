@@ -94,7 +94,7 @@ onMounted(() => {
     disableStdin: true,
     cursorBlink: false,
     scrollback: 5000,
-    fontFamily: "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    fontFamily: 'var(--bash-font-mono)',
     fontSize: 12,
     lineHeight: 1.3,
     theme: themeFor(props.dark),

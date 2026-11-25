@@ -5,7 +5,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { EDITOR_THEME_OPTIONS } from './themeOptions.js'
 
-const CODE_FONT = "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', monospace"
+const CODE_FONT = 'var(--bash-font-mono)'
 
 const PALETTES = {
   'github-light': {

@@ -173,11 +173,14 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     let parentRev = ''
     if (isGit()) parentRev = (detail.value && detail.value.parents && detail.value.parents[0]) || ''
     else if (Number(entry.revision) > 1) parentRev = String(Number(entry.revision) - 1)
-    const at = (rel, rev) =>
-      client.original(wsId(), rel, 'head', rev).catch(() => null)
+    const at = (rel, rev, repo) =>
+      client.original(wsId(), rel, 'head', rev, repo).catch(() => null)
+    // SVN 的远程提交可能还没更新到本地，另给仓库根相对路径。
+    const currentRepo = isGit() ? '' : (info && info.repoPath) || ''
+    const oldRepo = isGit() ? '' : (info && (info.copyfromRepo || info.repoPath)) || ''
     const [now, before] = await Promise.all([
-      at(path, entry.revision),
-      parentRev ? at(oldPath, parentRev) : Promise.resolve({ text: '', truncated: false }),
+      at(path, entry.revision, currentRepo),
+      parentRev ? at(oldPath, parentRev, oldRepo) : Promise.resolve({ text: '', truncated: false }),
     ])
     if (seq !== diffSeq || !now && !before) return
     const value = {
@@ -205,10 +208,14 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
     diffError.value = ''
     loadTexts(path, mine)
     try {
+      const info = ((current.value && current.value.paths) || []).find(
+        (item) => item.path === path,
+      )
       const data = await client.revision(
         wsId(),
         current.value.revision,
-        path,
+        // SVN 的版本差异要仓库根相对路径，页面展示用工作区相对路径。
+        (info && info.repoPath) || path,
         diffScope.value === 'file'
       )
       // 连点提交或来回切口径时，晚到的旧结果不能盖住当前这一份。
