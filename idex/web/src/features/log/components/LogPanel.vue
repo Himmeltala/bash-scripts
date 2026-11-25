@@ -228,43 +228,35 @@
               />
               <template v-else-if="!diffCollapsed">
                 <div class="rich-actions">
-                  <v-btn
-                    size="small"
-                    :variant="logDiffScope === 'hunks' ? 'flat' : 'text'"
-                    :color="logDiffScope === 'hunks' ? 'primary' : undefined"
-                    title="只显示改动的片段"
-                    @click="logDiffScope = 'hunks'"
-                  >
-                    仅改动
-                  </v-btn>
-                  <v-btn
-                    size="small"
-                    :variant="logDiffScope === 'file' ? 'flat' : 'text'"
-                    :color="logDiffScope === 'file' ? 'primary' : undefined"
-                    title="显示整份文件，改动的行照样标出来"
-                    @click="logDiffScope = 'file'"
-                  >
-                    整份文件
-                  </v-btn>
-                  <v-btn
-                    size="small"
-                    :variant="mergeInline ? 'text' : 'flat'"
-                    :color="mergeInline ? undefined : 'primary'"
-                    title="左右对照"
-                    @click="mergeInline = false"
-                  >
-                    并排
-                  </v-btn>
-                  <v-btn
-                    size="small"
-                    :variant="mergeInline ? 'flat' : 'text'"
-                    :color="mergeInline ? 'primary' : undefined"
-                    title="单栏内联差异"
-                    @click="mergeInline = true"
-                  >
-                    内联
-                  </v-btn>
                   <v-spacer />
+                  <v-btn-toggle
+                    v-model="logDiffScope"
+                    class="diff-modes"
+                    variant="text"
+                    divided
+                    mandatory
+                  >
+                    <v-btn value="hunks" size="x-small" icon title="只显示改动的片段">
+                      <v-icon>mdi-arrow-collapse-vertical</v-icon>
+                    </v-btn>
+                    <v-btn value="file" size="x-small" icon title="显示整份文件，改动的行照样标出来">
+                      <v-icon>mdi-arrow-expand-vertical</v-icon>
+                    </v-btn>
+                  </v-btn-toggle>
+                  <v-btn-toggle
+                    v-model="mergeInline"
+                    class="layout-modes"
+                    variant="text"
+                    divided
+                    mandatory
+                  >
+                    <v-btn :value="false" size="x-small" icon title="左右对照">
+                      <v-icon>mdi-view-column-outline</v-icon>
+                    </v-btn>
+                    <v-btn :value="true" size="x-small" icon title="单栏内联差异">
+                      <v-icon>mdi-view-day-outline</v-icon>
+                    </v-btn>
+                  </v-btn-toggle>
                   <v-btn icon size="x-small" variant="text" title="收起差异" @click="toggleDiff">
                     <v-icon size="18">mdi-chevron-down</v-icon>
                   </v-btn>
@@ -754,6 +746,13 @@ defineExpose({ load })
   gap: 4px;
   padding: 4px 10px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+.rich-actions :deep(.v-btn-toggle) {
+  height: 24px;
+}
+.rich-actions :deep(.v-btn-toggle .v-btn) {
+  height: 24px !important;
+  min-height: 24px;
 }
 .path {
   display: flex;

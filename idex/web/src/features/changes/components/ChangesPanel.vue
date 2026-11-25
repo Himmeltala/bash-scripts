@@ -40,13 +40,14 @@
             <v-btn
               v-if="group.action"
               size="x-small"
+              icon
               variant="text"
-              :prepend-icon="group.icon"
+              :title="group.action"
               :loading="acting === groupKey(group.key)"
               :disabled="!groupList(group.key).length"
               @click="actGroup(group)"
             >
-              {{ group.action }}
+              <v-icon>{{ group.icon }}</v-icon>
             </v-btn>
           </div>
           <ul>
@@ -134,44 +135,36 @@
         />
         <div v-else-if="selected" class="rich-diff">
           <div class="rich-actions">
-            <v-btn
-              size="small"
-              :variant="diffScope === 'hunks' ? 'flat' : 'text'"
-              :color="diffScope === 'hunks' ? 'primary' : undefined"
-              title="只显示改动的片段"
-              @click="diffScope = 'hunks'"
-            >
-              仅改动
-            </v-btn>
-            <v-btn
-              size="small"
-              :variant="diffScope === 'file' ? 'flat' : 'text'"
-              :color="diffScope === 'file' ? 'primary' : undefined"
-              title="显示整份文件，改动的行照样标出来"
-              @click="diffScope = 'file'"
-            >
-              整份文件
-            </v-btn>
-            <v-btn
-              size="small"
-              :variant="mergeInline ? 'text' : 'flat'"
-              :color="mergeInline ? undefined : 'primary'"
-              title="左右对照"
-              @click="mergeInline = false"
-            >
-              并排
-            </v-btn>
-            <v-btn
-              size="small"
-              :variant="mergeInline ? 'flat' : 'text'"
-              :color="mergeInline ? 'primary' : undefined"
-              title="单栏内联差异"
-              @click="mergeInline = true"
-            >
-              内联
-            </v-btn>
             <v-chip v-if="!canEdit" size="x-small" variant="flat">只读</v-chip>
             <v-spacer />
+            <v-btn-toggle
+              v-model="diffScope"
+              class="diff-modes"
+              variant="text"
+              divided
+              mandatory
+            >
+              <v-btn value="hunks" size="x-small" icon title="只显示改动的片段">
+                <v-icon>mdi-arrow-collapse-vertical</v-icon>
+              </v-btn>
+              <v-btn value="file" size="x-small" icon title="显示整份文件，改动的行照样标出来">
+                <v-icon>mdi-arrow-expand-vertical</v-icon>
+              </v-btn>
+            </v-btn-toggle>
+            <v-btn-toggle
+              v-model="mergeInline"
+              class="layout-modes"
+              variant="text"
+              divided
+              mandatory
+            >
+              <v-btn :value="false" size="x-small" icon title="左右对照">
+                <v-icon>mdi-view-column-outline</v-icon>
+              </v-btn>
+              <v-btn :value="true" size="x-small" icon title="单栏内联差异">
+                <v-icon>mdi-view-day-outline</v-icon>
+              </v-btn>
+            </v-btn-toggle>
             <v-chip v-if="dirty" size="x-small" variant="flat" color="modified">未保存</v-chip>
             <v-btn v-if="dirty" size="small" variant="text" color="primary" :loading="saving" @click="saveNow">
               保存
@@ -929,6 +922,14 @@ defineExpose({ load })
   gap: 4px;
   padding: 4px 10px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+/* 和左侧列表头的图标切换一样高，别再被 v-btn 的默认高度撑开。 */
+.rich-actions :deep(.v-btn-toggle) {
+  height: 24px;
+}
+.rich-actions :deep(.v-btn-toggle .v-btn) {
+  height: 24px !important;
+  min-height: 24px;
 }
 .view {
   flex: 1 1 auto;
