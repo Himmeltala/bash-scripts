@@ -330,7 +330,7 @@ const props = defineProps({
 
 // 差异口径与文件列表的查看方式记在全局偏好里，换工作副本也保持。
 const preferences = usePreferencesStore()
-const { logDiffScope, logFilesMode } = storeToRefs(preferences)
+const { logDiffScope, logFilesMode, logDiffInline: mergeInline } = storeToRefs(preferences)
 
 const theme = useTheme()
 const dark = computed(() => theme.global.current.value.dark)
@@ -376,7 +376,6 @@ const bodyRef = ref(null)
 const filesCollapsed = ref(false)
 const diffCollapsed = ref(false)
 // 提交里的差异默认左右对照，也可以收成单栏内联。
-const mergeInline = ref(false)
 // 文件列表占详情区的高度比例，拖动中间的分隔条改它。
 const { size: filePct, resizing: dragging, start: startDrag, reset: resetFiles } = useSplitPane({
   area: bodyRef,

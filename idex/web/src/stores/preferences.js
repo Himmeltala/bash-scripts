@@ -21,6 +21,9 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const activeTab = useStoredChoice('idex.active-tab', ['changes', 'log', 'browse', 'node', 'jvm'], 'changes')
   const logFilesMode = useStoredChoice('idex.log-files-mode', ['tree', 'flat'], 'flat')
   const logDiffScope = useStoredChoice('idex.log-diff-scope', ['file', 'hunks'], 'hunks')
+  // 差异编辑器默认并排；两个页面各自记住自己的选择。
+  const changesDiffInline = useStoredChoice('idex.changes-diff-inline', [false, true], false)
+  const logDiffInline = useStoredChoice('idex.log-diff-inline', [false, true], false)
   // 代码编辑器的配色只影响浏览页，跟随界面与四套固定预设。
   const editorTheme = useStoredChoice('idex.editor-theme', EDITOR_THEME_IDS, 'auto')
   // 编辑器右侧的代码地图，同样由服务端设置加载。
@@ -29,5 +32,5 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const shortcuts = ref({ ...SHORTCUT_DEFAULTS })
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
-  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme, minimap, shortcuts, pendingOpen }
+  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, pendingOpen }
 })

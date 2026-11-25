@@ -276,7 +276,6 @@ const error = ref('')
 const diffError = ref('')
 const mergeRef = ref(null)
 const richText = ref('')
-const mergeInline = ref(false)
 const originalState = ref({ text: '', truncated: false, error: false })
 const servers = ref([])
 const mergeHover = reactive({ on: false, x: 0, y: 0, text: '' })
@@ -297,7 +296,7 @@ watch(saveError, (text) => {
 
 // 查看方式来自全局偏好，所有工作区共用；树形默认全部展开。
 const preferences = usePreferencesStore()
-const { changesMode: mode, diffScope } = storeToRefs(preferences)
+const { changesMode: mode, diffScope, changesDiffInline: mergeInline } = storeToRefs(preferences)
 // 左侧列表的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
 const { size: listWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
