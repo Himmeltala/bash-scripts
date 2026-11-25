@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 08:18:05
+ * @LastEditTime: 2026-11-25 08:31:41
  * @FilePath: \idex\web\src\features\browse\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -1402,6 +1402,20 @@ watch(activePath, (path) => {
   // 换到一个在外部被改过的页签：只打标记，点它才换内容。
   diskSync.markActiveStale()
 })
+
+// 其他页签要打开某个文件的某一行：消费一次，打开后清掉。
+let pendingSeq = 0
+watch(
+  () => preferences.pendingOpen,
+  async (target) => {
+    if (!target || !target.path || target.seq === pendingSeq) return
+    pendingSeq = target.seq
+    preferences.pendingOpen = null
+    const name = String(target.path).split('/').pop()
+    await show({ name, path: target.path, type: 'file' }, Number(target.line) || 0)
+  },
+  { immediate: true },
+)
 watch(searching, (on) => {
   if (!on) {
     // 搜索期间攒下的外部变化，退出搜索时把目录树补读一遍。

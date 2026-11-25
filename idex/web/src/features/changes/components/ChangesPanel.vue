@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:55:31
+ * @LastEditTime: 2026-11-25 08:31:41
  * @FilePath: \idex\web\src\features\changes\components\ChangesPanel.vue
  * @Description: 列出工作副本的未提交变更，按文件查看差异并直接编辑保存。
 -->
@@ -133,6 +133,45 @@
           action-icon="mdi-eye-outline"
           @action="showDeferred"
         />
+        <div v-else-if="useRichDiff" class="rich-diff">
+          <div class="rich-actions">
+            <v-btn
+              size="small"
+              :variant="diffScope === 'hunks' ? 'flat' : 'text'"
+              :color="diffScope === 'hunks' ? 'primary' : undefined"
+              title="只显示改动的片段"
+              @click="diffScope = 'hunks'"
+            >
+              仅改动
+            </v-btn>
+            <v-btn
+              size="small"
+              :variant="diffScope === 'file' ? 'flat' : 'text'"
+              :color="diffScope === 'file' ? 'primary' : undefined"
+              title="显示整份文件，改动的行照样标出来"
+              @click="diffScope = 'file'"
+            >
+              整份文件
+            </v-btn>
+            <v-spacer />
+            <v-chip v-if="dirty" size="x-small" variant="flat" color="modified">未保存</v-chip>
+            <v-btn v-if="dirty" size="small" variant="text" color="primary" :loading="saving" @click="saveNow">
+              保存
+            </v-btn>
+            <v-btn v-if="dirty" size="small" variant="text" :disabled="saving" @click="discard">放弃</v-btn>
+          </div>
+          <IdexDiffEditor
+            ref="richDiffRef"
+            :ws="ws"
+            :path="selected.path"
+            :content="editState.baseText"
+            :diff-text="content.text"
+            :scope="diffScope === 'hunks' ? 'hunks' : 'file'"
+            @dirty="onRichDirty"
+            @saved="onRichSaved"
+            @open="openInBrowse"
+          />
+        </div>
         <DiffView
           v-else
           ref="diffRef"
@@ -149,17 +188,24 @@
           @dirty="onDirty"
         >
           <template #actions>
-            <v-btn-toggle
-              v-model="diffScope"
-              density="compact"
-              variant="text"
-              divided
-              mandatory
-              class="scopes"
+            <v-btn
+              size="small"
+              :variant="diffScope === 'hunks' ? 'flat' : 'text'"
+              :color="diffScope === 'hunks' ? 'primary' : undefined"
+              title="只显示改动的片段"
+              @click="diffScope = 'hunks'"
             >
-              <v-btn value="hunks" size="small" title="只显示改动的片段">仅改动</v-btn>
-              <v-btn value="file" size="small" title="显示整份文件，改动的行照样标出来">整份文件</v-btn>
-            </v-btn-toggle>
+              仅改动
+            </v-btn>
+            <v-btn
+              size="small"
+              :variant="diffScope === 'file' ? 'flat' : 'text'"
+              :color="diffScope === 'file' ? 'primary' : undefined"
+              title="显示整份文件，改动的行照样标出来"
+              @click="diffScope = 'file'"
+            >
+              整份文件
+            </v-btn>
             <template v-if="dirty">
               <v-chip size="x-small" variant="flat" color="modified">未保存</v-chip>
               <v-btn size="small" variant="text" color="primary" :loading="saving" @click="saveNow">
@@ -198,6 +244,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from '@bash-scripts/web-shared/diff'
+import IdexDiffEditor from './IdexDiffEditor.vue'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { api } from '../../../utils/api'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
@@ -231,6 +278,7 @@ const diffLoading = ref(false)
 const error = ref('')
 const diffError = ref('')
 const diffRef = ref(null)
+const richDiffRef = ref(null)
 // 差异行里直接改：工作副本快照给行内容与写回位置，读不出来就只能看。
 const editState = ref({ editable: false, baseText: '', reason: '' })
 const dirty = ref(false)
@@ -283,6 +331,17 @@ const awaitingLoad = computed(() => {
   const { group, path } = selected.value
   return marked(group, path) && !revealed.value.has(keyOf(group, path))
 })
+// 工作区的改动用 idex 自己的差异编辑器：整份文件、LSP 与逐块还原；已暂存与只读情况仍用通用 DiffView。
+const useRichDiff = computed(
+  () =>
+    isGit.value &&
+    !!selected.value &&
+    selected.value.group !== 'staged' &&
+    editState.value.editable &&
+    !content.value.truncated &&
+    !!content.value.text,
+)
+
 const diffEditable = computed(
   () => editState.value.editable && !content.value.truncated && !diffLoading.value,
 )
@@ -520,8 +579,29 @@ function onDirty(value) {
 function discard() {
   pendingRefresh = false
   saveError.value = ''
-  diffRef.value?.resetEdits()
+  if (useRichDiff.value && richDiffRef.value) richDiffRef.value.discard()
+  else diffRef.value?.resetEdits()
   dirty.value = false
+}
+
+function onRichDirty(value) {
+  dirty.value = value
+}
+
+async function onRichSaved() {
+  pendingRefresh = false
+  await load()
+}
+
+// 跨文件的定义跳到资源管理器打开对应位置。
+function openInBrowse(loc) {
+  if (!loc || !loc.path) return
+  preferences.activeTab = 'browse'
+  preferences.pendingOpen = {
+    path: loc.path,
+    line: Number(loc.line || 0) + 1,
+    seq: Date.now(),
+  }
 }
 
 // 只写回工作副本；先重读一遍，和进入编辑时的快照对不上就不写，免得盖掉别人的改动。
@@ -549,6 +629,20 @@ async function persist() {
 }
 
 async function saveNow() {
+  if (useRichDiff.value && richDiffRef.value) {
+    saving.value = true
+    saveError.value = ''
+    try {
+      const ok = await richDiffRef.value.save()
+      if (!ok) return false
+      dirty.value = false
+      pendingRefresh = false
+      await load()
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
   if (!(await persist())) return false
   await load()
   if (selected.value) {
@@ -752,6 +846,19 @@ defineExpose({ load })
 .held {
   flex: 0 0 auto;
   color: rgb(var(--v-theme-on-surface-variant));
+}
+.rich-diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rich-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 .view {
   flex: 1 1 auto;

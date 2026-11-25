@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 08:18:05
+ * @LastEditTime: 2026-11-25 08:31:41
  * @FilePath: \idex\web\src\stores\preferences.js
  * @Description: idex 的界面偏好：变更、差异、搜索、页签与编辑器配色的本地选择。
 */
@@ -24,5 +24,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const editorTheme = useStoredChoice('idex.editor-theme', EDITOR_THEME_IDS, 'auto')
   // 编辑器右侧的代码地图，同样由服务端设置加载。
   const minimap = ref(false)
-  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme, minimap }
+  // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
+  const pendingOpen = ref(null)
+  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme, minimap, pendingOpen }
 })

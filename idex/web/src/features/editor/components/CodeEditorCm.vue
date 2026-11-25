@@ -5,6 +5,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { basicSetup } from 'codemirror'
+import { foldEffect, unfoldEffect } from '@codemirror/language'
 import { Compartment, EditorState, StateEffect } from '@codemirror/state'
 import { EditorView, GutterMarker, gutter, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
@@ -35,6 +36,8 @@ const props = defineProps({
   theme: { type: String, default: 'auto' },
   // 右侧代码地图；设置里开关，切换时重配置。
   minimap: { type: Boolean, default: false },
+  // 需要折叠的行区间（1 起、含两端），用来只显示差异附近。
+  collapsedRanges: { type: Array, default: () => [] },
   // 各文件的 Git 行级标记：{ 路径: { marks: { 行号: { kind, hunk } }, hunks: [] } }。
   diff: { type: Object, default: () => ({}) },
 })
@@ -57,6 +60,7 @@ const appearance = new Compartment()
 const minimapConf = new Compartment()
 const requests = latestRequests()
 let view = null
+let foldedRanges = []
 let debounceTimer = 0
 let pendingResolve = null
 let hoverTimer = 0
@@ -380,6 +384,7 @@ onMounted(() => {
     state: EditorState.create({ doc: String(props.modelValue ?? ''), extensions: buildExtensions() }),
   })
   pushDiagnostics()
+  setCollapsedRanges(props.collapsedRanges)
 })
 
 onBeforeUnmount(() => {
@@ -407,6 +412,12 @@ watch(
     if (!view) return
     view.dispatch({ effects: appearance.reconfigure(editorThemeExtensions(props.theme)) })
   }
+)
+
+watch(
+  () => props.collapsedRanges,
+  (ranges) => setCollapsedRanges(ranges),
+  { deep: true },
 )
 
 watch(
@@ -455,7 +466,26 @@ function resetScroll() {
   view.scrollDOM.scrollLeft = 0
 }
 
-defineExpose({ locate, resetScroll })
+// 折叠一组行区间（1 起、含两端），用来只显示差异附近的代码；LSP 行号不受影响。
+function setCollapsedRanges(ranges) {
+  if (!view) return
+  const effects = []
+  for (const range of foldedRanges) effects.push(unfoldEffect.of(range))
+  foldedRanges = []
+  const doc = view.state.doc
+  for (const [start, end] of ranges || []) {
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    const a = Math.max(1, Math.trunc(start))
+    const b = Math.min(doc.lines, Math.trunc(end))
+    if (b <= a) continue
+    const range = { from: doc.line(a).from, to: doc.line(b).to }
+    effects.push(foldEffect.of(range))
+    foldedRanges.push(range)
+  }
+  view.dispatch({ effects })
+}
+
+defineExpose({ locate, resetScroll, setCollapsedRanges })
 </script>
 
 <style scoped>

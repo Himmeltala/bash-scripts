@@ -23,6 +23,7 @@
       :notice="notice"
       :theme="theme"
       :minimap="minimap"
+      :collapsed-ranges="collapsedRanges"
       :diff="diff"
       @update:model-value="$emit('update:modelValue', $event)"
       v-on="forwarders"
@@ -45,6 +46,7 @@ const props = defineProps({
   notice: { type: Function, default: null },
   theme: { type: String, default: 'auto' },
   minimap: { type: Boolean, default: false },
+  collapsedRanges: { type: Array, default: () => [] },
   diff: { type: Object, default: () => ({}) },
   // FileEditor 给的注册回调：内部编辑器就绪后交 locate/resetScroll，卸载时交 null。
   register: { type: Function, default: null },
@@ -93,6 +95,10 @@ function resetScroll() {
   innerRef.value?.resetScroll()
 }
 
+function setCollapsedRanges(ranges) {
+  innerRef.value?.setCollapsedRanges(ranges)
+}
+
 onMounted(async () => {
   try {
     const mod = await import('./CodeEditorCm.vue')
@@ -108,6 +114,8 @@ onMounted(async () => {
   flushPending()
   if (props.register) props.register({ locate, resetScroll })
 })
+
+defineExpose({ locate, resetScroll, setCollapsedRanges })
 
 onBeforeUnmount(() => {
   if (props.register) props.register(null)
