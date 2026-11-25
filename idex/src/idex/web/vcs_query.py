@@ -35,6 +35,7 @@ from git_query import (
     git_log,
     git_op_env,
     git_original,
+    git_prefix,
     git_ref_exists,
     git_ref_labels,
     git_remote_sync,

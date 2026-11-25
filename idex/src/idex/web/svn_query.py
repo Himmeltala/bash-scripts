@@ -189,7 +189,26 @@ def svn_log_meta(root, limit, skip=0):
     prefix = url_path[len(repo_path):].rstrip("/") if repo_path and url_path.startswith(repo_path) else url_path
     for entry in entries:
         entry["local"] = svn_entry_local(entry, prefix, revs, top, base_rev)
+        # 页面按工作区相对路径打开文件；仓库根相对路径留在 repoPath 给版本差异用。
+        for item in entry.get("paths") or []:
+            item["repoPath"] = item.get("path") or ""
+            item["path"] = svn_workspace_path(item["repoPath"], prefix)
+            if item.get("copyfrom"):
+                item["copyfromRepo"] = item["copyfrom"]
+                item["copyfrom"] = svn_workspace_path(item["copyfrom"], prefix)
     return entries[skip:], {"wc_revision": top}
+
+
+def svn_workspace_path(path, prefix):
+    """仓库根相对路径换成工作区相对路径；工作区外的路径按仓库根相对原样返回。"""
+    rel = (path or "").lstrip("/")
+    root_prefix = (prefix or "").strip("/")
+    if not root_prefix:
+        return rel
+    if rel == root_prefix:
+        return ""
+    head = root_prefix + "/"
+    return rel[len(head):] if rel.startswith(head) else rel
 
 
 def svn_status_state(root):
@@ -217,7 +236,9 @@ def svn_sync_info(root):
 
 def svn_original(root, rel, rev=None):
     """差异编辑器左栏要的原始版本：默认 BASE，也可指定版本；未纳管返回空。"""
-    args = ["cat", "-r", str(rev) if rev else "BASE", "--", rel]
+    # 日志里的仓库根相对路径以 / 开头，用 ^/ 让 svn 按仓库根取，不当作本地绝对路径。
+    target = "^" + rel if rel.startswith("/") else rel
+    args = ["cat", "-r", str(rev) if rev else "BASE", "--", target]
     rc, out, err = svn(args, cwd=root)
     if rc != 0:
         if not rev:

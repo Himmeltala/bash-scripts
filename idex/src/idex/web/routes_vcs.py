@@ -69,7 +69,14 @@ class VcsRoutes:
         rel = safe_rel((query.get("path") or [""])[0])
         scope = (query.get("scope") or ["worktree"])[0]
         rev = (query.get("rev") or [""])[0] or None
-        if ws.get("vcs") == "git":
+        # SVN 日志里的远端版本要用仓库根相对路径；只读，且不允许 .. 跳出仓库。
+        repo_path = (query.get("repo") or [""])[0]
+        if ws.get("vcs") == "svn" and repo_path:
+            parts = repo_path.split("/")
+            if not repo_path.startswith("/") or ".." in parts:
+                raise ApiError(400, "仓库路径不对：%s" % repo_path)
+            result = svn_original(ws["root"], repo_path, rev)
+        elif ws.get("vcs") == "git":
             result = git_original(ws["root"], rel, scope, rev)
         elif ws.get("vcs") == "svn":
             result = svn_original(ws["root"], rel, rev)

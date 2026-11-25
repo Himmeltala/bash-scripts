@@ -575,6 +575,25 @@ class GitSubdirHistory(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
+    def test_status_and_detail_paths_are_workspace_relative(self):
+        (self.repo / "web" / "a.txt").write_text("3\n", "utf-8")
+        changes = gitmod.git_changes(str(self.repo / "web"))
+        self.assertEqual(changes["files"][0]["path"], "a.txt")
+        head = git_out("rev-parse", "HEAD", cwd=self.repo)
+        detail = gitmod.git_commit_detail(str(self.repo / "web"), head)
+        self.assertEqual(detail["paths"][0]["path"], "a.txt")
+
+    def test_revision_original_accepts_repo_relative_log_path(self):
+        head = git_out("rev-parse", "HEAD", cwd=self.repo)
+        data = gitmod.git_original(str(self.repo / "web"), "web/a.txt", "head", head)
+        self.assertEqual(data["text"], "2\n")
+
+    def test_worktree_diff_uses_workspace_relative_path(self):
+        (self.repo / "web" / "a.txt").write_text("3\n", "utf-8")
+        data = gitmod.git_change_diff(str(self.repo / "web"), "a.txt", False, "head")
+        self.assertIn("a.txt", data["text"])
+        self.assertIn("+3", data["text"])
+
     def test_log_parents_are_rewritten_for_subdir(self):
         entries = gitmod.git_log(str(self.repo / "web"), 10)
         self.assertEqual([entry["message"] for entry in entries], ["web 第二次", "web 第一次"])

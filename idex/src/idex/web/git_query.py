@@ -17,6 +17,16 @@ from vcs_common import (
 )
 
 
+def git_prefix(root):
+    """工作区在仓库里的路径前缀；根就是仓库时为空串。"""
+    rc, out, _ = git(["rev-parse", "--show-prefix"], cwd=root)
+    return out.decode("utf-8", "replace").strip() if rc == 0 else ""
+
+
+def strip_prefix(path, prefix):
+    return path[len(prefix):] if prefix and path.startswith(prefix) else path
+
+
 def column_item(code):
     """单列状态字母换成页面展示项；未跟踪在索引列记作 ?，这里单独认。"""
     if code == "?":
@@ -90,17 +100,18 @@ def git_change_diff(root, rel, full=False, scope="head"):
     staged 取暂存区对 HEAD，worktree 取工作区对暂存区；head 取工作区加暂存区
     对 HEAD，口径跟 SVN 对 BASE 一致，也是缺省值。
     """
+    # rel 相对工作区根；命令的 cwd 就是工作区，别用仓库根相对的 :/。
     if scope == "staged":
-        args = ["diff", "--cached", "--", ":/" + rel]
+        args = ["diff", "--cached", "--", ":(literal)" + rel]
     elif scope == "worktree":
-        args = ["diff", "--", ":/" + rel]
+        args = ["diff", "--", ":(literal)" + rel]
     else:
         has_head, _ = git_head(root)
         if has_head:
-            args = ["diff", "HEAD", "--", ":/" + rel]
+            args = ["diff", "HEAD", "--", ":(literal)" + rel]
         else:
             # 空仓库还没有 HEAD，暂存区里的算新增。
-            args = ["diff", "--cached", "--", ":/" + rel]
+            args = ["diff", "--cached", "--", ":(literal)" + rel]
     if full:
         # 整文件模式：上下文给得足够大，diff 里就是整份文件加改动标记。
         args.insert(1, "--unified=1000000")
@@ -123,12 +134,17 @@ def git_original(root, rel, scope="worktree", rev=None):
     if rev:
         if rev.startswith("-") or not re.fullmatch(r"[0-9A-Za-z._/@^~-]+", rev):
             raise ApiError(400, "版本号不对：%s" % rev)
-        spec = "%s:./%s" % (rev, rel)
+        # 日志里的路径相对仓库根，工作区的相对路径也能用；两种都试一次。
+        specs = ["%s:./%s" % (rev, rel), "%s:%s" % (rev, rel)]
     elif scope in ("staged", "head"):
-        spec = "HEAD:./%s" % rel
+        specs = ["HEAD:./%s" % rel]
     else:
-        spec = ":./%s" % rel
-    rc, out, err = git(["show", "--no-textconv", spec], cwd=root)
+        specs = [":./%s" % rel]
+    rc, out, err = 1, b"", ""
+    for spec in specs:
+        rc, out, err = git(["show", "--no-textconv", spec], cwd=root)
+        if rc == 0:
+            break
     if rc != 0:
         if not rev and scope not in ("staged", "head"):
             rc, _, _ = git(["ls-files", "--error-unmatch", "--", rel], cwd=root)
@@ -145,7 +161,7 @@ def git_changes(root):
     rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
     if rc != 0:
         raise ApiError(500, err or "git status 失败")
-    files, truncated = parse_git_status(out)
+    files, truncated = parse_git_status(out, git_prefix(root))
     return {"info": info, "files": files, "truncated": truncated}
 
 
@@ -174,7 +190,7 @@ def git_commit_detail(root, sha):
         "parents": parents.split(),
         "refs": [item.strip() for item in refs.split(",") if item.strip()],
         "message": body.strip("\n"),
-        "paths": parse_name_status(names.decode("utf-8", "replace")) if names_rc == 0 else [],
+        "paths": parse_name_status(names.decode("utf-8", "replace"), git_prefix(root)) if names_rc == 0 else [],
     }
 
 
@@ -395,7 +411,8 @@ def git_revision_diff(root, sha, repo_path="", full=False):
     if full:
         args.insert(1, "--unified=1000000")
     if repo_path:
-        args += ["--", ":/" + repo_path.lstrip("/")]
+        # 提交详情里的路径已按工作区前缀裁过，直接按当前目录解释。
+        args += ["--", ":(literal)" + repo_path.lstrip("/")]
     return git_diff_of(root, args)
 
 
@@ -410,7 +427,7 @@ def git_sync_info(root):
     ahead, behind = git_ahead_behind(root, upstream) if upstream else (0, 0)
     branch = info["branch"]
     rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
-    files, truncated = parse_git_status(out) if rc == 0 else ([], False)
+    files, truncated = parse_git_status(out, git_prefix(root)) if rc == 0 else ([], False)
     return {
         **info,
         "vcs": "git",
@@ -435,7 +452,7 @@ def git_unstage_args(root, paths):
     rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
     if rc != 0:
         raise ApiError(500, err or "git status 失败")
-    files, _ = parse_git_status(out)
+    files, _ = parse_git_status(out, git_prefix(root))
     origins = {item["path"]: item["orig"] for item in files if item.get("orig")}
     wanted = []
     for rel in clean:
@@ -488,7 +505,7 @@ def parse_git_log(text):
     return entries
 
 
-def parse_git_status(out):
+def parse_git_status(out, prefix=""):
     """git status --porcelain -z 的条目：XY<空格>路径\\0，重命名后面再跟一个原路径字段。"""
     fields = out.decode("utf-8", "replace").split("\0")
     files = []
@@ -503,12 +520,12 @@ def parse_git_status(out):
             continue
         code = raw[:2]
         index, worktree = code[0], code[1]
-        path = raw[3:]
+        path = strip_prefix(raw[3:], prefix)
         orig = ""
         if code[0] in "RC":
             # 重命名、复制的原路径紧跟在路径字段后面。
             if i < len(fields):
-                orig = fields[i]
+                orig = strip_prefix(fields[i], prefix)
             i += 1
         item = git_item(code)
         if item == "unversioned":
@@ -525,7 +542,7 @@ def parse_git_status(out):
     return files, truncated
 
 
-def parse_name_status(text):
+def parse_name_status(text, prefix=""):
     """--name-status -z 的输出：动作与路径都用 \\0 分隔，改名与复制是“动作 原路径 新路径”。
 
     不加 -z 时 git 会把非 ASCII 路径加 C 风格引号，取出来的路径再拿去查差异就成了非法 pathspec。
@@ -542,7 +559,7 @@ def parse_name_status(text):
         action = action_field[:1]
         if action not in ("A", "C", "D", "M", "R", "T", "U", "X"):
             continue
-        path = fields[i] if i < len(fields) else ""
+        path = strip_prefix(fields[i] if i < len(fields) else "", prefix)
         i += 1
         old_path = ""
         if action in ("R", "C"):

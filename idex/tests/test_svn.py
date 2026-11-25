@@ -222,6 +222,10 @@ class SvnWorkspace(unittest.TestCase):
         entries, meta = svnmod.svn_log_meta(str(self.wc), 5)
         self.assertEqual(meta["wc_revision"], 1)
         self.assertTrue(entries[0]["local"])
+        # 日志给页面用的路径要相对工作区根，原始仓库路径留在 repoPath。
+        files = [p for p in entries[0]["paths"] if p["path"].endswith("a.txt")]
+        self.assertEqual(files[0]["path"], "src/a.txt")
+        self.assertEqual(files[0]["repoPath"], "/src/a.txt")
 
     def test_revision_diff_whole_and_single_path(self):
         whole = svnmod.revision_diff(str(self.wc), "1", "")
@@ -376,6 +380,10 @@ class SvnRemoteLog(unittest.TestCase):
             by_msg = {e["message"]: e for e in entries}
             self.assertTrue(by_msg["本地那条"]["local"])
             self.assertFalse(by_msg["远端那条"]["local"])
+            remote = by_msg["远端那条"]
+            info = next(p for p in remote["paths"] if p["path"] == "b.txt")
+            data = svnmod.svn_original(str(wc), info["repoPath"], remote["revision"])
+            self.assertEqual(data["text"], "b\n")
 
 
 class SvnOperations(unittest.TestCase):

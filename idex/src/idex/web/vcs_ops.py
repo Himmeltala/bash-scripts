@@ -14,6 +14,7 @@ from vcs_query import (
     git_branch,
     git_head,
     git_op_env,
+    git_prefix,
     git_ref_exists,
     git_remotes,
     git_upstream,
@@ -200,7 +201,7 @@ def git_commit_commands(root, message, stage_all=False):
     rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)
     if rc != 0:
         raise ApiError(500, err or "git status 失败")
-    files, _ = parse_git_status(out)
+    files, _ = parse_git_status(out, git_prefix(root))
     conflicts = [item["path"] for item in files if item["item"] == "conflicted"]
     if conflicts:
         raise ApiError(400, "这些路径还有冲突，先解决再提交：%s" % "、".join(conflicts[:10]))

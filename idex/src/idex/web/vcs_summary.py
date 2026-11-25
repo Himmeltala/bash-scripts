@@ -12,6 +12,7 @@ from vcs_query import (
     git_changes,
     git_head,
     git_info,
+    git_prefix,
     parse_git_status,
     parse_status,
     split_status,
@@ -49,7 +50,7 @@ def changes_report(ws):
         rc, out, _ = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=ws["root"])
         if rc != 0:
             return None, 0, None, []
-        files, _ = parse_git_status(out)
+        files, _ = parse_git_status(out, git_prefix(ws["root"]))
         has_head, head = git_head(ws["root"])
         rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=ws["root"])
         sig = hashlib.sha1(out)
