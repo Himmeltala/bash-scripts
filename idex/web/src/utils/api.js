@@ -94,6 +94,11 @@ export const api = {
   cancelOperation: (id) => call('POST', `/operations/${encodeParam(id)}/cancel`, {}),
   tree: (ws, path = '') => call('GET', `/tree?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
   file: (ws, path) => call('GET', `/file?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
+  original: (ws, path, scope = 'worktree', rev = '') =>
+    call(
+      'GET',
+      `/original?ws=${encodeParam(ws)}&path=${encodeParam(path)}&scope=${encodeParam(scope)}&rev=${encodeParam(rev)}`
+    ),
   stat: (ws, path = '') => call('GET', `/stat?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
   // 直接交给浏览器下；目录由后端现场压成 zip。
   downloadUrl: (ws, path) => `${PREFIX}/download?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,

@@ -106,6 +106,26 @@ def git_change_diff(root, rel, full=False, scope="head"):
     return git_diff_of(root, args)
 
 
+def git_original(root, rel, scope="worktree", rev=None):
+    """差异编辑器左栏要的原始版本：工作区对索引，已暂存对 HEAD，也可指定提交。"""
+    if rev:
+        if not re.fullmatch(r"[0-9A-Za-z._/@^~-]+", rev):
+            raise ApiError(400, "版本号不对：%s" % rev)
+        spec = "%s:./%s" % (rev, rel)
+    elif scope == "staged":
+        spec = "HEAD:./%s" % rel
+    else:
+        spec = ":./%s" % rel
+    rc, out, err = git(["show", "--no-textconv", spec], cwd=root)
+    if rc != 0:
+        # 未跟踪文件索引里没有内容，左栏就是空白；其余情况让前端降级只读。
+        if not rev and scope != "staged":
+            return {"text": "", "truncated": False}
+        raise ApiError(400, err or "取原始版本失败")
+    text, truncated = clip(out.decode("utf-8", "replace"))
+    return {"text": text, "truncated": truncated}
+
+
 def git_changes(root):
     info = git_info(root)
     rc, out, err = git(["status", "--porcelain", "-z", "-uall", "--", "."], cwd=root)

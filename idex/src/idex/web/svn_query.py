@@ -9,6 +9,7 @@ from vcs_cli import svn
 from vcs_common import (
     STATUS_ORDER,
     clean_paths,
+    clip,
     expand_unversioned,
 )
 
@@ -211,6 +212,18 @@ def svn_sync_info(root):
         "files": files,
         "conflicts": [item["path"] for item in files if item["item"] == "conflicted"],
     }
+
+
+def svn_original(root, rel, rev=None):
+    """差异编辑器左栏要的原始版本：默认 BASE，也可指定版本；未纳管返回空。"""
+    args = ["cat", "-r", str(rev) if rev else "BASE", "--", rel]
+    rc, out, err = svn(args, cwd=root)
+    if rc != 0:
+        if not rev:
+            return {"text": "", "truncated": False}
+        raise ApiError(400, err or "取原始版本失败")
+    text, truncated = clip(out.decode("utf-8", "replace"))
+    return {"text": text, "truncated": truncated}
 
 
 def svn_unadd_args(root, paths):

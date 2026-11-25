@@ -18,6 +18,7 @@ from vcs_query import (
     change_diff,
     git_commit_detail,
     git_log,
+    git_original,
     git_revision_diff,
     git_stage_args,
     git_sync_info,
@@ -27,6 +28,7 @@ from vcs_query import (
     svn_add_paths,
     svn_commit_detail,
     svn_log_meta,
+    svn_original,
     svn_sync_info,
     svn_unadd_args,
     svn_unadd_paths,
@@ -61,6 +63,19 @@ class VcsRoutes:
             result = change_diff(ws["root"], rel, rev, full)
         result.update({"kind": "diff", "path": rel})
         return result
+
+    def _original(self, query):
+        ws = self._ws(query)
+        rel = safe_rel((query.get("path") or [""])[0])
+        scope = (query.get("scope") or ["worktree"])[0]
+        rev = (query.get("rev") or [""])[0] or None
+        if ws.get("vcs") == "git":
+            result = git_original(ws["root"], rel, scope, rev)
+        elif ws.get("vcs") == "svn":
+            result = svn_original(ws["root"], rel, rev)
+        else:
+            result = {"text": "", "truncated": False}
+        return {"path": rel, **result}
 
     def _commit_detail(self, query):
         ws = self._ws(query)

@@ -582,6 +582,50 @@ class GitSubdirHistory(unittest.TestCase):
         self.assertEqual(entries[0]["parents"], [entries[1]["revision"]])
 
 
+class GitOriginal(unittest.TestCase):
+    """差异编辑器要的原始版本：工作区对索引，已暂存对 HEAD，未跟踪为空。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="idex-git-original-")
+        self.repo = Path(self.tmp.name) / "repo"
+        (self.repo / "web").mkdir(parents=True)
+        run(["git", "init", "-q"], cwd=self.repo)
+        (self.repo / "web" / "a.txt").write_text("one\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.repo)
+        run(["git", "commit", "-qm", "one"], cwd=self.repo)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def original(self, rel="a.txt", scope="worktree", rev=None):
+        return gitmod.git_original(str(self.repo / "web"), rel, scope, rev)
+
+    def test_worktree_original_is_index_version(self):
+        (self.repo / "web" / "a.txt").write_text("two\n", "utf-8")
+        self.assertEqual(self.original()["text"], "one\n")
+        run(["git", "add", "-A"], cwd=self.repo)
+        self.assertEqual(self.original()["text"], "two\n")
+
+    def test_staged_original_is_head_version(self):
+        (self.repo / "web" / "a.txt").write_text("two\n", "utf-8")
+        run(["git", "add", "-A"], cwd=self.repo)
+        self.assertEqual(self.original(scope="staged")["text"], "one\n")
+
+    def test_untracked_file_has_empty_original(self):
+        (self.repo / "web" / "new.txt").write_text("new\n", "utf-8")
+        self.assertEqual(self.original("new.txt")["text"], "")
+
+    def test_deleted_file_keeps_index_original(self):
+        (self.repo / "web" / "a.txt").unlink()
+        self.assertEqual(self.original()["text"], "one\n")
+
+    def test_explicit_revision(self):
+        (self.repo / "web" / "a.txt").write_text("two\n", "utf-8")
+        run(["git", "commit", "-qam", "two"], cwd=self.repo)
+        head = git_out("rev-parse", "HEAD", cwd=self.repo)
+        self.assertEqual(self.original(rev=head)["text"], "two\n")
+
+
 class GitRemoteLog(unittest.TestCase):
     """有远端时取日志先同步：别人刚推的提交要列出来，并标成远程。"""
 
@@ -1029,7 +1073,7 @@ class GitDiffScope(unittest.TestCase):
         run(["git", "add", "-A"], cwd=self.repo)
         run(["git", "commit", "-qm", "first"], cwd=self.repo)
         (self.repo / "a.txt").write_text("base\nstaged\n", "utf-8")
-        run(["git", "add", "a.txt"], cwd=self.repo)
+        run(["git", "add", "-A"], cwd=self.repo)
         (self.repo / "a.txt").write_text("base\nstaged\nworktree\n", "utf-8")
 
     def tearDown(self):

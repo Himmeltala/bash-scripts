@@ -290,6 +290,7 @@ READ_ROUTES = {
     "dirs": lambda h, m, q, b: h._local_dirs(q),
     "changes": lambda h, m, q, b: h._changes(q),
     "diff": lambda h, m, q, b: h._diff(q),
+    "original": lambda h, m, q, b: h._original(q),
     "log": lambda h, m, q, b: h._log(q),
     "revision": lambda h, m, q, b: h._revision(q),
     "commit": lambda h, m, q, b: h._commit_detail(q),
