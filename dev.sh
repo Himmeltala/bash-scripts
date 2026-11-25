@@ -4,25 +4,27 @@ set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 tool=${1:-idex}
-vite_port=${DEV_VITE_PORT:-5173}
+vite_port=${DEV_VITE_PORT:-}
 dev_host=${DEV_HOST:-127.0.0.1}
 
 case "$tool" in
   idex)
+    vite_port=${vite_port:-5173}
     web_dir="$repo/idex/web"
     static="$repo/idex/web/dist"
     origin_var=IDEX_WEB_ORIGIN
-    backend_port=8771
+    backend_port=${DEV_BACKEND_PORT:-8771}
     watch_dirs=("$repo/idex/src" "$repo/lib/py-shared")
     start_backend() {
       "$repo/idex/bin/idex" web --host "$dev_host" -p "$backend_port" --allow-write
     }
     ;;
   llmx)
+    vite_port=${vite_port:-5174}
     web_dir="$repo/llmx/web"
     static="$repo/llmx/web/dist"
     origin_var=LLMX_WEB_ORIGIN
-    backend_port=8770
+    backend_port=${DEV_BACKEND_PORT:-8770}
     watch_dirs=("$repo/llmx/src" "$repo/lib/py-shared")
     start_backend() {
       PYTHONPATH="$repo/llmx/src${PYTHONPATH:+:$PYTHONPATH}" \
@@ -30,10 +32,11 @@ case "$tool" in
     }
     ;;
   netx)
+    vite_port=${vite_port:-5175}
     web_dir="$repo/netx/web"
     static="$repo/netx/lib/netx/static"
     origin_var=NETX_WEB_ORIGIN
-    backend_port=8400
+    backend_port=${DEV_BACKEND_PORT:-8400}
     watch_dirs=("$repo/netx/lib" "$repo/lib/py-shared")
     start_backend() {
       PYTHONPATH="$repo/netx/lib${PYTHONPATH:+:$PYTHONPATH}" \
