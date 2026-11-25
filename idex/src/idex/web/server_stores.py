@@ -30,6 +30,7 @@ SHORTCUT_DEFAULTS = {
     "outline": "Ctrl+Shift+O",
     "problems": "Ctrl+Shift+M",
     "hover": "Ctrl+I",
+    "editorFind": "Ctrl+F",
     "complete": "Ctrl+Space",
     "format": "Shift+Alt+F",
     "rename": "F2",

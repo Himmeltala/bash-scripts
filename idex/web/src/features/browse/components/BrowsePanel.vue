@@ -1258,7 +1258,7 @@ function onPanelKey(event) {
     if (
       id === 'browseSearch' &&
       event.target instanceof Element &&
-      event.target.closest('.cm-editor')
+      event.target.closest('.cm-editor, .find-bar')
     ) {
       return
     }

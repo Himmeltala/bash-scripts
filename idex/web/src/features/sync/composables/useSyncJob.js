@@ -21,6 +21,13 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
   let stream = null
   let settled = false
   let opened = 0
+  // 任务卡住或连接一直断着时，页面不能永远转圈：最后一条输出后 5 分钟、
+  // 整个任务 30 分钟还没结束，就按失败收尾，后台任务不受影响。
+  const IDLE_MS = 5 * 60 * 1000
+  const MAX_MS = 30 * 60 * 1000
+  let idleTimer = 0
+  let maxTimer = 0
+  let activeAction = ''
 
   function appendLine(line) {
     outputLines.value.push(line)
@@ -37,9 +44,45 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
     }
   }
 
+  function stopTimers() {
+    clearTimeout(idleTimer)
+    clearTimeout(maxTimer)
+    idleTimer = 0
+    maxTimer = 0
+  }
+
+  function expire(message) {
+    if (settled) return
+    lastError.value = message
+    finishStream({ ok: false, error: message }, activeAction)
+  }
+
+  function touch() {
+    if (settled) return
+    clearTimeout(idleTimer)
+    idleTimer = setTimeout(
+      () => expire('操作 5 分钟没有输出，已停止等待，后台任务仍在继续'),
+      IDLE_MS,
+    )
+    // Node 里跑测试时别因为这两个计时器一直挂着；浏览器里没有 unref。
+    if (idleTimer && typeof idleTimer.unref === 'function') idleTimer.unref()
+  }
+
+  function armTimers(action) {
+    stopTimers()
+    activeAction = action
+    maxTimer = setTimeout(
+      () => expire('操作超过 30 分钟仍未完成，已停止等待，后台任务仍在继续'),
+      MAX_MS,
+    )
+    if (maxTimer && typeof maxTimer.unref === 'function') maxTimer.unref()
+    touch()
+  }
+
   function finishStream(data, action) {
     if (settled) return
     settled = true
+    stopTimers()
     closeStream()
     jobId.value = ''
     if (data && data.ok === false) {
@@ -55,12 +98,14 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
     opened = 0
     es.onopen = () => {
       opened += 1
+      touch()
       // 断线重连时服务端会从头重放，先把本地已显示的行换回命令行。
       if (opened > 1) {
         outputLines.value = commandLine.value ? [`$ ${commandLine.value}`, ''] : []
       }
     }
     es.addEventListener('output', (event) => {
+      touch()
       try {
         appendLine(JSON.parse(event.data).line ?? '')
       } catch (err) {
@@ -103,6 +148,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
       jobId.value = data.id
       commandLine.value = data.command || ''
       if (commandLine.value) outputLines.value.push(`$ ${commandLine.value}`, '')
+      armTimers(action)
       streamJob(data.id, action)
     } catch (err) {
       lastError.value = err.message
@@ -124,6 +170,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
       jobId.value = job.id
       commandLine.value = job.command || ''
       outputLines.value = commandLine.value ? [`$ ${commandLine.value}`, ''] : []
+      armTimers(job.action)
       streamJob(job.id, job.action)
     } catch (err) {
       // 接不上历史任务不影响查看页面。
@@ -144,6 +191,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
 
   function reset() {
     settled = true
+    stopTimers()
     closeStream()
     outputLines.value = []
     commandLine.value = ''
@@ -155,6 +203,7 @@ export function useSyncJob({ wsId, bodyFor, onFinish, client = api, openStream =
 
   function dispose() {
     settled = true
+    stopTimers()
     closeStream()
   }
 

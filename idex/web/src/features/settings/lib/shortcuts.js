@@ -18,6 +18,7 @@ export const SHORTCUT_DEFAULTS = {
   outline: 'Ctrl+Shift+O',
   problems: 'Ctrl+Shift+M',
   hover: 'Ctrl+I',
+  editorFind: 'Ctrl+F',
   complete: 'Ctrl+Space',
   format: 'Shift+Alt+F',
   rename: 'F2',
@@ -26,6 +27,7 @@ export const SHORTCUT_DEFAULTS = {
 export const SHORTCUT_GROUPS = [
   {
     title: '通用',
+    scope: 'any',
     items: [
       { id: 'save', title: '保存当前文件' },
       { id: 'commit', title: '提交' },
@@ -33,8 +35,13 @@ export const SHORTCUT_GROUPS = [
   },
   {
     title: '资源管理器',
+    scope: 'browse',
     items: [
-      { id: 'browseSearch', title: '按文件名搜索' },
+      {
+        id: 'browseSearch',
+        title: '按文件名搜索',
+        hint: '焦点在资源管理器时生效；代码编辑器里的 Ctrl+F 是查找当前文件。',
+      },
       { id: 'browseContentSearch', title: '按内容搜索' },
       { id: 'quickOpen', title: '快速打开' },
       { id: 'gotoLine', title: '转到行' },
@@ -45,7 +52,9 @@ export const SHORTCUT_GROUPS = [
   },
   {
     title: '代码编辑器',
+    scope: 'editor',
     items: [
+      { id: 'editorFind', title: '在文件中查找' },
       { id: 'complete', title: '代码补全' },
       { id: 'format', title: '格式化文档' },
       { id: 'rename', title: '重命名符号' },
@@ -54,7 +63,7 @@ export const SHORTCUT_GROUPS = [
 ]
 
 export const SHORTCUT_ITEMS = SHORTCUT_GROUPS.flatMap((group) =>
-  group.items.map((item) => ({ ...item, group: group.title })),
+  group.items.map((item) => ({ ...item, group: group.title, scope: group.scope })),
 )
 
 const MODIFIER_ORDER = ['Ctrl', 'Shift', 'Alt', 'Meta']

@@ -7,7 +7,10 @@
  * @Description: VS Code 式差异编辑器：左原始版本只读，右工作副本可编辑，支持并排与内联。
 -->
 <template>
-  <div ref="host" class="merge-diff" />
+  <div class="merge-diff">
+    <div ref="host" class="merge-host" />
+    <EditorFindBar :controller="findCtl" :replaceable="writable" />
+  </div>
 </template>
 
 <script setup>
@@ -15,7 +18,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { basicSetup } from 'codemirror'
 import { indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { autocompletion, startCompletion } from '@codemirror/autocomplete'
 import { lintGutter } from '@codemirror/lint'
@@ -24,6 +27,8 @@ import { symbolAt } from '@bash-scripts/web-shared'
 import { handlerOf } from '../core/handlers/registry.js'
 import { usePreferencesStore } from '../../../stores/preferences'
 import { toCmKey } from '../../settings/lib/shortcuts'
+import { useEditorFind } from '../composables/useEditorFind.js'
+import EditorFindBar from './EditorFindBar.vue'
 import { languageExtension } from '../core/languageExtension.js'
 import { editorThemeExtensions } from '../core/themes.js'
 import { mergeViewOptions, unifiedOptions } from '../core/mergeDiff.js'
@@ -85,6 +90,8 @@ const keymapConf = new Compartment()
 function activeView() {
   return merge.value ? merge.value.b : single.value
 }
+
+const findCtl = useEditorFind(() => activeView())
 
 function capabilitiesOf() {
   const value = props.capabilities
@@ -224,6 +231,29 @@ async function formatDocument() {
 }
 
 // 绑定从设置里读；只看历史版本（lsp=false）时不挂补全与格式化。
+function findKeys() {
+  const keys = []
+  const open = toCmKey(preferences.shortcuts.editorFind)
+  if (open) {
+    keys.push({
+      key: open,
+      run() {
+        findCtl.open()
+        return true
+      },
+    })
+  }
+  keys.push({
+    key: 'Escape',
+    run() {
+      if (!findCtl.find.open) return false
+      findCtl.close()
+      return true
+    },
+  })
+  return keys
+}
+
 function editorKeys() {
   if (!props.lsp) return [indentWithTab]
   const shortcuts = preferences.shortcuts
@@ -263,7 +293,7 @@ function editorExtensions(readonly) {
     appearance.of(editorThemeExtensions(props.theme)),
     minimapConf.of(minimapOn() ? minimapExtension(true) : []),
     indentUnit.of('    '),
-    keymapConf.of(keymap.of(editorKeys())),
+    keymapConf.of([Prec.high(keymap.of(findKeys())), keymap.of(editorKeys())]),
     lintGutter(),
     languageExtension(handlerOf(props.path).cmLanguage(props.path)),
     ...(props.lsp ? [autocompletion({ override: [completionSource], activateOnTyping: true })] : []),
@@ -405,7 +435,9 @@ watch(
   () => {
     const views = merge.value ? [merge.value.a, merge.value.b] : single.value ? [single.value] : []
     for (const view of views) {
-      view.dispatch({ effects: keymapConf.reconfigure(keymap.of(editorKeys())) })
+      view.dispatch({
+        effects: keymapConf.reconfigure([Prec.high(keymap.of(findKeys())), keymap.of(editorKeys())]),
+      })
     }
   },
   { deep: true },
@@ -434,6 +466,14 @@ defineExpose({ locate, resetScroll })
 
 <style scoped>
 .merge-diff {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.merge-host {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -441,7 +481,7 @@ defineExpose({ locate, resetScroll })
   overflow: hidden;
 }
 /* 内联时编辑器是 flex 子项，不撑开就会缩到内容宽度。 */
-.merge-diff > :deep(.cm-editor) {
+.merge-host > :deep(.cm-editor) {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;

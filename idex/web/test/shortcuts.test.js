@@ -10,6 +10,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   SHORTCUT_DEFAULTS,
+  SHORTCUT_GROUPS,
   SHORTCUT_ITEMS,
   bindingFromEvent,
   matchesBinding,
@@ -25,12 +26,21 @@ const key = (value, mods = {}) => ({
   metaKey: !!mods.meta,
 })
 
-test('默认绑定覆盖登记表里的每一项，且互不重复', () => {
-  const values = Object.values(SHORTCUT_DEFAULTS)
-  assert.equal(new Set(values).size, values.length)
+test('默认绑定覆盖登记表里的每一项，同一作用域内不重复', () => {
+  const scopes = new Map(SHORTCUT_ITEMS.map((item) => [item.id, item.scope]))
+  const seen = new Map()
   for (const item of SHORTCUT_ITEMS) {
-    assert.equal(typeof SHORTCUT_DEFAULTS[item.id], 'string', item.id)
+    const value = SHORTCUT_DEFAULTS[item.id]
+    assert.equal(typeof value, 'string', item.id)
+    const scope = scopes.get(item.id)
+    const key = `${scope}:${value}`
+    assert.equal(seen.has(key), false, `${item.id} 与 ${seen.get(key)} 撞在 ${value}`)
+    seen.set(key, item.id)
   }
+  const browse = SHORTCUT_GROUPS.find((group) => group.scope === 'browse')
+  const editor = SHORTCUT_GROUPS.find((group) => group.scope === 'editor')
+  assert.equal(browse.items.some((item) => item.id === 'browseSearch'), true)
+  assert.equal(editor.items.some((item) => item.id === 'editorFind'), true)
 })
 
 test('解析绑定，修饰键顺序随意，字母不区分大小写', () => {

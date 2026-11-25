@@ -70,15 +70,6 @@
       </v-btn>
     </div>
 
-    <div v-if="running" class="row status">
-      <v-progress-circular size="14" width="2" indeterminate />
-      <span class="hint">{{ actionLabel }}中…</span>
-      <v-spacer />
-      <v-btn size="small" variant="text" color="error" :loading="canceling" @click="cancel">
-        取消
-      </v-btn>
-    </div>
-
     <p v-if="!writable" class="hint warn">
       当前页面不是从本机打开的，拉取、推送与提交已禁用；要放开给其他机器，用 --allow-write 启动。
     </p>
@@ -252,9 +243,8 @@ const ACTION_LABEL = {
   commit: '提交',
   checkout: '切换分支',
 }
-const actionLabel = computed(() => ACTION_LABEL[running.value] || '操作')
 
-const { running, output: outputText, lastError, canceling, start, cancel, dispose } = useSyncJob({
+const { running, output: outputText, lastError, start, dispose } = useSyncJob({
   wsId: () => props.ws.id,
   bodyFor,
   onFinish: (action, data) => {

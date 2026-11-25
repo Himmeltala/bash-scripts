@@ -7,14 +7,17 @@
  * @Description: 基于 CodeMirror 6 的代码编辑器：补全、格式化、悬停、诊断与 Git 行级标记。
 -->
 <template>
-  <div ref="host" class="cm-host" />
+  <div class="cm-shell">
+    <div ref="host" class="cm-host" />
+    <EditorFindBar :controller="findCtl" />
+  </div>
 </template>
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { basicSetup } from 'codemirror'
 import { foldEffect, unfoldEffect } from '@codemirror/language'
-import { Compartment, EditorState, StateEffect } from '@codemirror/state'
+import { Compartment, EditorState, Prec, StateEffect } from '@codemirror/state'
 import { EditorView, GutterMarker, gutter, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
@@ -42,6 +45,8 @@ import {
 import { showMinimap } from '@replit/codemirror-minimap'
 import { usePreferencesStore } from '../../../stores/preferences'
 import { toCmKey } from '../../settings/lib/shortcuts'
+import { useEditorFind } from '../composables/useEditorFind.js'
+import EditorFindBar from './EditorFindBar.vue'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -240,6 +245,32 @@ async function formatDocument() {
   }
 }
 
+// 编辑器查找：设置里的组合与 Esc 优先于 CodeMirror 自带的查找面板。
+const findCtl = useEditorFind(() => view)
+
+function findKeys() {
+  const keys = []
+  const open = toCmKey(preferences.shortcuts.editorFind)
+  if (open) {
+    keys.push({
+      key: open,
+      run() {
+        findCtl.open()
+        return true
+      },
+    })
+  }
+  keys.push({
+    key: 'Escape',
+    run() {
+      if (!findCtl.find.open) return false
+      findCtl.close()
+      return true
+    },
+  })
+  return keys
+}
+
 // 绑定从设置里读；改完设置重配置，旧的组合不再拦截。
 function editorKeys() {
   const shortcuts = preferences.shortcuts
@@ -347,7 +378,7 @@ function buildExtensions() {
     appearance.of(editorThemeExtensions(props.theme)),
     minimapConf.of(minimapExtension(props.minimap, minimapMarks())),
     indentUnit.of('    '),
-    keymapConf.of(keymap.of(editorKeys())),
+    keymapConf.of([Prec.high(keymap.of(findKeys())), keymap.of(editorKeys())]),
     lintGutter(),
     diffGutter(),
     language.of(languageExtension(handlerOf(props.path).cmLanguage(props.path))),
@@ -404,7 +435,9 @@ watch(
   () => preferences.shortcuts,
   () => {
     if (!view) return
-    view.dispatch({ effects: keymapConf.reconfigure(keymap.of(editorKeys())) })
+    view.dispatch({
+      effects: keymapConf.reconfigure([Prec.high(keymap.of(findKeys())), keymap.of(editorKeys())]),
+    })
   },
   { deep: true },
 )
@@ -485,8 +518,16 @@ defineExpose({ locate, resetScroll, setCollapsedRanges })
   width: 72px;
   height: 100%;
 }
+.cm-shell {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
 .cm-host {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }

@@ -13,6 +13,7 @@
       v-for="item in group.items"
       :key="item.id"
       :label="item.title"
+      :hint="item.hint || ''"
     >
       <button
         type="button"
@@ -35,6 +36,7 @@ import { usePreferencesStore } from '../../../../stores/preferences'
 import {
   SHORTCUT_DEFAULTS,
   SHORTCUT_GROUPS,
+  SHORTCUT_ITEMS,
   bindingFromEvent,
 } from '../../lib/shortcuts'
 import SettingsItem from '../SettingsItem.vue'
@@ -45,16 +47,28 @@ const draft = ref({ ...SHORTCUT_DEFAULTS })
 const recording = ref('')
 const defaults = ref({ ...SHORTCUT_DEFAULTS })
 
+// 同一个键只在一个作用域里冲突：资源管理器的 Ctrl+F 与编辑器的 Ctrl+F 互不影响。
+const scopes = new Map(SHORTCUT_ITEMS.map((item) => [item.id, item.scope]))
+
 const clashes = computed(() => {
-  const seen = new Map()
-  const hit = new Set()
+  const groups = new Map()
   for (const [id, value] of Object.entries(draft.value)) {
     if (!value) continue
-    if (seen.has(value)) {
-      hit.add(id)
-      hit.add(seen.get(value))
-    } else {
-      seen.set(value, id)
+    const list = groups.get(value) || []
+    list.push({ id, scope: scopes.get(id) || 'any' })
+    groups.set(value, list)
+  }
+  const hit = new Set()
+  for (const list of groups.values()) {
+    for (let i = 0; i < list.length; i += 1) {
+      for (let j = i + 1; j < list.length; j += 1) {
+        const a = list[i]
+        const b = list[j]
+        if (a.scope === b.scope || a.scope === 'any' || b.scope === 'any') {
+          hit.add(a.id)
+          hit.add(b.id)
+        }
+      }
     }
   }
   return hit
