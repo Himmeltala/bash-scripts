@@ -765,7 +765,7 @@ import { saveSession, sessionOf } from '../lib/browseSessions'
 import { filterPaths } from '../lib/fuzzyMatch'
 import { toast } from '../../../utils/notice'
 import { dirName } from '../../../utils/format'
-import { diffMarks, hunkOriginal, parseDiffHunks } from '../lib/diffLines'
+import { diffMarks, hunkOriginal, parseDiffHunks } from '../../editor/core/diffLines'
 import { usePreferencesStore } from '../../../stores/preferences'
 import { useSplitPane } from '@bash-scripts/web-shared'
 

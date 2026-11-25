@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { diffMarks, hunkOriginal, parseDiffHunks } from '../src/features/browse/lib/diffLines.js'
+import { diffMarks, hunkOriginal, parseDiffHunks } from '../src/features/editor/core/diffLines.js'
 
 const DIFF = [
   'diff --git a/a.txt b/a.txt',

@@ -153,6 +153,24 @@
             >
               整份文件
             </v-btn>
+            <v-btn
+              size="small"
+              :variant="mergeInline ? 'text' : 'flat'"
+              :color="mergeInline ? undefined : 'primary'"
+              title="左右对照"
+              @click="mergeInline = false"
+            >
+              并排
+            </v-btn>
+            <v-btn
+              size="small"
+              :variant="mergeInline ? 'flat' : 'text'"
+              :color="mergeInline ? 'primary' : undefined"
+              title="单栏内联差异"
+              @click="mergeInline = true"
+            >
+              内联
+            </v-btn>
             <v-spacer />
             <v-chip v-if="dirty" size="x-small" variant="flat" color="modified">未保存</v-chip>
             <v-btn v-if="dirty" size="small" variant="text" color="primary" :loading="saving" @click="saveNow">
@@ -160,16 +178,23 @@
             </v-btn>
             <v-btn v-if="dirty" size="small" variant="text" :disabled="saving" @click="discard">放弃</v-btn>
           </div>
-          <IdexDiffEditor
-            ref="richDiffRef"
-            :ws="ws"
+          <MergeDiffEditor
+            ref="mergeRef"
+            v-model="richText"
+            :original="originalState.text"
             :path="selected.path"
-            :content="editState.baseText"
-            :diff-text="content.text"
-            :scope="diffScope === 'hunks' ? 'hunks' : 'file'"
-            @dirty="onRichDirty"
-            @saved="onRichSaved"
-            @open="openInBrowse"
+            writable
+            :inline="mergeInline"
+            :collapse="diffScope === 'hunks'"
+            :theme="preferences.editorTheme"
+            :minimap="preferences.minimap"
+            :markers="markers"
+            :complete="complete"
+            :format="formatText"
+            :capabilities="capabilities"
+            :notice="(text) => toast(text, 'warning')"
+            @edit="onMergeTyping"
+            @definition="onMergeDefinition"
           />
         </div>
         <DiffView
@@ -244,7 +269,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DiffView from '@bash-scripts/web-shared/diff'
-import IdexDiffEditor from './IdexDiffEditor.vue'
+import MergeDiffEditor from '../../editor/components/MergeDiffEditor.vue'
+import { handlerOf } from '../../editor/core/handlers/registry'
+import { useDiagnostics } from '../../editor/composables/useDiagnostics'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { api } from '../../../utils/api'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
@@ -278,7 +305,11 @@ const diffLoading = ref(false)
 const error = ref('')
 const diffError = ref('')
 const diffRef = ref(null)
-const richDiffRef = ref(null)
+const mergeRef = ref(null)
+const richText = ref('')
+const mergeInline = ref(false)
+const originalState = ref({ text: '', truncated: false, error: false })
+const servers = ref([])
 // 差异行里直接改：工作副本快照给行内容与写回位置，读不出来就只能看。
 const editState = ref({ editable: false, baseText: '', reason: '' })
 const dirty = ref(false)
@@ -334,13 +365,103 @@ const awaitingLoad = computed(() => {
 // 工作区的改动用 idex 自己的差异编辑器：整份文件、LSP 与逐块还原；已暂存与只读情况仍用通用 DiffView。
 const useRichDiff = computed(
   () =>
-    isGit.value &&
     !!selected.value &&
     selected.value.group !== 'staged' &&
     editState.value.editable &&
     !content.value.truncated &&
-    !!content.value.text,
+    !!content.value.text &&
+    !originalState.value.truncated &&
+    !originalState.value.error,
 )
+
+// 差异编辑器里的“编辑器”就是右侧工作副本，诊断据此取正文。
+const richEditor = computed(() =>
+  useRichDiff.value && selected.value
+    ? { path: selected.value.path, text: richText.value, dirty: dirty.value }
+    : null,
+)
+
+function editorOfRich(path) {
+  const editor = richEditor.value
+  return editor && editor.path === path ? editor : null
+}
+
+const { markers, refreshDiagnostics, onEdit: onDiagnosticsEdit } = useDiagnostics({
+  wsId: () => props.ws.id,
+  activePath: () => (selected.value ? selected.value.path : ''),
+  editorOf: editorOfRich,
+  onOpen: (loc) => openInBrowse(loc),
+})
+
+function onMergeTyping() {
+  if (!selected.value) return
+  onDiagnosticsEdit({ path: selected.value.path })
+}
+
+watch(richText, (value) => {
+  if (!useRichDiff.value) return
+  const changed = value !== editState.value.baseText
+  if (changed === dirty.value) return
+  dirty.value = changed
+  if (!changed && pendingRefresh) {
+    pendingRefresh = false
+    load()
+  }
+})
+
+function complete(payload) {
+  return api.completion(
+    props.ws.id,
+    payload.path,
+    payload.text,
+    payload.line,
+    payload.character,
+    payload.trigger,
+  )
+}
+
+function formatText(payload) {
+  const options = handlerOf(payload.path).formatOptions?.(payload.path) || {}
+  return api.format(
+    props.ws.id,
+    payload.path,
+    payload.text,
+    options.tabSize ?? 4,
+    options.insertSpaces ?? true,
+  )
+}
+
+function capabilities(path) {
+  const id = handlerOf(path).server
+  const info = id ? servers.value.find((item) => item.id === id) : null
+  return (info && info.capabilities) || {}
+}
+
+async function onMergeDefinition(symbol) {
+  if (!selected.value) return
+  try {
+    const data = await api.definition(
+      props.ws.id,
+      selected.value.path,
+      richText.value,
+      symbol.line,
+      symbol.character,
+    )
+    const list = (data && data.locations) || []
+    if (!list.length) {
+      toast(`没找到「${symbol.word}」的定义`, 'warning')
+      return
+    }
+    const loc = list[0]
+    if (loc.path === selected.value.path) {
+      mergeRef.value?.locate(Number(loc.line || 0) + 1)
+      return
+    }
+    openInBrowse(loc)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
 
 const diffEditable = computed(
   () => editState.value.editable && !content.value.truncated && !diffLoading.value,
@@ -525,6 +646,8 @@ async function pick(file, group, { skipGuard = false } = {}) {
   diffError.value = ''
   saveError.value = ''
   editState.value = { editable: false, baseText: '', reason: '' }
+  richText.value = ''
+  originalState.value = { text: '', truncated: false, error: false }
   if (marked(group, file.path) && !revealed.value.has(key)) {
     // 连工作副本快照都不取：大文件只在用户点了“加载差异”之后才读。
     content.value = { text: '', kind: 'diff', truncated: false }
@@ -533,10 +656,17 @@ async function pick(file, group, { skipGuard = false } = {}) {
   }
   diffLoading.value = true
   try {
-    // 已暂存的内容只读，不用为编辑读工作副本快照。
-    const [data, snap] = await Promise.all([
+    // 已暂存的内容只读，不用为编辑读工作副本快照与原始版本。
+    const wantOriginal =
+      group !== 'staged' && file.item !== 'deleted' && file.item !== 'missing'
+    const [data, snap, original] = await Promise.all([
       api.diff(props.ws.id, file.path, file.item, diffScope.value === 'file', scopeOf(group)),
       group === 'staged' ? null : snapshotOf(file),
+      wantOriginal
+        ? api
+            .original(props.ws.id, file.path, scopeOf(group))
+            .catch(() => ({ text: '', truncated: false, error: true }))
+        : null,
     ])
     if (mine !== pickSeq) return
     if (data.wide && !revealed.value.has(key)) {
@@ -546,13 +676,18 @@ async function pick(file, group, { skipGuard = false } = {}) {
       return
     }
     content.value = data
+    originalState.value = original || { text: '', truncated: false, error: false }
     if (group === 'staged') {
       editState.value = { editable: false, baseText: '', reason: '' }
+    } else if (data.truncated) {
+      editState.value = { editable: false, baseText: snap.baseText, reason: '差异已截断，不能直接在差异里编辑' }
+    } else if (originalState.value.truncated) {
+      editState.value = { editable: false, baseText: snap.baseText, reason: '原始版本太长，只能看差异' }
     } else {
-      editState.value = data.truncated
-        ? { editable: false, baseText: snap.baseText, reason: '差异已截断，不能直接在差异里编辑' }
-        : snap
+      editState.value = snap
     }
+    richText.value = editState.value.editable ? editState.value.baseText : ''
+    if (editState.value.editable) refreshDiagnostics(file.path)
   } catch (err) {
     if (mine !== pickSeq) return
     content.value = { text: '', kind: 'diff', truncated: false }
@@ -579,18 +714,12 @@ function onDirty(value) {
 function discard() {
   pendingRefresh = false
   saveError.value = ''
-  if (useRichDiff.value && richDiffRef.value) richDiffRef.value.discard()
-  else diffRef.value?.resetEdits()
+  if (useRichDiff.value) {
+    richText.value = editState.value.baseText
+  } else {
+    diffRef.value?.resetEdits()
+  }
   dirty.value = false
-}
-
-function onRichDirty(value) {
-  dirty.value = value
-}
-
-async function onRichSaved() {
-  pendingRefresh = false
-  await load()
 }
 
 // 跨文件的定义跳到资源管理器打开对应位置。
@@ -629,16 +758,29 @@ async function persist() {
 }
 
 async function saveNow() {
-  if (useRichDiff.value && richDiffRef.value) {
+  if (useRichDiff.value && selected.value) {
+    if (!dirty.value || saving.value) return false
     saving.value = true
     saveError.value = ''
     try {
-      const ok = await richDiffRef.value.save()
-      if (!ok) return false
+      const path = selected.value.path
+      // 先读磁盘：编辑期间别人改过就不写，避免盖掉外部改动。
+      const snap = await api.file(props.ws.id, path)
+      const disk = (snap.text || '').replace(/\r\n?/g, '\n')
+      if (disk !== editState.value.baseText) {
+        throw new Error('文件在编辑期间被改过，先刷新再改')
+      }
+      await api.save(props.ws.id, path, richText.value)
       dirty.value = false
       pendingRefresh = false
       await load()
+      if (selected.value) {
+        await pick(selected.value.file, selected.value.group, { skipGuard: true })
+      }
       return true
+    } catch (err) {
+      saveError.value = err.message
+      return false
     } finally {
       saving.value = false
     }
@@ -688,6 +830,9 @@ watch(() => props.refresh, () => {
 })
 onMounted(() => {
   document.addEventListener('keydown', onKeySave)
+  api.lspStatus().then((data) => {
+    servers.value = data.servers || []
+  }).catch(() => {})
   load()
 })
 onBeforeUnmount(() => {
