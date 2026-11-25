@@ -9,7 +9,6 @@
 <template>
   <div
     class="panel"
-    @keydown="onPanelKey"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDropFiles"
@@ -28,7 +27,7 @@
               :icon="searchOpen ? 'mdi-close' : 'mdi-magnify'"
               size="x-small"
               variant="text"
-              :title="searchOpen ? '关闭搜索（Esc）' : '搜索（Ctrl+F）'"
+              :title="searchOpen ? '关闭搜索（Esc）' : '搜索（Ctrl+Shift+E）'"
               @click="searchOpen ? closeSearch() : openSearch()"
             />
             <v-spacer />
@@ -1237,11 +1236,6 @@ function onCaret(position) {
 // 快捷键 ID 到处理函数的对应；绑定本身在设置里改。
 const SHORTCUT_RUN = {
   save,
-  browseSearch: openSearch,
-  browseContentSearch: () => {
-    mode.value = 'content'
-    openSearch()
-  },
   quickOpen: openQuickOpen,
   gotoLine: openGotoLine,
   outline: openOutline,
@@ -1252,16 +1246,17 @@ const SHORTCUT_RUN = {
 }
 
 function onPanelKey(event) {
+  // 输入框、下拉与普通文本框里不抢键；编辑器内的 CodeMirror 快捷键仍照常处理。
+  const target = event.target
+  if (
+    target instanceof Element &&
+    target.closest('input, textarea, select, [contenteditable="true"]') &&
+    !target.closest('.cm-editor, .find-bar')
+  ) {
+    return
+  }
   for (const [id, run] of Object.entries(SHORTCUT_RUN)) {
     if (!matchesBinding(preferences.shortcuts[id], event)) continue
-    // 和 VS Code 一样：光标在代码编辑器里时「按文件名搜索」只找当前文件，交给 CodeMirror。
-    if (
-      id === 'browseSearch' &&
-      event.target instanceof Element &&
-      event.target.closest('.cm-editor, .find-bar')
-    ) {
-      return
-    }
     event.preventDefault()
     run()
     return
@@ -1282,6 +1277,18 @@ function closeSearch() {
   clearSearch()
   searchOpen.value = false
 }
+
+// 全局快捷键只负责投递请求；切到资源管理器后由这里消费并打开搜索。
+watch(
+  () => preferences.pendingSearch,
+  (request) => {
+    if (!request) return
+    mode.value = request.mode
+    preferences.pendingSearch = null
+    openSearch()
+  },
+  { immediate: true },
+)
 
 async function openQuickOpen() {
   Object.assign(quickAsk, { on: true, filter: '', error: '' })
@@ -1552,6 +1559,7 @@ const {
 
 // 回来时把树摊回原来的层次，读出停着的那一个页签，草稿跟着放回去；其余页签等点开再读。
 onMounted(async () => {
+  window.addEventListener('keydown', onPanelKey)
   loadServers()
   if (keptExpanded.length) treeRef.value?.restoreExpanded(keptExpanded)
   const tab = tabOf(tabs.value, activePath.value) || tabs.value[0] || null
@@ -1563,6 +1571,7 @@ onMounted(async () => {
 
 // 换走之前把页签、草稿与树的展开层次收进这个工作区的 session，下次回来接着用。
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onPanelKey)
   takeDrafts()
   saveSession(props.ws.id, {
     tabs: tabs.value.map((tab) => ({ ...tab, dirty: drafts.has(tab.path) })),

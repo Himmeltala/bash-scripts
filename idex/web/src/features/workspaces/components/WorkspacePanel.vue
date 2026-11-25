@@ -61,6 +61,7 @@ import { workspaceEventsUrl } from '../../../utils/api'
 import { toolsApi } from '../../engines/lib/toolApi'
 import { needsToolDetection, workspaceTabs } from '../lib/workspaceTabs'
 import { usePreferencesStore } from '../../../stores/preferences'
+import { matchesBinding } from '../../settings/lib/shortcuts'
 
 const props = defineProps({
   ws: { type: Object, required: true },
@@ -79,7 +80,7 @@ const TAB_META = {
 
 // 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
 const preferences = usePreferencesStore()
-const { activeTab: tab } = storeToRefs(preferences)
+const { activeTab: tab, pendingSearch } = storeToRefs(preferences)
 // 不是 SVN 工作副本或 Git 仓库时留资源管理器，探测到 Node 或 JVM 工程再加对应页签。
 const tabs = computed(() => workspaceTabs(props.ws))
 // 当前页签不可用时回到资源管理器；普通目录默认停在它，引擎页签按探测结果追加。
@@ -156,12 +157,31 @@ watch(
     openEvents()
   }
 )
+// 全局搜索快捷键：不论停在哪个页签，都切到资源管理器并打开对应模式。
+function openSearch(mode, event) {
+  event.preventDefault()
+  preferences.activeTab = 'browse'
+  pendingSearch.value = { mode, seq: Date.now() }
+}
+
+function onGlobalKey(event) {
+  if (matchesBinding(preferences.shortcuts.browseSearch, event)) {
+    openSearch('name', event)
+    return
+  }
+  if (matchesBinding(preferences.shortcuts.browseContentSearch, event)) {
+    openSearch('content', event)
+  }
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onGlobalKey)
   document.addEventListener('visibilitychange', onVisibility)
   detectTools()
   openEvents()
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKey)
   document.removeEventListener('visibilitychange', onVisibility)
   closeEvents()
 })

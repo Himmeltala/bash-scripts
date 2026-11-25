@@ -11,7 +11,7 @@
 export const SHORTCUT_DEFAULTS = {
   save: 'Ctrl+S',
   commit: 'Ctrl+Enter',
-  browseSearch: 'Ctrl+F',
+  browseSearch: 'Ctrl+Shift+E',
   browseContentSearch: 'Ctrl+Shift+F',
   quickOpen: 'Ctrl+P',
   gotoLine: 'Ctrl+G',
@@ -37,11 +37,7 @@ export const SHORTCUT_GROUPS = [
     title: '资源管理器',
     scope: 'browse',
     items: [
-      {
-        id: 'browseSearch',
-        title: '按文件名搜索',
-        hint: '焦点在资源管理器时生效；代码编辑器里的 Ctrl+F 是查找当前文件。',
-      },
+      { id: 'browseSearch', title: '按文件名搜索' },
       { id: 'browseContentSearch', title: '按内容搜索' },
       { id: 'quickOpen', title: '快速打开' },
       { id: 'gotoLine', title: '转到行' },

@@ -140,4 +140,8 @@ const items = computed(() => {
   min-width: 260px;
   max-width: 420px;
 }
+/* 服务名与右侧状态标签之间留出空隙。 */
+.menu :deep(.v-list-item__content) {
+  padding-right: 12px;
+}
 </style>

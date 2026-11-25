@@ -23,7 +23,7 @@ EDITOR_THEMES = ("auto", "github-light", "github-dark", "one-dark", "dracula")
 SHORTCUT_DEFAULTS = {
     "save": "Ctrl+S",
     "commit": "Ctrl+Enter",
-    "browseSearch": "Ctrl+F",
+    "browseSearch": "Ctrl+Shift+E",
     "browseContentSearch": "Ctrl+Shift+F",
     "quickOpen": "Ctrl+P",
     "gotoLine": "Ctrl+G",

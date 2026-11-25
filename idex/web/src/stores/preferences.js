@@ -32,5 +32,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const shortcuts = ref({ ...SHORTCUT_DEFAULTS })
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
-  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, pendingOpen }
+  // 全局搜索快捷键带来的请求：{ mode, seq }，资源管理器消费后清空。
+  const pendingSearch = ref(null)
+  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, pendingOpen, pendingSearch }
 })
