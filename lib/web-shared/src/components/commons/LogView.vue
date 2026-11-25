@@ -32,11 +32,18 @@ const host = ref(null)
 let term = null
 let fit = null
 let observer = null
+let resizeFrame = 0
 // 已经画进终端的文本，用来判断这次是追加、前面补页还是整段换掉。
 let written = ''
 
 function themeFor(dark) {
   return dark ? THEMES.deeper : THEMES.normal
+}
+
+// xterm 用画布量字宽，认不了 CSS 变量，先取出变量里的真实字体串。
+function monoFont() {
+  const value = getComputedStyle(document.documentElement).getPropertyValue('--bash-font-mono')
+  return value.trim() || 'monospace'
 }
 
 function paint(text) {
@@ -94,7 +101,7 @@ onMounted(() => {
     disableStdin: true,
     cursorBlink: false,
     scrollback: 5000,
-    fontFamily: 'var(--bash-font-mono)',
+    fontFamily: monoFont(),
     fontSize: 12,
     lineHeight: 1.3,
     theme: themeFor(props.dark),
@@ -111,8 +118,12 @@ onMounted(() => {
       .then(() => term && fit.fit())
       .catch(() => {})
   }
+  // 在回调里直接 fit 会改画布尺寸，等下一帧再量，免得同一帧反复触发 ResizeObserver。
   observer = new ResizeObserver(() => {
-    if (term) fit.fit()
+    cancelAnimationFrame(resizeFrame)
+    resizeFrame = requestAnimationFrame(() => {
+      if (term) fit.fit()
+    })
   })
   observer.observe(host.value)
   term.attachCustomKeyEventHandler(onKey)
@@ -132,6 +143,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  cancelAnimationFrame(resizeFrame)
   if (observer) observer.disconnect()
   if (term) term.dispose()
   observer = null

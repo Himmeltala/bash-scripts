@@ -138,7 +138,9 @@ prep_dependencies() {
   done
   list=$(IFS=,; printf '%s' "${rels[*]}")
   printf '启动前安装改动的依赖模块：%s\n' "$list"
-  mvn -pl "$list" install -Dmaven.test.skip=true -Dspring-boot.repackage.skip=true || return 1
+  # 先 clean：target 里可能留着没跑注解处理器编出的 class（例如 Lombok 的 getter 缺失），
+  # 只 install 会被「Nothing to compile」原样打进本地仓库，消费方就报找不到符号。
+  mvn -pl "$list" clean install -Dmaven.test.skip=true -Dspring-boot.repackage.skip=true || return 1
   for rel in "${rels[@]}"; do
     mkdir -p "$(dirname "$base/$rel")"
     touch "$base/$rel"

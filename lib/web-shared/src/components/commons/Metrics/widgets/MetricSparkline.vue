@@ -41,6 +41,7 @@ const data = []
 const labels = []
 let chart = null
 let observer = null
+let resizeFrame = 0
 
 const isHot = computed(
   () => props.unit === 'percent' && now.value !== null && now.value >= props.hot,
@@ -130,16 +131,21 @@ watch(
 )
 
 onMounted(() => {
+  // 图表初始化与 resize 都会改画布尺寸，放到下一帧做，避免同一帧重复通知。
   observer = new ResizeObserver(() => {
-    const el = boxRef.value
-    if (!el || !el.clientWidth) return
-    if (chart) chart.resize()
-    else build()
+    cancelAnimationFrame(resizeFrame)
+    resizeFrame = requestAnimationFrame(() => {
+      const el = boxRef.value
+      if (!el || !el.clientWidth) return
+      if (chart) chart.resize()
+      else build()
+    })
   })
   if (boxRef.value) observer.observe(boxRef.value)
 })
 
 onBeforeUnmount(() => {
+  cancelAnimationFrame(resizeFrame)
   if (observer) observer.disconnect()
   if (chart) chart.dispose()
 })
