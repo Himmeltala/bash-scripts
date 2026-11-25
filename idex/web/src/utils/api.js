@@ -158,4 +158,6 @@ export const api = {
   restoreHunk: (ws, path, hunk) => call('POST', '/restore-hunk', { ws, path, hunk }),
   // 快速打开用的整份文件清单。
   files: (ws) => call('GET', `/files?ws=${encodeParam(ws)}`),
+  terminalSessions: (ws) => call('GET', `/terminal/sessions?ws=${encodeParam(ws)}`),
+  terminalClose: (ws, id) => call('POST', '/terminal/close', { ws, id }),
 }

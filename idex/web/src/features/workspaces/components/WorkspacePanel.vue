@@ -71,7 +71,7 @@ const props = defineProps({
 
 // 页签标题与图标；顺序由 workspaceTabs 决定，这里只管怎么显示。
 const TAB_META = {
-  changes: { icon: 'mdi-source-branch', label: '源代码管理' },
+  changes: { icon: 'mdi-source-branch', label: '版本管理' },
   log: { icon: 'mdi-history', label: '提交记录' },
   browse: { icon: 'mdi-folder-open-outline', label: '资源管理器' },
   node: { icon: 'mdi-nodejs', label: 'Node' },

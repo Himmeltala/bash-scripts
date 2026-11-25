@@ -22,6 +22,9 @@ export const SHORTCUT_DEFAULTS = {
   complete: 'Ctrl+Space',
   format: 'Shift+Alt+F',
   rename: 'F2',
+  terminalToggle: 'Ctrl+`',
+  terminalNew: 'Ctrl+Shift+`',
+  terminalClose: 'Ctrl+Alt+W',
 }
 
 export const SHORTCUT_GROUPS = [
@@ -44,6 +47,15 @@ export const SHORTCUT_GROUPS = [
       { id: 'outline', title: '符号大纲' },
       { id: 'problems', title: '问题列表' },
       { id: 'hover', title: '悬停提示' },
+    ],
+  },
+  {
+    title: '终端',
+    scope: 'any',
+    items: [
+      { id: 'terminalToggle', title: '显示/收起终端' },
+      { id: 'terminalNew', title: '新建终端' },
+      { id: 'terminalClose', title: '关闭当前终端' },
     ],
   },
   {

@@ -34,6 +34,9 @@ SHORTCUT_DEFAULTS = {
     "complete": "Ctrl+Space",
     "format": "Shift+Alt+F",
     "rename": "F2",
+    "terminalToggle": "Ctrl+`",
+    "terminalNew": "Ctrl+Shift+`",
+    "terminalClose": "Ctrl+Alt+W",
 }
 
 

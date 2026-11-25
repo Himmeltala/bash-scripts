@@ -34,7 +34,7 @@
     <SettingsDialog v-model="settingsOpen" @saved="onSettingsSaved" />
 
     <v-main class="fill-height">
-      <div ref="shellRef" class="shell">
+      <div ref="shellRef" class="shell" :style="shellStyle">
         <div
           class="side-slot"
           :style="{ width: sideOpen ? `${sideWidth}px` : '0px' }"
@@ -76,6 +76,7 @@
           />
         </main>
       </div>
+      <TerminalDock :ws-id="currentId || ''" />
     </v-main>
   </v-app>
 </template>
@@ -88,6 +89,7 @@ import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
 import StartingServices from './features/workspaces/components/StartingServices.vue'
 import LogCenter from './features/log/components/LogCenter.vue'
 import SettingsDialog from './features/settings/components/SettingsDialog.vue'
+import TerminalDock from './features/terminal/components/TerminalDock.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
@@ -97,7 +99,8 @@ import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api, metricsEventsUrl, stateEventsUrl } from './utils/api'
 import { snack, toast } from './utils/notice'
 import { usePreferencesStore } from './stores/preferences'
-import { SHORTCUT_DEFAULTS } from './features/settings/lib/shortcuts'
+import { SHORTCUT_DEFAULTS, matchesBinding } from './features/settings/lib/shortcuts'
+import { useTerminalsStore } from './stores/terminals'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'idex-ws'
@@ -122,7 +125,6 @@ const { size: sideWidth, resizing, start: startSplit, reset: resetSplit } = useS
   persist: 'idex.shell.side-width',
 })
 
-const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
 // 头部性能指标：CPU、内存、磁盘与网速，单独一条推送。
 const metrics = ref(null)
 let source = null
@@ -133,6 +135,12 @@ function select(id) {
 }
 
 const preferences = usePreferencesStore()
+const terminals = useTerminalsStore()
+
+const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
+// 底部终端面板固定贴在视口底部，正文让出同样的高度，别被盖住。
+const dockHeight = computed(() => (preferences.terminalOpen ? preferences.terminalHeight : 32))
+const shellStyle = computed(() => ({ height: `calc(100vh - 64px - ${dockHeight.value}px)` }))
 
 // 设置存在服务端：启动时应用编辑器配色与代码地图开关，保存后重新读一遍。
 async function loadSettings() {
@@ -143,6 +151,31 @@ async function loadSettings() {
     preferences.shortcuts = { ...SHORTCUT_DEFAULTS, ...(data.shortcuts || {}) }
   } catch (err) {
     // 读不到就沿用本地默认值。
+  }
+}
+
+// 终端快捷键是全局的：显示/收起、新建、关闭当前，切工作区不影响。
+function onGlobalKey(event) {
+  const keys = preferences.shortcuts
+  if (matchesBinding(keys.terminalToggle, event)) {
+    event.preventDefault()
+    preferences.terminalOpen = !preferences.terminalOpen
+    if (preferences.terminalOpen && currentId.value) terminals.ensureSlot(currentId.value)
+    return
+  }
+  if (!preferences.terminalOpen || !currentId.value) return
+  if (matchesBinding(keys.terminalNew, event)) {
+    event.preventDefault()
+    terminals.createSlot(currentId.value)
+    return
+  }
+  if (matchesBinding(keys.terminalClose, event)) {
+    const slot = terminals.activeSlot(currentId.value)
+    if (!slot) return
+    event.preventDefault()
+    terminals.closeSlot(currentId.value, slot.key).then(() => {
+      if (!terminals.list(currentId.value).length) preferences.terminalOpen = false
+    })
   }
 }
 
@@ -238,6 +271,7 @@ async function removeWorkspace(id) {
 }
 
 onMounted(async () => {
+  document.addEventListener('keydown', onGlobalKey)
   connectState()
   connectMetrics()
   await loadSettings()
@@ -245,6 +279,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onGlobalKey)
   if (source) source.close()
   if (metricsSource) metricsSource.close()
 })

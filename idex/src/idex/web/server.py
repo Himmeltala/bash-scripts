@@ -34,6 +34,7 @@ from stores import LayoutStore
 from routes_lsp import LspRoutes
 from routes_jvm import JvmRoutes
 from routes_logs import LogRoutes
+from terminal import TerminalManager, TerminalRoutes
 from logs_store import LogStore
 from routes_node import NodeRoutes
 from web import ApiError, WebHandler
@@ -306,6 +307,7 @@ READ_ROUTES = {
     "download": lambda h, m, q, b: h._download(q, head=(m == "HEAD")),
     "operations": lambda h, m, q, b: h._latest_job(q) if m == "GET" else _NOT_HANDLED,
     "logs": lambda h, m, q, b: h._logs_read(q) if m == "GET" else _NOT_HANDLED,
+    "terminal/sessions": lambda h, m, q, b: h._terminal_sessions(q),
 }
 
 WRITE_ROUTES = {
@@ -338,10 +340,11 @@ WRITE_ROUTES = {
     "operations": lambda h, m, q, b: h._start_operation(b),
     "logs": lambda h, m, q, b: h._logs_add(b),
     "logs/clear": lambda h, m, q, b: h._logs_clear(b),
+    "terminal/close": lambda h, m, q, b: h._terminal_close(b),
 }
 
 
-class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes, LspRoutes, LogRoutes, WebHandler):
+class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, VcsRoutes, BrowseRoutes, LspRoutes, LogRoutes, TerminalRoutes, WebHandler):
     server_version = "idex-web"
 
     static = None
@@ -360,6 +363,8 @@ class Handler(NodeRoutes, JvmRoutes, JobRoutes, WorkspacesRoutes, StreamRoutes, 
     api_prefix = "/__idex/api"
     # 页面日志：读取、追加与清空都走这个文件。
     logs = None
+    # 工作区终端：会话在内存里，页面关掉后由空闲回收收尾。
+    terminals = None
     # 写操作默认只认本机；--allow-write 把它放开给所有能打开页面的人。
     allow_write = False
 
@@ -588,6 +593,7 @@ def _make_handler(args, static):
     Handler.metrics_stream = MetricsStream(METRICS)
     Handler.logs = LogStore(Path(args.state).parent / "logs.jsonl")
     set_log_store(Handler.logs)
+    Handler.terminals = TerminalManager()
     _install_crash_hooks()
 
     node_home = _engine_home("nodex")
@@ -613,6 +619,8 @@ def _cleanup():
         except Exception as exc:
             log("关闭 %s 引擎出错：%r" % (label, exc))
     Handler.lsp.stop_all()
+    if Handler.terminals is not None:
+        Handler.terminals.close_all()
 
 
 def serve(args):
