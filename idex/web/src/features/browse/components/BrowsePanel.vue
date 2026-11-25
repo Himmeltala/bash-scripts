@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:53:01
+ * @LastEditTime: 2026-11-25 08:18:05
  * @FilePath: \idex\web\src\features\browse\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -239,6 +239,7 @@
                       :model-value="value"
                       @update:model-value="update"
                       :path="tab.path"
+                      :minimap="preferences.minimap"
                       :register="register"
                       :markers="markers"
                       v-bind="editorViewProps"

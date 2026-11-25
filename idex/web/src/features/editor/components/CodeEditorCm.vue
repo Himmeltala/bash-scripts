@@ -22,6 +22,7 @@ import {
   snapshotMatches,
 } from '../core/completion.js'
 import { offsetAt } from '../core/positions.js'
+import { showMinimap } from '@replit/codemirror-minimap'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -32,6 +33,8 @@ const props = defineProps({
   capabilities: { type: [Function, Object], default: () => ({}) },
   notice: { type: Function, default: null },
   theme: { type: String, default: 'auto' },
+  // 右侧代码地图；设置里开关，切换时重配置。
+  minimap: { type: Boolean, default: false },
   // 各文件的 Git 行级标记：{ 路径: { marks: { 行号: { kind, hunk } }, hunks: [] } }。
   diff: { type: Object, default: () => ({}) },
 })
@@ -51,6 +54,7 @@ const emit = defineEmits([
 const host = ref(null)
 const language = new Compartment()
 const appearance = new Compartment()
+const minimapConf = new Compartment()
 const requests = latestRequests()
 let view = null
 let debounceTimer = 0
@@ -338,10 +342,26 @@ function diffGutter() {
   })
 }
 
+function minimapExtension() {
+  return showMinimap.compute(['doc'], () => {
+    if (!props.minimap) return null
+    return {
+      create: () => {
+        const dom = document.createElement('div')
+        dom.className = 'cm-minimap-box'
+        return { dom }
+      },
+      displayText: 'blocks',
+      showOverlay: 'mouse-over',
+    }
+  })
+}
+
 function buildExtensions() {
   return [
     basicSetup,
     appearance.of(editorThemeExtensions(props.theme)),
+    minimapConf.of(minimapExtension()),
     indentUnit.of('    '),
     keymap.of(keys),
     lintGutter(),
@@ -390,6 +410,14 @@ watch(
 )
 
 watch(
+  () => props.minimap,
+  () => {
+    if (!view) return
+    view.dispatch({ effects: minimapConf.reconfigure(minimapExtension()) })
+  }
+)
+
+watch(
   () => props.path,
   () => {
     if (!view) return
@@ -431,6 +459,11 @@ defineExpose({ locate, resetScroll })
 </script>
 
 <style scoped>
+/* 缩略图画布由扩展自己排版，这里只定宽高。 */
+:deep(.cm-minimap-box) {
+  width: 72px;
+  height: 100%;
+}
 .cm-host {
   flex: 1 1 auto;
   min-height: 0;

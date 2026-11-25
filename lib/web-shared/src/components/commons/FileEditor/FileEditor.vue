@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-17 00:15:49
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-19 00:10:49
+ * @LastEditTime: 2026-11-25 08:18:05
  * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.vue
  * @Description: 文件内容编辑器，按扩展名切换源码与渲染视图并负责保存。
 -->

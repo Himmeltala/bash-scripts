@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 16:25:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-25 08:17:26
  * @FilePath: \idex\web\src\features\editor\components\IdexCodeEditor.vue
  * @Description: idex 的代码编辑器外壳：懒加载 CodeEditorCm，向 FileEditor 注册定位方法。
 -->
@@ -22,6 +22,7 @@
       :capabilities="capabilities"
       :notice="notice"
       :theme="theme"
+      :minimap="minimap"
       :diff="diff"
       @update:model-value="$emit('update:modelValue', $event)"
       v-on="forwarders"
@@ -43,6 +44,7 @@ const props = defineProps({
   capabilities: { type: [Function, Object], default: () => ({}) },
   notice: { type: Function, default: null },
   theme: { type: String, default: 'auto' },
+  minimap: { type: Boolean, default: false },
   diff: { type: Object, default: () => ({}) },
   // FileEditor 给的注册回调：内部编辑器就绪后交 locate/resetScroll，卸载时交 null。
   register: { type: Function, default: null },

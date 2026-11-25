@@ -1120,6 +1120,15 @@ class SearchSettings(unittest.TestCase):
         gitmod.Settings(str(path)).set_search_ignore([])
         self.assertEqual(gitmod.Settings(str(path)).search_ignore(), [])
 
+        # 编辑器设置按字段更新，没提到的字段不动；非法配色回 auto。
+        store.update({"editor_theme": "dracula", "minimap": True})
+        again = gitmod.Settings(str(path))
+        self.assertEqual(again.editor_theme(), "dracula")
+        self.assertTrue(again.minimap())
+        again.update({"editor_theme": "不存在"})
+        self.assertEqual(gitmod.Settings(str(path)).editor_theme(), "auto")
+        self.assertTrue(gitmod.Settings(str(path)).minimap())
+
 
 class SearchSettingsApi(unittest.TestCase):
     """设置接口与搜索按设置跳过目录。"""
@@ -1158,6 +1167,10 @@ class SearchSettingsApi(unittest.TestCase):
         code, data = self.call("/settings")
         self.assertEqual(code, 200, data)
         self.assertEqual(data["search_ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
+        # 默认模板一份：接口返回的 defaults 覆盖搜索、配色与代码地图。
+        self.assertEqual(data["defaults"]["search_ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
+        self.assertEqual(data["defaults"]["editor_theme"], "auto")
+        self.assertFalse(data["defaults"]["minimap"])
 
         code, data = self.call("/search?ws=%s&q=x.txt&mode=name" % self.ws)
         self.assertEqual(code, 200, data)
@@ -1176,6 +1189,17 @@ class SearchSettingsApi(unittest.TestCase):
             "/settings", {"search_ignore": [" /tmp ", "dist", "node_modules", "dist"]}
         )
         self.assertEqual(data["search_ignore"], ["dist", "node_modules"])
+
+        # 编辑器设置与服务端持久化；只改一个字段时其余字段保留。
+        code, data = self.call("/settings", {"editor_theme": "one-dark", "minimap": True})
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["editor_theme"], "one-dark")
+        self.assertTrue(data["minimap"])
+        code, data = self.call("/settings", {"search_ignore": ["vendor"]})
+        self.assertEqual(data["editor_theme"], "one-dark")
+        self.assertTrue(data["minimap"])
+        code, data = self.call("/settings")
+        self.assertEqual(data["editor_theme"], "one-dark")
 
 
 if __name__ == "__main__":

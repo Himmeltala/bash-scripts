@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 23:01:03
+ * @LastEditTime: 2026-11-25 08:18:05
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -31,7 +31,7 @@
     </v-app-bar>
 
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
-    <SettingsDialog v-model="settingsOpen" @saved="toast('设置已保存', 'success')" />
+    <SettingsDialog v-model="settingsOpen" @saved="onSettingsSaved" />
 
     <v-main class="fill-height">
       <div ref="shellRef" class="shell">
@@ -133,6 +133,22 @@ function select(id) {
 
 const preferences = usePreferencesStore()
 
+// 设置存在服务端：启动时应用编辑器配色与代码地图开关，保存后重新读一遍。
+async function loadSettings() {
+  try {
+    const data = await api.settings()
+    preferences.editorTheme = data.editor_theme || 'auto'
+    preferences.minimap = !!data.minimap
+  } catch (err) {
+    // 读不到就沿用本地默认值。
+  }
+}
+
+async function onSettingsSaved() {
+  await loadSettings()
+  toast('设置已保存', 'success')
+}
+
 // 顶栏点一条正在启动的服务：切到它的工作区与 Node / JVM 页签。
 function openService(item) {
   if (!item || !item.wsId) return
@@ -222,6 +238,7 @@ async function removeWorkspace(id) {
 onMounted(async () => {
   connectState()
   connectMetrics()
+  await loadSettings()
   await refresh()
 })
 

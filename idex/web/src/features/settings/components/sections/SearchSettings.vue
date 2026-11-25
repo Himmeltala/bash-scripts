@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 23:05:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 23:09:46
+ * @LastEditTime: 2026-11-25 08:21:53
  * @FilePath: \idex\web\src\features\settings\components\sections\SearchSettings.vue
  * @Description: 搜索设置：跳过目录的名单，读写服务端设置。
 -->
@@ -35,7 +35,7 @@ const defaults = ref([])
 
 async function load() {
   const data = await api.settings()
-  defaults.value = data.defaults || []
+  defaults.value = (data.defaults && data.defaults.search_ignore) || []
   text.value = (data.search_ignore || []).join('\n')
 }
 
@@ -49,7 +49,7 @@ async function save() {
     .map((line) => line.trim())
     .filter(Boolean)
   try {
-    const data = await api.saveSettings(names)
+    const data = await api.saveSettings({ search_ignore: names })
     text.value = (data.search_ignore || []).join('\n')
     return true
   } catch (err) {

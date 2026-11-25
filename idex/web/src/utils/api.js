@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 23:09:46
+ * @LastEditTime: 2026-11-24 23:18:07
  * @FilePath: \idex\web\src\utils\api.js
  * @Description: idex 的接口封装与 SSE 地址，所有请求都走 /__idex/api。
 */
@@ -113,7 +113,8 @@ export const api = {
       `/search?ws=${encodeParam(ws)}&q=${encodeParam(text)}&mode=${encodeParam(mode)}&path=${encodeParam(path)}&token=${encodeParam(token)}`
     ),
   settings: () => call('GET', '/settings'),
-  saveSettings: (searchIgnore) => call('POST', '/settings', { search_ignore: searchIgnore }),
+  saveSettings: (patch) =>
+    call('POST', '/settings', Array.isArray(patch) ? { search_ignore: patch } : patch),
   // 代码索引：把编辑框里这份文本和词的位置交给服务端的语言服务器。
   definition: (ws, path, text, line, character) =>
     call('POST', '/lsp/definition', { ws, path, text, line, character }),

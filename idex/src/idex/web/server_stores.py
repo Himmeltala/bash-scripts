@@ -17,6 +17,14 @@ from vcs_summary import (
 SEARCH_IGNORE_DEFAULTS = [".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target"]
 SEARCH_IGNORE_MAX = 50
 SEARCH_IGNORE_LEN = 80
+# 编辑器配色与代码地图。
+EDITOR_THEMES = ("auto", "github-light", "github-dark", "one-dark", "dracula")
+# 默认设置模板：重置与「未设置」时的回退都读这一份，别的模块不再各写一份。
+SETTINGS_DEFAULTS = {
+    "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
+    "editor_theme": "auto",
+    "minimap": False,
+}
 
 
 def clean_tools(tools):
@@ -184,7 +192,7 @@ class Workspaces:
 
 
 class Settings:
-    """全局设置，存在 settings.json 里；现在只管搜索要跳过哪些目录名。"""
+    """全局设置，存在 settings.json 里：搜索跳过目录、编辑器配色与默认视图。"""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -200,11 +208,41 @@ class Settings:
             return list(SEARCH_IGNORE_DEFAULTS)
         return clean_search_ignore(values)
 
+    def editor_theme(self):
+        value = self.data().get("editor_theme")
+        return value if value in EDITOR_THEMES else SETTINGS_DEFAULTS["editor_theme"]
+
+    def minimap(self):
+        return bool(self.data().get("minimap"))
+
+    def payload(self):
+        return {
+            "search_ignore": self.search_ignore(),
+            "defaults": dict(SETTINGS_DEFAULTS, search_ignore=list(SETTINGS_DEFAULTS["search_ignore"])),
+            "editor_theme": self.editor_theme(),
+            "minimap": self.minimap(),
+        }
+
     def set_search_ignore(self, values):
+        """只改搜索名单，保留其余设置。"""
+        names = clean_search_ignore(values)
         with self.lock:
-            names = clean_search_ignore(values)
             data = self.data()
             data["search_ignore"] = names
             write_json(self.path, data, indent=2, ensure_ascii=False)
-            return names
+        return names
+
+    def update(self, body):
+        """按页面提交的字段更新设置；没提到的字段保持原值。"""
+        with self.lock:
+            data = self.data()
+            if "search_ignore" in body:
+                data["search_ignore"] = clean_search_ignore(body.get("search_ignore") or [])
+            if "editor_theme" in body:
+                theme = str(body.get("editor_theme") or "")
+                data["editor_theme"] = theme if theme in EDITOR_THEMES else "auto"
+            if "minimap" in body:
+                data["minimap"] = bool(body.get("minimap"))
+            write_json(self.path, data, indent=2, ensure_ascii=False)
+        return self.payload()
 

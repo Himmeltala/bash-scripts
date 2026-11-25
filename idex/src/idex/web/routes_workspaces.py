@@ -6,7 +6,7 @@ from pathlib import Path
 from web import ApiError, log
 
 from server_common import inside
-from server_stores import SEARCH_IGNORE_DEFAULTS
+from server_stores import SEARCH_IGNORE_DEFAULTS, SETTINGS_DEFAULTS
 from tool_detect import detect_tools
 
 
@@ -115,7 +115,7 @@ def _save_settings(handler, body):
     handler._check_write()
     if handler.settings is None:
         raise ApiError(404, "设置没有起来")
-    handler.settings.set_search_ignore(body.get("search_ignore") or [])
+    handler.settings.update(body if isinstance(body, dict) else {})
     return handler._settings_payload()
 
 
@@ -141,10 +141,12 @@ class WorkspacesRoutes:
 
 
     def _settings_payload(self):
-        ignore = (
-            self.settings.search_ignore()
-            if self.settings is not None
-            else list(SEARCH_IGNORE_DEFAULTS)
-        )
-        return {"search_ignore": ignore, "defaults": list(SEARCH_IGNORE_DEFAULTS)}
+        if self.settings is None:
+            return {
+                "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
+                "defaults": dict(SETTINGS_DEFAULTS, search_ignore=list(SEARCH_IGNORE_DEFAULTS)),
+                "editor_theme": SETTINGS_DEFAULTS["editor_theme"],
+                "minimap": SETTINGS_DEFAULTS["minimap"],
+            }
+        return self.settings.payload()
 

@@ -2,12 +2,13 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:08:05
+ * @LastEditTime: 2026-11-25 08:18:05
  * @FilePath: \idex\web\src\stores\preferences.js
  * @Description: idex 的界面偏好：变更、差异、搜索、页签与编辑器配色的本地选择。
 */
 
 import { defineStore } from 'pinia'
+import { ref } from 'vue'
 import { useStoredChoice } from '@bash-scripts/web-shared'
 import { EDITOR_THEME_IDS } from '../features/editor/core/themeOptions'
 
@@ -21,5 +22,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const logDiffScope = useStoredChoice('idex.log-diff-scope', ['file', 'hunks'], 'hunks')
   // 代码编辑器的配色只影响浏览页，跟随界面与四套固定预设。
   const editorTheme = useStoredChoice('idex.editor-theme', EDITOR_THEME_IDS, 'auto')
-  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme }
+  // 编辑器右侧的代码地图，同样由服务端设置加载。
+  const minimap = ref(false)
+  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme, minimap }
 })
