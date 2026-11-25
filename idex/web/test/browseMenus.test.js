@@ -8,7 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../src/features/browse/lib/browseMenus.js'
+import { SYMBOL_MENU, TAB_MENU } from '../src/features/browse/lib/browseMenus.js'
 
 const actions = (menu) => menu.filter((item) => !item.sep).map((item) => item.action)
 
@@ -28,16 +28,6 @@ test('代码菜单的动作不重复，且都归在本地动作或服务端动�
   for (const action of list) {
     assert.equal(local.includes(action) || server.includes(action), true, action)
   }
-})
-
-test('快捷键不重复，同一个键的 Shift 组合能分开', () => {
-  const seen = new Set()
-  for (const item of SHORTCUTS) {
-    const key = `${item.key}:${item.shift ? 'shift' : 'plain'}`
-    assert.equal(seen.has(key), false, key)
-    seen.add(key)
-  }
-  assert.equal(['search', 'quick-open', 'goto-line', 'outline', 'problems', 'hover'].includes(SHORTCUTS[0].action), true)
 })
 
 test('菜单项都有文字与图标', () => {

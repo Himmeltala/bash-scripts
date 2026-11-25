@@ -20,10 +20,27 @@ SEARCH_IGNORE_LEN = 80
 # 编辑器配色与代码地图。
 EDITOR_THEMES = ("auto", "github-light", "github-dark", "one-dark", "dracula")
 # 默认设置模板：重置与「未设置」时的回退都读这一份，别的模块不再各写一份。
+SHORTCUT_DEFAULTS = {
+    "save": "Ctrl+S",
+    "commit": "Ctrl+Enter",
+    "browseSearch": "Ctrl+F",
+    "browseContentSearch": "Ctrl+Shift+F",
+    "quickOpen": "Ctrl+P",
+    "gotoLine": "Ctrl+G",
+    "outline": "Ctrl+Shift+O",
+    "problems": "Ctrl+Shift+M",
+    "hover": "Ctrl+I",
+    "complete": "Ctrl+Space",
+    "format": "Shift+Alt+F",
+    "rename": "F2",
+}
+
+
 SETTINGS_DEFAULTS = {
     "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
     "editor_theme": "auto",
     "minimap": False,
+    "shortcuts": dict(SHORTCUT_DEFAULTS),
 }
 
 
@@ -215,12 +232,23 @@ class Settings:
     def minimap(self):
         return bool(self.data().get("minimap"))
 
+    def shortcuts(self):
+        saved = self.data().get("shortcuts")
+        if not isinstance(saved, dict):
+            return dict(SHORTCUT_DEFAULTS)
+        return {**SHORTCUT_DEFAULTS, **{key: saved[key] for key in SHORTCUT_DEFAULTS if key in saved}}
+
     def payload(self):
         return {
             "search_ignore": self.search_ignore(),
-            "defaults": dict(SETTINGS_DEFAULTS, search_ignore=list(SETTINGS_DEFAULTS["search_ignore"])),
+            "defaults": dict(
+                SETTINGS_DEFAULTS,
+                search_ignore=list(SETTINGS_DEFAULTS["search_ignore"]),
+                shortcuts=dict(SHORTCUT_DEFAULTS),
+            ),
             "editor_theme": self.editor_theme(),
             "minimap": self.minimap(),
+            "shortcuts": self.shortcuts(),
         }
 
     def set_search_ignore(self, values):
@@ -243,6 +271,21 @@ class Settings:
                 data["editor_theme"] = theme if theme in EDITOR_THEMES else "auto"
             if "minimap" in body:
                 data["minimap"] = bool(body.get("minimap"))
+            if "shortcuts" in body:
+                data["shortcuts"] = clean_shortcuts(body.get("shortcuts"))
             write_json(self.path, data, indent=2, ensure_ascii=False)
         return self.payload()
 
+
+def clean_shortcuts(values):
+    """快捷键按登记表收：未知项丢掉，写坏的值退回默认，空串表示停用。"""
+    out = dict(SHORTCUT_DEFAULTS)
+    if not isinstance(values, dict):
+        return out
+    for key in SHORTCUT_DEFAULTS:
+        value = values.get(key)
+        if not isinstance(value, str):
+            continue
+        text = " ".join(value.split())
+        out[key] = text if len(text) <= 40 else SHORTCUT_DEFAULTS[key]
+    return out

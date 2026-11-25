@@ -11,5 +11,6 @@
 export const SETTINGS_SECTIONS = [
   { id: 'search', title: '搜索', icon: 'mdi-magnify', savable: true, resettable: true, load: () => import('../components/sections/SearchSettings.vue') },
   { id: 'editor', title: '编辑器', icon: 'mdi-palette-outline', savable: false, resettable: true, load: () => import('../components/sections/EditorSettings.vue') },
+  { id: 'shortcuts', title: '快捷键', icon: 'mdi-keyboard-outline', savable: true, resettable: true, load: () => import('../components/sections/ShortcutsSettings.vue') },
   { id: 'lsp', title: '语言服务器', icon: 'mdi-server-network', savable: false, load: () => import('../components/sections/LspSettings.vue') },
 ]

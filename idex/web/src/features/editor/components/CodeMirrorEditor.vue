@@ -40,6 +40,8 @@ import {
   resetViewScroll,
 } from '../core/editorBase.js'
 import { showMinimap } from '@replit/codemirror-minimap'
+import { usePreferencesStore } from '../../../stores/preferences'
+import { toCmKey } from '../../settings/lib/shortcuts'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -70,10 +72,12 @@ const emit = defineEmits([
   'diffhunk',
 ])
 
+const preferences = usePreferencesStore()
 const host = ref(null)
 const language = new Compartment()
 const appearance = new Compartment()
 const minimapConf = new Compartment()
+const keymapConf = new Compartment()
 const requests = latestRequests()
 let view = null
 let foldedRanges = []
@@ -236,26 +240,36 @@ async function formatDocument() {
   }
 }
 
-const keys = [
-  indentWithTab,
-  { key: 'Mod-Space', run: startCompletion },
-  {
-    key: 'Shift-Alt-f',
-    run() {
-      formatDocument()
-      return true
-    },
-  },
-  {
-    key: 'F2',
-    run(editor) {
-      const symbol = symbolAtOffset(editor.state.selection.main.head)
-      if (!symbol) return false
-      emit('rename', symbol)
-      return true
-    },
-  },
-]
+// 绑定从设置里读；改完设置重配置，旧的组合不再拦截。
+function editorKeys() {
+  const shortcuts = preferences.shortcuts
+  const bindings = [indentWithTab]
+  const complete = toCmKey(shortcuts.complete)
+  if (complete) bindings.push({ key: complete, run: startCompletion })
+  const format = toCmKey(shortcuts.format)
+  if (format) {
+    bindings.push({
+      key: format,
+      run() {
+        formatDocument()
+        return true
+      },
+    })
+  }
+  const rename = toCmKey(shortcuts.rename)
+  if (rename) {
+    bindings.push({
+      key: rename,
+      run(editor) {
+        const symbol = symbolAtOffset(editor.state.selection.main.head)
+        if (!symbol) return false
+        emit('rename', symbol)
+        return true
+      },
+    })
+  }
+  return bindings
+}
 
 const updateListener = EditorView.updateListener.of((update) => {
   if (update.docChanged) {
@@ -292,6 +306,11 @@ function diffEntry() {
   return (props.diff && props.diff[props.path]) || null
 }
 
+function minimapMarks() {
+  const entry = diffEntry()
+  return (entry && entry.marks) || {}
+}
+
 function diffGutter() {
   return gutter({
     class: 'cm-diff-gutter',
@@ -326,9 +345,9 @@ function buildExtensions() {
   return [
     basicSetup,
     appearance.of(editorThemeExtensions(props.theme)),
-    minimapConf.of(minimapExtension(props.minimap)),
+    minimapConf.of(minimapExtension(props.minimap, minimapMarks())),
     indentUnit.of('    '),
-    keymap.of(keys),
+    keymapConf.of(keymap.of(editorKeys())),
     lintGutter(),
     diffGutter(),
     language.of(languageExtension(handlerOf(props.path).cmLanguage(props.path))),
@@ -382,10 +401,21 @@ watch(
 )
 
 watch(
+  () => preferences.shortcuts,
+  () => {
+    if (!view) return
+    view.dispatch({ effects: keymapConf.reconfigure(keymap.of(editorKeys())) })
+  },
+  { deep: true },
+)
+
+watch(
   () => props.minimap,
   () => {
     if (!view) return
-    view.dispatch({ effects: minimapConf.reconfigure(minimapExtension()) })
+    view.dispatch({
+      effects: minimapConf.reconfigure(minimapExtension(props.minimap, minimapMarks())),
+    })
   }
 )
 
@@ -394,7 +424,10 @@ watch(
   () => {
     if (!view) return
     view.dispatch({
-      effects: language.reconfigure(languageExtension(handlerOf(props.path).cmLanguage(props.path))),
+      effects: [
+        language.reconfigure(languageExtension(handlerOf(props.path).cmLanguage(props.path))),
+        minimapConf.reconfigure(minimapExtension(props.minimap, minimapMarks())),
+      ],
     })
   }
 )
@@ -406,7 +439,13 @@ const refreshDiff = StateEffect.define()
 watch(
   () => props.diff,
   () => {
-    if (view) view.dispatch({ effects: refreshDiff.of(null) })
+    if (!view) return
+    view.dispatch({
+      effects: [
+        refreshDiff.of(null),
+        minimapConf.reconfigure(minimapExtension(props.minimap, minimapMarks())),
+      ],
+    })
   }
 )
 

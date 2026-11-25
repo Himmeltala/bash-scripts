@@ -728,9 +728,15 @@ defineExpose({ load })
   align-items: center;
   gap: 4px;
 }
-/* 切换钮里这两个图标按钮不许被压小，否则图标会被裁掉。 */
+/* 切换钮里这两个图标按钮不许被压小，否则图标会被裁掉；高度统一压到 24px。 */
 .files-mode :deep(.v-btn) {
   flex: 0 0 auto;
+  height: 24px !important;
+  min-height: 24px;
+}
+.files-mode.v-btn-toggle {
+  height: 24px !important;
+  min-height: 24px;
 }
 .pane-title {
   flex: 0 1 auto;

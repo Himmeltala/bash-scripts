@@ -33,7 +33,21 @@ export function positionOfDoc(doc, offset) {
   return { line: line.number - 1, character: safe - line.from, offset: safe }
 }
 
-export function minimapExtension(enabled) {
+// 代码地图左侧的改动色条：新增、改动、删除与 VS Code 的取色接近。
+const DIFF_COLORS = { add: '#3fb950', modify: '#58a6ff', delete: '#f85149' }
+
+export function diffGutters(marks) {
+  const map = {}
+  for (const [line, mark] of Object.entries(marks || {})) {
+    const color = DIFF_COLORS[mark && mark.kind]
+    const number = Number(line)
+    if (color && Number.isInteger(number) && number > 0) map[number] = color
+  }
+  return Object.keys(map).length ? [map] : []
+}
+
+export function minimapExtension(enabled, marks) {
+  const gutters = enabled ? diffGutters(marks) : []
   return showMinimap.compute(['doc'], () => {
     if (!enabled) return null
     return {
@@ -44,6 +58,7 @@ export function minimapExtension(enabled) {
       },
       displayText: 'blocks',
       showOverlay: 'mouse-over',
+      gutters,
     }
   })
 }

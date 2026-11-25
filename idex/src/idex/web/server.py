@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import traceback
 from pathlib import Path
 
@@ -549,6 +550,29 @@ def _start_engine(label, factory):
         return None
 
 
+def _install_crash_hooks():
+    """主线程与后台线程没接住的异常也写进页面日志，别只留在终端的 stderr 里。"""
+    previous_main = sys.excepthook
+
+    def main_hook(kind, value, tb):
+        log("未捕获的异常：%s" % value, "".join(traceback.format_exception(kind, value, tb)))
+        previous_main(kind, value, tb)
+
+    sys.excepthook = main_hook
+
+    previous_thread = threading.excepthook
+
+    def thread_hook(args):
+        name = args.thread.name if args.thread is not None else "?"
+        log(
+            "线程 %s 未捕获的异常：%s" % (name, args.exc_value),
+            "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)),
+        )
+        previous_thread(args)
+
+    threading.excepthook = thread_hook
+
+
 def _make_handler(args, static):
     Handler.static = static
     Handler.store = Workspaces(args.state)
@@ -564,6 +588,7 @@ def _make_handler(args, static):
     Handler.metrics_stream = MetricsStream(METRICS)
     Handler.logs = LogStore(Path(args.state).parent / "logs.jsonl")
     set_log_store(Handler.logs)
+    _install_crash_hooks()
 
     node_home = _engine_home("nodex")
     Handler.node_service = _start_engine(

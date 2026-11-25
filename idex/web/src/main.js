@@ -14,14 +14,41 @@ import '@fontsource/jetbrains-mono/latin-700.css'
 import '@bash-scripts/web-shared/style.css'
 import '@bash-scripts/web-shared/tailwind.css'
 
-createApp(App).use(createPinia()).use(vuetify).mount('#app')
+const app = createApp(App)
 
-// 未捕获的前端异常也写进服务端日志，带上原始堆栈，方便回查只闪一下的错误。
-window.addEventListener('error', (event) => {
-  logToServer('error', event.message || '页面脚本出错', event.error?.stack || '', 'frontend')
-})
+// 全局错误先挂监听再挂载：首屏渲染期间出的错也要收进服务端日志。
+// 资源加载失败只有捕获阶段拿得到，顺便标出是哪个标签、哪个地址。
+function resourceError(target) {
+  if (!(target instanceof Element)) return ''
+  if (target instanceof HTMLScriptElement) return `脚本加载失败：${target.src}`
+  if (target instanceof HTMLLinkElement) return `样式加载失败：${target.href}`
+  if (target instanceof HTMLImageElement) return `图片加载失败：${target.src}`
+  return ''
+}
+
+window.addEventListener(
+  'error',
+  (event) => {
+    const message = resourceError(event.target)
+    if (message) {
+      logToServer('error', message, event.target.outerHTML.slice(0, 500), 'frontend')
+      return
+    }
+    logToServer('error', event.message || '页面脚本出错', event.error?.stack || '', 'frontend')
+  },
+  true,
+)
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason
   const message = reason && reason.message ? reason.message : String(reason || '未处理的异步错误')
   logToServer('error', message, reason && reason.stack ? reason.stack : '', 'frontend')
 })
+// Vue 自己接住的组件错误不会再抛到 window，单独记一条，组件与阶段也带上。
+app.config.errorHandler = (err, instance, info) => {
+  const message = err && err.message ? err.message : String(err || '组件渲染出错')
+  const stack = err && err.stack ? err.stack : ''
+  logToServer('error', message, `${info || ''}\n${stack}`.trim(), 'frontend')
+  console.error(err)
+}
+
+app.use(createPinia()).use(vuetify).mount('#app')

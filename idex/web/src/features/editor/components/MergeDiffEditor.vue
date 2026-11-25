@@ -22,6 +22,8 @@ import { lintGutter } from '@codemirror/lint'
 import { MergeView, unifiedMergeView } from '@codemirror/merge'
 import { symbolAt } from '@bash-scripts/web-shared'
 import { handlerOf } from '../core/handlers/registry.js'
+import { usePreferencesStore } from '../../../stores/preferences'
+import { toCmKey } from '../../settings/lib/shortcuts'
 import { languageExtension } from '../core/languageExtension.js'
 import { editorThemeExtensions } from '../core/themes.js'
 import { mergeViewOptions, unifiedOptions } from '../core/mergeDiff.js'
@@ -75,8 +77,10 @@ let debounceTimer = 0
 let pendingResolve = null
 let hoverTimer = 0
 let hoverKey = ''
+const preferences = usePreferencesStore()
 const appearance = new Compartment()
 const minimapConf = new Compartment()
+const keymapConf = new Compartment()
 
 function activeView() {
   return merge.value ? merge.value.b : single.value
@@ -219,20 +223,24 @@ async function formatDocument() {
   }
 }
 
-const keys = [
-  indentWithTab,
-  { key: 'Mod-Space', run: startCompletion },
-  {
-    key: 'Shift-Alt-f',
-    run() {
-      formatDocument()
-      return true
-    },
-  },
-]
-
+// 绑定从设置里读；只看历史版本（lsp=false）时不挂补全与格式化。
 function editorKeys() {
-  return props.lsp ? keys : [indentWithTab]
+  if (!props.lsp) return [indentWithTab]
+  const shortcuts = preferences.shortcuts
+  const bindings = [indentWithTab]
+  const complete = toCmKey(shortcuts.complete)
+  if (complete) bindings.push({ key: complete, run: startCompletion })
+  const format = toCmKey(shortcuts.format)
+  if (format) {
+    bindings.push({
+      key: format,
+      run() {
+        formatDocument()
+        return true
+      },
+    })
+  }
+  return bindings
 }
 
 const updateListener = EditorView.updateListener.of((update) => {
@@ -255,7 +263,7 @@ function editorExtensions(readonly) {
     appearance.of(editorThemeExtensions(props.theme)),
     minimapConf.of(minimapOn() ? minimapExtension(true) : []),
     indentUnit.of('    '),
-    keymap.of(editorKeys()),
+    keymapConf.of(keymap.of(editorKeys())),
     lintGutter(),
     languageExtension(handlerOf(props.path).cmLanguage(props.path)),
     ...(props.lsp ? [autocompletion({ override: [completionSource], activateOnTyping: true })] : []),
@@ -392,6 +400,17 @@ watch(
   () => props.theme,
   () => reconfigure(appearance, editorThemeExtensions(props.theme)),
 )
+watch(
+  () => preferences.shortcuts,
+  () => {
+    const views = merge.value ? [merge.value.a, merge.value.b] : single.value ? [single.value] : []
+    for (const view of views) {
+      view.dispatch({ effects: keymapConf.reconfigure(keymap.of(editorKeys())) })
+    }
+  },
+  { deep: true },
+)
+
 watch(
   () => props.minimap,
   () => {

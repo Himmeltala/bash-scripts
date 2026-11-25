@@ -26,14 +26,3 @@ export const SYMBOL_MENU = [
   { sep: true },
   { action: 'copy', label: '复制标识符', icon: 'mdi-content-copy' },
 ]
-
-// shift 表示要按住 Shift；Ctrl（Mac 上 Command）由处理函数统一判断。
-export const SHORTCUTS = [
-  { key: 'f', shift: false, action: 'search' },
-  { key: 'f', shift: true, action: 'search' },
-  { key: 'p', shift: false, action: 'quick-open' },
-  { key: 'g', shift: false, action: 'goto-line' },
-  { key: 'o', shift: true, action: 'outline' },
-  { key: 'm', shift: true, action: 'problems' },
-  { key: 'i', shift: false, action: 'hover' },
-]

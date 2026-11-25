@@ -291,6 +291,7 @@ import { useLeaveGuard } from '../composables/useLeaveGuard'
 import { isDeferred } from '../../../utils/deferred'
 import { toast } from '../../../utils/notice'
 import { usePreferencesStore } from '../../../stores/preferences'
+import { matchesBinding } from '../../settings/lib/shortcuts'
 import { useFileTree } from '@bash-scripts/web-shared'
 import { useSplitPane } from '@bash-scripts/web-shared'
 
@@ -824,7 +825,7 @@ async function saveNow() {
 
 
 function onKeySave(event) {
-  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+  if (!matchesBinding(preferences.shortcuts.save, event)) return
   if (!dirty.value || saving.value) return
   event.preventDefault()
   saveNow()
@@ -912,7 +913,13 @@ defineExpose({ load })
 .list-head {
   display: flex;
   align-items: center;
-  padding: 2px 8px 4px;
+  padding: 0 8px 2px;
+}
+/* 图标按钮的 height:auto 会让这一行高到 48px，压回和分组标题一样高。 */
+.list-head :deep(.v-btn),
+.list-head :deep(.v-btn-toggle) {
+  height: 24px !important;
+  min-height: 24px;
 }
 .group-head {
   display: flex;

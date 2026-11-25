@@ -11,6 +11,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useStoredChoice } from '@bash-scripts/web-shared'
 import { EDITOR_THEME_IDS } from '../features/editor/core/themeOptions'
+import { SHORTCUT_DEFAULTS } from '../features/settings/lib/shortcuts'
 
 // 变更清单、差异、搜索与页签的查看方式，都记在浏览器里，换工作区保持不变。
 export const usePreferencesStore = defineStore('preferences', () => {
@@ -24,7 +25,9 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const editorTheme = useStoredChoice('idex.editor-theme', EDITOR_THEME_IDS, 'auto')
   // 编辑器右侧的代码地图，同样由服务端设置加载。
   const minimap = ref(false)
+  // 快捷键绑定，由服务端设置加载，各处按键处理都读这一份。
+  const shortcuts = ref({ ...SHORTCUT_DEFAULTS })
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
-  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme, minimap, pendingOpen }
+  return { changesMode, diffScope, searchMode, activeTab, logFilesMode, logDiffScope, editorTheme, minimap, shortcuts, pendingOpen }
 })

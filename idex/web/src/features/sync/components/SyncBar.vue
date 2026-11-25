@@ -19,15 +19,22 @@
         <span v-if="info.behind" class="ab" title="远端比本地分支多出的提交">
           <v-icon size="12">mdi-arrow-down-bold</v-icon>{{ info.behind }}
         </span>
-        <v-btn size="small" variant="text" :disabled="busy || !writable" @click="openBranch">
-          切换分支
-        </v-btn>
       </template>
       <template v-else>
         <span class="mono up">{{ info.url }}</span>
         <span v-if="info.revision" class="rev">r{{ info.revision }}</span>
       </template>
       <v-spacer />
+      <v-btn
+        v-if="isGit"
+        size="small"
+        variant="text"
+        prepend-icon="mdi-source-branch"
+        :disabled="busy || !writable"
+        @click="openBranch"
+      >
+        切换分支
+      </v-btn>
       <v-btn
         v-if="isGit"
         size="small"
@@ -86,7 +93,7 @@
         hide-details
         :maxlength="8000"
         class="msg"
-        @keydown.ctrl.enter.prevent="ask('commit')"
+        @keydown="onCommitKey"
       />
       <div class="commit-side">
         <v-btn
@@ -161,6 +168,8 @@ import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { api } from '../../../utils/api'
 import { toast } from '../../../utils/notice'
 import { useSyncJob } from '../composables/useSyncJob'
+import { usePreferencesStore } from '../../../stores/preferences'
+import { matchesBinding } from '../../settings/lib/shortcuts'
 import {
   PULL_MODES,
   branchItemsOf,
@@ -170,6 +179,14 @@ import {
   confirmTitleOf,
   findBranchOf,
 } from '../lib/syncView'
+
+const preferences = usePreferencesStore()
+
+function onCommitKey(event) {
+  if (!matchesBinding(preferences.shortcuts.commit, event)) return
+  event.preventDefault()
+  ask('commit')
+}
 
 const props = defineProps({
   ws: { type: Object, required: true },

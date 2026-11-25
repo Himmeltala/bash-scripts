@@ -9,7 +9,6 @@
 <template>
   <div
     class="panel"
-    @keydown.ctrl.s.prevent="save"
     @keydown="onPanelKey"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -749,7 +748,8 @@ import { formatBytes, formatTimestamp } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, isHeldNode } from '../lib/browseOps'
 import { compressiblePath } from '../lib/browseCompress'
 import { SOURCE_LABELS, previewKindOf } from '../../editor/core/previews/previewTypes'
-import { SHORTCUTS, SYMBOL_MENU, TAB_MENU } from '../lib/browseMenus'
+import { SYMBOL_MENU, TAB_MENU } from '../lib/browseMenus'
+import { matchesBinding } from '../../settings/lib/shortcuts'
 import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../../editor/core/diagnostics'
 import { useDiagnostics } from '../../editor/composables/useDiagnostics'
 import { useCodeIndex } from '../../editor/composables/useCodeIndex'
@@ -1234,11 +1234,16 @@ function onCaret(position) {
   caret.column = position.column
 }
 
-// 快捷键表在 browseMenus；这里只放 action 到处理函数的对应。
+// 快捷键 ID 到处理函数的对应；绑定本身在设置里改。
 const SHORTCUT_RUN = {
-  search: openSearch,
-  'quick-open': openQuickOpen,
-  'goto-line': openGotoLine,
+  save,
+  browseSearch: openSearch,
+  browseContentSearch: () => {
+    mode.value = 'content'
+    openSearch()
+  },
+  quickOpen: openQuickOpen,
+  gotoLine: openGotoLine,
   outline: openOutline,
   problems: () => {
     problemsAsk.on = true
@@ -1247,12 +1252,20 @@ const SHORTCUT_RUN = {
 }
 
 function onPanelKey(event) {
-  if (!(event.ctrlKey || event.metaKey) || event.altKey) return
-  const key = (event.key || '').toLowerCase()
-  const hit = SHORTCUTS.find((item) => item.key === key && item.shift === event.shiftKey)
-  if (!hit) return
-  event.preventDefault()
-  SHORTCUT_RUN[hit.action]()
+  for (const [id, run] of Object.entries(SHORTCUT_RUN)) {
+    if (!matchesBinding(preferences.shortcuts[id], event)) continue
+    // 和 VS Code 一样：光标在代码编辑器里时「按文件名搜索」只找当前文件，交给 CodeMirror。
+    if (
+      id === 'browseSearch' &&
+      event.target instanceof Element &&
+      event.target.closest('.cm-editor')
+    ) {
+      return
+    }
+    event.preventDefault()
+    run()
+    return
+  }
 }
 
 function openSearch() {

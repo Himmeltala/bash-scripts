@@ -97,6 +97,7 @@ import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api, metricsEventsUrl, stateEventsUrl } from './utils/api'
 import { snack, toast } from './utils/notice'
 import { usePreferencesStore } from './stores/preferences'
+import { SHORTCUT_DEFAULTS } from './features/settings/lib/shortcuts'
 import { rememberTheme } from './plugins/vuetify'
 
 const VIEW_KEY = 'idex-ws'
@@ -139,6 +140,7 @@ async function loadSettings() {
     const data = await api.settings()
     preferences.editorTheme = data.editor_theme || 'auto'
     preferences.minimap = !!data.minimap
+    preferences.shortcuts = { ...SHORTCUT_DEFAULTS, ...(data.shortcuts || {}) }
   } catch (err) {
     // 读不到就沿用本地默认值。
   }
