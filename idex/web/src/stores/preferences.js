@@ -9,7 +9,6 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
 import { useStoredChoice } from '@bash-scripts/web-shared'
 import { EDITOR_THEME_IDS } from '../features/editor/core/themeOptions'
 import { SHORTCUT_DEFAULTS } from '../features/settings/lib/shortcuts'
@@ -31,12 +30,9 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const minimap = ref(false)
   // 快捷键绑定，由服务端设置加载，各处按键处理都读这一份。
   const shortcuts = ref({ ...SHORTCUT_DEFAULTS })
-  // 底部终端面板的展开状态与高度只管这一台浏览器。
-  const terminalOpen = useLocalStorage('idex.terminal-open', false)
-  const terminalHeight = useLocalStorage('idex.terminal-height', 280)
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
   // 全局搜索快捷键带来的请求：{ mode, seq }，资源管理器消费后清空。
   const pendingSearch = ref(null)
-  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, terminalOpen, terminalHeight, pendingOpen, pendingSearch }
+  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, pendingOpen, pendingSearch }
 })

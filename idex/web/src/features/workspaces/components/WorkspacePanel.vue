@@ -194,8 +194,13 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
 }
+/* 页签条本身也套卡片，和下面的 tabbody 同一底色；正文卡片之间留 8px。 */
 .tabsbar {
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  flex: 0 0 auto;
+  margin: 8px 8px 0;
+  border-radius: 10px;
+  background: rgb(var(--v-theme-surface));
+  overflow: hidden;
 }
 .badge {
   margin-left: 6px;

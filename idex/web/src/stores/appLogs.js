@@ -1,18 +1,19 @@
 /*
  * @Author: Himmeltala
- * @Date: 2026-11-24 23:09:46
+ * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 23:09:46
- * @FilePath: \idex\web\src\features\log\composables\useLogs.js
- * @Description: 服务端日志的分页读取、按级别筛选、轮询新条目与清空。
+ * @LastEditTime: 2026-11-25 00:00:00
+ * @FilePath: \idex\web\src\stores\appLogs.js
+ * @Description: 页面日志的共享状态：入口徽标与日志面板共用一份数据，只轮询一次。
  */
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { api } from '../../../utils/api'
+import { defineStore } from 'pinia'
+import { computed, reactive, ref, watch } from 'vue'
+import { api } from '../utils/api'
 
 const PAGE = 200
 const POLL_MS = 10000
 
-export function useLogs() {
+export const useAppLogsStore = defineStore('appLogs', () => {
   const items = ref([])
   const counts = reactive({ error: 0, warning: 0, info: 0 })
   const total = ref(0)
@@ -20,9 +21,9 @@ export function useLogs() {
   const loading = ref(false)
   const error = ref('')
   const level = ref('all')
-  let timer = null
-
   const queryLevel = computed(() => (level.value === 'all' ? '' : level.value))
+  let timer = null
+  let started = false
 
   function apply(data, { reset = false } = {}) {
     total.value = data.total || 0
@@ -34,8 +35,7 @@ export function useLogs() {
       const seen = new Set(items.value.map((item) => item.id))
       items.value = page.filter((item) => !seen.has(item.id)).concat(items.value)
     }
-    hasMore.value = !!data.has_more || (items.value.length > 0 && !!data.next_before && !reset)
-    if (reset) hasMore.value = !!data.has_more
+    hasMore.value = reset ? !!data.has_more : !!data.has_more || (items.value.length > 0 && !!data.next_before)
     error.value = ''
   }
 
@@ -69,16 +69,21 @@ export function useLogs() {
     }
   }
 
-  // 轮询只补比当前最新一条更新的记录，不打断已经往前翻的页。
   async function poll() {
     if (document.hidden) return
     try {
-      const data = await api.logs({ limit: PAGE, level: queryLevel.value })
-      apply(data, { reset: false })
-      if (items.value.length > PAGE) items.value = items.value.slice(0, items.value.length)
+      apply(await api.logs({ limit: PAGE, level: queryLevel.value }), { reset: false })
     } catch (err) {
       // 轮询失败不提示，下一次再试。
     }
+  }
+
+  // 入口与面板共用：第一次用到时读一次、开一次轮询，之后一直复用。
+  function ensure() {
+    if (started) return
+    started = true
+    load()
+    timer = setInterval(poll, POLL_MS)
   }
 
   async function clear() {
@@ -96,19 +101,5 @@ export function useLogs() {
 
   watch(level, load)
 
-  function startPolling() {
-    stopPolling()
-    timer = setInterval(poll, POLL_MS)
-  }
-
-  function stopPolling() {
-    if (timer !== null) {
-      clearInterval(timer)
-      timer = null
-    }
-  }
-
-  onBeforeUnmount(stopPolling)
-
-  return { items, counts, total, hasMore, loading, error, level, load, more, poll, clear, startPolling, stopPolling }
-}
+  return { items, counts, total, hasMore, loading, error, level, load, more, clear, ensure }
+})
