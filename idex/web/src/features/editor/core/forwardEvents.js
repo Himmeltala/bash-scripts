@@ -4,10 +4,10 @@
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-24 21:41:59
  * @FilePath: \idex\web\src\features\editor\core\forwardEvents.js
- * @Description: CodeEditorCm 的事件转发给 BrowsePanel：统一补 path，symbol 改名为 definition。
+ * @Description: CodeMirrorEditor 的事件转发给 BrowsePanel：统一补 path，symbol 改名为 definition。
  */
 
-// 键是 CodeEditorCm 的事件，值是 IdexCodeEditor 对外的事件名。
+// 键是 CodeMirrorEditor 的事件，值是 CodeEditorShell 对外的事件名。
 export const EDITOR_EVENT_MAP = {
   symbol: 'definition',
   menu: 'menu',

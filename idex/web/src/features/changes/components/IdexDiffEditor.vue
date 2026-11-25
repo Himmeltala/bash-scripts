@@ -8,7 +8,7 @@
 -->
 <template>
   <div class="diff-editor">
-    <IdexCodeEditor
+    <CodeEditorShell
       ref="editorRef"
       :model-value="text"
       :path="path"
@@ -56,7 +56,7 @@ import { api } from '../../../utils/api'
 import { toast } from '../../../utils/notice'
 import { handlerOf } from '../../editor/core/handlers/registry'
 import { useDiagnostics } from '../../editor/composables/useDiagnostics'
-import IdexCodeEditor from '../../editor/components/IdexCodeEditor.vue'
+import CodeEditorShell from '../../editor/components/CodeEditorShell.vue'
 import { usePreferencesStore } from '../../../stores/preferences'
 import { diffMarks, hunkOriginal, parseDiffHunks } from '../../browse/lib/diffLines'
 

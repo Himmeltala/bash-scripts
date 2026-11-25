@@ -235,7 +235,7 @@
                   @edit="onEdit"
                 >
                   <template #editor="{ value, update, register }">
-                    <IdexCodeEditor
+                    <CodeEditorShell
                       :model-value="value"
                       @update:model-value="update"
                       :path="tab.path"
@@ -754,7 +754,7 @@ import { PROBLEM_LEVELS, SEVERITY_ICONS } from '../../editor/core/diagnostics'
 import { useDiagnostics } from '../../editor/composables/useDiagnostics'
 import { useCodeIndex } from '../../editor/composables/useCodeIndex'
 import { handlerOf } from '../../editor/core/handlers/registry'
-import IdexCodeEditor from '../../editor/components/IdexCodeEditor.vue'
+import CodeEditorShell from '../../editor/components/CodeEditorShell.vue'
 import { useBrowseSearch } from '../composables/useBrowseSearch'
 import { useBrowseEditors } from '../composables/useBrowseEditors'
 import { useBrowseFiles } from '../composables/useBrowseFiles'

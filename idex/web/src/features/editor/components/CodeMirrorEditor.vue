@@ -1,3 +1,11 @@
+<!--
+ * @Author: Himmeltala
+ * @Date: 2026-11-21 20:04:21
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-25 09:19:47
+ * @FilePath: \idex\web\src\features\editor\components\CodeMirrorEditor.vue
+ * @Description: 基于 CodeMirror 6 的代码编辑器：补全、格式化、悬停、诊断与 Git 行级标记。
+-->
 <template>
   <div ref="host" class="cm-host" />
 </template>

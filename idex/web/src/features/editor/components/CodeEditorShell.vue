@@ -3,11 +3,11 @@
  * @Date: 2026-11-24 16:25:00
  * @LastEditors: Himmeltala
  * @LastEditTime: 2026-11-25 08:17:26
- * @FilePath: \idex\web\src\features\editor\components\IdexCodeEditor.vue
- * @Description: idex 的代码编辑器外壳：懒加载 CodeEditorCm，向 FileEditor 注册定位方法。
+ * @FilePath: \idex\web\src\features\editor\components\CodeEditorShell.vue
+ * @Description: idex 的代码编辑器外壳：懒加载 CodeMirrorEditor，向 FileEditor 注册定位方法。
 -->
 <template>
-  <div class="idex-code-editor">
+  <div class="code-editor-shell">
     <LoadingState v-if="loading" hint="正在准备视图…" />
     <p v-else-if="loadError" class="hint bad">{{ loadError }}</p>
     <component
@@ -101,7 +101,7 @@ function setCollapsedRanges(ranges) {
 
 onMounted(async () => {
   try {
-    const mod = await import('./CodeEditorCm.vue')
+    const mod = await import('./CodeMirrorEditor.vue')
     Inner.value = mod.default
     // 先关掉加载态，内层才会渲染出 innerRef，再等一帧后注册定位方法。
     loading.value = false
@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.idex-code-editor {
+.code-editor-shell {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
