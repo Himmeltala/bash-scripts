@@ -15,13 +15,12 @@ import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { basicSetup } from 'codemirror'
 import { indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { autocompletion, startCompletion } from '@codemirror/autocomplete'
-import { lintGutter, setDiagnostics } from '@codemirror/lint'
+import { lintGutter } from '@codemirror/lint'
 import { MergeView, unifiedMergeView } from '@codemirror/merge'
 import { symbolAt } from '@bash-scripts/web-shared'
-import { showMinimap } from '@replit/codemirror-minimap'
 import { handlerOf } from '../core/handlers/registry.js'
 import { languageExtension } from '../core/languageExtension.js'
 import { editorThemeExtensions } from '../core/themes.js'
@@ -32,7 +31,15 @@ import {
   latestRequests,
   snapshotMatches,
 } from '../core/completion.js'
-import { offsetAt } from '../core/positions.js'
+import {
+  SEARCH_PHRASES,
+  formatChanges,
+  locateInView,
+  minimapExtension,
+  positionOfDoc,
+  pushDiagnostics,
+  resetViewScroll,
+} from '../core/editorBase.js'
 
 const props = defineProps({
   original: { type: String, default: '' },
@@ -52,7 +59,6 @@ const props = defineProps({
 
 const emit = defineEmits([
   'update:modelValue',
-  'caret',
   'edit',
   'definition',
   'hover',
@@ -67,6 +73,8 @@ let debounceTimer = 0
 let pendingResolve = null
 let hoverTimer = 0
 let hoverKey = ''
+const appearance = new Compartment()
+const minimapConf = new Compartment()
 
 function activeView() {
   return merge.value ? merge.value.b : single.value
@@ -81,14 +89,6 @@ function capabilitiesOf() {
 function currentText() {
   const view = activeView()
   return view ? view.state.doc.toString() : String(props.modelValue ?? '')
-}
-
-function positionOf(offset) {
-  const text = currentText()
-  const safe = Math.max(0, Math.min(Number(offset) || 0, text.length))
-  const before = text.slice(0, safe)
-  const line = before.split('\n').length - 1
-  return { line, character: safe - (before.lastIndexOf('\n') + 1), offset: safe }
 }
 
 function endHover() {
@@ -171,7 +171,7 @@ async function completionSource(context) {
   const text = currentText()
   const anchor = completionAnchor(text, context.pos)
   if (!context.explicit && (!anchor || (anchor.empty && !anchor.trigger))) return null
-  const at = positionOf(context.pos)
+  const at = positionOfDoc(activeView().state.doc, context.pos)
   const data = await completeAt({
     path: props.path,
     text,
@@ -209,13 +209,7 @@ async function formatDocument() {
   }
   if (!snapshotMatches(view.state.doc.toString(), text)) return
   if (!data || !Array.isArray(data.edits) || !data.edits.length) return
-  const changes = data.edits
-    .map((edit) => ({
-      from: offsetAt(text, edit.start.line, edit.start.character),
-      to: offsetAt(text, edit.end.line, edit.end.character),
-      insert: String(edit.newText ?? ''),
-    }))
-    .sort((left, right) => left.from - right.from || left.to - right.to)
+  const changes = formatChanges(text, data.edits)
   try {
     view.dispatch({ changes })
   } catch (err) {
@@ -235,86 +229,30 @@ const keys = [
   },
 ]
 
-const phrases = EditorState.phrases.of({
-  Find: '查找',
-  Replace: '替换',
-  next: '下一个',
-  previous: '上一个',
-  all: '全部',
-  'match case': '区分大小写',
-  regexp: '正则表达式',
-  'by word': '整词',
-  replace: '替换',
-  'replace all': '全部替换',
-  close: '关闭',
-})
-
 const updateListener = EditorView.updateListener.of((update) => {
   if (update.docChanged) {
     const text = update.state.doc.toString()
     if (text !== props.modelValue) emit('update:modelValue', text)
     emit('edit')
   }
-  if (update.docChanged || update.selectionSet) {
-    const at = positionOf(update.state.selection.main.head)
-    emit('caret', { line: at.line + 1, column: at.character + 1 })
-  }
 })
 
-function diagnosticsFor(view) {
-  const items = []
-  for (const [key, level] of Object.entries(props.markers || {})) {
-    const number = Number(key)
-    if (!Number.isInteger(number) || number < 1 || number > view.state.doc.lines) continue
-    const line = view.state.doc.line(number)
-    items.push({
-      from: line.from,
-      to: line.to,
-      severity: level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info',
-      message: '',
-    })
-  }
-  return items
-}
-
-function pushDiagnostics() {
-  const view = activeView()
-  if (view) view.dispatch(setDiagnostics(view.state, diagnosticsFor(view)))
-}
-
-function minimapExtension() {
-  return showMinimap.compute(['doc'], () => {
-    if (!props.minimap) return null
-    return {
-      create: () => {
-        const dom = document.createElement('div')
-        dom.className = 'cm-minimap-box'
-        return { dom }
-      },
-      displayText: 'blocks',
-      showOverlay: 'mouse-over',
-    }
-  })
-}
-
-function editorExtensions({ readonly, original }) {
+function editorExtensions(readonly) {
   const extensions = [
     basicSetup,
-    editorThemeExtensions(props.theme),
+    appearance.of(editorThemeExtensions(props.theme)),
+    minimapConf.of(readonly ? [] : minimapExtension(props.minimap)),
     indentUnit.of('    '),
     keymap.of(keys),
     lintGutter(),
     languageExtension(handlerOf(props.path).cmLanguage(props.path)),
     autocompletion({ override: [completionSource], activateOnTyping: true }),
-    phrases,
+    SEARCH_PHRASES,
   ]
-  if (props.inline) {
-    extensions.push(unifiedMergeView({ original, ...unifiedOptions(props) }))
-  }
   if (readonly) {
     extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false))
   } else {
-    extensions.push(domEvents, updateListener, minimapExtension())
+    extensions.push(domEvents, updateListener)
   }
   return extensions
 }
@@ -328,7 +266,6 @@ function destroy() {
   single.value?.destroy()
   merge.value = null
   single.value = null
-  if (host.value) host.value.innerHTML = ''
 }
 
 function captureState() {
@@ -365,7 +302,10 @@ function build() {
       parent: host.value,
       state: EditorState.create({
         doc: modified,
-        extensions: editorExtensions({ readonly: !props.writable, original }),
+        extensions: [
+          ...editorExtensions(!props.writable),
+          unifiedMergeView({ original, ...unifiedOptions(props) }),
+        ],
       }),
     })
   } else {
@@ -373,16 +313,14 @@ function build() {
     merge.value = new MergeView({
       a: {
         doc: original,
-        extensions: editorExtensions({ readonly: true, original: '' }),
+        extensions: editorExtensions(true),
       },
       b: {
         doc: modified,
-        extensions: editorExtensions({ readonly: !props.writable, original: '' }),
+        extensions: editorExtensions(!props.writable),
       },
       parent: host.value,
-      orientation: 'a-b',
-      revertControls: options.revertControls,
-      collapseUnchanged: options.collapseUnchanged,
+          ...options,
     })
   }
   pushDiagnostics()
@@ -393,7 +331,7 @@ onMounted(() => build())
 onBeforeUnmount(destroy)
 
 watch(
-  () => [props.inline, props.collapse, props.writable, props.path, props.theme, props.minimap],
+  () => [props.inline, props.collapse, props.writable, props.path],
   () => nextTick(build),
 )
 watch(
@@ -411,23 +349,34 @@ watch(
     pushDiagnostics()
   },
 )
-watch(() => props.markers, pushDiagnostics, { deep: true })
+watch(() => props.markers, pushDiagnostics)
+
+function reconfigure(compartment, extension) {
+  for (const view of merge.value ? [merge.value.a, merge.value.b] : single.value ? [single.value] : []) {
+    view.dispatch({ effects: compartment.reconfigure(extension) })
+  }
+}
+
+watch(
+  () => props.theme,
+  () => reconfigure(appearance, editorThemeExtensions(props.theme)),
+)
+watch(
+  () => props.minimap,
+  () => {
+    const views = merge.value ? [merge.value.b] : single.value ? [single.value] : []
+    for (const view of views) {
+      view.dispatch({ effects: minimapConf.reconfigure(minimapExtension(props.minimap)) })
+    }
+  },
+)
 
 function locate(line) {
-  const view = activeView()
-  if (!view) return
-  const number = Math.min(Math.max(Number(line) || 1, 1), view.state.doc.lines)
-  const target = view.state.doc.line(number)
-  view.focus()
-  view.dispatch({
-    selection: { anchor: target.from, head: target.to },
-    effects: EditorView.scrollIntoView(target.from, { y: 'start' }),
-  })
+  locateInView(activeView(), line)
 }
 
 function resetScroll() {
-  const view = activeView()
-  if (view) view.scrollDOM.scrollTop = 0
+  resetViewScroll(activeView())
 }
 
 defineExpose({ locate, resetScroll })

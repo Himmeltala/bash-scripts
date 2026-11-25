@@ -17,7 +17,7 @@ export function mergeViewOptions({ collapse, writable }) {
 
 export function unifiedOptions({ collapse, writable }) {
   return {
-    mergeControls: !!writable,
+    mergeControls: writable,
     collapseUnchanged: collapse ? { margin: 3 } : undefined,
     highlightChanges: true,
   }

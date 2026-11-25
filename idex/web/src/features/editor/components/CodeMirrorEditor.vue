@@ -30,7 +30,15 @@ import {
   latestRequests,
   snapshotMatches,
 } from '../core/completion.js'
-import { offsetAt } from '../core/positions.js'
+import {
+  SEARCH_PHRASES,
+  formatChanges,
+  locateInView,
+  minimapExtension,
+  positionOfDoc,
+  pushDiagnostics as pushMarkers,
+  resetViewScroll,
+} from '../core/editorBase.js'
 import { showMinimap } from '@replit/codemirror-minimap'
 
 const props = defineProps({
@@ -85,11 +93,9 @@ function currentText() {
 }
 
 function positionOf(offset) {
-  const text = currentText()
-  const safe = Math.max(0, Math.min(Number(offset) || 0, text.length))
-  const before = text.slice(0, safe)
-  const line = before.split('\n').length - 1
-  return { line, character: safe - (before.lastIndexOf('\n') + 1), offset: safe }
+  return view
+    ? positionOfDoc(view.state.doc, offset)
+    : { line: 0, character: 0, offset: 0 }
 }
 
 function endHover() {
@@ -222,13 +228,7 @@ async function formatDocument() {
   }
   if (!snapshotMatches(view.state.doc.toString(), text)) return
   if (!data || !Array.isArray(data.edits) || !data.edits.length) return
-  const changes = data.edits
-    .map((edit) => ({
-      from: offsetAt(text, edit.start.line, edit.start.character),
-      to: offsetAt(text, edit.end.line, edit.end.character),
-      insert: String(edit.newText ?? ''),
-    }))
-    .sort((left, right) => left.from - right.from || left.to - right.to)
+  const changes = formatChanges(text, data.edits)
   try {
     view.dispatch({ changes })
   } catch (err) {
@@ -257,20 +257,6 @@ const keys = [
   },
 ]
 
-const phrases = EditorState.phrases.of({
-  Find: '查找',
-  Replace: '替换',
-  next: '下一个',
-  previous: '上一个',
-  all: '全部',
-  'match case': '区分大小写',
-  regexp: '正则表达式',
-  'by word': '整词',
-  replace: '替换',
-  'replace all': '全部替换',
-  close: '关闭',
-})
-
 const updateListener = EditorView.updateListener.of((update) => {
   if (update.docChanged) {
     const text = update.state.doc.toString()
@@ -282,24 +268,6 @@ const updateListener = EditorView.updateListener.of((update) => {
     emit('caret', { line: at.line + 1, column: at.character + 1 })
   }
 })
-
-function pushDiagnostics() {
-  if (!view) return
-  const doc = view.state.doc
-  const items = []
-  for (const [key, level] of Object.entries(props.markers || {})) {
-    const number = Number(key)
-    if (!Number.isInteger(number) || number < 1 || number > doc.lines) continue
-    const line = doc.line(number)
-    items.push({
-      from: line.from,
-      to: line.to,
-      severity: level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info',
-      message: '',
-    })
-  }
-  view.dispatch(setDiagnostics(view.state, items))
-}
 
 class DiffMarker extends GutterMarker {
   constructor(kind) {
@@ -354,26 +322,11 @@ function diffGutter() {
   })
 }
 
-function minimapExtension() {
-  return showMinimap.compute(['doc'], () => {
-    if (!props.minimap) return null
-    return {
-      create: () => {
-        const dom = document.createElement('div')
-        dom.className = 'cm-minimap-box'
-        return { dom }
-      },
-      displayText: 'blocks',
-      showOverlay: 'mouse-over',
-    }
-  })
-}
-
 function buildExtensions() {
   return [
     basicSetup,
     appearance.of(editorThemeExtensions(props.theme)),
-    minimapConf.of(minimapExtension()),
+    minimapConf.of(minimapExtension(props.minimap)),
     indentUnit.of('    '),
     keymap.of(keys),
     lintGutter(),
@@ -382,7 +335,7 @@ function buildExtensions() {
     autocompletion({ override: [completionSource], activateOnTyping: true }),
     domEvents,
     updateListener,
-    phrases,
+    SEARCH_PHRASES,
   ]
 }
 
@@ -391,7 +344,7 @@ onMounted(() => {
     parent: host.value,
     state: EditorState.create({ doc: String(props.modelValue ?? ''), extensions: buildExtensions() }),
   })
-  pushDiagnostics()
+  pushMarkers(view, props.markers)
   setCollapsedRanges(props.collapsedRanges)
 })
 
@@ -446,7 +399,7 @@ watch(
   }
 )
 
-watch(() => props.markers, pushDiagnostics, { deep: true })
+watch(() => props.markers, () => pushMarkers(view, props.markers), { deep: true })
 
 // 换文件或重新取到差异后，让边栏按新标记重画一次。
 const refreshDiff = StateEffect.define()
@@ -458,20 +411,11 @@ watch(
 )
 
 function locate(line) {
-  if (!view) return
-  const number = Math.min(Math.max(Number(line) || 1, 1), view.state.doc.lines)
-  const target = view.state.doc.line(number)
-  view.focus()
-  view.dispatch({
-    selection: { anchor: target.from, head: target.to },
-    effects: EditorView.scrollIntoView(target.from, { y: 'start' }),
-  })
+  locateInView(view, line)
 }
 
 function resetScroll() {
-  if (!view) return
-  view.scrollDOM.scrollTop = 0
-  view.scrollDOM.scrollLeft = 0
+  resetViewScroll(view)
 }
 
 // 折叠一组行区间（1 起、含两端），用来只显示差异附近的代码；LSP 行号不受影响。
