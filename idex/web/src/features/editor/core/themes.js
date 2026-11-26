@@ -98,6 +98,21 @@ const PALETTES = {
   },
 }
 
+// 字符级差异用背景色标出，不画下划线，和 VS Code 的差异编辑器一致。
+function diffTextStyle() {
+  return {
+    '&.cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText': {
+      background: 'rgba(255, 0, 0, 0.2) !important',
+    },
+    '&.cm-merge-b .cm-changedText': {
+      background: 'rgba(155, 185, 85, 0.2) !important',
+    },
+    '&.cm-merge-b .cm-deletedText': {
+      background: 'rgba(255, 0, 0, 0.2) !important',
+    },
+  }
+}
+
 function chrome(palette) {
   return EditorView.theme(
     {
@@ -126,6 +141,7 @@ function chrome(palette) {
         color: palette.fg,
         border: `1px solid ${palette.border}`,
       },
+      ...diffTextStyle(),
     },
     { dark: palette.dark },
   )
@@ -220,6 +236,7 @@ function autoTheme() {
         color: 'rgb(var(--v-theme-on-surface))',
         border: '1px solid rgba(var(--v-theme-on-surface), 0.12)',
       },
+      ...diffTextStyle(),
     }),
   ]
 }
