@@ -14,7 +14,12 @@
       </v-btn>
     </div>
 
-    <div v-if="!workspaces.length && !groupCount" class="none">{{ labels.empty }}</div>
+    <EmptyState
+      v-if="!workspaces.length && !groupCount"
+      icon="mdi-folder-open-outline"
+      :icon-size="44"
+      :title="labels.empty"
+    />
 
     <v-list density="compact" nav class="items" @drop.prevent="dropRow">
       <v-list-item
@@ -199,6 +204,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import ContextMenu from '../../feedbacks/commons/ContextMenu.vue'
+import EmptyState from '../../layouts/commons/EmptyState.vue'
 import DirectoryPicker from '../commons/DirectoryPicker/index.js'
 import FloatingDialog from '../../feedbacks/commons/FloatingDialog.vue'
 import { copyText } from '../../utils/commons/clipboard.js'
@@ -672,11 +678,6 @@ function drop() {
   font-size: 0.82rem;
   letter-spacing: 0.06em;
   color: rgb(var(--v-theme-on-surface-variant));
-}
-.none {
-  padding: 12px 16px;
-  color: rgb(var(--v-theme-on-surface-variant));
-  font-size: 0.9rem;
 }
 .items :deep(.v-list-item) {
   border-radius: 8px;

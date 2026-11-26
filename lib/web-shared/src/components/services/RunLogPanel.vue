@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \lib\web-shared\src\components\services\RunLogPanel.vue
  * @Description: 运行日志面板：标题、更早按钮与终端视图，空日志时给占位文案。
 -->
@@ -17,12 +17,13 @@
   </div>
   <div class="log-box">
     <LogView v-if="text" :text="text" :dark="dark" :colorize="colorize" />
-    <p v-else class="log-empty">{{ emptyText }}</p>
+    <EmptyState v-else icon="mdi-playlist-play" :icon-size="28" :title="emptyText" />
   </div>
 </template>
 
 <script setup>
 import LogView from '../commons/LogView.vue'
+import EmptyState from '../../layouts/commons/EmptyState.vue'
 
 defineProps({
   text: { type: String, default: '' },
@@ -54,9 +55,5 @@ defineEmits(['load-more'])
 .label {
   font-size: 0.78rem;
   color: rgb(var(--v-theme-on-surface-variant));
-}
-.log-empty {
-  color: rgb(var(--v-theme-on-surface-variant));
-  font-size: 0.86rem;
 }
 </style>

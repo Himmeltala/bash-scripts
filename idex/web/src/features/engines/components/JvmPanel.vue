@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\engines\components\JvmPanel.vue
  * @Description: JVM 页签：扫描 Maven 或 Gradle 工作区的模块与目标，在同一张表里启动、停止、重启、打包与安装。
 -->
@@ -62,9 +62,13 @@
         <v-btn size="small" variant="text" @click="retry">重试</v-btn>
       </div>
 
-      <div v-if="!rows.length" class="none">
-        没扫到可执行的模块，或点重新扫描。
-      </div>
+      <EmptyState
+        v-if="!rows.length"
+        icon="mdi-language-java"
+        :icon-size="44"
+        title="没扫到可执行的模块"
+        hint="可以点「重新扫描」再试。"
+      />
 
       <ServiceTable
         v-else
@@ -134,6 +138,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import EngineRegisterState from './EngineRegisterState.vue'
 import JvmSettingsDialog from './JvmSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'

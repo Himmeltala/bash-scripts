@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 21:41:59
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\engines\components\NodePanel.vue
  * @Description: Node 页签：扫描 package.json 脚本，在同一张表里启动、停止并管理自定义命令。
 -->
@@ -63,9 +63,13 @@
         <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="openAdd">添加命令</v-btn>
       </div>
 
-      <div v-if="!rows.length" class="none">
-        这个工作区没有可执行的脚本；可以添加一条自己的命令。
-      </div>
+      <EmptyState
+        v-if="!rows.length"
+        icon="mdi-console-line"
+        :icon-size="44"
+        title="没有可执行的脚本"
+        hint="可以添加一条自己的命令。"
+      />
 
       <ServiceTable
         v-else
@@ -189,6 +193,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import EngineRegisterState from './EngineRegisterState.vue'
 import NodeSettingsDialog from './NodeSettingsDialog.vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'

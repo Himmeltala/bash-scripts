@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\browse\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -90,9 +90,12 @@
               <template v-if="search.truncated">，只列了前面一部分</template>
             </span>
           </div>
-          <p v-if="!search.loading && !search.error && !search.matches.length" class="hint">
-            没有找到匹配的文件。
-          </p>
+          <EmptyState
+            v-if="!search.loading && !search.error && !search.matches.length"
+            icon="mdi-file-search-outline"
+            :icon-size="40"
+            title="没有找到匹配的文件"
+          />
           <div v-for="row in resultRows" :key="`${row.type}:${row.path}`" class="snode">
             <div
               class="srow"

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 22:53:37
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\log\components\LogPanel.vue
  * @Description: 按时间线列出提交历史，查看提交说明与逐文件差异。
 -->
@@ -14,7 +14,12 @@
 
     <div ref="splitRef" class="split" :class="{ resizing }">
       <aside class="revs" :style="{ '--list-width': `${listWidth}px` }">
-        <p v-if="!loading && !entries.length" class="none">还没有提交记录。</p>
+        <EmptyState
+          v-if="!loading && !entries.length"
+          icon="mdi-history"
+          :icon-size="40"
+          title="还没有提交记录"
+        />
         <div
           v-for="entry in entries"
           :key="entry.revision"
@@ -202,7 +207,12 @@
                     </v-icon>
                   </div>
                 </template>
-                <p v-if="!current.paths.length" class="none">这次提交没有列出变更路径。</p>
+                <EmptyState
+                  v-if="!current.paths.length"
+                  icon="mdi-file-outline"
+                  :icon-size="28"
+                  title="这次提交没有列出变更路径"
+                />
               </div>
             </div>
 
@@ -285,7 +295,12 @@
             </div>
           </div>
         </template>
-        <div v-else class="none">选一次提交看详情。</div>
+        <EmptyState
+          v-else
+          icon="mdi-file-document-outline"
+          :icon-size="32"
+          title="选一次提交看详情"
+        />
       </section>
     </div>
   </div>
@@ -801,11 +816,6 @@ defineExpose({ load })
 }
 .held {
   flex: 0 0 auto;
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.none {
-  padding: 12px 16px;
-  font-size: 0.84rem;
   color: rgb(var(--v-theme-on-surface-variant));
 }
 .hint {

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 15:44:39
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 08:31:41
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\changes\components\ChangesPanel.vue
  * @Description: 列出工作副本的未提交变更，按文件查看差异并直接编辑保存。
 -->
@@ -31,7 +31,13 @@
             <v-btn value="tree" size="x-small" icon="mdi-file-tree-outline" title="目录树" />
           </v-btn-toggle>
         </div>
-        <p v-if="!loading && !files.length" class="none">工作副本是干净的，没有未提交的变更。</p>
+        <EmptyState
+          v-if="!loading && !files.length"
+          icon="mdi-source-branch"
+          :icon-size="44"
+          title="工作副本是干净的"
+          hint="没有未提交的变更。"
+        />
         <div v-for="group in shownGroups" :key="group.key" class="group">
           <div class="group-head">
             <span class="group-title">{{ group.title }}</span>
@@ -937,11 +943,6 @@ defineExpose({ load })
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.none {
-  padding: 12px 16px;
-  font-size: 0.86rem;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 .hint {
   margin: 8px 12px;

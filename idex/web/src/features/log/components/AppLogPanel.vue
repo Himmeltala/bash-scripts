@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 09:33:52
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\log\components\AppLogPanel.vue
  * @Description: 日志面板：级别筛选、展开详情、复制、清空与加载更多。
 -->
@@ -26,7 +26,12 @@
     <div class="list">
       <p v-if="error" class="none bad">{{ error }}</p>
       <p v-else-if="loading && !items.length" class="none">正在读取…</p>
-      <p v-else-if="!items.length" class="none">没有{{ levelText }}。</p>
+      <EmptyState
+        v-else-if="!items.length"
+        icon="mdi-text-box-outline"
+        :icon-size="40"
+        :title="`没有${levelText}。`"
+      />
       <div v-for="entry in items" :key="entry.id" class="item" @click="toggle(entry.id)">
         <v-icon size="16" :color="colorOf(entry.level)">
           {{ iconOf(entry.level) }}
@@ -67,6 +72,7 @@
 
 <script setup>
 import { computed, onMounted, reactive } from 'vue'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { storeToRefs } from 'pinia'
 import { copyText } from '@bash-scripts/web-shared'
 import { useAppLogsStore } from '../../../stores/appLogs'
