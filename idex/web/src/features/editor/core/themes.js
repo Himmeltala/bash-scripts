@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-26 09:26:41
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 09:26:41
+ * @LastEditTime: 2026-11-26 11:20:00
  * @FilePath: \idex\web\src\features\editor\core\themes.js
  * @Description: 编辑器主题预设，组合底色、语法高亮、折叠图标与差异字符样式。
  */
@@ -141,7 +141,7 @@ function chrome(palette) {
   return EditorView.theme(
     {
       '&': { height: '100%', color: palette.fg, backgroundColor: palette.bg },
-      '.cm-scroller': { fontFamily: CODE_FONT, fontSize: '0.86rem', lineHeight: '1.6' },
+      '.cm-scroller': { fontFamily: CODE_FONT, fontSize: 'var(--bash-code-size)', lineHeight: '1.6' },
       '.cm-content': { caretColor: palette.fg },
       '.cm-gutters': {
         backgroundColor: palette.gutterBg,
@@ -234,7 +234,7 @@ function autoTheme() {
         color: 'rgb(var(--v-theme-on-surface))',
         backgroundColor: 'rgb(var(--v-theme-surface))',
       },
-      '.cm-scroller': { fontFamily: CODE_FONT, fontSize: '0.86rem', lineHeight: '1.6' },
+      '.cm-scroller': { fontFamily: CODE_FONT, fontSize: 'var(--bash-code-size)', lineHeight: '1.6' },
       '.cm-content': { caretColor: 'rgb(var(--v-theme-on-surface))' },
       '.cm-gutters': {
         backgroundColor: 'rgb(var(--v-theme-surface))',

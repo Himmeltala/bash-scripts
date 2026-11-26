@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 11:20:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalView.vue
  * @Description: 单个终端的 xterm 宿主；切走后保留实例与 DOM，切回来重新挂上。
 -->
@@ -95,12 +95,24 @@ function terminalTheme() {
   }
 }
 
+// xterm 在 canvas 里画字，读不到 CSS 变量，先把字体栈和字号取成具体的值。
+function codeFont() {
+  const value = getComputedStyle(document.documentElement).getPropertyValue('--bash-font-mono')
+  return value.trim() || 'monospace'
+}
+
+function codeSize() {
+  const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const rem = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bash-code-size'))
+  return Math.round(root * (rem || 0.86) * 100) / 100
+}
+
 function buildTerminal() {
   const term = new Terminal({
     allowProposedApi: true,
     cursorBlink: true,
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13,
+    fontFamily: codeFont(),
+    fontSize: codeSize(),
     lineHeight: 1.15,
     scrollback: 5000,
     theme: terminalTheme(),

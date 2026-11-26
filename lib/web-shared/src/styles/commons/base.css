@@ -11,6 +11,8 @@ body,
 :root {
   --bash-font-mono: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
     'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* 代码与终端共用一个字号，改一处两边一起变。 */
+  --bash-code-size: 0.86rem;
 }
 
 code,
