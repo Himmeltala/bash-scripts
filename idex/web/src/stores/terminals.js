@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\stores\terminals.js
  * @Description: 跨工作区的终端会话表；xterm、连接与 DOM 都由这里持有，切页签不销毁。
  */
@@ -23,10 +23,35 @@ export const useTerminalsStore = defineStore('terminals', () => {
   const groups = reactive({})
   // Dock 当前查看哪一组；记在本机，刷新后还看这一组。
   const viewWsId = useLocalStorage('idex.dock-view-ws', '')
+  // 用户改过的终端名，按会话 id 记，刷新接回会话时还叫这个名字。
+  const names = useLocalStorage('idex.terminal-names', {})
+  // Dock 里给工作区组起的名字，单独一份，不改左侧列表的别名。
+  const groupNames = useLocalStorage('idex.terminal-group-names', {})
 
   function group(wsId) {
     if (!groups[wsId]) groups[wsId] = emptyGroup()
     return groups[wsId]
+  }
+
+  // 改 Dock 里的工作区组名：只影响终端面板这一处。
+  function renameGroup(wsId, text) {
+    const name = String(text || '').trim().slice(0, 40)
+    if (!wsId || !name) return
+    groupNames.value = { ...groupNames.value, [wsId]: name }
+  }
+
+  // 改终端名：本地立即生效，有会话 id 就一并记下来。
+  function renameSlot(key, text) {
+    const name = String(text || '').trim().slice(0, 40)
+    if (!name) return
+    for (const found of Object.values(groups)) {
+      const slot = found.items.find((item) => item.key === key)
+      if (!slot) continue
+      slot.title = name
+      slot.renamed = true
+      if (slot.id) names.value = { ...names.value, [slot.id]: name }
+      return
+    }
   }
 
   function setView(wsId) {
@@ -74,6 +99,8 @@ export const useTerminalsStore = defineStore('terminals', () => {
       wsId,
       id: '',
       title: '终端',
+      // 用户改过名字之后，重连拿到的 shell 名不再覆盖它。
+      renamed: false,
       status: 'connecting',
       since: 0,
       term: null,
@@ -104,7 +131,8 @@ export const useTerminalsStore = defineStore('terminals', () => {
             key: `term-${slotSeq}`,
             wsId,
             id: item.id,
-            title: item.title || '终端',
+            title: names.value?.[item.id] || item.title || '终端',
+            renamed: !!names.value?.[item.id],
             status: item.done ? 'exited' : 'running',
             since: 0,
             term: null,
@@ -195,6 +223,7 @@ export const useTerminalsStore = defineStore('terminals', () => {
   return {
     groups,
     viewWsId,
+    groupNames,
     list,
     activeSlot,
     createSlot,
@@ -204,6 +233,8 @@ export const useTerminalsStore = defineStore('terminals', () => {
     restore,
     setActive,
     setView,
+    renameSlot,
+    renameGroup,
     shown,
     closeSlot,
     disposeGroup,

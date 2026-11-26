@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalTabs.vue
  * @Description: 终端面板的标签栏：切换、新建与关闭。
 -->
@@ -16,6 +16,7 @@
       :class="{ active: item.key === activeKey, exited: item.status === 'exited' }"
       :title="item.title"
       @click="$emit('select', item.key)"
+      @contextmenu.prevent.stop="$emit('menu', { item, event: $event })"
     >
       <v-icon size="13">mdi-console-line</v-icon>
       <span class="name">{{ item.title || '终端' }}</span>
@@ -43,7 +44,7 @@ defineProps({
   items: { type: Array, default: () => [] },
   activeKey: { type: String, default: '' },
 })
-defineEmits(['select', 'create', 'close'])
+defineEmits(['select', 'create', 'close', 'menu'])
 </script>
 
 <style scoped>

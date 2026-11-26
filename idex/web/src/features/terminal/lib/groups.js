@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-26 10:20:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\terminal\lib\groups.js
  * @Description: 终端按工作区分组：组名、组数量与 Dock 当前查看组的回落规则。
  */
@@ -16,13 +16,14 @@ export function displayName(ws) {
 }
 
 // 只列有终端的工作区组，顺序跟工作区列表一致。
-export function groupRows(groups, workspaces) {
+// names 是 Dock 里单独改过的组名，只影响这里，不动工作区别名。
+export function groupRows(groups, workspaces, names) {
   const rows = []
   for (const ws of workspaces || []) {
     const found = groups?.[ws.id]
     const count = found?.items?.length || 0
     if (!count) continue
-    rows.push({ wsId: ws.id, name: displayName(ws), count })
+    rows.push({ wsId: ws.id, name: names?.[ws.id] || displayName(ws), count })
   }
   return rows
 }

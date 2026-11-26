@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalPanel.vue
  * @Description: 终端视图内容：多个终端标签与各自的 xterm；外壳由 DockShell 提供。
 -->
@@ -15,6 +15,7 @@
         @select="selectTab"
         @create="createTab"
         @close="closeTab"
+        @menu="openTabMenu"
       />
     </div>
     <div class="term-body">
@@ -25,13 +26,54 @@
         :session="item"
         :active="item.key === activeKey"
       />
-      <p v-if="!items.length" class="none">点 + 新建一个终端。</p>
+      <EmptyState
+        v-if="!items.length"
+        icon="mdi-console"
+        :icon-size="44"
+        title="还没有终端"
+        hint="点上面的 + 新建一个。"
+      />
     </div>
   </div>
+  <ContextMenu
+    v-model="tabMenu.open"
+    :x="tabMenu.x"
+    :y="tabMenu.y"
+    :items="TAB_ACTIONS"
+    @select="onTabAction"
+  />
+
+  <FloatingDialog
+    v-model="rename.on"
+    :initial-width="440"
+    :initial-height="240"
+    :min-width="340"
+    :min-height="200"
+  >
+    <template #title>重命名终端</template>
+    <v-text-field
+      v-model="rename.text"
+      label="名称"
+      density="compact"
+      variant="outlined"
+      maxlength="40"
+      autofocus
+      @keyup.enter="saveRename"
+    />
+    <template #actions>
+      <v-spacer />
+      <v-btn variant="text" @click="rename.on = false">取消</v-btn>
+      <v-btn color="primary" variant="flat" :disabled="!rename.text.trim()" @click="saveRename">
+        保存
+      </v-btn>
+    </template>
+  </FloatingDialog>
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, reactive, watch } from 'vue'
+import { EmptyState } from '@bash-scripts/web-shared/layouts'
+import { ContextMenu, FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { useTerminalsStore } from '../../../stores/terminals'
 import TerminalTabs from './TerminalTabs.vue'
 import TerminalView from './TerminalView.vue'
@@ -42,6 +84,14 @@ const props = defineProps({
 const emit = defineEmits(['close-dock'])
 
 const store = useTerminalsStore()
+// 标签右键：重命名与关闭；重命名只改本地显示，不碰服务端的 shell 名。
+const TAB_ACTIONS = [
+  { action: 'rename', label: '重命名', icon: 'mdi-rename-box' },
+  { sep: true },
+  { action: 'close', label: '关闭终端', icon: 'mdi-close' },
+]
+const tabMenu = reactive({ open: false, x: 0, y: 0, key: '' })
+const rename = reactive({ on: false, key: '', text: '' })
 // 显示哪一组：查看组还有终端就看它，否则回到当前工作区。
 // 这里只读不写，写回交给 watcher，避免在计算属性里改状态。
 const shownId = computed(() => {
@@ -75,6 +125,32 @@ onMounted(async () => {
   // 头一回打开、且哪都没有终端才自动建；之后一律等用户点 +。
   if (!items.length && id === props.wsId) store.bootstrap(id)
 })
+
+function openTabMenu({ item, event }) {
+  tabMenu.key = item.key
+  tabMenu.x = event.clientX
+  tabMenu.y = event.clientY
+  tabMenu.open = true
+}
+
+function onTabAction(action) {
+  if (action === 'close') {
+    closeTab(tabMenu.key)
+    return
+  }
+  const slot = items.value.find((item) => item.key === tabMenu.key)
+  if (!slot) return
+  rename.key = slot.key
+  rename.text = slot.title || ''
+  rename.on = true
+}
+
+function saveRename() {
+  const text = (rename.text || '').trim()
+  if (!text) return
+  store.renameSlot(rename.key, text)
+  rename.on = false
+}
 
 function selectTab(key) {
   if (shownId.value) store.setActive(shownId.value, key)
@@ -116,10 +192,5 @@ async function closeTab(key) {
   min-height: 0;
   display: flex;
   overflow: hidden;
-}
-.none {
-  margin: 12px;
-  font-size: 0.8rem;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 </style>

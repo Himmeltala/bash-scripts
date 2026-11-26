@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\features\terminal\composables\useTerminalConnection.js
  * @Description: 一条终端的 WebSocket 连接：输入、输出、确认、断线重连。
  */
@@ -48,7 +48,7 @@ export function connectTerminal(slot, { onData, onReady, onExit, onError }) {
         }
         if (message.type === 'ready') {
           slot.id = message.id || slot.id
-          slot.title = message.title || slot.title
+          if (!slot.renamed) slot.title = message.title || slot.title
           slot.status = 'running'
           onReady?.(message)
         } else if (message.type === 'exit') {

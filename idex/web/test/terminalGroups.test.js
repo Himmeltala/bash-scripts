@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-26 10:20:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\test\terminalGroups.test.js
  * @Description: 终端按工作区分组的名称、数量与查看组回落的测试。
  */
@@ -51,4 +51,11 @@ test('只有任何工作区都没终端时才算首次', () => {
   assert.equal(hasAnyTerminal({}), false)
   assert.equal(hasAnyTerminal({ a: { items: [] }, b: { items: [] } }), false)
   assert.equal(hasAnyTerminal({ a: { items: [{}] } }), true)
+})
+
+test('终端分组名可以单独改，不动工作区别名', () => {
+  const rows = groupRows(groups, ws, { b: '接口终端' })
+  assert.equal(rows[0].name, '主工程')
+  assert.equal(rows[1].name, '接口终端')
+  assert.equal(ws[1].alias, '')
 })

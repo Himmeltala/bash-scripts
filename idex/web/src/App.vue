@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-26 18:40:00
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
