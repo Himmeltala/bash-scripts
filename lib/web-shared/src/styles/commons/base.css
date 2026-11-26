@@ -13,6 +13,33 @@ body,
     'PingFang SC', 'Microsoft YaHei', sans-serif;
   /* 代码与终端共用一个字号，改一处两边一起变。 */
   --bash-code-size: 0.86rem;
+  /* 全局动画时长与缓动，设置里选方案后由 applyAnimation 改写。 */
+  --bash-anim-dur: 220ms;
+  --bash-anim-dur-fast: 132ms;
+  --bash-anim-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 对话框与提示条走 Vuetify 自带的过渡类，这里把它们接到全局动画变量上。 */
+@media (prefers-reduced-motion: no-preference) {
+  html .dialog-transition-enter-active,
+  html .dialog-bottom-transition-enter-active,
+  html .dialog-top-transition-enter-active,
+  html .dialog-transition-leave-active,
+  html .dialog-bottom-transition-leave-active,
+  html .dialog-top-transition-leave-active {
+    transition-duration: var(--bash-anim-dur-fast) !important;
+    transition-timing-function: var(--bash-anim-ease) !important;
+  }
+  html .dialog-transition-enter-active,
+  html .dialog-bottom-transition-enter-active,
+  html .dialog-top-transition-enter-active {
+    transition-duration: var(--bash-anim-dur) !important;
+  }
+}
+html .v-snackbar-transition-enter-active,
+html .v-snackbar-transition-leave-active {
+  transition-duration: var(--bash-anim-dur-fast) !important;
+  transition-timing-function: var(--bash-anim-ease) !important;
 }
 
 code,

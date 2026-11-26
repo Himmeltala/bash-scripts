@@ -70,66 +70,13 @@
       </v-list-item>
     </v-list>
 
-    <div
-      v-if="menu.open"
-      class="ctxmenu"
-      :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
-      @click.stop
-      @contextmenu.prevent.stop
-    >
-      <template v-if="menu.mode === 'ws'">
-        <button type="button" class="ctxitem" @click="startAlias(menu.target)">
-          <v-icon size="16">mdi-rename-box</v-icon>{{ labels.menuAlias }}
-        </button>
-        <button type="button" class="ctxitem" @click="copyPath(menu.target, 'rel')">
-          <v-icon size="16">mdi-content-copy</v-icon>{{ labels.copyRel }}
-        </button>
-        <button type="button" class="ctxitem" @click="copyPath(menu.target, 'abs')">
-          <v-icon size="16">mdi-content-copy</v-icon>{{ labels.copyAbs }}
-        </button>
-        <button type="button" class="ctxitem" @click="menu.mode = 'pick'">
-          <v-icon size="16">mdi-folder-move-outline</v-icon>移到分组
-          <span class="more">›</span>
-        </button>
-      </template>
-      <template v-else-if="menu.mode === 'pick'">
-        <button type="button" class="ctxitem" @click="moveTo('')">
-          <v-icon size="16">mdi-format-list-bulleted</v-icon>移出分组
-        </button>
-        <button
-          v-for="g in groupChoices"
-          :key="g.id"
-          type="button"
-          class="ctxitem"
-          :style="{ paddingLeft: `${10 + g.depth * 18}px` }"
-          @click="moveTo(g.id)"
-        >
-          <v-icon size="16">mdi-folder-outline</v-icon>{{ g.name }}
-        </button>
-        <button type="button" class="ctxitem" @click="newGroupAndMove">
-          <v-icon size="16">mdi-folder-plus-outline</v-icon>新建分组并移入
-        </button>
-      </template>
-      <template v-else-if="menu.mode === 'group'">
-        <button type="button" class="ctxitem" @click="addInGroup(menu.target)">
-          <v-icon size="16">mdi-plus</v-icon>{{ labels.menuAddInGroup }}
-        </button>
-        <button type="button" class="ctxitem" @click="newSubGroup">
-          <v-icon size="16">mdi-folder-plus-outline</v-icon>新建子分组
-        </button>
-        <button type="button" class="ctxitem" @click="startRename(menu.target)">
-          <v-icon size="16">mdi-rename-box</v-icon>重命名
-        </button>
-        <button type="button" class="ctxitem" @click="askDeleteGroup">
-          <v-icon size="16">mdi-trash-can-outline</v-icon>删除分组
-        </button>
-      </template>
-      <template v-else>
-        <button type="button" class="ctxitem" @click="newTopGroup">
-          <v-icon size="16">mdi-folder-plus-outline</v-icon>新建分组
-        </button>
-      </template>
-    </div>
+    <ContextMenu
+      v-model="menu.open"
+      :x="menu.x"
+      :y="menu.y"
+      :items="menuItems"
+      @select="runMenu"
+    />
 
     <FloatingDialog
       v-model="aliasOn"
@@ -249,8 +196,9 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
+import ContextMenu from '../../feedbacks/commons/ContextMenu.vue'
 import DirectoryPicker from '../commons/DirectoryPicker/index.js'
 import FloatingDialog from '../../feedbacks/commons/FloatingDialog.vue'
 import { copyText } from '../../utils/commons/clipboard.js'
@@ -463,9 +411,9 @@ const deleteOn = ref(false)
 const deleteTarget = ref(null)
 
 function placeMenu(event) {
-  // 靠近右边缘或下边缘时往回收，菜单不至于跑出窗口。
-  menu.x = Math.max(8, Math.min(event.clientX, window.innerWidth - 210))
-  menu.y = Math.max(8, Math.min(event.clientY, window.innerHeight - 160))
+  // 位置先按鼠标给，贴边时的收放交给 ContextMenu。
+  menu.x = event.clientX
+  menu.y = event.clientY
 }
 
 function rowMenu(event, row) {
@@ -486,6 +434,57 @@ function blankMenu(event) {
 
 function closeMenu() {
   menu.open = false
+}
+
+// 菜单项按当前模式给：工作区、选分组、分组、空白处各一套。
+const menuItems = computed(() => {
+  if (menu.mode === 'pick') {
+    return [
+      { action: 'move-out', label: '移出分组', icon: 'mdi-format-list-bulleted' },
+      ...groupChoices.value.map((g) => ({
+        action: `move:${g.id}`,
+        label: g.name,
+        icon: 'mdi-folder-outline',
+        indent: g.depth,
+      })),
+      { action: 'new-group-move', label: '新建分组并移入', icon: 'mdi-folder-plus-outline' },
+    ]
+  }
+  if (menu.mode === 'group') {
+    return [
+      { action: 'add-in-group', label: labels.value.menuAddInGroup, icon: 'mdi-plus' },
+      { action: 'new-subgroup', label: '新建子分组', icon: 'mdi-folder-plus-outline' },
+      { action: 'rename-group', label: '重命名', icon: 'mdi-rename-box' },
+      { action: 'delete-group', label: '删除分组', icon: 'mdi-trash-can-outline', danger: true },
+    ]
+  }
+  if (menu.mode === 'ws') {
+    return [
+      { action: 'alias', label: labels.value.menuAlias, icon: 'mdi-rename-box' },
+      { action: 'copy-rel', label: labels.value.copyRel, icon: 'mdi-content-copy' },
+      { action: 'copy-abs', label: labels.value.copyAbs, icon: 'mdi-content-copy' },
+      { action: 'pick', label: '移到分组', icon: 'mdi-folder-move-outline', keepOpen: true },
+    ]
+  }
+  return [{ action: 'new-top-group', label: '新建分组', icon: 'mdi-folder-plus-outline' }]
+})
+
+function runMenu(action) {
+  if (action === 'pick') {
+    menu.mode = 'pick'
+    return
+  }
+  if (action === 'alias') return startAlias(menu.target)
+  if (action === 'copy-rel') return copyPath(menu.target, 'rel')
+  if (action === 'copy-abs') return copyPath(menu.target, 'abs')
+  if (action === 'move-out') return moveTo('')
+  if (action === 'new-group-move') return newGroupAndMove()
+  if (action === 'add-in-group') return addInGroup(menu.target)
+  if (action === 'new-subgroup') return newSubGroup()
+  if (action === 'rename-group') return startRename(menu.target)
+  if (action === 'delete-group') return askDeleteGroup()
+  if (action === 'new-top-group') return newTopGroup()
+  if (action.startsWith('move:')) return moveTo(action.slice(5))
 }
 
 function startRename(group) {
@@ -603,18 +602,6 @@ async function copyPath(ws, kind) {
   closeMenu()
 }
 
-onMounted(() => {
-  document.addEventListener('click', closeMenu)
-  document.addEventListener('contextmenu', closeMenu)
-  window.addEventListener('resize', closeMenu)
-  window.addEventListener('blur', closeMenu)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('click', closeMenu)
-  document.removeEventListener('contextmenu', closeMenu)
-  window.removeEventListener('resize', closeMenu)
-  window.removeEventListener('blur', closeMenu)
-})
 
 function baseName(full) {
   const parts = String(full || '').split('/').filter(Boolean)
@@ -761,39 +748,5 @@ function drop() {
   color: rgb(var(--v-theme-on-surface-variant));
   font-size: 0.86rem;
   margin: 0 0 12px;
-}
-.ctxmenu {
-  position: fixed;
-  z-index: 3000;
-  min-width: 180px;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding: 4px;
-  border-radius: 8px;
-  background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.16);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
-}
-.ctxitem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgb(var(--v-theme-on-surface));
-  font-size: 0.84rem;
-  text-align: left;
-  cursor: pointer;
-}
-.ctxitem:hover {
-  background: rgba(var(--v-theme-on-surface), 0.08);
-}
-.ctxitem .more {
-  margin-left: auto;
-  padding-left: 12px;
-  color: rgb(var(--v-theme-on-surface-variant));
 }
 </style>

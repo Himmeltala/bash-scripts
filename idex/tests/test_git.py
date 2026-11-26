@@ -2,7 +2,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-26 09:29:54
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-26 12:05:00
+# @LastEditTime: 2026-11-26 17:05:00
 # @FilePath: \idex\tests\test_git.py
 # @Description: idex 回归：临时 Git 仓库上的状态解析、差异、日志与网页接口。
 
@@ -1238,6 +1238,25 @@ class SearchSettings(unittest.TestCase):
         again = gitmod.Settings(str(path))
         self.assertEqual(again.terminal()["cursor_style"], "bar")
         self.assertEqual(again.terminal()["font_size"], 48)
+
+    def test_animation_settings_defaults_and_clamp(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        self.assertEqual(store.animation(), dict(gitmod.ANIMATION_DEFAULTS))
+        self.assertEqual(store.payload()["animation"], dict(gitmod.ANIMATION_DEFAULTS))
+        self.assertIn("animation", store.payload()["defaults"])
+
+        store.update({"animation": {"preset": "spring", "speed": 1.5}})
+        self.assertEqual(gitmod.Settings(str(path)).animation(),
+                         {"preset": "spring", "speed": 1.5})
+
+        # 未知预设退回标准，速度越界钳位。
+        store.update({"animation": {"preset": "乱填", "speed": 9}})
+        self.assertEqual(gitmod.Settings(str(path)).animation(),
+                         {"preset": "standard", "speed": 2})
+        store.update({"animation": {"speed": 0.1}})
+        self.assertEqual(gitmod.Settings(str(path)).animation()["speed"], 0.5)
+        self.assertEqual(gitmod.Settings(str(path)).animation()["preset"], "standard")
 
 
 class SearchSettingsApi(unittest.TestCase):

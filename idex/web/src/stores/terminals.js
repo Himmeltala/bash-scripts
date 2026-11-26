@@ -2,14 +2,15 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 11:20:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\stores\terminals.js
  * @Description: 跨工作区的终端会话表；xterm、连接与 DOM 都由这里持有，切页签不销毁。
  */
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import { api } from '../utils/api'
-import { missingSessions, resolveView } from '../features/terminal/lib/groups'
+import { hasAnyTerminal, missingSessions, resolveView } from '../features/terminal/lib/groups'
 
 let slotSeq = 0
 
@@ -20,8 +21,8 @@ function emptyGroup() {
 export const useTerminalsStore = defineStore('terminals', () => {
   // wsId -> { items: [slot], activeKey }
   const groups = reactive({})
-  // Dock 当前查看哪一组；默认跟当前工作区，点标题栏别的组只换这里。
-  const viewWsId = ref('')
+  // Dock 当前查看哪一组；记在本机，刷新后还看这一组。
+  const viewWsId = useLocalStorage('idex.dock-view-ws', '')
 
   function group(wsId) {
     if (!groups[wsId]) groups[wsId] = emptyGroup()
@@ -30,6 +31,22 @@ export const useTerminalsStore = defineStore('terminals', () => {
 
   function setView(wsId) {
     viewWsId.value = wsId || ''
+  }
+
+  // 切工作区：这组有终端才跟着换；没有就先接回服务端会话，
+  // 还是空的就保持原来那组，别把面板清成空的。
+  async function followWorkspace(wsId) {
+    if (!wsId) return
+    if ((groups[wsId]?.items?.length || 0) > 0) {
+      viewWsId.value = wsId
+      return
+    }
+    const items = await restore(wsId)
+    if (items.length) {
+      viewWsId.value = wsId
+      return
+    }
+    if (!hasAnyTerminal(groups)) viewWsId.value = wsId
   }
 
   // 调用方实际该显示哪组：查看组失效时回落到当前工作区。
@@ -100,13 +117,22 @@ export const useTerminalsStore = defineStore('terminals', () => {
         }),
       )
     } catch (err) {
-      // 取不到列表就按本地为空处理，照常新建一个。
+      // 取不到列表就当作这组没有会话，交给调用方决定要不要新建。
     }
-    if (!found.items.length) return createSlot(wsId)
-    if (!found.items.some((item) => item.key === found.activeKey)) {
+    if (found.items.length && !found.items.some((item) => item.key === found.activeKey)) {
       found.activeKey = found.items[0].key
     }
     return found.items
+  }
+
+  // 每次加载只自动补一次：头一回打开面板、且哪都没有终端时才建。
+  // 之后切换工作区不再自动建，等用户点 +。
+  const bootstrapped = ref(false)
+  function bootstrap(wsId) {
+    if (bootstrapped.value || !wsId) return null
+    bootstrapped.value = true
+    if (hasAnyTerminal(groups)) return null
+    return createSlot(wsId)
   }
 
   function ensureSlot(wsId) {
@@ -173,6 +199,8 @@ export const useTerminalsStore = defineStore('terminals', () => {
     activeSlot,
     createSlot,
     ensureSlot,
+    bootstrap,
+    followWorkspace,
     restore,
     setActive,
     setView,

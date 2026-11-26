@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-23 23:09:19
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \lib\web-shared\src\components\commons\FileTree\FileTree.vue
  * @Description: 通用文件树：按节点渲染目录与文件，展开、选择与懒加载交给调用方。
 -->
@@ -71,107 +71,20 @@
       </template>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="menu.open"
-        ref="menuRef"
-        class="ft-menu"
-        :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
-        @contextmenu.prevent
-      >
-        <template v-if="editable">
-          <button
-            v-if="isDirNode"
-            class="ft-item"
-            type="button"
-            @click="run('create-file')"
-          >
-            <v-icon size="16">mdi-file-plus-outline</v-icon>
-            <span>{{ text.newFile }}</span>
-          </button>
-          <button
-            v-if="isDirNode"
-            class="ft-item"
-            type="button"
-            @click="run('create-dir')"
-          >
-            <v-icon size="16">mdi-folder-plus-outline</v-icon>
-            <span>{{ text.newDir }}</span>
-          </button>
-          <button
-            v-if="isDirNode"
-            class="ft-item"
-            type="button"
-            @click="run('upload')"
-          >
-            <v-icon size="16">mdi-cloud-upload-outline</v-icon>
-            <span>{{ text.upload }}</span>
-          </button>
-          <button
-            v-if="isDirNode"
-            class="ft-item"
-            type="button"
-            :disabled="!relativePath"
-            @click="run('compress')"
-          >
-            <v-icon size="16">mdi-zip-box-outline</v-icon>
-            <span>{{ text.compress }}</span>
-          </button>
-          <button
-            class="ft-item"
-            type="button"
-            :disabled="!relativePath"
-            @click="run('rename')"
-          >
-            <v-icon size="16">mdi-form-textbox</v-icon>
-            <span>{{ text.rename }}</span>
-          </button>
-          <button
-            class="ft-item danger"
-            type="button"
-            :disabled="!relativePath"
-            @click="run('delete')"
-          >
-            <v-icon size="16">mdi-trash-can-outline</v-icon>
-            <span>{{ text.delete }}</span>
-          </button>
-          <div class="ft-sep" />
-          <button class="ft-item" type="button" @click="run('props')">
-            <v-icon size="16">mdi-information-outline</v-icon>
-            <span>{{ text.props }}</span>
-          </button>
-          <div class="ft-sep" />
-        </template>
-        <button
-          class="ft-item"
-          type="button"
-          :disabled="!relativePath"
-          @click="copyPath('rel')"
-        >
-          <v-icon size="16">mdi-content-copy</v-icon>
-          <span>{{ menu.copied === 'rel' ? text.copied : text.copyRel }}</span>
-        </button>
-        <button
-          v-if="rootPath"
-          class="ft-item"
-          type="button"
-          @click="copyPath('abs')"
-        >
-          <v-icon size="16">mdi-link-variant</v-icon>
-          <span>{{ menu.copied === 'abs' ? text.copied : text.copyAbs }}</span>
-        </button>
-        <button v-if="downloadOf" class="ft-item" type="button" @click="download">
-          <v-icon size="16">{{ isDirNode ? 'mdi-folder-zip-outline' : 'mdi-download' }}</v-icon>
-          <span>{{ isDirNode ? text.downloadDir : text.downloadFile }}</span>
-        </button>
-      </div>
-    </Teleport>
+      <ContextMenu
+      v-model="menu.open"
+      :x="menu.x"
+      :y="menu.y"
+      :items="menuItems"
+      @select="run"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import FileTreeNode from './FileTreeNode.vue'
+import ContextMenu from '../../../feedbacks/commons/ContextMenu.vue'
 import { copyText } from '../../../utils/commons/clipboard.js'
 
 const props = defineProps({
@@ -337,7 +250,6 @@ watch(
 )
 
 const menu = reactive({ open: false, x: 0, y: 0, node: null, copied: '' })
-const menuRef = ref(null)
 let copyTimer = 0
 
 const relativePath = computed(() => (menu.node ? String(props.keyOf(menu.node) || '') : ''))
@@ -355,18 +267,53 @@ function openMenu({ node, event }) {
   menu.x = event.clientX
   menu.y = event.clientY
   menu.open = true
-  nextTick(clampMenu)
 }
 
-// 贴着窗口边缘弹会超出视口，量到实际尺寸后往里收。
-function clampMenu() {
-  if (!menuRef.value) return
-  const gap = 6
-  const width = menuRef.value.offsetWidth
-  const height = menuRef.value.offsetHeight
-  menu.x = Math.max(gap, Math.min(menu.x, window.innerWidth - width - gap))
-  menu.y = Math.max(gap, Math.min(menu.y, window.innerHeight - height - gap))
-}
+// 按当前右键的节点算菜单项：可编辑、目录、路径是否有效都会影响条目。
+const menuItems = computed(() => {
+  const items = []
+  const path = relativePath.value
+  if (props.editable) {
+    if (isDirNode.value) {
+      items.push(
+        { action: 'create-file', label: text.value.newFile, icon: 'mdi-file-plus-outline' },
+        { action: 'create-dir', label: text.value.newDir, icon: 'mdi-folder-plus-outline' },
+        { action: 'upload', label: text.value.upload, icon: 'mdi-cloud-upload-outline' },
+        { action: 'compress', label: text.value.compress, icon: 'mdi-zip-box-outline', disabled: !path },
+      )
+    }
+    items.push(
+      { action: 'rename', label: text.value.rename, icon: 'mdi-form-textbox', disabled: !path },
+      { action: 'delete', label: text.value.delete, icon: 'mdi-trash-can-outline', disabled: !path, danger: true },
+      { sep: true },
+      { action: 'props', label: text.value.props, icon: 'mdi-information-outline' },
+      { sep: true },
+    )
+  }
+  items.push({
+    action: 'copy-rel',
+    label: menu.copied === 'rel' ? text.value.copied : text.value.copyRel,
+    icon: 'mdi-content-copy',
+    disabled: !path,
+    keepOpen: true,
+  })
+  if (props.rootPath) {
+    items.push({
+      action: 'copy-abs',
+      label: menu.copied === 'abs' ? text.value.copied : text.value.copyAbs,
+      icon: 'mdi-link-variant',
+      keepOpen: true,
+    })
+  }
+  if (props.downloadOf) {
+    items.push({
+      action: 'download',
+      label: isDirNode.value ? text.value.downloadDir : text.value.downloadFile,
+      icon: isDirNode.value ? 'mdi-folder-zip-outline' : 'mdi-download',
+    })
+  }
+  return items
+})
 
 function closeMenu() {
   menu.open = false
@@ -385,6 +332,9 @@ async function copyPath(kind) {
 
 // 增删改交给调用方：菜单只报动作与节点，弹窗与接口都在各自面板里。
 function run(action) {
+  if (action === 'copy-rel') return copyPath('rel')
+  if (action === 'copy-abs') return copyPath('abs')
+  if (action === 'download') return download()
   if (!menu.node) return
   const node = menu.node
   closeMenu()
@@ -408,34 +358,8 @@ function download() {
   link.remove()
 }
 
-function onDocumentDown(event) {
-  if (menuRef.value && !menuRef.value.contains(event.target)) closeMenu()
-}
-
-function onDocumentKey(event) {
-  if (event.key === 'Escape') closeMenu()
-}
-
-function onViewportChange() {
-  if (menu.open) closeMenu()
-}
-
-function bindMenu(hold) {
-  const method = hold ? 'addEventListener' : 'removeEventListener'
-  document[method]('mousedown', onDocumentDown, true)
-  document[method]('keydown', onDocumentKey, true)
-  window[method]('scroll', onViewportChange, true)
-  window[method]('resize', onViewportChange)
-}
-
-watch(
-  () => menu.open,
-  (on) => bindMenu(on),
-)
-
 onBeforeUnmount(() => {
   closeMenu()
-  bindMenu(false)
 })
 
 defineExpose({
@@ -468,53 +392,5 @@ defineExpose({
 }
 .hint.bad {
   color: rgb(var(--v-theme-error));
-}
-.ft-menu {
-  position: fixed;
-  z-index: 3000;
-  min-width: 178px;
-  padding: 4px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
-  background: rgb(var(--v-theme-surface));
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-}
-.ft-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: rgb(var(--v-theme-on-surface));
-  font-size: 0.82rem;
-  text-align: left;
-  cursor: pointer;
-}
-.ft-item:hover {
-  background: rgba(var(--v-theme-on-surface), 0.08);
-}
-.ft-item:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.ft-item:disabled:hover {
-  background: none;
-}
-.ft-item .v-icon {
-  color: rgb(var(--v-theme-on-surface-variant));
-}
-.ft-item.danger {
-  color: rgb(var(--v-theme-error));
-}
-.ft-item.danger .v-icon {
-  color: inherit;
-}
-.ft-sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: rgba(var(--v-theme-on-surface), 0.12);
 }
 </style>

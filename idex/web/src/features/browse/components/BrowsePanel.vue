@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 09:34:36
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\features\browse\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -682,33 +682,21 @@
       <pre class="hover-tip-text mono">{{ hoverTip.text }}</pre>
     </div>
 
-    <div
-      v-if="tabMenu.on"
-      class="sym-menu tab-menu"
-      :style="{ left: `${tabMenu.x}px`, top: `${tabMenu.y}px` }"
-    >
-      <template v-for="(item, index) in TAB_MENU" :key="index">
-        <div v-if="item.sep" class="sym-sep" />
-        <button v-else type="button" class="sym-item" @click="tabAction(item.action)">
-          <v-icon size="16">{{ item.icon }}</v-icon>
-          <span>{{ item.label }}</span>
-        </button>
-      </template>
-    </div>
+    <ContextMenu
+      v-model="tabMenu.on"
+      :x="tabMenu.x"
+      :y="tabMenu.y"
+      :items="TAB_MENU"
+      @select="tabAction"
+    />
 
-    <div
-      v-if="symMenu.on"
-      class="sym-menu"
-      :style="{ left: `${symMenu.x}px`, top: `${symMenu.y}px` }"
-    >
-      <template v-for="(item, index) in SYMBOL_MENU" :key="index">
-        <div v-if="item.sep" class="sym-sep" />
-        <button v-else type="button" class="sym-item" @click="runSymbol(item.action)">
-          <v-icon size="16">{{ item.icon }}</v-icon>
-          <span>{{ item.label }}</span>
-        </button>
-      </template>
-    </div>
+    <ContextMenu
+      v-model="symMenu.on"
+      :x="symMenu.x"
+      :y="symMenu.y"
+      :items="SYMBOL_MENU"
+      @select="runSymbol"
+    />
 
     <div
       v-if="diffMenu.on"
@@ -742,7 +730,7 @@ import { useBrowseUploads } from '../composables/useBrowseUploads'
 import { useBrowseDiskSync } from '../composables/useBrowseDiskSync'
 import { FileEditor, FileTree, copyText, fileIcon } from '@bash-scripts/web-shared'
 import { EmptyState, LoadingState, SplitHandle } from '@bash-scripts/web-shared/layouts'
-import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
+import { ContextMenu, FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes, formatTimestamp } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, isHeldNode } from '../lib/browseOps'
 import { compressiblePath } from '../lib/browseCompress'
@@ -1162,30 +1150,19 @@ function closeSymbolMenu() {
   symMenu.on = false
 }
 
-function closeMenus() {
-  symMenu.on = false
-  tabMenu.on = false
+// 右键菜单自己管点外面与 Esc；这里只管下边那块原文浮层。
+function onMenuOutside(event) {
+  const target = event.target
+  if (target && target.closest && target.closest('.diff-menu')) return
   diffMenu.on = false
 }
 
-function onMenuOutside(event) {
-  const target = event.target
-  if (
-    target &&
-    target.closest &&
-    (target.closest('.sym-menu') || target.closest('.tab-menu') || target.closest('.diff-menu'))
-  ) {
-    return
-  }
-  closeMenus()
-}
-
 function onMenuKey(event) {
-  if (event.key === 'Escape') closeMenus()
+  if (event.key === 'Escape') diffMenu.on = false
 }
 
 watch(
-  () => symMenu.on || tabMenu.on || diffMenu.on,
+  () => diffMenu.on,
   (on) => {
     if (on) {
       window.addEventListener('mousedown', onMenuOutside, true)
@@ -1344,7 +1321,7 @@ function absolutePath(path) {
 
 async function tabAction(action) {
   const path = tabMenu.path
-  closeMenus()
+  tabMenu.on = false
   if (action === 'copy') {
     await copyText(path)
     flash(`已复制 ${path}`)

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-26 10:20:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:20:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\features\terminal\lib\groups.js
  * @Description: 终端按工作区分组：组名、组数量与 Dock 当前查看组的回落规则。
  */
@@ -25,6 +25,11 @@ export function groupRows(groups, workspaces) {
     rows.push({ wsId: ws.id, name: displayName(ws), count })
   }
   return rows
+}
+
+// 只有所有工作区都没终端时，打开面板才自动建一个；之后一律等用户点 +。
+export function hasAnyTerminal(groups) {
+  return Object.values(groups || {}).some((found) => (found?.items?.length || 0) > 0)
 }
 
 // 刷新后接回服务端还活着的会话：本地已有的跳过，只挑没接上的。

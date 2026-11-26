@@ -2,14 +2,14 @@
  * @Author: Himmeltala
  * @Date: 2026-11-26 10:20:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:20:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\test\terminalGroups.test.js
  * @Description: 终端按工作区分组的名称、数量与查看组回落的测试。
  */
 // Dock 标题栏的分组与查看组：只列有终端的组，查看组失效时回落当前工作区。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { displayName, groupRows, missingSessions, resolveView } from '../src/features/terminal/lib/groups.js'
+import { displayName, groupRows, hasAnyTerminal, missingSessions, resolveView } from '../src/features/terminal/lib/groups.js'
 
 const ws = [
   { id: 'a', alias: '主工程', root: '/home/x/idex' },
@@ -45,4 +45,10 @@ test('服务端会话里只补本地没有的', () => {
   const items = [{ key: 'term-1', id: 'a' }, { key: 'term-2', id: '' }]
   const sessions = [{ id: 'a' }, { id: 'b' }, { id: '' }, null]
   assert.deepEqual(missingSessions(items, sessions), [{ id: 'b' }])
+})
+
+test('只有任何工作区都没终端时才算首次', () => {
+  assert.equal(hasAnyTerminal({}), false)
+  assert.equal(hasAnyTerminal({ a: { items: [] }, b: { items: [] } }), false)
+  assert.equal(hasAnyTerminal({ a: { items: [{}] } }), true)
 })

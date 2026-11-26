@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 11:20:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalPanel.vue
  * @Description: 终端视图内容：多个终端标签与各自的 xterm；外壳由 DockShell 提供。
 -->
@@ -59,12 +59,21 @@ watch(shownId, async (id) => {
   if (!store.list(id).length) await store.restore(id)
 })
 
-// 刷新后本地是空的，先把服务端还活着的会话接回来，再决定要不要新建。
+// 刷新后本地是空的，先把服务端还活着的会话接回来；
+// 只有从来没开过终端（哪个工作区都没有）才自动建一个，其余等用户点 +。
 onMounted(async () => {
   if (!props.wsId) return
-  const id = shownId.value || props.wsId
+  // 先看上次停在哪一组；那组没会话了再退回当前工作区。
+  let id = store.viewWsId || props.wsId
   store.setView(id)
-  await store.restore(id)
+  let items = await store.restore(id)
+  if (!items.length && id !== props.wsId) {
+    id = props.wsId
+    store.setView(id)
+    items = await store.restore(id)
+  }
+  // 头一回打开、且哪都没有终端才自动建；之后一律等用户点 +。
+  if (!items.length && id === props.wsId) store.bootstrap(id)
 })
 
 function selectTab(key) {
@@ -80,11 +89,9 @@ async function closeTab(key) {
   if (!id || !key) return
   await store.closeSlot(id, key)
   if (items.value.length) return
-  // 别组关空了就回当前工作区并补一个终端；当前工作区关空了收起 Dock。
-  if (id !== props.wsId) {
-    store.setView(props.wsId)
-    store.ensureSlot(props.wsId)
-  } else emit('close-dock')
+  // 别组关空了就回当前工作区，留空等用户点 +；当前工作区关空了收起 Dock。
+  if (id !== props.wsId) store.setView(props.wsId)
+  else emit('close-dock')
 }
 </script>
 

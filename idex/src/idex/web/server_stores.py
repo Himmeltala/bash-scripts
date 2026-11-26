@@ -1,7 +1,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-26 09:29:54
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-26 12:05:00
+# @LastEditTime: 2026-11-26 17:05:00
 # @FilePath: \idex\src\idex\web\server_stores.py
 # @Description: 工作区登记与全局设置的存储：都落在 state.json 旁边。
 
@@ -65,12 +65,18 @@ TERMINAL_CURSORS = ("block", "bar", "underline")
 TERMINAL_WEIGHTS = ("normal", "bold", "500")
 
 
+# 全局动画方案：预设一套手感，速度再整体缩放。
+ANIMATION_PRESETS = ("none", "quick", "standard", "spring", "soft")
+ANIMATION_DEFAULTS = {"preset": "standard", "speed": 1}
+
+
 SETTINGS_DEFAULTS = {
     "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
     "editor_theme": "auto",
     "minimap": False,
     "shortcuts": dict(SHORTCUT_DEFAULTS),
     "terminal": dict(TERMINAL_DEFAULTS),
+    "animation": dict(ANIMATION_DEFAULTS),
 }
 
 
@@ -271,6 +277,9 @@ class Settings:
     def terminal(self):
         return clean_terminal(self.data().get("terminal"))
 
+    def animation(self):
+        return clean_animation(self.data().get("animation"))
+
     def payload(self):
         return {
             "search_ignore": self.search_ignore(),
@@ -279,11 +288,13 @@ class Settings:
                 search_ignore=list(SETTINGS_DEFAULTS["search_ignore"]),
                 shortcuts=dict(SHORTCUT_DEFAULTS),
                 terminal=dict(TERMINAL_DEFAULTS),
+                animation=dict(ANIMATION_DEFAULTS),
             ),
             "editor_theme": self.editor_theme(),
             "minimap": self.minimap(),
             "shortcuts": self.shortcuts(),
             "terminal": self.terminal(),
+            "animation": self.animation(),
         }
 
     def set_search_ignore(self, values):
@@ -308,6 +319,8 @@ class Settings:
                 data["minimap"] = bool(body.get("minimap"))
             if "shortcuts" in body:
                 data["shortcuts"] = clean_shortcuts(body.get("shortcuts"))
+            if "animation" in body:
+                data["animation"] = clean_animation(body.get("animation"))
             if "terminal" in body:
                 incoming = body.get("terminal")
                 if not isinstance(incoming, dict):
@@ -319,6 +332,20 @@ class Settings:
                 data["terminal"] = clean_terminal({**current, **incoming})
             write_json(self.path, data, indent=2, ensure_ascii=False)
         return self.payload()
+
+
+def clean_animation(values):
+    """动画方案只认登记的预设，速度钳在 0.5–2 倍。"""
+    out = dict(ANIMATION_DEFAULTS)
+    if not isinstance(values, dict):
+        return out
+    preset = values.get("preset")
+    if preset in ANIMATION_PRESETS:
+        out["preset"] = preset
+    speed = values.get("speed")
+    if isinstance(speed, (int, float)) and not isinstance(speed, bool):
+        out["speed"] = round(max(0.5, min(2, float(speed))), 2)
+    return out
 
 
 def clean_terminal(values):

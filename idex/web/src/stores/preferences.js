@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 12:05:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\stores\preferences.js
  * @Description: idex 的界面偏好：变更、差异、搜索、页签与编辑器配色的本地选择。
 */
@@ -13,6 +13,7 @@ import { useStoredChoice } from '@bash-scripts/web-shared'
 import { EDITOR_THEME_IDS } from '../features/editor/core/themeOptions'
 import { SHORTCUT_DEFAULTS } from '../features/settings/lib/shortcuts'
 import { TERMINAL_DEFAULTS } from '../features/terminal/lib/options'
+import { ANIMATION_DEFAULTS } from '@bash-scripts/web-shared'
 
 // 变更清单、差异、搜索与页签的查看方式，都记在浏览器里，换工作区保持不变。
 export const usePreferencesStore = defineStore('preferences', () => {
@@ -33,9 +34,11 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const shortcuts = ref({ ...SHORTCUT_DEFAULTS })
   // 终端外观，同样由服务端设置加载；xterm 建好后按这份值实时改选项。
   const terminal = ref({ ...TERMINAL_DEFAULTS })
+  // 全局动画方案与速度，菜单开合不受它影响。
+  const animation = ref({ ...ANIMATION_DEFAULTS })
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
   // 全局搜索快捷键带来的请求：{ mode, seq }，资源管理器消费后清空。
   const pendingSearch = ref(null)
-  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, terminal, pendingOpen, pendingSearch }
+  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, terminal, animation, pendingOpen, pendingSearch }
 })

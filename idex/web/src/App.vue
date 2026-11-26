@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 12:05:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -91,7 +91,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './features/workspaces/components/WorkspaceList.vue'
 import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
@@ -104,7 +104,7 @@ import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
-import { useSplitPane } from '@bash-scripts/web-shared'
+import { applyAnimation, useSplitPane } from '@bash-scripts/web-shared'
 import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api, metricsEventsUrl, stateEventsUrl } from './utils/api'
 import { snack, toast } from './utils/notice'
@@ -143,8 +143,8 @@ let metricsSource = null
 
 function select(id) {
   currentId.value = id || ''
-  // 切工作区时 Dock 跟着看新工作区的终端组；重复点同一行也算回到这一组。
-  if (id) terminals.setView(id)
+  // 切工作区：这组有终端才跟着换，没有就保持原来那组。
+  if (id) terminals.followWorkspace(id)
 }
 
 const preferences = usePreferencesStore()
@@ -152,6 +152,9 @@ const terminals = useTerminalsStore()
 const dock = useDockStore()
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
+
+// 动画方案落到根节点的 CSS 变量上，Dock、对话框、提示条都读同一份。
+watch(() => preferences.animation, (value) => applyAnimation(value), { deep: true, immediate: true })
 
 // 设置存在服务端：启动时应用编辑器配色与代码地图开关，保存后重新读一遍。
 async function loadSettings() {
@@ -161,6 +164,7 @@ async function loadSettings() {
     preferences.minimap = !!data.minimap
     preferences.shortcuts = { ...SHORTCUT_DEFAULTS, ...(data.shortcuts || {}) }
     preferences.terminal = { ...(data.defaults?.terminal || {}), ...(data.terminal || {}) }
+    preferences.animation = { ...(data.defaults?.animation || {}), ...(data.animation || {}) }
   } catch (err) {
     // 读不到就沿用本地默认值。
   }
@@ -192,10 +196,7 @@ function onGlobalKey(event) {
     terminals.closeSlot(target, slot.key).then(() => {
       if (terminals.list(target).length) return
       if (target === currentId.value) dock.open = false
-      else {
-        terminals.setView(currentId.value)
-        terminals.ensureSlot(currentId.value)
-      }
+      else terminals.setView(currentId.value)
     })
   }
 }

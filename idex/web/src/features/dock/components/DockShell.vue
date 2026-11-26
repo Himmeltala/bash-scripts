@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 11:20:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\features\dock\components\DockShell.vue
  * @Description: macOS 式底部 Dock：一排入口图标，点开从下方呼出面板并把 Dock 盖住。
 -->
@@ -249,7 +249,7 @@ function resetDrag() {
   z-index: 20;
   transform: translate(-50%, calc(100% + 18px));
   opacity: 0;
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  transition: transform var(--bash-anim-dur-fast) var(--bash-anim-ease), opacity var(--bash-anim-dur-fast) var(--bash-anim-ease);
   display: flex;
   align-items: flex-end;
   gap: 2px;
@@ -334,7 +334,7 @@ function resetDrag() {
 .sheet-left-leave-active,
 .sheet-right-enter-active,
 .sheet-right-leave-active {
-  transition: transform 0.22s ease, opacity 0.22s ease;
+  transition: transform var(--bash-anim-dur) var(--bash-anim-ease), opacity var(--bash-anim-dur) var(--bash-anim-ease);
 }
 .sheet-bottom-enter-from,
 .sheet-bottom-leave-to {

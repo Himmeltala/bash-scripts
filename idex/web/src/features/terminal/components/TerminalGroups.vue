@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-26 10:26:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:26:00
+ * @LastEditTime: 2026-11-26 17:05:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalGroups.vue
  * @Description: Dock 标题栏里的工作区终端分组：点一组只看那组终端，不切工作区。
 -->
@@ -19,6 +19,14 @@
     >
       {{ row.name }} {{ row.count }}
     </v-chip>
+    <v-btn
+      icon="mdi-plus"
+      size="x-small"
+      variant="text"
+      title="在当前工作区新建终端"
+      :disabled="!current"
+      @click="store.createSlot(current)"
+    />
   </div>
 </template>
 
