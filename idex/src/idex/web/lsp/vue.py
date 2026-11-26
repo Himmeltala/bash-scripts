@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\lsp\vue.py
+# @Description: Vue 单文件组件的分工：模板交给 Vue 语言服务器，脚本交给 TypeScript 语言服务器。
+
 """Vue 单文件组件的分工：模板交给 Vue 语言服务器，脚本交给 TypeScript 语言服务器。"""
 
 

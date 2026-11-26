@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\svn_query.py
+# @Description: SVN 的查询：状态、差异、日志、提交详情与同步信息。
+
 """SVN 的查询：状态、差异、日志、提交详情与同步信息。"""
 from web import ApiError
 import os

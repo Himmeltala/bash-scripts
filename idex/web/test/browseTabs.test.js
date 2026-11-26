@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\browseTabs.test.js
+ * @Description: 浏览页页签操作的测试。
+ */
 // 浏览页的页签摆布：打开、关闭后停在哪个，以及改名后路径怎么跟。
 import test from 'node:test'
 import assert from 'node:assert/strict'

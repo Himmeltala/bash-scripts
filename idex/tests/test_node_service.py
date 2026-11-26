@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_node_service.py
+# @Description: Node 引擎的服务层：状态快照、Node 版本发现，以及执行端的启停。
+
 """Node 引擎的服务层：状态快照、Node 版本发现，以及执行端的启停。
 
 原来 nodex 网页用例里的扫描结果解析、Node 版本选择与启停，改成直接调用引擎类；

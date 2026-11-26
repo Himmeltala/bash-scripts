@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_node_detect.py
+# @Description: Node 工程根探测的回归测试。
+
 # idex/tests/test_node_detect.py
 import subprocess, tempfile, unittest
 from pathlib import Path

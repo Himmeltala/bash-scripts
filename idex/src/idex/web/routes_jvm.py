@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\routes_jvm.py
+# @Description: JVM 引擎的接口：状态、JDK、启停、重扫与日志。
+
 """JVM 引擎的接口：状态、JDK、启停、重扫与日志。
 
 只做参数、工作区映射、权限与调用；工作区、目标与运行记录都在 engines.jvm 里。

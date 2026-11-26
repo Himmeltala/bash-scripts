@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\lsp\servers.py
+# @Description: 语言服务器注册表：每种语言怎么拉起，本机装了没有。
+
 """语言服务器注册表：每种语言怎么拉起，本机装了没有。"""
 
 import os

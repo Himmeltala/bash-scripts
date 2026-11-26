@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\vcs_ops.py
+# @Description: 写操作的命令拼装：拉取、推送、切分支、提交、更新。
+
 """写操作的命令拼装：拉取、推送、切分支、提交、更新。"""
 
 import os

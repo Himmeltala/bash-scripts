@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_web_tool_wiring.py
+# @Description: 服务端把 Node 与 JVM 接口装进同一个 Handler 的回归：前缀分派、缺引擎、注销与越界。
+
 """服务端把 Node 与 JVM 接口装进同一个 Handler 的回归：前缀分派、缺引擎、注销与越界。"""
 
 import argparse

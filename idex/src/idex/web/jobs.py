@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\jobs.py
+# @Description: 后台写操作：任务对象与执行线程在共享的 jobqueue，这里给 idex 的超时与任务表。
+
 """后台写操作：任务对象与执行线程在共享的 jobqueue，这里给 idex 的超时与任务表。"""
 
 from jobqueue import (  # noqa: F401  再导出给别人用

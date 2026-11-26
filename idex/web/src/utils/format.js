@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\utils\format.js
+ * @Description: 页面常用格式化与状态词汇的转发。
+ */
 // 页面上反复用到的小格式化：路径与时间走共享的 /format，这里只留状态与动作词汇。
 
 export {

@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\editorThemes.test.js
+ * @Description: 编辑器主题与扩展的测试。
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EDITOR_THEMES, editorThemeExtensions, editorThemeOf } from '../src/features/editor/core/themes.js'

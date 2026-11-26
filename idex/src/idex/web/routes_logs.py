@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\routes_logs.py
+# @Description: 页面日志接口：分页读取、前端追加与清空。
+
 """页面日志接口：分页读取、前端追加与清空。"""
 
 from web import ApiError

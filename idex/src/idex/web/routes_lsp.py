@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\routes_lsp.py
+# @Description: 代码索引的网页接口：定义、引用、符号、悬停、诊断与重命名。
+
 """代码索引的网页接口：定义、引用、符号、悬停、诊断与重命名。"""
 
 import os

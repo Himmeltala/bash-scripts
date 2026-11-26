@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\lib\idex-core.sh
+# @Description: idex 加载器：按顺序 source 模块，cli 放最后。
+
 # idex 加载器：按顺序 source idex/ 下的模块，cli 放最后。
 # 直接执行本文件等价于 idex 命令，便于调试。
 

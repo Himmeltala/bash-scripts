@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_web_tool_detect.py
+# @Description: 工具能力探测：Node 与 JVM 各自的根与 id，失败时只省略对应项。
+
 """工具能力探测：Node 与 JVM 各自的根与 id，失败时只省略对应项。"""
 
 import sys, tempfile, unittest

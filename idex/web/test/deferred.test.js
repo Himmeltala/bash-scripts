@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\deferred.test.js
+ * @Description: 默认不渲染路径规则的测试。
+ */
 // 变更页“默认不渲染”的路径判断：锁文件与构建产物，纯函数测试。
 import test from 'node:test'
 import assert from 'node:assert/strict'

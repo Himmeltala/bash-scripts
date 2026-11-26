@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\browse\lib\browseOps.js
+ * @Description: 浏览页新建与改名的名字校验、过大文件判定和路径小工具。
+ */
 // 浏览页新建、改名的名字校验，过大文件不预览的判定，以及几个通用的路径小工具；纯函数，接口那边同样有这道校验。
 
 // 跟服务端 MAX_FILE 一致：超过它的文件读不出来，右侧只给下载。

@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_web_logs.py
+# @Description: 页面日志存储：追加、分页、按级别筛选、清空与条数上限。
+
 """页面日志存储：追加、分页、按级别筛选、清空与条数上限。"""
 
 import sys, tempfile, unittest

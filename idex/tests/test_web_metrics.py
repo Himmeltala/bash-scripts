@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_web_metrics.py
+# @Description: 头部性能指标推送的回归：连上先给一份完整指标。
+
 """头部性能指标推送的回归：连上先给一份完整指标。"""
 
 import http.client

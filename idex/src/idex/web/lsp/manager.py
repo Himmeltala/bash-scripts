@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\lsp\manager.py
+# @Description: 按（工作区, 语言）管理语言服务器：懒启动、空闲回收、五种操作与重命名。
+
 """按（工作区, 语言）管理语言服务器：懒启动、空闲回收、五种操作与重命名。"""
 
 import os

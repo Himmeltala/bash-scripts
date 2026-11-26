@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\main.js
+ * @Description: idex 前端入口：创建 Vue 应用并注册 Pinia、Vuetify 与日志。
+ */
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'

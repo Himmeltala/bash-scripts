@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\vcs_common.py
+# @Description: VCS 查询共用的常量与小工具：文本截断、差异片段、非纳管文件展开。
+
 """VCS 查询共用的常量与小工具：文本截断、差异片段、非纳管文件展开。"""
 import os
 

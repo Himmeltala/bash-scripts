@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\utils\deferred.js
+ * @Description: 变更页默认不渲染的路径判断，覆盖锁文件与构建产物。
+ */
 // 变更页默认不取差异的路径：锁文件与构建产物，体量大、看差异也用不上。
 // 规则按路径段匹配：* 只配一段里的任意字符，** 配任意多段。
 export const DEFERRED_PATTERNS = [

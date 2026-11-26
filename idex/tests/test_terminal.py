@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_terminal.py
+# @Description: 终端回归：WebSocket 帧编解码与 PTY 会话的输入输出、缓冲与清理。
+
 """终端回归：WebSocket 帧编解码与 PTY 会话的输入输出、缓冲与清理。"""
 
 import os

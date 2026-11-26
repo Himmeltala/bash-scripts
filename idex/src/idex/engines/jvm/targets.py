@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\engines\jvm\targets.py
+# @Description: 找 mvnx / gradlex 入口，并在工作区根目录取目标清单。
+
 """找 mvnx / gradlex 入口，并在工作区根目录取目标清单。
 
 目标是工具自己算出来的：引擎不读 pom，也不读 settings.gradle。

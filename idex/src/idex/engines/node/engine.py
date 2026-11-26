@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\engines\node\engine.py
+# @Description: Node 引擎的服务层：状态解析、Node 版本发现与执行端客户端。
+
 """Node 引擎的服务层：状态解析、Node 版本发现与执行端客户端。
 
 状态文件由 ``engine.sh`` 写、这里只读；页面、HTTP 与压缩不在这份文件里。

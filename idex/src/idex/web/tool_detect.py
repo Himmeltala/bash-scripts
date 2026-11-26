@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\tool_detect.py
+# @Description: 工具能力探测：从选中的目录找 Node 与 JVM 工程根。
+
 """工具能力探测：从选中的目录找 Node 与 JVM 工程根。
 
 只读探测，退出码非零、超时、解析失败都只省略对应的一项，不向调用方抛异常。

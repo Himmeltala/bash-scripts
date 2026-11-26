@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\plugins\vuetify.js
+ * @Description: Vuetify 实例与主题配置，跟随深浅色并记住手动选择。
+ */
 // Vuetify 实例与主题：颜色跟浏览器深浅色走，标题栏可以手动切换。
 
 import 'vuetify/styles'

@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\editor\core\positions.js
+ * @Description: LSP 的 0 基行列与文档偏移互算，越界时夹到边界。
+ */
 // LSP 的 0 基行列换算成文档偏移；超过行尾夹到行尾，行号越界夹到末尾。
 
 export function offsetAt(text, line, character) {

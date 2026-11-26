@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_plain_dir.py
+# @Description: 普通目录的回归：不是 SVN 工作副本也不是 Git 仓库，照样能加，只按目录浏览。
+
 """普通目录的回归：不是 SVN 工作副本也不是 Git 仓库，照样能加，只按目录浏览。"""
 
 import io

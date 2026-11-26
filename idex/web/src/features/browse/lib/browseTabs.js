@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\browse\lib\browseTabs.js
+ * @Description: 浏览页文件页签的打开、关闭与改名后的路径跟随。
+ */
 // 浏览页的文件页签：打开、关闭，以及改名之后跟着换路径。
 // 纯函数只摆页签列表，草稿与滚动位置都在各自的编辑器实例里。
 

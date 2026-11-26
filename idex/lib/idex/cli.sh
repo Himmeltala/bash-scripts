@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\lib\idex\cli.sh
+# @Description: idex 命令行层：帮助、参数解析与主流程。
+
 # 命令行层：帮助、参数解析与主流程，加载顺序放最后。
 # 目前只有一个网页命令；终端里的查询以后再加。
 

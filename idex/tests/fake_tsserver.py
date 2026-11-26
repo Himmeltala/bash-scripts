@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\fake_tsserver.py
+# @Description: 测试用假 tsserver：收一行一条 JSON，回 Content-Length 帧。
+
 """测试用假 tsserver：收一行一条 JSON，回 Content-Length 帧。
 
 认 configure、open、exit，几种语言查询，以及 _vue:echo。

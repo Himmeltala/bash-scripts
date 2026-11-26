@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\src\idex\engines\node\engine.sh
+# @Description: Node 引擎的状态文件与目录锁，idex 通过管道发请求。
+
 # Node 引擎：扫描与执行由 node.sh / exec.sh 负责，状态文件与目录锁在这里；idex 通过管道发请求。
 # 状态按行存、$FS 分列：bash 读写它不必管 JSON 转义，接口每轮请求现读现拼。
 # 状态目录沿用 ~/.cache/nodex/web，旧状态文件不动。

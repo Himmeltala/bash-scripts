@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\capabilities.test.js
+ * @Description: 语言服务器能力文案的测试。
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { capabilityText } from '../src/features/engines/lib/capabilities.js'

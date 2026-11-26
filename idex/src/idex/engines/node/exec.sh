@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\src\idex\engines\node\exec.sh
+# @Description: Node 引擎执行侧：按记录进目录执行命令。
+
 # 执行侧：记录里的参数就是完整命令，进脚本所在目录直接执行；单条记录 exec 顶替进程，多条记录后台共用终端。
 
 # 进目录后 exec 成记录里的那条命令；在子 shell 里调用即后台执行，因为 exec 只替换那个子 shell。

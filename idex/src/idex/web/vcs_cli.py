@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\vcs_cli.py
+# @Description: 跑 git 与 svn 命令的薄封装：超时与找不到命令都翻成接口错误。
+
 """跑 git 与 svn 命令的薄封装：超时与找不到命令都翻成接口错误。"""
 
 import subprocess

@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_jvm_engine.py
+# @Description: JVM 引擎工作区、目标与启停的回归测试。
+
 import sys, tempfile, unittest
 from pathlib import Path
 

@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\editorPositions.test.js
+ * @Description: 行列偏移换算的测试。
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { offsetAt } from '../src/features/editor/core/positions.js'

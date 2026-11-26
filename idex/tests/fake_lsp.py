@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\fake_lsp.py
+# @Description: 测试用假语言服务器：按 LSP 帧回话，定义结果是固定的几条，供桥接层断言。
+
 """测试用假语言服务器：按 LSP 帧回话，定义结果是固定的几条，供桥接层断言。
 
 环境变量：

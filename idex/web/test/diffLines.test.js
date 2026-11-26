@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\diffLines.test.js
+ * @Description: 统一差异解析与行标记的测试。
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { diffMarks, hunkOriginal, parseDiffHunks } from '../src/features/editor/core/diffLines.js'

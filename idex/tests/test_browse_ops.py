@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_browse_ops.py
+# @Description: 资源管理器的增删改：新建、改名、删除，已纳管的要走 svn 与 git，未纳管的直接动磁盘。
+
 """资源管理器的增删改：新建、改名、删除，已纳管的要走 svn 与 git，未纳管的直接动磁盘。"""
 
 import json

@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\vcs_query.py
+# @Description: 工作副本查询的统一入口：按 git / svn 分文件实现，这里再导出。
+
 """工作副本查询的统一入口：按 git / svn 分文件实现，这里再导出。"""
 
 from vcs_common import (

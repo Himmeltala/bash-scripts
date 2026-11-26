@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\editor\core\diffLines.js
+ * @Description: 解析统一差异的 hunk，生成新增、修改与删除行标记。
+ */
 // 统一差异按行拆开：给编辑器标出新增、修改、删除的行，点击时能拿出原内容。
 
 const HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/

@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\engines\jvm\runs.py
+# @Description: 运行记录：起进程、整组停止、识别端口与状态，运行历史落在 runs.json。
+
 """运行记录：起进程、整组停止、识别端口与状态，运行历史落在 runs.json。
 
 进程本身仍由 mvnx / gradlex 的 ``exec`` 拉起，日志写进

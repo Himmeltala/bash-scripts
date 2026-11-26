@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\routes_browse.py
+# @Description: 浏览目录的网页接口：目录树、取文件、下载、搜索与增删改。
+
 """浏览目录的网页接口：目录树、取文件、下载、搜索与增删改。"""
 
 import os

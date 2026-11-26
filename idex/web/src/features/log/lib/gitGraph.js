@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\log\lib\gitGraph.js
+ * @Description: 提交时间线的分列坐标与连线计算。
+ */
 // 提交列表的时间线分列：按列表顺序扫一遍，算出每条提交画在哪一列、连到下面哪几列。
 // 不依赖 Vue，单独可测；调用方按返回的坐标画 SVG。
 

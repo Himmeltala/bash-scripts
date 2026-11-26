@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\completion.test.js
+ * @Description: 补全选项与请求闸门的测试。
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {

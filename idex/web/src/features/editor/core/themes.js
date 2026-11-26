@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\editor\core\themes.js
+ * @Description: 编辑器主题预设，组合底色、语法高亮、折叠图标与差异字符样式。
+ */
 // 编辑器主题预设：每套同时给出编辑器底色与语法高亮，避免只换背景。
 
 import { EditorView } from '@codemirror/view'

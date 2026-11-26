@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\routes_node.py
+# @Description: Node 引擎的接口：状态、版本、启停、重扫与自定义命令。
+
 """Node 引擎的接口：状态、版本、启停、重扫与自定义命令。
 
 只做参数、工作区映射、权限与调用；状态与执行端都在 NodeService 里。

@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\engines\jvm\engine.py
+# @Description: JVM 引擎的组装：工作区、目标、运行记录与状态。
+
 """JVM 引擎的组装：工作区、目标、运行记录与状态。
 
 每个工作区带一个 kind（mvn / gradle），启动时按它选工具；目标由 mvnx / gradlex 扫描。

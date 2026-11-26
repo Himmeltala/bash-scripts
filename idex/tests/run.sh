@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\tests\run.sh
+# @Description: idex 回归：SVN / Git 查询、接口与命令行用法检查。
+
 # idex 回归：临时 SVN / Git 仓库上的查询与接口，加上命令行的用法检查。
 set -uo pipefail
 repo=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)

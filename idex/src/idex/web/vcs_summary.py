@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\vcs_summary.py
+# @Description: 变更清单与状态指纹：把 git 与 svn 的结果合成页面要的形状。
+
 """变更清单与状态指纹：把 git 与 svn 的结果合成页面要的形状。"""
 
 import hashlib

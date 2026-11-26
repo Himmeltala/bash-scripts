@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_web_node_routes.py
+# @Description: Node 网页接口的回归测试。
+
 import sys, tempfile, threading, time, unittest
 from pathlib import Path
 

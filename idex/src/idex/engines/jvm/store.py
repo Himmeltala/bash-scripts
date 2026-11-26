@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\engines\jvm\store.py
+# @Description: 工作区登记表：state.json 里存工作区、别名与每行参数。
+
 """工作区登记表：state.json 里存工作区、别名与每行参数。
 
 JVM 引擎不解析 pom / settings.gradle，目标由 mvnx / gradlex 的 ``--list --json``

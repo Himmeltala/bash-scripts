@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\lib\idex\server.sh
+# @Description: idex 网页模式的启动参数与专属校验、提示。
+
 # 网页模式：起 python3 转发进程，静态页面与 SVN / Git 查询、操作接口都由它出。
 # 公共启动流程在 lib/shell-shared/services/web-command.sh，这里给参数与两项 idex 专属校验/提示。
 

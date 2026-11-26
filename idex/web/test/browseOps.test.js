@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\browseOps.test.js
+ * @Description: 浏览页名字校验与过大文件判定的测试。
+ */
 // 浏览页新建与改名的名字校验、过大文件占位的判定。
 import test from 'node:test'
 import assert from 'node:assert/strict'

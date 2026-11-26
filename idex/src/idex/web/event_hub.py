@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\event_hub.py
+# @Description: 工作副本变化与状态变化的推送：一个工作副本一个检查线程，页面断开就退出。
+
 """工作副本变化与状态变化的推送：一个工作副本一个检查线程，页面断开就退出。"""
 
 import queue

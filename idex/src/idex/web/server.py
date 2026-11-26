@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\server.py
+# @Description: idex 网页模式的转发进程：静态页面加 SVN / Git 查询与操作接口，只用标准库。
+
 """idex 网页模式的转发进程：静态页面加 SVN / Git 查询与操作接口，只用标准库。
 
 页面要的东西都由这里现跑 svn 或 git 命令取：工作副本变更、单个文件的差异、

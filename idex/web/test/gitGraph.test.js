@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\test\gitGraph.test.js
+ * @Description: 提交时间线分列的测试。
+ */
 // 时间线分列的纯函数测试：不跑浏览器，只验坐标与连线。
 import test from 'node:test'
 import assert from 'node:assert/strict'

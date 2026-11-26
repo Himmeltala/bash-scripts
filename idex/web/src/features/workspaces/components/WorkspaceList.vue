@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\workspaces\components\WorkspaceList.vue
+ * @Description: 工作副本列表的封装：补版本库图标、移除与分组事件。
+ */
 <template>
   <WorkspaceList
     :workspaces="workspaces"

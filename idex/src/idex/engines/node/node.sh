@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:32:16
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:32:16
+# @FilePath: \idex\src\idex\engines\node\node.sh
+# @Description: Node 工作区扫描：包管理器与脚本清单的拼装。
+
 # Node 工作区扫描：包管理器、工作区里的脚本由 scan.js 读，bash 只做判定与拼记录。
 # 脚本列表在 prepare_scripts 里填一次，其余文件只读。
 

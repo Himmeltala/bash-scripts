@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\lsp\session.py
+# @Description: 一条语言服务器子进程会话：拉起、初始化、打开文档、发请求、收诊断。
+
 """一条语言服务器子进程会话：拉起、初始化、打开文档、发请求、收诊断。"""
 
 import json

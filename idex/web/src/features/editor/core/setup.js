@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\editor\core\setup.js
+ * @Description: CodeMirror basicSetup 的本地副本，折叠标记换成 MDI 图标。
+ */
 // basicSetup 的本地副本：CodeMirror 不开放折叠标记配置，定制要照官方说明复制这份清单。
 // 与 basicSetup 的差别只有 foldGutter 的 markerDOM 换成 MDI 图标并写中文标题。
 

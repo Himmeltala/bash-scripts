@@ -1,3 +1,11 @@
+/*
+ * @Author: Himmeltala
+ * @Date: 2026-11-26 09:26:41
+ * @LastEditors: Himmeltala
+ * @LastEditTime: 2026-11-26 09:26:41
+ * @FilePath: \idex\web\src\features\editor\core\completion.js
+ * @Description: 补全结果转成 CodeMirror 选项，并只接受最后一次请求。
+ */
 // 补全结果转成 CodeMirror 的选项，并提供一个只认最后一次请求的闸门。
 
 import { offsetAt } from './positions.js'

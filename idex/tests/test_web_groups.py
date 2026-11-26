@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\tests\test_web_groups.py
+# @Description: 网页左侧分组结构的回归测试：整份写入，状态回话与推送都带上它。
+
 """网页左侧分组结构的回归测试：整份写入，状态回话与推送都带上它。"""
 
 import http.client

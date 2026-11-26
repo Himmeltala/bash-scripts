@@ -1,3 +1,10 @@
+# @Author: Himmeltala
+# @Date: 2026-11-26 09:29:54
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-26 09:29:54
+# @FilePath: \idex\src\idex\web\routes_vcs.py
+# @Description: 变更、日志与同步的网页接口。
+
 """变更、日志与同步的网页接口。"""
 
 from web import ApiError
