@@ -64,6 +64,13 @@ class WebSocketTest(unittest.TestCase):
             else:
                 self.assertEqual(len(frame), 2)
 
+    def test_unmask_matches_byte_walk(self):
+        mask = b"\x13\x37\xab\xcd"
+        for size in (0, 1, 2, 3, 4, 5, 7, 64, 65535, 65536, 65537, 200000):
+            payload = bytes((index * 31 + 7) % 256 for index in range(size))
+            expected = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+            self.assertEqual(ws.unmask(payload, mask), expected, size)
+
     def test_read_masked_and_fragmented(self):
         left, right = socket.socketpair()
         try:

@@ -9,6 +9,7 @@
 
 import json
 import queue
+import socket
 import struct
 import threading
 import time
@@ -17,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from web import ApiError
 
 from . import ws
+from .service import BATCH_LIMIT
 
 
 class TerminalRoutes:
@@ -73,6 +75,11 @@ class TerminalRoutes:
         self.send_header("Connection", "Upgrade")
         self.send_header("Sec-WebSocket-Accept", ws.accept_key(key))
         self.end_headers()
+        # 按键回显大多是小帧，Nagle 会拖到几十毫秒才发。
+        try:
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
         self.close_connection = True
 
         if session is None:
@@ -89,9 +96,54 @@ class TerminalRoutes:
             since = 0
         self._terminal_run(session, since)
 
+    def _send_lock(self):
+        lock = getattr(self, "_terminal_send_lock", None)
+        if lock is None:
+            lock = self._terminal_send_lock = threading.Lock()
+        return lock
+
     def _terminal_send(self, opcode, payload):
-        with getattr(self, "_terminal_send_lock", threading.Lock()):
+        with self._send_lock():
             self.connection.sendall(ws.encode_frame(opcode, payload))
+
+    # 大块输出分两次发：帧头加序号很小，数据块不再复制一遍。
+    def _terminal_send_chunk(self, seq, payload):
+        head = struct.pack("!I", seq)
+        frame = ws.frame_header(ws.OP_BINARY, len(head) + len(payload))
+        with self._send_lock():
+            self.connection.sendall(frame + head)
+            self.connection.sendall(payload)
+
+    # 会话结束时把队列里还没发的块补发完，别把重放期间的最后一屏丢掉。
+    def _drain_queue(self, box, sent):
+        parts = []
+        size = 0
+        while True:
+            try:
+                item = box.get_nowait()
+            except queue.Empty:
+                break
+            if item is None:
+                break
+            seq, data = item
+            if seq <= sent:
+                continue
+            parts.append(data)
+            size += len(data)
+            sent = seq
+            if size >= BATCH_LIMIT:
+                try:
+                    self._terminal_send_chunk(sent, b"".join(parts))
+                except OSError:
+                    return sent
+                parts = []
+                size = 0
+        if parts:
+            try:
+                self._terminal_send_chunk(sent, b"".join(parts))
+            except OSError:
+                pass
+        return sent
 
     def _terminal_run(self, session, since):
         send_lock = threading.Lock()
@@ -108,54 +160,78 @@ class TerminalRoutes:
                 }
             ),
         )
-        sent = max(0, since)
-        for seq, data in session.chunks_since(sent):
-            self._terminal_send(ws.OP_BINARY, struct.pack("!I", seq) + data)
-            sent = seq
-        if session.done:
-            self._terminal_send(ws.OP_TEXT, json.dumps({"type": "exit", "seq": sent}))
-            return
-
+        # 先订阅再重放：中间新产生的输出落到队列里，不会漏在快照之外；
+        # 重复的块按序号丢弃。
         box = session.subscribe()
+        sent = max(0, since)
         stop = threading.Event()
-
-        def read_loop():
-            while not stop.is_set():
-                try:
-                    opcode, payload = ws.read_message(self.connection)
-                except (OSError, ValueError):
-                    break
-                if opcode is None or opcode == ws.OP_CLOSE:
-                    break
-                if opcode == ws.OP_PING:
-                    try:
-                        self._terminal_send(ws.OP_PONG, payload)
-                    except OSError:
-                        break
-                elif opcode == ws.OP_BINARY:
-                    if not session.write(payload):
-                        break
-                elif opcode == ws.OP_TEXT:
-                    try:
-                        message = json.loads(payload.decode("utf-8", "replace"))
-                    except ValueError:
-                        continue
-                    if not isinstance(message, dict):
-                        continue
-                    kind = message.get("type")
-                    if kind == "resize":
-                        session.resize(message.get("cols") or 100, message.get("rows") or 30)
-                    elif kind == "ack":
-                        try:
-                            session.ack(int(message.get("seq") or 0))
-                        except (TypeError, ValueError):
-                            pass
-            stop.set()
-
-        reader = threading.Thread(target=read_loop, name="idex-term-read", daemon=True)
-        reader.start()
-        last_ping = time.monotonic()
         try:
+            # 重放同样合批：一帧带多个块，序号取最后一块。
+            parts = []
+            size = 0
+            try:
+                for seq, data in session.chunks_since(sent):
+                    parts.append(data)
+                    size += len(data)
+                    sent = seq
+                    if size >= BATCH_LIMIT:
+                        self._terminal_send_chunk(sent, b"".join(parts))
+                        parts = []
+                        size = 0
+                if parts:
+                    self._terminal_send_chunk(sent, b"".join(parts))
+            except OSError:
+                return
+            if session.done:
+                # 重放期间新产生的块还压在队列里，先发完再报退出。
+                sent = self._drain_queue(box, sent)
+                try:
+                    self._terminal_send(ws.OP_TEXT, json.dumps({"type": "exit", "seq": sent}))
+                except OSError:
+                    pass
+                return
+
+            def read_loop():
+                while not stop.is_set():
+                    try:
+                        opcode, payload = ws.read_message(self.connection)
+                    except (OSError, ValueError):
+                        break
+                    if opcode is None or opcode == ws.OP_CLOSE:
+                        break
+                    if opcode == ws.OP_PING:
+                        try:
+                            self._terminal_send(ws.OP_PONG, payload)
+                        except OSError:
+                            break
+                    elif opcode == ws.OP_BINARY:
+                        if not session.write(payload):
+                            break
+                    elif opcode == ws.OP_TEXT:
+                        try:
+                            message = json.loads(payload.decode("utf-8", "replace"))
+                        except ValueError:
+                            continue
+                        if not isinstance(message, dict):
+                            continue
+                        kind = message.get("type")
+                        if kind == "resize":
+                            try:
+                                session.resize(
+                                    message.get("cols") or 100, message.get("rows") or 30
+                                )
+                            except (TypeError, ValueError):
+                                continue
+                        elif kind == "ack":
+                            try:
+                                session.ack(int(message.get("seq") or 0))
+                            except (TypeError, ValueError):
+                                pass
+                stop.set()
+
+            reader = threading.Thread(target=read_loop, name="idex-term-read", daemon=True)
+            reader.start()
+            last_ping = time.monotonic()
             while not stop.is_set():
                 try:
                     item = box.get(timeout=1)
@@ -178,11 +254,38 @@ class TerminalRoutes:
                 seq, data = item
                 if seq <= sent:
                     continue
+                # 队列里已经堆着的先并进同一帧，帧头序号用最后一条；
+                # 客户端确认这个序号，服务端就能把前面的块一起回收。
+                payload = [data]
+                size = len(data)
+                exiting = False
+                while size < BATCH_LIMIT:
+                    try:
+                        more = box.get_nowait()
+                    except queue.Empty:
+                        break
+                    if more is None:
+                        exiting = True
+                        break
+                    next_seq, next_data = more
+                    if next_seq <= seq:
+                        continue
+                    seq = next_seq
+                    payload.append(next_data)
+                    size += len(next_data)
                 try:
-                    self._terminal_send(ws.OP_BINARY, struct.pack("!I", seq) + data)
+                    self._terminal_send_chunk(seq, b"".join(payload))
                 except OSError:
                     break
                 sent = seq
+                if exiting:
+                    try:
+                        self._terminal_send(
+                            ws.OP_TEXT, json.dumps({"type": "exit", "seq": sent})
+                        )
+                    except OSError:
+                        pass
+                    break
         finally:
             stop.set()
             session.unsubscribe(box)

@@ -50,6 +50,7 @@ import '@xterm/xterm/css/xterm.css'
 import { encodeInput } from '../lib/protocol'
 import { connectTerminal } from '../composables/useTerminalConnection'
 import { terminalOptions } from '../lib/options'
+import { dropWebgl, holdWebgl } from '../lib/webglCache'
 import { usePreferencesStore } from '../../../stores/preferences'
 
 const props = defineProps({
@@ -64,6 +65,20 @@ const theme = useTheme()
 const preferences = usePreferencesStore()
 let observer = null
 let fitTimer = 0
+
+// 输出先攒着，一帧或一批再写进 xterm；确认也攒着发，别让每个块都占一条消息。
+const FLUSH_BYTES = 256 * 1024
+const ACK_DELAY = 120
+const ACK_BYTES = 256 * 1024
+let writeQueue = []
+let writeBytes = 0
+let writeRaf = 0
+let writeTimer = 0
+let latestSeq = 0
+let ackSeq = 0
+let ackSent = 0
+let ackBytes = 0
+let ackTimer = 0
 
 function terminalTheme() {
   if (theme.global.current.value.dark) {
@@ -160,39 +175,127 @@ function buildTerminal() {
   props.session.el = el
 }
 
-// WebGL 只给当前可见的终端；隐藏或切换工作区时退回 canvas，省上下文。
+// WebGL 上下文有限：共享队列保留最近看过的几个终端，来回切标签不用反复建销。
+function releaseWebgl(slot) {
+  dropWebgl(slot)
+  if (!slot.webgl) return
+  try { slot.webgl.dispose() } catch (err) { /* 已释放 */ }
+  slot.webgl = null
+}
+
 function loadWebgl() {
   const slot = props.session
-  if (!props.active || slot.webgl || !slot.term) return
-  try {
-    const addon = new WebglAddon()
-    addon.onContextLoss(() => {
-      try { addon.dispose() } catch (err) { /* 已释放 */ }
+  if (!props.active || !slot.term) return
+  if (!slot.webgl) {
+    let addon = null
+    try {
+      addon = new WebglAddon()
+      addon.onContextLoss(() => {
+        try { addon.dispose() } catch (err) { /* 已释放 */ }
+        slot.webgl = null
+        dropWebgl(slot)
+      })
+      slot.term.loadAddon(addon)
+      slot.webgl = markRaw(addon)
+    } catch (err) {
+      // 建了但挂不上去时把上下文还回去，别把有限的上下文占死。
+      if (addon) {
+        try { addon.dispose() } catch (e) { /* 已释放 */ }
+      }
       slot.webgl = null
-    })
-    slot.term.loadAddon(addon)
-    slot.webgl = markRaw(addon)
-  } catch (err) {
-    slot.webgl = null
+    }
   }
+  for (const old of holdWebgl(slot)) releaseWebgl(old)
 }
 
 function unloadWebgl() {
-  if (!props.session.webgl) return
-  try { props.session.webgl.dispose() } catch (err) { /* 已释放 */ }
-  props.session.webgl = null
+  releaseWebgl(props.session)
+}
+
+// 攒够一批或到了下一帧就合并写入一次；隐藏页签用定时器，别让后台终端把输出一直压着。
+function scheduleFlush() {
+  // 隐藏页签里 rAF 不跑，已经挂着的那一帧要撤掉换定时器，否则输出永远等不到刷新。
+  if (document.hidden) {
+    if (writeRaf) {
+      cancelAnimationFrame(writeRaf)
+      writeRaf = 0
+    }
+    if (!writeTimer) writeTimer = setTimeout(flushWrites, 50)
+    return
+  }
+  if (writeRaf || writeTimer) return
+  if (writeBytes >= FLUSH_BYTES) {
+    writeTimer = setTimeout(flushWrites, 0)
+    return
+  }
+  writeRaf = requestAnimationFrame(flushWrites)
+}
+
+function flushWrites() {
+  if (writeRaf) {
+    cancelAnimationFrame(writeRaf)
+    writeRaf = 0
+  }
+  if (writeTimer) {
+    clearTimeout(writeTimer)
+    writeTimer = 0
+  }
+  if (!writeQueue.length) return
+  const total = writeBytes
+  const merged = new Uint8Array(total)
+  let at = 0
+  for (const part of writeQueue) {
+    merged.set(part, at)
+    at += part.byteLength
+  }
+  const seq = latestSeq
+  writeQueue = []
+  writeBytes = 0
+  try {
+    props.session.term?.write(merged, () => collectAck(seq, total))
+  } catch (err) {
+    // 终端已经销毁时丢掉这批，不影响其它标签。
+  }
+}
+
+// 确认只报最大序号：服务端按序号把前面的块一起回收。
+function collectAck(seq, bytes) {
+  if (seq > ackSeq) ackSeq = seq
+  ackBytes += bytes
+  if (ackBytes >= ACK_BYTES) {
+    sendAck()
+    return
+  }
+  if (!ackTimer) ackTimer = setTimeout(sendAck, ACK_DELAY)
+}
+
+function sendAck() {
+  if (ackTimer) {
+    clearTimeout(ackTimer)
+    ackTimer = 0
+  }
+  if (ackSeq <= ackSent) return
+  ackSent = ackSeq
+  ackBytes = 0
+  props.session.conn?.ack(ackSeq)
 }
 
 function connect() {
   if (props.session.conn) return
   props.session.conn = connectTerminal(props.session, {
     onData: (seq, data) => {
-      props.session.term?.write(data, () => props.session.conn?.ack(seq))
+      latestSeq = seq
+      writeQueue.push(data)
+      writeBytes += data.byteLength
+      scheduleFlush()
     },
+    // 退出提示要排在最后一批输出之后，先把攒着的写完。
     onExit: () => {
+      flushWrites()
       props.session.term?.write('\r\n\x1b[2m[进程已结束]\x1b[0m\r\n')
     },
     onError: (message) => {
+      flushWrites()
       props.session.term?.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`)
     },
   })
@@ -264,6 +367,9 @@ onBeforeUnmount(() => {
   clearTimeout(fitTimer)
   observer?.disconnect()
   observer = null
+  // 切组或关标签前把攒着的输出写完，缓冲和历史不丢。
+  flushWrites()
+  sendAck()
   unloadWebgl()
   // DOM 与连接都留在 store 里，切工作区回来接着用；关闭终端时才 dispose。
   if (props.session.el && props.session.el.parentNode === wrap.value) {
@@ -271,13 +377,11 @@ onBeforeUnmount(() => {
   }
 })
 
+// 切走不立刻释放上下文：最近几个终端的 WebGL 留着，切回来不重建；超出保留数由 keepWebgl 淘汰。
 watch(
   () => props.active,
   (on) => {
-    if (!on) {
-      unloadWebgl()
-      return
-    }
+    if (!on) return
     nextTick(() => {
       fit()
       loadWebgl()

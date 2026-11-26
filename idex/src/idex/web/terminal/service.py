@@ -20,6 +20,10 @@ from collections import deque
 
 MAX_PER_WS = 5
 MAX_TOTAL = 20
+# 一次系统调用读这么多；读完先看 PTY 还有没有现成数据，攒成一批再发，少切帧。
+READ_SIZE = 64 * 1024
+# 一批最多攒这么多字节，防止一条命令的输出无限占住读线程。
+BATCH_LIMIT = 256 * 1024
 # 未确认输出超过这个量就暂停读 PTY，等客户端 ack 再继续，终端不会把内存吃满。
 SOFT_BUFFER = 1024 * 1024
 # 没有客户端看时只留最近这一段，换回来还能看到最近的屏幕内容。
@@ -74,13 +78,25 @@ class TerminalSession:
                 break
             if not ready:
                 continue
+            # 先把 PTY 里现成可读的数据攒成一批，再按一个序号发出去。
+            batch = bytearray()
+            eof = False
             try:
-                data = os.read(self.fd, 8192)
-            except OSError:
+                while len(batch) < BATCH_LIMIT:
+                    data = os.read(self.fd, min(READ_SIZE, BATCH_LIMIT - len(batch)))
+                    if not data:
+                        eof = True
+                        break
+                    batch.extend(data)
+                    more, _, _ = select.select([self.fd], [], [], 0)
+                    if not more:
+                        break
+            except (OSError, ValueError):
+                eof = True
+            if batch:
+                self._append(bytes(batch))
+            if eof:
                 break
-            if not data:
-                break
-            self._append(data)
         # shell 自己退出时顺手收掉进程，别把僵尸留到空闲回收。
         try:
             os.waitpid(self.pid, os.WNOHANG)
@@ -97,6 +113,9 @@ class TerminalSession:
             self.buffered += len(data)
             self.last_active = time.monotonic()
             listeners = list(self.subscribers)
+            # 没人看就只留最近一段，别让后台终端的缓冲一直涨到软上限。
+            if not listeners:
+                self._trim(IDLE_BUFFER)
             self.lock.notify_all()
         for box in listeners:
             try:
@@ -209,6 +228,8 @@ class TerminalManager:
         self.lock = threading.Lock()
         self.sessions = {}
         self.by_ws = {}
+        # 正在锁外建的会话：先占名额，别让并发创建冲破总数上限。
+        self.reserved = 0
         self.sweeper = threading.Thread(target=self._sweep, name="idex-term-sweep", daemon=True)
         self.sweeper.start()
 
@@ -225,16 +246,38 @@ class TerminalManager:
             for item in stale:
                 self.close(item.id)
 
+    # pty.fork 会复制整个进程地址空间，放到管理器锁外做，别的会话操作不被它卡住。
     def create(self, ws_id, root, cols=100, rows=30):
         with self.lock:
             ids = self.by_ws.setdefault(ws_id, [])
-            if len(ids) >= MAX_PER_WS:
+            if len(ids) + 1 > MAX_PER_WS:
                 raise ValueError("这个工作区打开的终端太多了，先关掉几个")
-            if len(self.sessions) >= MAX_TOTAL:
+            if len(self.sessions) + self.reserved >= MAX_TOTAL:
                 raise ValueError("服务端终端数量到上限了，先关掉几个")
+            self.reserved += 1
+        try:
             session = TerminalSession(ws_id, root, cols, rows)
-            self.sessions[session.id] = session
-            ids.append(session.id)
+        except Exception:
+            with self.lock:
+                self.reserved -= 1
+                if not self.by_ws.get(ws_id):
+                    self.by_ws.pop(ws_id, None)
+            raise
+        with self.lock:
+            self.reserved -= 1
+            ids = self.by_ws.setdefault(ws_id, [])
+            # 建的过程中同组可能又开了终端，撞上限就把这个新的收掉。
+            if len(ids) >= MAX_PER_WS:
+                error = "这个工作区打开的终端太多了，先关掉几个"
+            elif len(self.sessions) >= MAX_TOTAL:
+                error = "服务端终端数量到上限了，先关掉几个"
+            else:
+                error = ""
+                ids.append(session.id)
+                self.sessions[session.id] = session
+        if error:
+            session.close()
+            raise ValueError(error)
         return session
 
     def get(self, session_id):

@@ -8,6 +8,8 @@
  */
 
 const API_PREFIX = '/__idex/api'
+// 每敲一键都编码一次，编码器建一份复用，别每次新建。
+const encoder = new TextEncoder()
 
 // 二进制块：前 4 字节是序号，后面才是终端输出。
 export function parseChunk(buffer) {
@@ -17,7 +19,7 @@ export function parseChunk(buffer) {
 }
 
 export function encodeInput(text) {
-  return new TextEncoder().encode(String(text ?? ''))
+  return encoder.encode(String(text ?? ''))
 }
 
 export function terminalSocketUrl({ wsId, sessionId = '', cols = 100, rows = 30, since = 0 }) {

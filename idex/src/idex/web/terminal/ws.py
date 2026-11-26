@@ -28,11 +28,9 @@ def accept_key(key):
     return base64.b64encode(digest).decode("ascii")
 
 
-def encode_frame(opcode, payload=b""):
+def frame_header(opcode, size):
     """服务端发出的帧不加掩码；长度按 7/16/64 位三档。"""
-    data = payload.encode("utf-8") if isinstance(payload, str) else bytes(payload)
     header = bytearray([0x80 | (opcode & 0x0F)])
-    size = len(data)
     if size < 126:
         header.append(size)
     elif size < 65536:
@@ -41,7 +39,30 @@ def encode_frame(opcode, payload=b""):
     else:
         header.append(127)
         header.extend(struct.pack("!Q", size))
-    return bytes(header) + data
+    return bytes(header)
+
+
+def encode_frame(opcode, payload=b""):
+    """整帧一次拼好；大块输出走 frame_header + 分两次发送，省一次整块复制。"""
+    data = payload.encode("utf-8") if isinstance(payload, str) else bytes(payload)
+    return frame_header(opcode, len(data)) + data
+
+
+def unmask(payload, mask):
+    """按 4 字节掩码解出原文；用整数异或交给 C 做，别按字节跑 Python 循环。"""
+    size = len(payload)
+    if not size:
+        return b""
+    out = bytearray()
+    step = 65536
+    for start in range(0, size, step):
+        block = payload[start:start + step]
+        count = len(block)
+        # 掩码按字节循环，截到与块同长，两边大端整数异或才对得上字节位置。
+        repeated = (mask * ((count + 3) // 4))[:count]
+        value = int.from_bytes(block, "big") ^ int.from_bytes(repeated, "big")
+        out.extend(value.to_bytes(count, "big"))
+    return bytes(out)
 
 
 def recv_exact(sock, count):
@@ -84,7 +105,7 @@ def read_frame(sock):
     if size and len(payload) < size:
         return False, None, b""
     if masked:
-        payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        payload = unmask(payload, mask)
     return fin, opcode, payload
 
 
