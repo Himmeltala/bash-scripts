@@ -146,6 +146,8 @@
           pick-on-row-click
           :texts="treeTexts"
           editable
+          refreshable
+          movable
           @pick="pick"
           @action="onTreeAction"
         />
@@ -1424,13 +1426,14 @@ watch(searching, (on) => {
   }
 })
 
-// 新建、改名与删除交给组合式函数：目录树只报动作，页签跟着路径走。
+// 新建、改名、拖动移动与删除交给组合式函数：目录树只报动作，页签跟着路径走。
 const {
   nameAsk,
   delAsk,
   nameTitle,
   nameLabel,
   onTreeAction: onBrowseAction,
+  moveNode,
   submitName,
   submitDelete,
 } = useBrowseFiles({
@@ -1446,6 +1449,19 @@ const {
 
 // 目录树右键：上传与属性留在本组件，其余动作照旧交给组合式函数。
 function onTreeAction(payload) {
+  if (payload.action === 'refresh') {
+    // 目录重读自己这层，文件重读所在的那层：外部改动后手动刷一下，比等推送快。
+    const node = payload.node
+    if (!node) return
+    treeRef.value?.reloadDir(node.type === 'dir' ? node.path : dirName(node.path))
+    return
+  }
+  if (payload.action === 'move') {
+    moveNode(payload.node, payload.dir).catch((err) => {
+      flash(err && err.message ? err.message : '移动失败')
+    })
+    return
+  }
   if (payload.action === 'upload') {
     pickUpload(payload.node && payload.node.path)
     return

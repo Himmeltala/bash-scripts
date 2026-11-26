@@ -8,6 +8,7 @@
 """浏览目录的读写：列目录、取文件、搜索、保存，以及新建、改名、删除。"""
 
 import grp
+import io
 import os
 import pwd
 import shutil
@@ -82,6 +83,19 @@ def browse_list(root, rel):
     return {"path": rel, "entries": shown, "truncated": truncated}
 
 
+def _contains_bytes(data, needle, chunk=64 * 1024):
+    """整份里有没有这个 ASCII 片段；按块比，别为了一次预筛复制整份文件。"""
+    overlap = max(0, len(needle) - 1)
+    start = 0
+    size = len(data)
+    while start < size:
+        part = data[start:start + chunk + overlap].lower()
+        if needle in part:
+            return True
+        start += chunk
+    return False
+
+
 def search_lines(path, needle, should_stop=None, needle_bytes=None):
     """逐行找内容，跳过二进制、超大与不是 UTF-8 的文件，产出 (行号, 行文本)。
 
@@ -95,15 +109,17 @@ def search_lines(path, needle, should_stop=None, needle_bytes=None):
         return
     if b"\x00" in data:
         return
-    if needle_bytes is not None and needle_bytes not in data.lower():
+    if needle_bytes is not None and not _contains_bytes(data, needle_bytes):
         return
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return
-    for number, line in enumerate(text.splitlines(), 1):
+    # 逐行给，不先建整份行列表：几万行的大文件只占一份文本。
+    for number, line in enumerate(io.StringIO(text), 1):
         if should_stop is not None and number % 200 == 0 and should_stop():
             return
+        line = line.rstrip("\r\n")
         if needle in line.lower():
             yield number, line.strip()[:SEARCH_LINE_MAX]
 
@@ -135,6 +151,7 @@ def browse_files(root, ignore=(), vcs="none"):
         if hit is not None and now - hit[0] < FILES_CACHE_TTL:
             return hit[1]
     result = None
+    real_root = os.path.realpath(root)
     if vcs == "git":
         rc, out, _ = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=root)
         if rc == 0:
@@ -147,7 +164,7 @@ def browse_files(root, ignore=(), vcs="none"):
             dirnames[:] = sorted(name for name in dirnames if name not in skip)
             for name in sorted(filenames):
                 path = os.path.join(dirpath, name)
-                if not inside(root, path):
+                if os.path.islink(path) and not os.path.realpath(path).startswith(real_root + os.sep):
                     continue
                 out.append(os.path.relpath(path, root).replace(os.sep, "/"))
                 if len(out) >= FILES_MAX:
@@ -163,6 +180,13 @@ def browse_files(root, ignore=(), vcs="none"):
             _FILES_CACHE.pop(oldest, None)
         _FILES_CACHE[key] = (now, result)
     return result
+
+
+def _file_size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
 
 
 def browse_search(root, rel, query, mode, ignore=(), should_stop=None):
@@ -187,6 +211,7 @@ def browse_search(root, rel, query, mode, ignore=(), should_stop=None):
     low = needle.lower()
     needle_bytes = low.encode("utf-8") if low.isascii() else None
     skip = {str(name) for name in ignore if name}
+    real_root = os.path.realpath(root)
     matches = []
     scanned = 0
     truncated = False
@@ -201,25 +226,24 @@ def browse_search(root, rel, query, mode, ignore=(), should_stop=None):
                 cancelled = True
                 break
             path = os.path.join(dirpath, name)
-            # 链接指到工作副本外的不看，免得搜到别人的文件。
-            if not inside(root, path):
+            # os.walk 不跟目录软链，正常条目一定在根内；只有文件软链可能指到外面，
+            # 这时才解析一次，别给每个文件都做一遍 realpath。
+            if os.path.islink(path) and not os.path.realpath(path).startswith(real_root + os.sep):
                 continue
             relpath = os.path.relpath(path, root).replace(os.sep, "/")
             scanned += 1
-            try:
-                size = os.path.getsize(path)
-            except OSError:
-                size = 0
             if mode == "name":
                 if low in name.lower():
-                    matches.append({"path": relpath, "name": name, "size": size})
+                    matches.append(
+                        {"path": relpath, "name": name, "size": _file_size(path)}
+                    )
             else:
                 for number, line in search_lines(path, low, should_stop, needle_bytes):
                     matches.append(
                         {
                             "path": relpath,
                             "name": name,
-                            "size": size,
+                            "size": _file_size(path),
                             "line": number,
                             "text": line,
                         }
@@ -512,6 +536,40 @@ def rename_entry(root, vcs, rel, name):
             os.rename(src, dest)
     except OSError as exc:
         raise ApiError(403, "改名失败：%s" % exc)
+    return {"path": dest_rel, "name": name, "type": entry_kind(dest)}
+
+
+def move_entry(root, vcs, rel, dest_dir):
+    """把文件或目录移到另一层目录；已纳管的走 git mv / svn mv，未纳管的直接改名。"""
+    rel, src = browse_target(root, rel)
+    parent_rel, parent = browse_parent(root, dest_dir)
+    name = os.path.basename(rel)
+    dest_rel = join_rel(parent_rel, name)
+    if dest_rel == rel:
+        return {"path": rel, "name": name, "type": entry_kind(src)}
+    dest = os.path.join(root, dest_rel)
+    if not inside(root, dest):
+        raise ApiError(400, "路径要在工作副本里：%s" % dest_rel)
+    # 目录不能移进自己或自己的子目录里。
+    real_src = os.path.realpath(src)
+    real_parent = os.path.realpath(parent)
+    if real_parent == real_src or real_parent.startswith(real_src + os.sep):
+        raise ApiError(400, "不能把目录移动到它自己里面")
+    if os.path.lexists(dest):
+        raise ApiError(409, "目标目录里已经有同名文件或目录：%s" % name)
+    try:
+        if vcs == "git" and git_tracks(root, rel):
+            rc, _, err = git(["mv", "--", rel, dest_rel], cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "git mv 失败")
+        elif vcs == "svn" and svn_tracks(root, rel):
+            rc, _, err = svn(["mv", "--", rel, dest_rel], cwd=root)
+            if rc != 0:
+                raise ApiError(400, err or "svn mv 失败")
+        else:
+            os.rename(src, dest)
+    except OSError as exc:
+        raise ApiError(403, "移动失败：%s" % exc)
     return {"path": dest_rel, "name": name, "type": entry_kind(dest)}
 
 

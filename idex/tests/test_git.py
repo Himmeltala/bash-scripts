@@ -319,6 +319,20 @@ class GitWorkspace(unittest.TestCase):
             for name in made:
                 shutil.rmtree(self.repo / name)
 
+    def test_browse_search_skips_symlink_outside(self):
+        with tempfile.TemporaryDirectory() as out:
+            secret = Path(out) / "secret.txt"
+            secret.write_text("needle_outside\n", encoding="utf-8")
+            link = self.repo / "link.txt"
+            os.symlink(secret, link)
+            try:
+                hits = gitmod.browse_search(str(self.repo), "", "needle_outside", "content")
+                self.assertEqual(hits["matches"], [])
+                hits = gitmod.browse_search(str(self.repo), "", "link.txt", "name")
+                self.assertEqual(hits["matches"], [])
+            finally:
+                link.unlink()
+
     def test_browse_save_keeps_line_endings(self):
         target = self.repo / "save.txt"
         target.write_bytes(b"a\r\nb\r\n")

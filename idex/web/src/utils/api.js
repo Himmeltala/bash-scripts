@@ -110,6 +110,7 @@ export const api = {
   mkdir: (ws, dir, name) => call('POST', '/mkdir', { ws, dir, name }),
   newFile: (ws, dir, name) => call('POST', '/newfile', { ws, dir, name }),
   renameEntry: (ws, path, name) => call('POST', '/rename', { ws, path, name }),
+  moveEntry: (ws, path, dir) => call('POST', '/move', { ws, path, dir }),
   deleteEntry: (ws, path) => call('POST', '/delete', { ws, path }),
   compress: (ws, path) => call('POST', '/compress', { ws, path }),
   search: (ws, text, mode = 'name', path = '', token = '') =>

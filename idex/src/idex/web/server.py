@@ -337,6 +337,7 @@ WRITE_ROUTES = {
     "mkdir": lambda h, m, q, b: h._browse_create(b, "dir"),
     "newfile": lambda h, m, q, b: h._browse_create(b, "file"),
     "rename": lambda h, m, q, b: h._browse_rename(b),
+    "move": lambda h, m, q, b: h._browse_move(b),
     "delete": lambda h, m, q, b: h._browse_delete(b),
     "compress": lambda h, m, q, b: h._browse_compress(b),
     "stage": lambda h, m, q, b: h._stage(b),

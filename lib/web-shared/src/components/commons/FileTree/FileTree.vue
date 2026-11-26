@@ -22,9 +22,13 @@
         :row-class="rowClass"
         :pick-on-row-click="pickOnRowClick"
         :texts="texts"
+        :movable="movable"
         @toggle="toggle"
         @pick="emit('pick', $event)"
         @context="openMenu"
+        @drag-start="onDragStart"
+        @drag-end="onDragEnd"
+        @drop-on="onDropOn"
       >
         <template #row-before-label="scope">
           <slot name="row-before-label" v-bind="scope" />
@@ -56,9 +60,13 @@
           :row-class="rowClass"
           :pick-on-row-click="pickOnRowClick"
           :texts="texts"
+          :movable="movable"
           @toggle="toggle"
           @pick="emit('pick', $event)"
           @context="openMenu"
+          @drag-start="onDragStart"
+          @drag-end="onDragEnd"
+          @drop-on="onDropOn"
         >
           <template #row-before-label="scope">
             <slot name="row-before-label" v-bind="scope" />
@@ -105,6 +113,10 @@ const props = defineProps({
   downloadOf: { type: Function, default: null },
   // 打开右键菜单里的新建、改名、删除；具体怎么做由调用方接 action 事件处理。
   editable: { type: Boolean, default: false },
+  // 树读的是磁盘目录时，菜单里加「刷新」，由调用方重读这一层。
+  refreshable: { type: Boolean, default: false },
+  // 长按节点可拖到别的目录，松手后由调用方执行移动。
+  movable: { type: Boolean, default: false },
   texts: { type: Object, default: () => ({}) },
 })
 
@@ -115,7 +127,7 @@ const DEFAULTS = {
   copyRel: '复制相对路径',
   copyAbs: '复制绝对路径',
   downloadFile: '下载文件',
-  downloadDir: '下载目录（zip）',
+  downloadDir: '下载目录',
   copied: '已复制',
   newFile: '新建文件',
   newDir: '新建目录',
@@ -124,6 +136,7 @@ const DEFAULTS = {
   props: '属性',
   rename: '重命名',
   delete: '删除',
+  refresh: '刷新',
 }
 const text = computed(() => ({ ...DEFAULTS, ...props.texts }))
 const EMPTY = { loading: false, error: '', entries: [], truncated: false }
@@ -250,6 +263,35 @@ watch(
 )
 
 const menu = reactive({ open: false, x: 0, y: 0, node: null, copied: '' })
+
+// 拖动：节点只报落点，能不能落、怎么移由这里判断，再交给调用方。
+const dragging = ref(null)
+
+function parentOf(key) {
+  const index = key.lastIndexOf('/')
+  return index < 0 ? '' : key.slice(0, index)
+}
+
+function onDragStart(node) {
+  dragging.value = node
+}
+
+function onDragEnd() {
+  dragging.value = null
+}
+
+function onDropOn(target) {
+  const source = dragging.value
+  dragging.value = null
+  if (!source || !target || !props.dirOf(target)) return
+  const srcKey = String(props.keyOf(source) || '')
+  const destKey = String(props.keyOf(target) || '')
+  // 根不能拖动；原地放、放进自身子树都不做事。
+  if (!srcKey || srcKey === destKey) return
+  if (destKey === parentOf(srcKey)) return
+  if (destKey.startsWith(srcKey + '/')) return
+  emit('action', { action: 'move', node: source, dir: destKey })
+}
 let copyTimer = 0
 
 const relativePath = computed(() => (menu.node ? String(props.keyOf(menu.node) || '') : ''))
@@ -303,6 +345,13 @@ const menuItems = computed(() => {
       label: menu.copied === 'abs' ? text.value.copied : text.value.copyAbs,
       icon: 'mdi-link-variant',
       keepOpen: true,
+    })
+  }
+  if (props.refreshable) {
+    items.push({
+      action: 'refresh',
+      label: text.value.refresh,
+      icon: 'mdi-refresh',
     })
   }
   if (props.downloadOf) {

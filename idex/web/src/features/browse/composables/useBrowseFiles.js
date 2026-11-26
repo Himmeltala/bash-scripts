@@ -125,6 +125,26 @@ export function useBrowseFiles({ wsId, tabs, activePath, drafts, editorOf, show,
     return true
   }
 
+  // 拖动移动：目标目录不同才动；开着这个路径的页签跟着换键，草稿按新路径重读。
+  async function moveNode(node, dir) {
+    if (!node || !node.path) return true
+    if (dirName(node.path) === (dir || '')) return true
+    if (!(await leaveTabs(affectedTabs(node.path)))) return false
+    const data = await api.moveEntry(wsId(), node.path, dir || '')
+    await reload(dirName(node.path))
+    if ((dir || '') !== dirName(node.path)) await reload(dir || '')
+    const before = activePath.value
+    const moved = renameTabs(tabs.value, node.path, data.path, data.name)
+    tabs.value = moved.tabs
+    activePath.value = followMoved(moved.moved, before)
+    for (const item of moved.moved) drafts.delete(item.from)
+    await nextTick()
+    for (const item of moved.moved) {
+      await editorOf(item.to)?.open(item.to)
+    }
+    return true
+  }
+
   async function submitDelete() {
     if (delAsk.busy) return
     const node = delAsk.node
@@ -152,5 +172,5 @@ export function useBrowseFiles({ wsId, tabs, activePath, drafts, editorOf, show,
     }
   }
 
-  return { nameAsk, delAsk, nameTitle, nameLabel, onTreeAction, submitName, submitDelete }
+  return { nameAsk, delAsk, nameTitle, nameLabel, onTreeAction, moveNode, submitName, submitDelete }
 }

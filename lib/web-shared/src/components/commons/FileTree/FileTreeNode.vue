@@ -2,12 +2,21 @@
   <div class="branch">
     <div
       class="row"
-      :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick }]"
+      :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick, 'drag-over': dragOver }]"
       :data-path="key"
       :data-type="node.type"
       :style="{ paddingLeft: 4 + depth * 18 + 'px' }"
+      :draggable="movable && dragReady"
       @click="onRowClick"
       @contextmenu.prevent.stop="onContext"
+      @pointerdown="onPointerDown"
+      @pointerup="cancelHold"
+      @pointercancel="cancelHold"
+      @dragstart="onDragStart"
+      @dragend="onDragEnd"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
     >
       <v-btn
         v-if="isDir"
@@ -54,9 +63,13 @@
           :row-class="rowClass"
           :pick-on-row-click="pickOnRowClick"
           :texts="texts"
+          :movable="movable"
           @toggle="emit('toggle', $event)"
           @pick="emit('pick', $event)"
           @context="emit('context', $event)"
+          @drag-start="emit('drag-start', $event)"
+          @drag-end="emit('drag-end')"
+          @drop-on="emit('drop-on', $event)"
         >
           <template #row-before-label="scope">
             <slot name="row-before-label" v-bind="scope" />
@@ -72,7 +85,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { fileIcon } from '../../../utils/commons/fileIcons.js'
 
 const props = defineProps({
@@ -86,10 +99,12 @@ const props = defineProps({
   labelClass: { type: String, default: '' },
   rowClass: { type: Function, default: null },
   pickOnRowClick: { type: Boolean, default: false },
+  // 长按后可拖到别的目录：按住一段时间才开启原生拖动，避免误拖。
+  movable: { type: Boolean, default: false },
   texts: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['toggle', 'pick', 'context'])
+const emit = defineEmits(['toggle', 'pick', 'context', 'drag-start', 'drag-end', 'drop-on'])
 
 // 每层的提示文案由调用方给，这里只兜底。
 const DEFAULTS = {
@@ -100,6 +115,57 @@ const EMPTY = { loading: false, error: '', entries: [], truncated: false }
 
 const key = computed(() => props.keyOf(props.node))
 const isDir = computed(() => props.dirOf(props.node))
+
+// 长按 350ms 才开启原生拖动，避免点选、右键时误触。
+const dragReady = ref(false)
+const dragOver = ref(false)
+let holdTimer = 0
+
+function onPointerDown(event) {
+  if (!props.movable || (event.button && event.button > 0)) return
+  cancelHold()
+  holdTimer = setTimeout(() => { dragReady.value = true }, 350)
+}
+
+function cancelHold() {
+  clearTimeout(holdTimer)
+  holdTimer = 0
+}
+
+function onDragStart(event) {
+  if (!props.movable || !dragReady.value) {
+    event.preventDefault()
+    return
+  }
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(props.key))
+  emit('drag-start', props.node)
+}
+
+function onDragEnd() {
+  dragReady.value = false
+  cancelHold()
+  emit('drag-end')
+}
+
+function onDragOver(event) {
+  if (!props.movable || !isDir.value) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  dragOver.value = true
+}
+
+function onDragLeave() {
+  dragOver.value = false
+}
+
+function onDrop(event) {
+  if (!props.movable || !isDir.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  dragOver.value = false
+  emit('drop-on', props.node)
+}
 const open = computed(() => props.expanded[key.value] === true)
 const state = computed(() => props.cache[key.value] || EMPTY)
 
@@ -128,6 +194,11 @@ function onContext(event) {
 <style scoped>
 .branch {
   min-width: 0;
+}
+.row.drag-over {
+  outline: 1px dashed rgb(var(--v-theme-primary));
+  outline-offset: -1px;
+  background: rgba(var(--v-theme-primary), 0.12);
 }
 .row {
   display: flex;

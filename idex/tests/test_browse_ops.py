@@ -153,6 +153,38 @@ class PlainDirOps(unittest.TestCase):
             self.assertEqual(status, 400, data)
         self.assertFalse((Path(self.root).parent / "escape.txt").exists())
 
+    def test_move_file_and_dir(self):
+        (self.root / "a.txt").write_text("hello", encoding="utf-8")
+        (self.root / "sub").mkdir()
+        status, data = self.call("/move", {"path": "a.txt", "dir": "sub"})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["path"], "sub/a.txt")
+        self.assertTrue((self.root / "sub" / "a.txt").is_file())
+
+        (self.root / "sub" / "inner").mkdir()
+        status, data = self.call("/move", {"path": "sub/inner", "dir": ""})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["path"], "inner")
+        self.assertTrue((self.root / "inner").is_dir())
+
+    def test_move_rejects_self_subtree_and_conflict(self):
+        (self.root / "dir").mkdir()
+        (self.root / "dir" / "inner").mkdir()
+        status, data = self.call("/move", {"path": "dir", "dir": "dir"})
+        self.assertEqual(status, 400, data)
+        status, data = self.call("/move", {"path": "dir", "dir": "dir/inner"})
+        self.assertEqual(status, 400, data)
+        (self.root / "a.txt").write_text("x", encoding="utf-8")
+        status, data = self.call("/move", {"path": "a.txt", "dir": "dir"})
+        self.assertEqual(status, 200, data)
+        (self.root / "b.txt").write_text("y", encoding="utf-8")
+        (self.root / "dir" / "b.txt").write_text("old", encoding="utf-8")
+        status, data = self.call("/move", {"path": "b.txt", "dir": "dir"})
+        self.assertEqual(status, 409, data)
+        # 根目录不能移动，原地放也不动。
+        status, data = self.call("/move", {"path": "", "dir": "dir"})
+        self.assertIn(status, (400, 403), data)
+
     def test_stat_reports_basic_metadata(self):
         target = self.root / "meta.txt"
         target.write_text("hello", encoding="utf-8")

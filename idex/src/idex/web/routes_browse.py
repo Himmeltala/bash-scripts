@@ -26,6 +26,7 @@ from browse_fs import (
     delete_entry,
     entry_stat,
     make_entry,
+    move_entry,
     rename_entry,
     save_file,
 )
@@ -217,6 +218,12 @@ class BrowseRoutes:
         rel = str(body.get("path", ""))
         name = str(body.get("name", ""))
         return {"workspace": ws, **rename_entry(ws["root"], ws.get("vcs", "none"), rel, name)}
+
+    def _browse_move(self, body):
+        ws = self._browse_write_ws(body)
+        rel = str(body.get("path", ""))
+        dest_dir = str(body.get("dir", ""))
+        return {"workspace": ws, **move_entry(ws["root"], ws.get("vcs", "none"), rel, dest_dir)}
 
     def _browse_delete(self, body):
         ws = self._browse_write_ws(body)
