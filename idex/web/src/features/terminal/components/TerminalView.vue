@@ -80,10 +80,16 @@ let ackSent = 0
 let ackBytes = 0
 let ackTimer = 0
 
+// 终端底色跟应用卡片用同一个 surface，深浅色切换和主题配色都以 Vuetify 为准。
+function surfaceColor() {
+  const colors = theme.global.current.value.colors || {}
+  return colors.surface || (theme.global.current.value.dark ? '#121212' : '#ffffff')
+}
+
 function terminalTheme() {
   if (theme.global.current.value.dark) {
     return {
-      background: '#1e1e1e',
+      background: surfaceColor(),
       foreground: '#d4d4d4',
       cursor: '#d4d4d4',
       selectionBackground: '#264f78',
@@ -98,7 +104,7 @@ function terminalTheme() {
     }
   }
   return {
-    background: '#ffffff',
+    background: surfaceColor(),
     foreground: '#333333',
     cursor: '#333333',
     selectionBackground: '#add6ff',

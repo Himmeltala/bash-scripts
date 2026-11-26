@@ -25,6 +25,7 @@
       <v-list-item
         v-for="item in items"
         :key="item.key"
+        :class="item.actionColor ? `tint-${item.actionColor}` : ''"
         @click="emit('open', item)"
       >
         <v-list-item-title>{{ item.service }}</v-list-item-title>
@@ -239,6 +240,16 @@ async function halt(item) {
   line-height: 1.35;
   opacity: 0.6;
   word-break: break-all;
+}
+/* 按动作类型给行一点底色，和引擎页签的表格口径一致。 */
+.tint-primary {
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+.tint-warning {
+  background: rgba(var(--v-theme-warning), 0.08);
+}
+.tint-success {
+  background: rgba(var(--v-theme-success), 0.08);
 }
 /* 服务名与右侧状态标签之间留出空隙。 */
 .menu :deep(.v-list-item__content) {

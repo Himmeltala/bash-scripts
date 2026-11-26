@@ -23,7 +23,10 @@
       v-for="row in rows"
       :key="row.key"
       :data-svc="row.svc ? row.svc.id : ''"
-      :class="{ 'focus-row': focusId && row.svc && row.svc.id === focusId }"
+      :class="[
+        { 'focus-row': focusId && row.svc && row.svc.id === focusId },
+        row.typeColor ? `tint-${row.typeColor}` : '',
+      ]"
     >
         <td>
           <div class="svc-name">
@@ -173,6 +176,16 @@ watch(
 </script>
 
 <style scoped>
+/* 按动作类型给整行一点底色：启动蓝、打包橙、安装绿，扫一眼就能分开。 */
+tr.tint-primary {
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+tr.tint-warning {
+  background: rgba(var(--v-theme-warning), 0.06);
+}
+tr.tint-success {
+  background: rgba(var(--v-theme-success), 0.06);
+}
 .table {
   flex: 1 1 auto;
   min-height: 0;
