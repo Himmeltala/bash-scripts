@@ -9,7 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { needsToolDetection, workspaceTabs } from '../src/features/workspaces/lib/workspaceTabs.js'
+import { jvmKindLabel, needsToolDetection, workspaceTabs } from '../src/features/workspaces/lib/workspaceTabs.js'
 
 test('普通目录没有能力时只给浏览', () => {
   assert.deepEqual(workspaceTabs({ vcs: 'none' }), ['browse'])
@@ -38,4 +38,10 @@ test('后端工程追加 JVM', () => {
 test('未检测过的工作区需要探测一次', () => {
   assert.equal(needsToolDetection({ vcs: 'git', tools: null }), true)
   assert.equal(needsToolDetection({ vcs: 'git', tools: {} }), false)
+})
+
+test('JVM 类型标签', () => {
+  assert.equal(jvmKindLabel('mvn'), 'Maven')
+  assert.equal(jvmKindLabel('gradle'), 'Gradle')
+  assert.equal(jvmKindLabel(''), '')
 })
