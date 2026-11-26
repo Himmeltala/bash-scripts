@@ -80,6 +80,7 @@
             v-if="view?.id === 'terminal'"
             :workspaces="state.workspaces"
             :current="currentId || ''"
+            @close-dock="dock.open = false"
           />
         </template>
         <template #actions>

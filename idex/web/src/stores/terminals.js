@@ -209,6 +209,20 @@ export const useTerminalsStore = defineStore('terminals', () => {
     delete groups[wsId]
   }
 
+  // 移除一组终端：本地标签与服务端会话一起关掉，组名一并清掉。
+  async function removeGroup(wsId) {
+    const found = groups[wsId]
+    if (!found) return
+    const ids = found.items.map((item) => item.id).filter(Boolean)
+    disposeGroup(wsId)
+    if (groupNames.value[wsId]) {
+      const next = { ...groupNames.value }
+      delete next[wsId]
+      groupNames.value = next
+    }
+    await Promise.all(ids.map((id) => api.terminalClose(wsId, id).catch(() => {})))
+  }
+
   function disposeAll() {
     for (const found of Object.values(groups)) {
       for (const slot of found.items) {
@@ -237,6 +251,7 @@ export const useTerminalsStore = defineStore('terminals', () => {
     renameGroup,
     shown,
     closeSlot,
+    removeGroup,
     disposeGroup,
     disposeAll,
   }
