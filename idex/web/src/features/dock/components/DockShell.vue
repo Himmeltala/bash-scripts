@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 09:35:55
+ * @LastEditTime: 2026-11-26 10:24:10
  * @FilePath: \idex\web\src\features\dock\components\DockShell.vue
  * @Description: macOS 式底部 Dock：一排入口图标，点开从下方呼出面板并把 Dock 盖住。
 -->
@@ -50,6 +50,7 @@
       <div class="dock-panel-bar">
         <v-icon size="16">{{ activeView?.icon }}</v-icon>
         <span class="dock-panel-title">{{ activeView?.title }}</span>
+        <slot name="panel-bar" :view="activeView" />
         <v-spacer />
         <v-btn
           icon="mdi-chevron-down"
