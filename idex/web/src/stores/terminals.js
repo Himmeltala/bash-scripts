@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:34:00
+ * @LastEditTime: 2026-11-26 11:20:00
  * @FilePath: \idex\web\src\stores\terminals.js
  * @Description: 跨工作区的终端会话表；xterm、连接与 DOM 都由这里持有，切页签不销毁。
  */
@@ -39,12 +39,14 @@ export const useTerminalsStore = defineStore('terminals', () => {
     return next
   }
 
+  // 读的时候不建组：渲染期改响应式状态会触发多余的更新。
   function list(wsId) {
-    return group(wsId).items
+    return groups[wsId]?.items || []
   }
 
   function activeSlot(wsId) {
-    const found = group(wsId)
+    const found = groups[wsId]
+    if (!found) return null
     return found.items.find((item) => item.key === found.activeKey) || found.items[0] || null
   }
 
@@ -105,6 +107,18 @@ export const useTerminalsStore = defineStore('terminals', () => {
     }
   }
 
+  // 工作区被移出：断连接、销毁终端，再把这一组从表里删掉。
+  function disposeGroup(wsId) {
+    const found = groups[wsId]
+    if (!found) return
+    for (const slot of found.items) {
+      slot.conn?.close()
+      slot.term?.dispose()
+    }
+    if (viewWsId.value === wsId) viewWsId.value = ''
+    delete groups[wsId]
+  }
+
   function disposeAll() {
     for (const found of Object.values(groups)) {
       for (const slot of found.items) {
@@ -127,6 +141,7 @@ export const useTerminalsStore = defineStore('terminals', () => {
     setView,
     shown,
     closeSlot,
+    disposeGroup,
     disposeAll,
   }
 })

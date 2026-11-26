@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:52:00
+ * @LastEditTime: 2026-11-26 11:20:00
  * @FilePath: \idex\web\src\features\dock\components\DockShell.vue
  * @Description: macOS 式底部 Dock：一排入口图标，点开从下方呼出面板并把 Dock 盖住。
 -->
@@ -41,41 +41,43 @@
       :style="panelStyle"
     >
       <SplitHandle
-        v-if="placement === 'bottom'"
-        axis="y"
+        class="edge"
+        :axis="horizontal ? 'x' : 'y'"
         :active="dragging"
         @start="startDrag"
         @reset="resetDrag"
       />
-      <div class="dock-panel-bar">
-        <v-icon size="16">{{ activeView?.icon }}</v-icon>
-        <span class="dock-panel-title">{{ activeView?.title }}</span>
-        <slot name="panel-bar" :view="activeView" />
-        <v-spacer />
-        <v-btn
-          v-for="side in SIDES"
-          :key="side.value"
-          :icon="side.icon"
-          :title="side.title"
-          :color="placement === side.value ? 'primary' : undefined"
-          size="x-small"
-          variant="text"
-          @click="dock.setPlacement(activeView?.id, side.value)"
-        />
-        <v-btn
-          icon="mdi-chevron-down"
-          size="x-small"
-          variant="text"
-          title="收起面板"
-          @click="dock.open = false"
-        />
-      </div>
-      <div class="dock-panel-body">
-        <component
-          :is="currentView"
-          :ws-id="wsId"
-          @close-dock="dock.open = false"
-        />
+      <div class="dock-panel-inner">
+        <div class="dock-panel-bar">
+          <v-icon size="16">{{ activeView?.icon }}</v-icon>
+          <span class="dock-panel-title">{{ activeView?.title }}</span>
+          <slot name="panel-bar" :view="activeView" />
+          <v-spacer />
+          <v-btn
+            v-for="side in SIDES"
+            :key="side.value"
+            :icon="side.icon"
+            :title="side.title"
+            :color="placement === side.value ? 'primary' : undefined"
+            size="x-small"
+            variant="text"
+            @click="dock.setPlacement(activeView?.id, side.value)"
+          />
+          <v-btn
+            icon="mdi-chevron-down"
+            size="x-small"
+            variant="text"
+            title="收起面板"
+            @click="dock.open = false"
+          />
+        </div>
+        <div class="dock-panel-body">
+          <component
+            :is="currentView"
+            :ws-id="wsId"
+            @close-dock="dock.open = false"
+          />
+        </div>
       </div>
     </div>
   </Transition>
@@ -84,7 +86,7 @@
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { SplitHandle } from '@bash-scripts/web-shared/layouts'
-import { DEFAULT_DOCK_HEIGHT, useDockStore } from '../../../stores/dock'
+import { DEFAULT_DOCK_HEIGHT, DEFAULT_DOCK_WIDTH, useDockStore } from '../../../stores/dock'
 import { DOCK_VIEWS } from '../lib/views'
 import DockItem from './DockItem.vue'
 
@@ -127,9 +129,11 @@ const SIDES = [
 const placement = computed(() =>
   dock.placementOf(activeView.value?.id, activeView.value?.placement || 'bottom'),
 )
+// 左右呼出时拖宽度，上下呼出时拖高度。
+const horizontal = computed(() => placement.value === 'left' || placement.value === 'right')
 const panelStyle = computed(() =>
-  placement.value === 'left' || placement.value === 'right'
-    ? { width: `${Math.min(520, Math.round(window.innerWidth * 0.42))}px` }
+  horizontal.value
+    ? { width: `${Math.min(dock.width, Math.round(window.innerWidth * 0.9))}px` }
     : { height: `${dock.height}px` },
 )
 
@@ -183,14 +187,16 @@ onBeforeUnmount(() => {
 })
 
 const dragging = ref(false)
+let startX = 0
 let startY = 0
-let startHeight = 0
+let startSize = 0
 
 function startDrag(event) {
   if (event.button !== 0) return
   dragging.value = true
+  startX = event.clientX
   startY = event.clientY
-  startHeight = dock.height
+  startSize = horizontal.value ? dock.width : dock.height
   event.preventDefault()
   document.body.classList.add('web-shared-resizing')
   window.addEventListener('pointermove', onDrag)
@@ -198,8 +204,20 @@ function startDrag(event) {
 }
 
 function onDrag(event) {
-  const next = startHeight + (startY - event.clientY)
-  dock.height = Math.max(160, Math.min(window.innerHeight - 220, next))
+  // 往面板里侧拖是变大，方向按呼出边换。
+  const delta = horizontal.value
+    ? placement.value === 'left'
+      ? event.clientX - startX
+      : startX - event.clientX
+    : placement.value === 'top'
+      ? event.clientY - startY
+      : startY - event.clientY
+  const next = startSize + delta
+  if (horizontal.value) {
+    dock.width = Math.max(260, Math.min(window.innerWidth - 360, next))
+  } else {
+    dock.height = Math.max(160, Math.min(window.innerHeight - 220, next))
+  }
 }
 
 function stopDrag() {
@@ -210,7 +228,8 @@ function stopDrag() {
 }
 
 function resetDrag() {
-  dock.height = DEFAULT_DOCK_HEIGHT
+  if (horizontal.value) dock.width = DEFAULT_DOCK_WIDTH
+  else dock.height = DEFAULT_DOCK_HEIGHT
 }
 </script>
 
@@ -255,11 +274,28 @@ function resetDrag() {
 }
 .dock-panel {
   position: fixed;
-  z-index: 21;
+  /* 顶栏是 1004，面板得压过它，左右呼出才不会被遮。 */
+  z-index: 1100;
   display: flex;
   flex-direction: column;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.22);
+}
+/* 左右呼出时面板横着排：内容一栏，分隔条贴内侧那条边。 */
+.dock-panel-left,
+.dock-panel-right {
+  flex-direction: row;
+}
+.dock-panel-top .edge,
+.dock-panel-left .edge {
+  order: 10;
+}
+.dock-panel-inner {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .dock-panel-bottom {
   left: 0;

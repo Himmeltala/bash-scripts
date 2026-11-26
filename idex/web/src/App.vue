@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:34:00
+ * @LastEditTime: 2026-11-26 11:20:00
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -91,7 +91,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './features/workspaces/components/WorkspaceList.vue'
 import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
@@ -143,6 +143,8 @@ let metricsSource = null
 
 function select(id) {
   currentId.value = id || ''
+  // 切工作区时 Dock 跟着看新工作区的终端组；重复点同一行也算回到这一组。
+  if (id) terminals.setView(id)
 }
 
 const preferences = usePreferencesStore()
@@ -150,11 +152,6 @@ const terminals = useTerminalsStore()
 const dock = useDockStore()
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
-
-// 切工作区时 Dock 跟着看新工作区的终端组；点标题栏别的组只在 Dock 里换，不动工作区。
-watch(currentId, (id) => {
-  if (id) terminals.setView(id)
-})
 
 // 设置存在服务端：启动时应用编辑器配色与代码地图开关，保存后重新读一遍。
 async function loadSettings() {
@@ -175,7 +172,9 @@ function onGlobalKey(event) {
     if (!currentId.value) return
     event.preventDefault()
     dock.toggle('terminal')
-    if (dock.open && currentId.value) terminals.ensureSlot(currentId.value)
+    // 只看别组时不要在当前工作区凭空新建终端。
+    if (!dock.open) return
+    if (terminals.shown(currentId.value) === currentId.value) terminals.ensureSlot(currentId.value)
     return
   }
   if (!dock.open || dock.view !== 'terminal' || !currentId.value) return
@@ -194,7 +193,10 @@ function onGlobalKey(event) {
     terminals.closeSlot(target, slot.key).then(() => {
       if (terminals.list(target).length) return
       if (target === currentId.value) dock.open = false
-      else terminals.setView(currentId.value)
+      else {
+        terminals.setView(currentId.value)
+        terminals.ensureSlot(currentId.value)
+      }
     })
   }
 }
@@ -228,6 +230,13 @@ async function setGroups(nodes) {
 function applyState(data) {
   state.workspaces = data.workspaces || []
   state.groups = data.groups || []
+  // 工作区被移出后，它名下的终端也跟着收掉，别把 Dock 留在一个不存在的组上。
+  for (const wsId of Object.keys(terminals.groups)) {
+    if (!state.workspaces.some((w) => w.id === wsId)) terminals.disposeGroup(wsId)
+  }
+  if (terminals.viewWsId && !state.workspaces.some((w) => w.id === terminals.viewWsId)) {
+    terminals.setView(currentId.value)
+  }
   // 没选中或选中的已经移出时，落到第一个；列表空着就清空选中。
   if (!currentId.value && state.workspaces.length) select(state.workspaces[0].id)
   else if (currentId.value && !current.value) select('')

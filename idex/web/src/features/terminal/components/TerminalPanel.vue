@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:34:00
+ * @LastEditTime: 2026-11-26 11:20:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalPanel.vue
  * @Description: 终端视图内容：多个终端标签与各自的 xterm；外壳由 DockShell 提供。
 -->
@@ -77,9 +77,11 @@ async function closeTab(key) {
   if (!id || !key) return
   await store.closeSlot(id, key)
   if (items.value.length) return
-  // 别组关空了就回当前工作区；当前工作区关空了收起 Dock。
-  if (id !== props.wsId) store.setView(props.wsId)
-  else emit('close-dock')
+  // 别组关空了就回当前工作区并补一个终端；当前工作区关空了收起 Dock。
+  if (id !== props.wsId) {
+    store.setView(props.wsId)
+    store.ensureSlot(props.wsId)
+  } else emit('close-dock')
 }
 </script>
 
