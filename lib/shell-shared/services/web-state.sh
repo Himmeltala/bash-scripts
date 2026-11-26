@@ -113,15 +113,12 @@ web_write_lines() {
 
 # 只收形状认得出的行：首列决定后面有几列，写坏的行丢掉，不让一行打乱整份状态。
 web_state_load() {
-  local line want
+  local line
   STATE_LINES=()
   [[ -f "$WEB_STATE_FILE" ]] || return 0
-  # 循环体一律执行，别用 && 串：跳过的条件会悄悄吃掉最后一行。
+  # 只留首列认得出的行；这里不切列，切列交给真正要用的地方，省掉每行一次 herestring。
   while IFS= read -r line; do
-    want=${WEB_STATE_WIDTHS[${line%%"$FS"*}]:-}
-    [[ -n "$want" ]] || continue
-    web_split "$line"
-    ((STATE_WIDTH == want)) && STATE_LINES+=("$line")
+    [[ -n "${WEB_STATE_WIDTHS[${line%%"$FS"*}]:-}" ]] && STATE_LINES+=("$line")
   done <"$WEB_STATE_FILE"
 }
 

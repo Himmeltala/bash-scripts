@@ -21,6 +21,7 @@ const nodeClient = createToolApi('/__idex/api/node')
 export const nodeApi = {
   ...nodeClient.api,
   nodes: () => nodeClient.call('GET', '/nodes'),
+  runs: () => nodeClient.call('GET', '/runs'),
   rescanStatus: (ws) => nodeClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
   restart: (run) => nodeClient.call('POST', '/restart', { run }),
   setNode: (ws, node) => nodeClient.call('POST', '/node', { ws, node }),
@@ -32,6 +33,7 @@ const jvmClient = createToolApi('/__idex/api/jvm')
 export const jvmApi = {
   ...jvmClient.api,
   jdks: () => jvmClient.call('GET', '/jdks'),
+  runs: () => jvmClient.call('GET', '/runs'),
   rescanStatus: (ws) => jvmClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
   setJdk: (ws, jdk) => jvmClient.call('POST', '/jdk', { ws, jdk }),
   restart: (run) => jvmClient.call('POST', '/restart', { run }),

@@ -40,6 +40,8 @@ source "$repo"/lib/shell-shared/services/web-state.sh
 
 # 缺省值在这里定。停止时先 TERM，这么多秒还没退干净再 KILL。
 RV_GRACE=15
+# 已结束的运行记录最多留这么多条，多了从最旧的开始丢。
+RUN_HISTORY_KEEP=200
 
 readonly WEB_HOME="$CACHE_DIR/web"
 readonly WEB_STATE_FILE="$WEB_HOME/state.tsv"
@@ -436,24 +438,44 @@ web_advance() {
 # 收拾一遍在跑的记录，页面每隔两秒调一次。
 web_poll() {
   local ws=$1 row idx status changed=0
+  local -a finished=()
   web_lock || return
   web_state_load
   idx=0
+  # 直接读 web_split 切好的 FRAG：一条记录套几个 $(web_col ...) 就等于几次 fork，
+  # 历史越长越慢；轮询走的是内建，多了几十条记录也不明显。
   for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
     WEB_AT=$idx
     idx=$((idx + 1))
     [[ ${row%%"$FS"*} == "$RUN_KIND" ]] || continue
-    if [[ -n "$ws" ]] && [[ "$(web_col "$row" 3)" != "$ws" ]]; then
+    web_split "$row"
+    status=${FRAG[RUN_COL_STATUS - 1]}
+    case "$status" in
+      starting|ready) ;;
+      *) finished+=("$WEB_AT") ;;
+    esac
+    if [[ -n "$ws" ]] && [[ "${FRAG[2]}" != "$ws" ]]; then
       continue
     fi
-    status=$(web_col "$row" "$RUN_COL_STATUS")
     case "$status" in
       starting|ready) ;;
       *) continue ;;
     esac
-    web_advance "$(web_col "$row" 2)" "$(web_col "$row" 3)" \
-      "$(web_col "$row" "$RUN_COL_PID")" "$status" && changed=1
+    web_advance "${FRAG[1]}" "${FRAG[2]}" "${FRAG[RUN_COL_PID - 1]}" "$status" && changed=1
   done
+  # 已结束的 run 行只留最近这么多条，状态文件不跟着构建次数无限长。
+  if (( ${#finished[@]} > RUN_HISTORY_KEEP )); then
+    local -A drop=()
+    local excess=$(( ${#finished[@]} - RUN_HISTORY_KEEP )) i keep=()
+    for ((i = 0; i < excess; i++)); do drop[${finished[i]}]=1; done
+    idx=0
+    for row in "${STATE_LINES[@]+"${STATE_LINES[@]}"}"; do
+      [[ -n "${drop[$idx]:-}" ]] || keep+=("$row")
+      idx=$((idx + 1))
+    done
+    STATE_LINES=("${keep[@]}")
+    changed=1
+  fi
   ((changed)) && web_state_save
   web_unlock
 }
@@ -641,7 +663,8 @@ web_engine() {
       delcmd) web_custom_del "$(web_col "$req" 2)" || rc=$? ;;
       *) web_fail "网页请求不认识：$op" "$EXIT_USAGE" || rc=$? ;;
     esac
-    web_poll ''
+    # 只有心跳要收拾在跑的记录；别的请求顺带跑一遍等于每条都多花二十毫秒。
+    [[ "$op" == tick ]] && web_poll ''
     if ((rc)); then
       printf 'fail\n'
       continue

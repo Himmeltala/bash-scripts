@@ -294,6 +294,26 @@ class App:
         self._static_cache[ws.get("id")] = (fingerprint, data)
         return data
 
+    def runs_summary(self):
+        """顶栏运行清单：每个服务最新一条，字段与状态页签的 run 对齐。"""
+        rows = []
+        for svc, run in self.runs.latest_map().items():
+            rows.append(
+                {
+                    "ws": run.get("ws", ""),
+                    "svc": svc,
+                    "id": run.get("id", ""),
+                    "type": run.get("type", ""),
+                    "tag": run.get("tag", ""),
+                    "display": run.get("display", ""),
+                    "cmd": run.get("cmd", ""),
+                    "port": run.get("port", ""),
+                    "status": run.get("status", ""),
+                    "started": run.get("started", 0),
+                }
+            )
+        return {"runs": rows}
+
     def state_payload(self):
         self.runs.advance()
         workspaces = self.store.workspaces()

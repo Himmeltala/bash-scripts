@@ -11,6 +11,7 @@
 """
 
 import threading
+import time
 from pathlib import Path
 
 from browse import list_dirs
@@ -18,6 +19,23 @@ from engines.node.engine import current_node_version, discover_nodes
 from runner import run_log_path
 from sse import SSEMixin
 from web import ApiError, STREAMED, log
+
+# Node 候选要扫四个目录再跑一次 `node --version`；一分钟内复用同一份，别每开页面都扫。
+_NODES_TTL = 60
+_nodes_cache = {"at": 0.0, "data": None}
+_nodes_lock = threading.Lock()
+
+
+def nodes_payload():
+    now = time.time()
+    with _nodes_lock:
+        if _nodes_cache["data"] is not None and now - _nodes_cache["at"] < _NODES_TTL:
+            return _nodes_cache["data"]
+    data = {"nodes": discover_nodes(), "current": current_node_version()}
+    with _nodes_lock:
+        _nodes_cache["at"] = now
+        _nodes_cache["data"] = data
+    return data
 
 # 这些路由要写状态文件或动进程，POST 之外的方法一律不接。
 _WRITE_ROUTES = ("start", "stop", "restart", "update", "rescan", "addcmd", "delcmd", "node")
@@ -75,8 +93,10 @@ class NodeRoutes(SSEMixin):
         if route == "rescan/status":
             wid = str((query.get("ws") or [""])[0]).strip()
             return self._node_rescan_status(wid)
+        if route == "runs":
+            return self.node_service.runs_summary()
         if route == "nodes":
-            return {"nodes": discover_nodes(), "current": current_node_version()}
+            return nodes_payload()
         if route == "log":
             return self._node_log_page(query)
         if route == "log/stream":

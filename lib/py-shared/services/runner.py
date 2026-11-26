@@ -230,10 +230,10 @@ class EngineClient:
         self.proc.stdin.flush()
 
     def _readline(self):
-        """读回一行。不能用 readline：管道不缓冲时它一次只给一个字节，行就断了。"""
+        """读回一行。按块读进缓冲再切行，别一个字节一次系统调用。"""
         stdout = self.proc.stdout
         while b"\n" not in self._buffer:
-            chunk = stdout.read(1)
+            chunk = os.read(stdout.fileno(), 65536)
             if not chunk:
                 raise ApiError(502, "%s 执行端退出了，看服务端的输出" % self.label)
             self._buffer += chunk
@@ -280,12 +280,24 @@ class EngineClient:
     def call(self, op, *params):
         """发一条请求，返回数据行（有的话）。"""
         with self.lock:
-            if self.proc is not None and self._buffer:
-                log("丢掉上一次没读完的一行：%r" % self._buffer)
-                self._buffer = b""
-            if self.proc is None or self.proc.poll() is not None:
-                self._spawn()
-            return self._request(op, *params)
+            return self._call_locked(op, *params)
+
+    def try_call(self, op, *params):
+        """抢不到锁就跳过这一轮：扫描要几秒，心跳不必排它后面。"""
+        if not self.lock.acquire(blocking=False):
+            return None
+        try:
+            return self._call_locked(op, *params)
+        finally:
+            self.lock.release()
+
+    def _call_locked(self, op, *params):
+        if self.proc is not None and self._buffer:
+            log("丢掉上一次没读完的一行：%r" % self._buffer)
+            self._buffer = b""
+        if self.proc is None or self.proc.poll() is not None:
+            self._spawn()
+        return self._request(op, *params)
 
 
 class ToolEngine(EngineClient):

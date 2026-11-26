@@ -95,6 +95,8 @@ class JvmRoutes(SSEMixin):
         if route == "rescan/status":
             wid = str((query.get("ws") or [""])[0]).strip()
             return self._jvm_rescan_status(wid)
+        if route == "runs":
+            return self.jvm_app.runs_summary()
         if route == "jdks":
             self._require_local("读取 JDK 列表")
             return {"jdks": self.jvm_app.jdks(), "current": os.environ.get("JAVA_HOME", "")}

@@ -248,7 +248,7 @@ const engineId = computed(() => {
   return (node && node.id) || ''
 })
 
-const { ws: engineWs, registered, loading, error, refresh, reload } = useToolWorkspace({
+const { ws: engineWs, registered, loading, error, reload } = useToolWorkspace({
   api: nodeApi,
   engineId: () => engineId.value,
   localApi: toolsApi,
@@ -362,7 +362,6 @@ async function setNode(node) {
   try {
     await nodeApi.setNode(props.ws.id, node)
     toast(node ? 'Node 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
-    await refresh()
   } catch (err) {
     toast(`设置 Node 失败：${err.message}`, 'error')
   }
@@ -378,7 +377,6 @@ async function rescan() {
   try {
     await nodeApi.rescan(props.ws.id)
     toast('已开始重新扫描', 'primary')
-    await refresh()
   } catch (err) {
     toast(`重新扫描失败：${err.message}`, 'error')
   } finally {
@@ -390,7 +388,6 @@ async function startService(payload) {
   try {
     await nodeApi.start(payload)
     toast('已发出启动', 'primary')
-    await refresh()
   } catch (err) {
     toast(`启动失败：${err.message}`, 'error')
   }
@@ -399,8 +396,7 @@ async function startService(payload) {
 async function stopService(runId) {
   try {
     await nodeApi.stop(runId)
-    toast('已停止', 'primary')
-    await refresh()
+    toast('已发出停止', 'primary')
   } catch (err) {
     toast(`停止失败：${err.message}`, 'error')
   }
@@ -415,7 +411,6 @@ async function restart(row) {
   try {
     await nodeApi.restart(row.run.id)
     toast('已发出重启', 'primary')
-    await refresh()
   } catch (err) {
     toast(`重启失败：${err.message}`, 'error')
   } finally {
@@ -511,7 +506,6 @@ async function onSave({ args }) {
   try {
     await nodeApi.update({ svc: settings.svc.id, args })
     toast('参数已保存', 'primary')
-    await refresh()
   } catch (err) {
     toast(`保存参数失败：${err.message}`, 'error')
   }

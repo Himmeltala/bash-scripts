@@ -393,6 +393,30 @@ class EngineProtocolTest(unittest.TestCase):
         dev = next(item for item in ws["services"] if item["type"] == "dev")
         self.assertEqual(dev["cmd"], "npm run dev")
 
+    def test_tick_trims_finished_run_history(self):
+        self.eng.add_workspace(str(self.root))
+        path = self.home / "state.tsv"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        # 205 条已结束 + 1 条在跑；心跳后应只留最近 200 条已结束，在跑的不动。
+        for index in range(205):
+            lines.append(
+                FS.join(
+                    ["run", "r%d" % index, "w1", "dev", "t", ".", ".", ".", ".", "x", "pnpm x", "", "", "exited", "1", "0", ""]
+                )
+            )
+        lines.append(
+            FS.join(
+                ["run", "live", "w1", "dev", "t", ".", ".", ".", ".", "x", "pnpm x", "999", "", "starting", "2", "", ""]
+            )
+        )
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        self.eng.call("tick")
+
+        rows = [line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("run" + FS)]
+        self.assertEqual(len([r for r in rows if r.split(FS)[13] == "exited"]), 200)
+        self.assertIn("live", [r.split(FS)[1] for r in rows])
+
     def test_reserve_launched_and_stop_keep_state(self):
         self.eng.add_workspace(str(self.root))
         ws = self.state.snapshot()["workspaces"][0]

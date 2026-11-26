@@ -57,9 +57,12 @@ class RecordingEngine:
     def call(self, op, *params):
         self.calls.append((op, params))
         return ""
+    # 状态回话改用非阻塞心跳：抢不到引擎锁就不 tick。
+    try_call = call
 
 class ExplodingEngine:
     def call(self, op, *params): raise ApiError(502, "引擎断开")
+    try_call = call
 
 class NodeDispatchTest(unittest.TestCase):
     def make(self):

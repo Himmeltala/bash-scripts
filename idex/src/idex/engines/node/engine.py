@@ -149,13 +149,24 @@ class CustomStore(LineStore):
 
     def __init__(self, path):
         LineStore.__init__(self, path, allow_empty=True)
+        # 每次状态推送都会问一遍；文件没变就不重读重切。
+        self._ids = None
+        self._ids_mtime = None
 
     def ids(self):
+        try:
+            mtime = self.path.stat().st_mtime_ns
+        except OSError:
+            mtime = None
+        if self._ids is not None and mtime == self._ids_mtime:
+            return self._ids
         out = set()
         for ws, rest in self.all().items():
             parts = rest.split(FS)
             if len(parts) >= 3 and ws and parts[0] and parts[2]:
                 out.add("%s.%s.%s" % (ws, parts[0], parts[2]))
+        self._ids = out
+        self._ids_mtime = mtime
         return out
 
 
@@ -188,7 +199,7 @@ class State(StateRows):
             elif r[0] == SCRIPT_KIND:
                 scripts.setdefault(r[2], []).append({"rel": r[1], "name": r[3]})
 
-        for r in self.rows():
+        for r in rows:
             if r[0] != SVC_KIND:
                 continue
             ws = by_id.get(r[2])
@@ -309,7 +320,8 @@ class NodeService:
         self.state_stream = StateStream(
             watched,
             build=self.state_payload,
-            tick=lambda: self.engine.call("tick"),
+            # 引擎正忙着扫描时这一轮直接跳过，别让心跳排在扫描后面。
+            tick=lambda: self.engine.try_call("tick"),
         )
         self.metrics_stream = MetricsStream(self.metrics)
 
@@ -344,10 +356,31 @@ class NodeService:
 
     # 状态与动作
 
+    def runs_summary(self):
+        """顶栏运行清单：每个服务最新一条，只给页面要的几列，不拼整份状态。"""
+        rows = []
+        for svc, run in latest_runs(self.state.rows()).items():
+            info = run_info(run)
+            rows.append(
+                {
+                    "ws": info.get("ws", ""),
+                    "svc": svc,
+                    "id": info.get("id", ""),
+                    "type": info.get("type", ""),
+                    "tag": svc.split(".", 2)[-1],
+                    "display": info.get("display", ""),
+                    "cmd": info.get("cmd", ""),
+                    "port": info.get("port", ""),
+                    "status": info.get("status", ""),
+                    "started": info.get("started", 0),
+                }
+            )
+        return {"runs": rows}
+
     def state_payload(self):
         # 与原 nodex 的状态接口一致：取状态前先让引擎收拾一遍在跑的记录。
         try:
-            self.engine.call("tick")
+            self.engine.try_call("tick")
         except ApiError as exc:
             log("tick 失败：%s" % exc.message)
         return state_payload(self.state, self.nodes, self.aliases, self.custom, self.layout)
