@@ -15,7 +15,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { basicSetup } from 'codemirror'
+import { editorSetup } from '../core/setup.js'
 import { foldEffect, unfoldEffect } from '@codemirror/language'
 import { Compartment, EditorState, Prec, StateEffect } from '@codemirror/state'
 import { EditorView, GutterMarker, gutter, keymap } from '@codemirror/view'
@@ -23,6 +23,7 @@ import { indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
 import { autocompletion, startCompletion } from '@codemirror/autocomplete'
 import { lintGutter, setDiagnostics } from '@codemirror/lint'
+import { search } from '@codemirror/search'
 import { symbolAt } from '@bash-scripts/web-shared'
 import { handlerOf } from '../core/handlers/registry.js'
 import { languageExtension } from '../core/languageExtension.js'
@@ -374,7 +375,8 @@ function diffGutter() {
 
 function buildExtensions() {
   return [
-    basicSetup,
+    editorSetup,
+    search(),
     appearance.of(editorThemeExtensions(props.theme)),
     minimapConf.of(minimapExtension(props.minimap, minimapMarks())),
     indentUnit.of('    '),

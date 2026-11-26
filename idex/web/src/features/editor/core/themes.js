@@ -98,6 +98,22 @@ const PALETTES = {
   },
 }
 
+// 折叠标记换成了 MDI 图标，量一下尺寸，免得图标把行高撑开。
+function foldIconStyle() {
+  return {
+    '.cm-foldGutter .cm-fold-icon': {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '14px',
+      height: '14px',
+      fontSize: '14px',
+      lineHeight: '1',
+      opacity: '0.75',
+    },
+  }
+}
+
 // 字符级差异用背景色标出，不画下划线，和 VS Code 的差异编辑器一致。
 function diffTextStyle() {
   return {
@@ -141,6 +157,7 @@ function chrome(palette) {
         color: palette.fg,
         border: `1px solid ${palette.border}`,
       },
+      ...foldIconStyle(),
       ...diffTextStyle(),
     },
     { dark: palette.dark },
@@ -236,6 +253,7 @@ function autoTheme() {
         color: 'rgb(var(--v-theme-on-surface))',
         border: '1px solid rgba(var(--v-theme-on-surface), 0.12)',
       },
+      ...foldIconStyle(),
       ...diffTextStyle(),
     }),
   ]

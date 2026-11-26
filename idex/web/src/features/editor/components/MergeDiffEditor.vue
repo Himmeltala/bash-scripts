@@ -15,13 +15,14 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { basicSetup } from 'codemirror'
+import { editorSetup } from '../core/setup.js'
 import { indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { autocompletion, startCompletion } from '@codemirror/autocomplete'
 import { lintGutter } from '@codemirror/lint'
+import { search } from '@codemirror/search'
 import { MergeView, unifiedMergeView } from '@codemirror/merge'
 import { symbolAt } from '@bash-scripts/web-shared'
 import { handlerOf } from '../core/handlers/registry.js'
@@ -289,7 +290,8 @@ function minimapOn() {
 
 function editorExtensions(readonly) {
   const extensions = [
-    basicSetup,
+    editorSetup,
+    search(),
     appearance.of(editorThemeExtensions(props.theme)),
     minimapConf.of(minimapOn() ? minimapExtension(true) : []),
     indentUnit.of('    '),

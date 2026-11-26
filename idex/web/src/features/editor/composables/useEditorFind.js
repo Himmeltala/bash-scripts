@@ -69,6 +69,11 @@ export function useEditorFind(getView) {
   function step(direction) {
     const view = getView()
     if (!view) return
+    // 空查询会让 CodeMirror 退回自带的搜索面板，这里直接不动。
+    if (!find.text) {
+      find.count = ''
+      return
+    }
     refresh()
     const hit = direction > 0 ? findNext(view) : findPrevious(view)
     find.count = hit ? find.count : '没找到'
