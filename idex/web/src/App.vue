@@ -111,6 +111,7 @@ import { api, metricsEventsUrl, stateEventsUrl } from './utils/api'
 import { snack, toast } from './utils/notice'
 import { usePreferencesStore } from './stores/preferences'
 import { SHORTCUT_DEFAULTS, matchesBinding } from './features/settings/lib/shortcuts'
+import { applyEditorFont } from './features/editor/core/fonts'
 import { useTerminalsStore } from './stores/terminals'
 import { useDockStore } from './stores/dock'
 import { rememberTheme } from './plugins/vuetify'
@@ -165,6 +166,8 @@ async function loadSettings() {
     preferences.minimap = !!data.minimap
     preferences.shortcuts = { ...SHORTCUT_DEFAULTS, ...(data.shortcuts || {}) }
     preferences.terminal = { ...(data.defaults?.terminal || {}), ...(data.terminal || {}) }
+    preferences.editorFont = { ...(data.defaults?.editor_font || {}), ...(data.editor_font || {}) }
+    applyEditorFont(preferences.editorFont)
     preferences.animation = { ...(data.defaults?.animation || {}), ...(data.animation || {}) }
   } catch (err) {
     // 读不到就沿用本地默认值。

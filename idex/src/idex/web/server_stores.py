@@ -64,6 +64,18 @@ TERMINAL_DEFAULTS = {
 TERMINAL_CURSORS = ("block", "bar", "underline")
 TERMINAL_WEIGHTS = ("normal", "bold", "500")
 
+# 编辑器字体：与终端分开存，改编辑器不影响终端。
+EDITOR_FONT_DEFAULTS = {
+    "font_family": (
+        "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', "
+        "'PingFang SC', 'Microsoft YaHei', sans-serif"
+    ),
+    "font_size": 14,
+    "line_height": 1.6,
+    "font_weight": "normal",
+    "letter_spacing": 0,
+}
+
 
 # 全局动画方案：预设一套手感，速度再整体缩放。
 ANIMATION_PRESETS = ("none", "quick", "standard", "spring", "soft")
@@ -76,6 +88,7 @@ SETTINGS_DEFAULTS = {
     "minimap": False,
     "shortcuts": dict(SHORTCUT_DEFAULTS),
     "terminal": dict(TERMINAL_DEFAULTS),
+    "editor_font": dict(EDITOR_FONT_DEFAULTS),
     "animation": dict(ANIMATION_DEFAULTS),
 }
 
@@ -277,6 +290,9 @@ class Settings:
     def terminal(self):
         return clean_terminal(self.data().get("terminal"))
 
+    def editor_font(self):
+        return clean_editor_font(self.data().get("editor_font"))
+
     def animation(self):
         return clean_animation(self.data().get("animation"))
 
@@ -288,12 +304,14 @@ class Settings:
                 search_ignore=list(SETTINGS_DEFAULTS["search_ignore"]),
                 shortcuts=dict(SHORTCUT_DEFAULTS),
                 terminal=dict(TERMINAL_DEFAULTS),
+                editor_font=dict(EDITOR_FONT_DEFAULTS),
                 animation=dict(ANIMATION_DEFAULTS),
             ),
             "editor_theme": self.editor_theme(),
             "minimap": self.minimap(),
             "shortcuts": self.shortcuts(),
             "terminal": self.terminal(),
+            "editor_font": self.editor_font(),
             "animation": self.animation(),
         }
 
@@ -330,6 +348,14 @@ class Settings:
                 if not isinstance(current, dict):
                     current = {}
                 data["terminal"] = clean_terminal({**current, **incoming})
+            if "editor_font" in body:
+                incoming = body.get("editor_font")
+                if not isinstance(incoming, dict):
+                    incoming = {}
+                current = data.get("editor_font")
+                if not isinstance(current, dict):
+                    current = {}
+                data["editor_font"] = clean_editor_font({**current, **incoming})
             write_json(self.path, data, indent=2, ensure_ascii=False)
         return self.payload()
 
@@ -387,6 +413,36 @@ def clean_terminal(values):
     scrollback = values.get("scrollback")
     if isinstance(scrollback, (int, float)) and not isinstance(scrollback, bool):
         out["scrollback"] = max(1000, min(100000, int(scrollback)))
+
+    return out
+
+
+def clean_editor_font(values):
+    """编辑器字体按范围收：枚举只认登记值，数字钳到区间，写坏的字段退回默认。"""
+    out = dict(EDITOR_FONT_DEFAULTS)
+    if not isinstance(values, dict):
+        return out
+
+    family = values.get("font_family")
+    if isinstance(family, str):
+        out["font_family"] = " ".join(family.split())[:300] or EDITOR_FONT_DEFAULTS["font_family"]
+
+    size = values.get("font_size")
+    if isinstance(size, (int, float)) and not isinstance(size, bool):
+        number = float(size)
+        out["font_size"] = round(max(4, min(48, number if number > 0 else 14)), 1)
+
+    height = values.get("line_height")
+    if isinstance(height, (int, float)) and not isinstance(height, bool):
+        out["line_height"] = round(max(1.0, min(3.0, float(height))), 2)
+
+    weight = values.get("font_weight")
+    if weight in TERMINAL_WEIGHTS:
+        out["font_weight"] = weight
+
+    spacing = values.get("letter_spacing")
+    if isinstance(spacing, (int, float)) and not isinstance(spacing, bool):
+        out["letter_spacing"] = round(max(-2, min(5, float(spacing))), 2)
 
     return out
 

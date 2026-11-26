@@ -10,7 +10,7 @@
 // savable 表示这类设置有没有「保存」动作；section 组件只需在打开时自己读数据。
 export const SETTINGS_SECTIONS = [
   { id: 'search', title: '搜索', icon: 'mdi-magnify', savable: true, resettable: true, load: () => import('../components/sections/SearchSettings.vue') },
-  { id: 'editor', title: '编辑器', icon: 'mdi-palette-outline', savable: false, resettable: true, load: () => import('../components/sections/EditorSettings.vue') },
+  { id: 'editor', title: '编辑器', icon: 'mdi-palette-outline', savable: true, resettable: true, load: () => import('../components/sections/EditorSettings.vue') },
   { id: 'terminal', title: '终端', icon: 'mdi-console', savable: true, resettable: true, load: () => import('../components/sections/TerminalSettings.vue') },
   { id: 'animation', title: '动画', icon: 'mdi-transition', savable: true, resettable: true, load: () => import('../components/sections/AnimationSettings.vue') },
   { id: 'shortcuts', title: '快捷键', icon: 'mdi-keyboard-outline', savable: true, resettable: true, load: () => import('../components/sections/ShortcutsSettings.vue') },

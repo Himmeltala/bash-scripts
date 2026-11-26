@@ -13,7 +13,14 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { EDITOR_THEME_OPTIONS } from './themeOptions.js'
 
-const CODE_FONT = 'var(--bash-font-mono)'
+// 字体、字号、行高、字重与字间距都由编辑器设置写到根节点，没设时退回应用默认等宽字体。
+const SCROLLER_FONT = {
+  fontFamily: 'var(--idex-editor-font, var(--bash-font-mono))',
+  fontSize: 'var(--idex-editor-size, var(--bash-code-size))',
+  lineHeight: 'var(--idex-editor-line-height, 1.6)',
+  fontWeight: 'var(--idex-editor-weight, normal)',
+  letterSpacing: 'var(--idex-editor-letter-spacing, normal)',
+}
 
 const PALETTES = {
   'github-light': {
@@ -141,7 +148,7 @@ function chrome(palette) {
   return EditorView.theme(
     {
       '&': { height: '100%', color: palette.fg, backgroundColor: palette.bg },
-      '.cm-scroller': { fontFamily: CODE_FONT, fontSize: 'var(--bash-code-size)', lineHeight: '1.6' },
+      '.cm-scroller': SCROLLER_FONT,
       '.cm-content': { caretColor: palette.fg },
       '.cm-gutters': {
         backgroundColor: palette.gutterBg,
@@ -234,7 +241,7 @@ function autoTheme() {
         color: 'rgb(var(--v-theme-on-surface))',
         backgroundColor: 'rgb(var(--v-theme-surface))',
       },
-      '.cm-scroller': { fontFamily: CODE_FONT, fontSize: 'var(--bash-code-size)', lineHeight: '1.6' },
+      '.cm-scroller': SCROLLER_FONT,
       '.cm-content': { caretColor: 'rgb(var(--v-theme-on-surface))' },
       '.cm-gutters': {
         backgroundColor: 'rgb(var(--v-theme-surface))',

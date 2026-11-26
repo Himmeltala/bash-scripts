@@ -1239,6 +1239,35 @@ class SearchSettings(unittest.TestCase):
         self.assertEqual(again.terminal()["cursor_style"], "bar")
         self.assertEqual(again.terminal()["font_size"], 48)
 
+    def test_editor_font_defaults_and_clamp(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        self.assertEqual(store.editor_font(), dict(gitmod.EDITOR_FONT_DEFAULTS))
+        payload = store.payload()
+        self.assertEqual(payload["editor_font"], dict(gitmod.EDITOR_FONT_DEFAULTS))
+        self.assertIn("editor_font", payload["defaults"])
+
+        store.update({"editor_font": {
+            "font_family": "  Fira   Code  ",
+            "font_size": 99,
+            "line_height": 5,
+            "font_weight": "heavy",
+            "letter_spacing": -9,
+        }})
+        got = gitmod.Settings(str(path)).editor_font()
+        self.assertEqual(got["font_family"], "Fira Code")
+        self.assertEqual(got["font_size"], 48)
+        self.assertEqual(got["line_height"], 3)
+        self.assertEqual(got["font_weight"], "normal")
+        self.assertEqual(got["letter_spacing"], -2)
+
+        # 没提到的字段保持原值，终端设置不受影响。
+        store.update({"editor_font": {"font_weight": "bold"}})
+        again = gitmod.Settings(str(path))
+        self.assertEqual(again.editor_font()["font_weight"], "bold")
+        self.assertEqual(again.editor_font()["font_size"], 48)
+        self.assertEqual(again.terminal(), dict(gitmod.TERMINAL_DEFAULTS))
+
     def test_animation_settings_defaults_and_clamp(self):
         path = self.base / "settings.json"
         store = gitmod.Settings(str(path))
