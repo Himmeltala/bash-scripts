@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 10:24:10
+ * @LastEditTime: 2026-11-26 10:52:00
  * @FilePath: \idex\web\src\features\dock\components\DockShell.vue
  * @Description: macOS 式底部 Dock：一排入口图标，点开从下方呼出面板并把 Dock 盖住。
 -->
@@ -52,6 +52,16 @@
         <span class="dock-panel-title">{{ activeView?.title }}</span>
         <slot name="panel-bar" :view="activeView" />
         <v-spacer />
+        <v-btn
+          v-for="side in SIDES"
+          :key="side.value"
+          :icon="side.icon"
+          :title="side.title"
+          :color="placement === side.value ? 'primary' : undefined"
+          size="x-small"
+          variant="text"
+          @click="dock.setPlacement(activeView?.id, side.value)"
+        />
         <v-btn
           icon="mdi-chevron-down"
           size="x-small"
@@ -107,7 +117,16 @@ const revealed = ref(false)
 // 鼠标停在 Dock 上不动超过这个时间也收起；有移动就重新计时。
 const IDLE_MS = 3000
 let hideTimer = 0
-const placement = computed(() => activeView.value?.placement || 'bottom')
+// 呼出方向按视图分开记：改终端的方向不影响日志。
+const SIDES = [
+  { value: 'left', icon: 'mdi-dock-left', title: '从左侧呼出' },
+  { value: 'bottom', icon: 'mdi-dock-bottom', title: '从下方呼出' },
+  { value: 'top', icon: 'mdi-dock-top', title: '从上方呼出' },
+  { value: 'right', icon: 'mdi-dock-right', title: '从右侧呼出' },
+]
+const placement = computed(() =>
+  dock.placementOf(activeView.value?.id, activeView.value?.placement || 'bottom'),
+)
 const panelStyle = computed(() =>
   placement.value === 'left' || placement.value === 'right'
     ? { width: `${Math.min(520, Math.round(window.innerWidth * 0.42))}px` }

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 10:52:00
  * @FilePath: \idex\web\src\stores\dock.js
  * @Description: 全局底部面板的展开状态、高度与当前视图；只记在本机。
  */
@@ -15,6 +15,17 @@ export const useDockStore = defineStore('dock', () => {
   const open = useLocalStorage('idex.terminal-open', false)
   const height = useLocalStorage('idex.terminal-height', DEFAULT_DOCK_HEIGHT)
   const view = useLocalStorage('idex.dock-view', 'terminal')
+  // 每个视图各记各的呼出方向；没记过的用视图登记表里的默认值。
+  const placements = useLocalStorage('idex.dock-placement', {})
+
+  function placementOf(id, fallback = 'bottom') {
+    return placements.value?.[id] || fallback
+  }
+
+  function setPlacement(id, placement) {
+    if (!id) return
+    placements.value = { ...placements.value, [id]: placement }
+  }
 
   function show(id = 'terminal') {
     view.value = id
@@ -29,5 +40,5 @@ export const useDockStore = defineStore('dock', () => {
     show(id)
   }
 
-  return { open, height, view, show, toggle }
+  return { open, height, view, placements, placementOf, setPlacement, show, toggle }
 })
