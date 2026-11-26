@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 10:34:00
  * @FilePath: \idex\web\src\stores\terminals.js
  * @Description: 跨工作区的终端会话表；xterm、连接与 DOM 都由这里持有，切页签不销毁。
  */

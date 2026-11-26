@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 08:18:05
+ * @LastEditTime: 2026-11-26 10:34:00
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -75,6 +75,13 @@
         </main>
       </div>
       <DockShell :ws-id="currentId || ''" :ws="current">
+        <template #panel-bar="{ view }">
+          <TerminalGroups
+            v-if="view?.id === 'terminal'"
+            :workspaces="state.workspaces"
+            :current="currentId || ''"
+          />
+        </template>
         <template #actions>
           <DockItem icon="mdi-cog-outline" label="设置" @click="settingsOpen = true" />
         </template>
@@ -84,7 +91,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './features/workspaces/components/WorkspaceList.vue'
 import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
@@ -92,6 +99,7 @@ import StartingServices from './features/workspaces/components/StartingServices.
 import SettingsDialog from './features/settings/components/SettingsDialog.vue'
 import DockItem from './features/dock/components/DockItem.vue'
 import DockShell from './features/dock/components/DockShell.vue'
+import TerminalGroups from './features/terminal/components/TerminalGroups.vue'
 import { useThemeToggle } from '@bash-scripts/web-shared/theme'
 import { EmptyState } from '@bash-scripts/web-shared/layouts'
 import { ToastHost } from '@bash-scripts/web-shared/feedbacks'
@@ -143,6 +151,11 @@ const dock = useDockStore()
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
 
+// 切工作区时 Dock 跟着看新工作区的终端组；点标题栏别的组只在 Dock 里换，不动工作区。
+watch(currentId, (id) => {
+  if (id) terminals.setView(id)
+})
+
 // 设置存在服务端：启动时应用编辑器配色与代码地图开关，保存后重新读一遍。
 async function loadSettings() {
   try {
@@ -166,17 +179,22 @@ function onGlobalKey(event) {
     return
   }
   if (!dock.open || dock.view !== 'terminal' || !currentId.value) return
+  // 新建与关闭都作用于 Dock 当前查看的那一组，可能是别的工作区。
+  const target = terminals.shown(currentId.value)
+  if (!target) return
   if (matchesBinding(keys.terminalNew, event)) {
     event.preventDefault()
-    terminals.createSlot(currentId.value)
+    terminals.createSlot(target)
     return
   }
   if (matchesBinding(keys.terminalClose, event)) {
-    const slot = terminals.activeSlot(currentId.value)
+    const slot = terminals.activeSlot(target)
     if (!slot) return
     event.preventDefault()
-    terminals.closeSlot(currentId.value, slot.key).then(() => {
-      if (!terminals.list(currentId.value).length) dock.open = false
+    terminals.closeSlot(target, slot.key).then(() => {
+      if (terminals.list(target).length) return
+      if (target === currentId.value) dock.open = false
+      else terminals.setView(currentId.value)
     })
   }
 }

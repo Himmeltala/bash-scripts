@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 10:34:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalPanel.vue
  * @Description: 终端视图内容：多个终端标签与各自的 xterm；外壳由 DockShell 提供。
 -->
@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useTerminalsStore } from '../../../stores/terminals'
 import TerminalTabs from './TerminalTabs.vue'
 import TerminalView from './TerminalView.vue'
@@ -42,25 +42,44 @@ const props = defineProps({
 const emit = defineEmits(['close-dock'])
 
 const store = useTerminalsStore()
-const items = computed(() => (props.wsId ? store.list(props.wsId) : []))
-const activeKey = computed(() => (props.wsId ? store.activeSlot(props.wsId)?.key || '' : ''))
+// 显示哪一组：查看组还有终端就看它，否则回到当前工作区。
+// 这里只读不写，写回交给 watcher，避免在计算属性里改状态。
+const shownId = computed(() => {
+  const view = store.viewWsId
+  const alive = view && (store.groups[view]?.items?.length || 0) > 0
+  return alive ? view : props.wsId
+})
+const items = computed(() => (shownId.value ? store.list(shownId.value) : []))
+const activeKey = computed(() => (shownId.value ? store.activeSlot(shownId.value)?.key || '' : ''))
+
+watch(shownId, (id) => {
+  if (id && store.viewWsId !== id) store.setView(id)
+})
 
 onMounted(() => {
-  if (props.wsId) store.ensureSlot(props.wsId)
+  if (!props.wsId) return
+  const id = shownId.value || props.wsId
+  store.setView(id)
+  // 只有看的就是当前工作区才补一个终端；只看别组时不凭空新建。
+  if (id === props.wsId) store.ensureSlot(props.wsId)
 })
 
 function selectTab(key) {
-  if (props.wsId) store.setActive(props.wsId, key)
+  if (shownId.value) store.setActive(shownId.value, key)
 }
 
 function createTab() {
-  if (props.wsId) store.createSlot(props.wsId)
+  if (shownId.value) store.createSlot(shownId.value)
 }
 
 async function closeTab(key) {
-  if (!props.wsId || !key) return
-  await store.closeSlot(props.wsId, key)
-  if (!items.value.length) emit('close-dock')
+  const id = shownId.value
+  if (!id || !key) return
+  await store.closeSlot(id, key)
+  if (items.value.length) return
+  // 别组关空了就回当前工作区；当前工作区关空了收起 Dock。
+  if (id !== props.wsId) store.setView(props.wsId)
+  else emit('close-dock')
 }
 </script>
 
