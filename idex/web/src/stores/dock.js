@@ -9,9 +9,11 @@
 import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
 
+export const DEFAULT_DOCK_HEIGHT = 280
+
 export const useDockStore = defineStore('dock', () => {
   const open = useLocalStorage('idex.terminal-open', false)
-  const height = useLocalStorage('idex.terminal-height', 280)
+  const height = useLocalStorage('idex.terminal-height', DEFAULT_DOCK_HEIGHT)
   const view = useLocalStorage('idex.dock-view', 'terminal')
 
   function show(id = 'terminal') {

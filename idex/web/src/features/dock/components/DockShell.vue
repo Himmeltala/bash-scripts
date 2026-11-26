@@ -39,6 +39,13 @@
       :class="`dock-panel-${placement}`"
       :style="panelStyle"
     >
+      <SplitHandle
+        v-if="placement === 'bottom'"
+        axis="y"
+        :active="dragging"
+        @start="startDrag"
+        @reset="resetDrag"
+      />
       <div class="dock-panel-bar">
         <v-icon size="16">{{ activeView?.icon }}</v-icon>
         <span class="dock-panel-title">{{ activeView?.title }}</span>
@@ -52,12 +59,6 @@
         />
       </div>
       <div class="dock-panel-body">
-        <div
-          v-if="placement === 'bottom'"
-          class="drag"
-          title="拖动调整面板高度"
-          @mousedown.prevent="startDrag"
-        />
         <component
           :is="currentView"
           :ws-id="wsId"
@@ -70,7 +71,8 @@
 
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
-import { useDockStore } from '../../../stores/dock'
+import { SplitHandle } from '@bash-scripts/web-shared/layouts'
+import { DEFAULT_DOCK_HEIGHT, useDockStore } from '../../../stores/dock'
 import { DOCK_VIEWS } from '../lib/views'
 import DockItem from './DockItem.vue'
 
@@ -144,23 +146,40 @@ function cancelHide() {
   clearTimeout(hideTimer)
 }
 
-onBeforeUnmount(() => clearTimeout(hideTimer))
+onBeforeUnmount(() => {
+  clearTimeout(hideTimer)
+  stopDrag()
+})
 
+const dragging = ref(false)
 let startY = 0
 let startHeight = 0
+
 function startDrag(event) {
+  if (event.button !== 0) return
+  dragging.value = true
   startY = event.clientY
   startHeight = dock.height
-  window.addEventListener('mousemove', onDrag)
-  window.addEventListener('mouseup', stopDrag)
+  event.preventDefault()
+  document.body.classList.add('web-shared-resizing')
+  window.addEventListener('pointermove', onDrag)
+  window.addEventListener('pointerup', stopDrag, { once: true })
 }
+
 function onDrag(event) {
   const next = startHeight + (startY - event.clientY)
   dock.height = Math.max(160, Math.min(window.innerHeight - 220, next))
 }
+
 function stopDrag() {
-  window.removeEventListener('mousemove', onDrag)
-  window.removeEventListener('mouseup', stopDrag)
+  if (!dragging.value) return
+  dragging.value = false
+  document.body.classList.remove('web-shared-resizing')
+  window.removeEventListener('pointermove', onDrag)
+}
+
+function resetDrag() {
+  dock.height = DEFAULT_DOCK_HEIGHT
 }
 </script>
 
@@ -289,14 +308,5 @@ function stopDrag() {
   min-height: 0;
   display: flex;
   overflow: hidden;
-}
-.drag {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  z-index: 3;
-  cursor: row-resize;
 }
 </style>
