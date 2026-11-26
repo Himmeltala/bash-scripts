@@ -2,17 +2,18 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 09:35:55
  * @FilePath: \idex\web\src\features\dock\components\DockShell.vue
  * @Description: macOS 式底部 Dock：一排入口图标，点开从下方呼出面板并把 Dock 盖住。
 -->
 <template>
-  <div v-if="!showing" class="dock-zone" @mouseenter="reveal" />
+  <div v-if="!showing" class="dock-zone" @mouseenter="reveal" @mousemove="reveal" />
   <div
     v-if="!showing"
     class="dock"
     :class="{ revealed }"
     @mouseenter="cancelHide"
+    @mousemove="cancelHide"
     @mouseleave="scheduleHide"
   >
     <template v-for="item in views" :key="item.id">
@@ -102,6 +103,8 @@ const currentView = computed(() => (activeView.value ? components.get(activeView
 const showing = ref(dock.open)
 // Dock 平时藏在屏幕下方，鼠标碰到最底边才浮出；离开后自动收起。
 const revealed = ref(false)
+// 鼠标停在 Dock 上不动超过这个时间也收起；有移动就重新计时。
+const IDLE_MS = 3000
 let hideTimer = 0
 const placement = computed(() => activeView.value?.placement || 'bottom')
 const panelStyle = computed(() =>
@@ -130,9 +133,17 @@ watch(
   { immediate: true },
 )
 
+function scheduleIdle() {
+  clearTimeout(hideTimer)
+  hideTimer = setTimeout(() => {
+    revealed.value = false
+  }, IDLE_MS)
+}
+
 function reveal() {
   clearTimeout(hideTimer)
   revealed.value = true
+  scheduleIdle()
 }
 
 function scheduleHide() {
@@ -143,7 +154,7 @@ function scheduleHide() {
 }
 
 function cancelHide() {
-  clearTimeout(hideTimer)
+  scheduleIdle()
 }
 
 onBeforeUnmount(() => {

@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 00:00:00
+ * @LastEditTime: 2026-11-26 09:33:52
  * @FilePath: \idex\web\src\features\log\components\AppLogPanel.vue
  * @Description: 日志面板：级别筛选、展开详情、复制、清空与加载更多。
 -->
@@ -45,6 +45,16 @@
             </div>
           </template>
         </div>
+        <v-btn
+          class="copy"
+          icon
+          size="x-small"
+          variant="text"
+          title="复制完整日志"
+          @click.stop="copyEntry(entry)"
+        >
+          <v-icon size="16">mdi-content-copy</v-icon>
+        </v-btn>
       </div>
       <div v-if="hasMore" class="more">
         <v-btn size="small" variant="text" color="primary" :loading="loading" @click="more">
@@ -82,9 +92,9 @@ const filters = computed(() => [
 ])
 
 const LEVEL_STYLE = {
-  error: { icon: 'mdi-alert-circle-outline', color: 'failed' },
-  warning: { icon: 'mdi-alert-outline', color: 'warning' },
-  info: { icon: 'mdi-information-outline', color: 'info' },
+  error: { icon: 'mdi-alert-circle-outline', color: 'failed', text: '错误' },
+  warning: { icon: 'mdi-alert-outline', color: 'warning', text: '告警' },
+  info: { icon: 'mdi-information-outline', color: 'info', text: '正常' },
 }
 
 const levelText = computed(
@@ -105,13 +115,20 @@ function timeOf(at) {
   return `${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`
 }
 
+function fullTimeOf(at) {
+  return `${new Date(at).getFullYear()}-${timeOf(at)}`
+}
+
 function toggle(id) {
   if (opened.has(id)) opened.delete(id)
   else opened.add(id)
 }
 
 async function copyEntry(entry) {
-  const text = entry.detail ? `${entry.message}\n\n${entry.detail}` : entry.message
+  const level = (LEVEL_STYLE[entry.level] || LEVEL_STYLE.info).text
+  const source = entry.source ? ` ${entry.source}` : ''
+  const head = `${fullTimeOf(entry.at)} [${level}]${source}`
+  const text = `${head}\n${entry.message}${entry.detail ? `\n\n${entry.detail}` : ''}`
   const ok = await copyText(text)
   if (ok) toast('已复制', 'primary')
 }
@@ -165,6 +182,15 @@ onMounted(store.ensure)
 .body {
   min-width: 0;
   flex: 1 1 auto;
+}
+.copy {
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.item:hover .copy,
+.copy:focus-visible {
+  opacity: 1;
 }
 .line {
   display: flex;

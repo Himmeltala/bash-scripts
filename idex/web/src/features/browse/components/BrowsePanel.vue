@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-12 18:48:07
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-25 08:31:41
+ * @LastEditTime: 2026-11-26 09:34:36
  * @FilePath: \idex\web\src\features\browse\components\BrowsePanel.vue
  * @Description: 浏览工作副本目录，预览、编辑、新建、重命名与删除文件。
 -->
@@ -876,6 +876,10 @@ const editorViewProps = computed(() => ({
 }))
 
 // 打开文件、换工作区时取一次尚未提交的差异，给编辑器画行级标记。
+// 各文件的 Git 行级标记，按路径分开存；换页签时编辑器各取各的。
+const diffCache = ref({})
+let diffSeq = 0
+
 watch(activePath, (path) => loadDiff(path), { immediate: true })
 watch(
   () => props.ws.id,
@@ -912,10 +916,6 @@ const symMenu = reactive({ on: false, x: 0, y: 0, path: '', line: 0, character: 
 const tabMenu = reactive({ on: false, x: 0, y: 0, path: '' })
 // 编辑器行级改动的菜单：显示这一块原文，可以还原。
 const diffMenu = reactive({ on: false, x: 0, y: 0, path: '', hunk: null, original: '', busy: false })
-// 各文件的 Git 行级标记，按路径分开存；换页签时编辑器各取各的。
-const diffCache = ref({})
-let diffSeq = 0
-
 async function loadDiff(path = activePath.value) {
   if (!path) return
   if (props.ws.vcs !== 'git') {
