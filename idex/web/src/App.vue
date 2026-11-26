@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-24 00:56:55
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 11:20:00
+ * @LastEditTime: 2026-11-26 12:05:00
  * @FilePath: \idex\web\src\App.vue
  * @Description: idex 网页入口：工作区列表、页签面板、顶栏指标与主题设置。
 -->
@@ -160,6 +160,7 @@ async function loadSettings() {
     preferences.editorTheme = data.editor_theme || 'auto'
     preferences.minimap = !!data.minimap
     preferences.shortcuts = { ...SHORTCUT_DEFAULTS, ...(data.shortcuts || {}) }
+    preferences.terminal = { ...(data.defaults?.terminal || {}), ...(data.terminal || {}) }
   } catch (err) {
     // 读不到就沿用本地默认值。
   }
@@ -172,9 +173,7 @@ function onGlobalKey(event) {
     if (!currentId.value) return
     event.preventDefault()
     dock.toggle('terminal')
-    // 只看别组时不要在当前工作区凭空新建终端。
-    if (!dock.open) return
-    if (terminals.shown(currentId.value) === currentId.value) terminals.ensureSlot(currentId.value)
+    // 面板挂载时会接回服务端会话，没有才新建；这里不预先建，免得刷新后多一个空终端。
     return
   }
   if (!dock.open || dock.view !== 'terminal' || !currentId.value) return

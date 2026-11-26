@@ -52,16 +52,19 @@ const shownId = computed(() => {
 const items = computed(() => (shownId.value ? store.list(shownId.value) : []))
 const activeKey = computed(() => (shownId.value ? store.activeSlot(shownId.value)?.key || '' : ''))
 
-watch(shownId, (id) => {
-  if (id && store.viewWsId !== id) store.setView(id)
+watch(shownId, async (id) => {
+  if (!id) return
+  if (store.viewWsId !== id) store.setView(id)
+  // 切到一组本地还没有的（比如刷新后换工作区），同样先接服务端会话。
+  if (!store.list(id).length) await store.restore(id)
 })
 
-onMounted(() => {
+// 刷新后本地是空的，先把服务端还活着的会话接回来，再决定要不要新建。
+onMounted(async () => {
   if (!props.wsId) return
   const id = shownId.value || props.wsId
   store.setView(id)
-  // 只有看的就是当前工作区才补一个终端；只看别组时不凭空新建。
-  if (id === props.wsId) store.ensureSlot(props.wsId)
+  await store.restore(id)
 })
 
 function selectTab(key) {

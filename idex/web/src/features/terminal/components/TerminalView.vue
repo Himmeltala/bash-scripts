@@ -2,7 +2,7 @@
  * @Author: Himmeltala
  * @Date: 2026-11-25 00:00:00
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 11:20:00
+ * @LastEditTime: 2026-11-26 12:05:00
  * @FilePath: \idex\web\src\features\terminal\components\TerminalView.vue
  * @Description: 单个终端的 xterm 宿主；切走后保留实例与 DOM，切回来重新挂上。
 -->
@@ -49,6 +49,8 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { encodeInput } from '../lib/protocol'
 import { connectTerminal } from '../composables/useTerminalConnection'
+import { terminalOptions } from '../lib/options'
+import { usePreferencesStore } from '../../../stores/preferences'
 
 const props = defineProps({
   session: { type: Object, required: true },
@@ -59,6 +61,7 @@ const wrap = ref(null)
 const findInput = ref(null)
 const find = reactive({ on: false, text: '', missing: false })
 const theme = useTheme()
+const preferences = usePreferencesStore()
 let observer = null
 let fitTimer = 0
 
@@ -107,14 +110,15 @@ function codeSize() {
   return Math.round(root * (rem || 0.86) * 100) / 100
 }
 
+// 终端外观按设置来；字体名换了也保留代码字体那串中文回退。
+function appearance() {
+  return terminalOptions(preferences.terminal, { font: codeFont(), size: codeSize() })
+}
+
 function buildTerminal() {
   const term = new Terminal({
+    ...appearance(),
     allowProposedApi: true,
-    cursorBlink: true,
-    fontFamily: codeFont(),
-    fontSize: codeSize(),
-    lineHeight: 1.15,
-    scrollback: 5000,
     theme: terminalTheme(),
   })
   const fit = new FitAddon()
@@ -287,6 +291,19 @@ watch(
   () => {
     if (props.session.term) props.session.term.options.theme = terminalTheme()
   },
+)
+
+// 设置里改终端外观后立即生效，字号变了要重新量一次宽度。
+watch(
+  () => preferences.terminal,
+  () => {
+    const term = props.session.term
+    if (!term) return
+    const next = appearance()
+    for (const [key, value] of Object.entries(next)) term.options[key] = value
+    nextTick(() => fit())
+  },
+  { deep: true },
 )
 </script>
 

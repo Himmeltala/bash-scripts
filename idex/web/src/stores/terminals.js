@@ -9,7 +9,7 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 import { api } from '../utils/api'
-import { resolveView } from '../features/terminal/lib/groups'
+import { missingSessions, resolveView } from '../features/terminal/lib/groups'
 
 let slotSeq = 0
 
@@ -71,6 +71,42 @@ export const useTerminalsStore = defineStore('terminals', () => {
     found.activeKey = slot.key
     viewWsId.value = wsId
     return slot
+  }
+
+  // 刷新页面后界面是空的，但服务端的 PTY 还活着；把会话接回成本地标签。
+  async function restore(wsId) {
+    if (!wsId) return []
+    const found = group(wsId)
+    try {
+      const data = await api.terminalSessions(wsId)
+      const extra = missingSessions(found.items, data?.sessions)
+      found.items.unshift(
+        ...extra.map((item) => {
+          slotSeq += 1
+          return reactive({
+            key: `term-${slotSeq}`,
+            wsId,
+            id: item.id,
+            title: item.title || '终端',
+            status: item.done ? 'exited' : 'running',
+            since: 0,
+            term: null,
+            fit: null,
+            el: null,
+            conn: null,
+            search: null,
+            webgl: null,
+          })
+        }),
+      )
+    } catch (err) {
+      // 取不到列表就按本地为空处理，照常新建一个。
+    }
+    if (!found.items.length) return createSlot(wsId)
+    if (!found.items.some((item) => item.key === found.activeKey)) {
+      found.activeKey = found.items[0].key
+    }
+    return found.items
   }
 
   function ensureSlot(wsId) {
@@ -137,6 +173,7 @@ export const useTerminalsStore = defineStore('terminals', () => {
     activeSlot,
     createSlot,
     ensureSlot,
+    restore,
     setActive,
     setView,
     shown,

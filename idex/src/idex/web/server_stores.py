@@ -1,7 +1,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-26 09:29:54
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-26 09:29:54
+# @LastEditTime: 2026-11-26 12:05:00
 # @FilePath: \idex\src\idex\web\server_stores.py
 # @Description: 工作区登记与全局设置的存储：都落在 state.json 旁边。
 
@@ -47,11 +47,30 @@ SHORTCUT_DEFAULTS = {
 }
 
 
+# 终端外观：字体空着表示跟随代码字体，字号 0 表示跟随代码字号。
+TERMINAL_DEFAULTS = {
+    "font_family": (
+        "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', "
+        "'PingFang SC', 'Microsoft YaHei', sans-serif"
+    ),
+    "font_size": 14,
+    "line_height": 1.15,
+    "font_weight": "normal",
+    "letter_spacing": 0,
+    "cursor_style": "block",
+    "cursor_blink": True,
+    "scrollback": 5000,
+}
+TERMINAL_CURSORS = ("block", "bar", "underline")
+TERMINAL_WEIGHTS = ("normal", "bold", "500")
+
+
 SETTINGS_DEFAULTS = {
     "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
     "editor_theme": "auto",
     "minimap": False,
     "shortcuts": dict(SHORTCUT_DEFAULTS),
+    "terminal": dict(TERMINAL_DEFAULTS),
 }
 
 
@@ -249,6 +268,9 @@ class Settings:
             return dict(SHORTCUT_DEFAULTS)
         return {**SHORTCUT_DEFAULTS, **{key: saved[key] for key in SHORTCUT_DEFAULTS if key in saved}}
 
+    def terminal(self):
+        return clean_terminal(self.data().get("terminal"))
+
     def payload(self):
         return {
             "search_ignore": self.search_ignore(),
@@ -256,10 +278,12 @@ class Settings:
                 SETTINGS_DEFAULTS,
                 search_ignore=list(SETTINGS_DEFAULTS["search_ignore"]),
                 shortcuts=dict(SHORTCUT_DEFAULTS),
+                terminal=dict(TERMINAL_DEFAULTS),
             ),
             "editor_theme": self.editor_theme(),
             "minimap": self.minimap(),
             "shortcuts": self.shortcuts(),
+            "terminal": self.terminal(),
         }
 
     def set_search_ignore(self, values):
@@ -284,8 +308,60 @@ class Settings:
                 data["minimap"] = bool(body.get("minimap"))
             if "shortcuts" in body:
                 data["shortcuts"] = clean_shortcuts(body.get("shortcuts"))
+            if "terminal" in body:
+                incoming = body.get("terminal")
+                if not isinstance(incoming, dict):
+                    incoming = {}
+                # 只传真改过的字段也行，没提到的沿用已存的值。
+                current = data.get("terminal")
+                if not isinstance(current, dict):
+                    current = {}
+                data["terminal"] = clean_terminal({**current, **incoming})
             write_json(self.path, data, indent=2, ensure_ascii=False)
         return self.payload()
+
+
+def clean_terminal(values):
+    """终端外观按范围收：枚举只认登记值，数字钳到区间，写坏的字段退回默认。"""
+    out = dict(TERMINAL_DEFAULTS)
+    if not isinstance(values, dict):
+        return out
+
+    family = values.get("font_family")
+    if isinstance(family, str):
+        # 旧数据里存过空串；空着就按默认字体算，别让下拉框显示成空白。
+        out["font_family"] = " ".join(family.split())[:300] or TERMINAL_DEFAULTS["font_family"]
+
+    size = values.get("font_size")
+    if isinstance(size, (int, float)) and not isinstance(size, bool):
+        # 直接填像素值，允许小数；越界钳到 4–48，旧数据里的 0 按默认字号算。
+        number = float(size)
+        out["font_size"] = round(max(4, min(48, number if number > 0 else 14)), 1)
+
+    height = values.get("line_height")
+    if isinstance(height, (int, float)) and not isinstance(height, bool):
+        out["line_height"] = round(max(0.8, min(2.0, float(height))), 2)
+
+    weight = values.get("font_weight")
+    if weight in TERMINAL_WEIGHTS:
+        out["font_weight"] = weight
+
+    spacing = values.get("letter_spacing")
+    if isinstance(spacing, (int, float)) and not isinstance(spacing, bool):
+        out["letter_spacing"] = round(max(-2, min(5, float(spacing))), 2)
+
+    cursor = values.get("cursor_style")
+    if cursor in TERMINAL_CURSORS:
+        out["cursor_style"] = cursor
+
+    if "cursor_blink" in values:
+        out["cursor_blink"] = bool(values.get("cursor_blink"))
+
+    scrollback = values.get("scrollback")
+    if isinstance(scrollback, (int, float)) and not isinstance(scrollback, bool):
+        out["scrollback"] = max(1000, min(100000, int(scrollback)))
+
+    return out
 
 
 def clean_shortcuts(values):

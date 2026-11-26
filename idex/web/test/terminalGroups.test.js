@@ -9,7 +9,7 @@
 // Dock 标题栏的分组与查看组：只列有终端的组，查看组失效时回落当前工作区。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { displayName, groupRows, resolveView } from '../src/features/terminal/lib/groups.js'
+import { displayName, groupRows, missingSessions, resolveView } from '../src/features/terminal/lib/groups.js'
 
 const ws = [
   { id: 'a', alias: '主工程', root: '/home/x/idex' },
@@ -39,4 +39,10 @@ test('查看组失效时回落到当前工作区', () => {
 test('没有别名时用目录名', () => {
   assert.equal(displayName(ws[1]), 'llmx')
   assert.equal(displayName({ root: '/tmp/x/idex/' }), 'idex')
+})
+
+test('服务端会话里只补本地没有的', () => {
+  const items = [{ key: 'term-1', id: 'a' }, { key: 'term-2', id: '' }]
+  const sessions = [{ id: 'a' }, { id: 'b' }, { id: '' }, null]
+  assert.deepEqual(missingSessions(items, sessions), [{ id: 'b' }])
 })

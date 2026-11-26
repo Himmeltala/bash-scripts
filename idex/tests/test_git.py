@@ -2,7 +2,7 @@
 # @Author: Himmeltala
 # @Date: 2026-11-26 09:29:54
 # @LastEditors: Himmeltala
-# @LastEditTime: 2026-11-26 09:29:54
+# @LastEditTime: 2026-11-26 12:05:00
 # @FilePath: \idex\tests\test_git.py
 # @Description: idex 回归：临时 Git 仓库上的状态解析、差异、日志与网页接口。
 
@@ -1203,6 +1203,41 @@ class SearchSettings(unittest.TestCase):
         again.update({"editor_theme": "不存在"})
         self.assertEqual(gitmod.Settings(str(path)).editor_theme(), "auto")
         self.assertTrue(gitmod.Settings(str(path)).minimap())
+
+    def test_terminal_settings_defaults_and_clamp(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        self.assertEqual(store.terminal(), dict(gitmod.TERMINAL_DEFAULTS))
+        payload = store.payload()
+        self.assertEqual(payload["terminal"], dict(gitmod.TERMINAL_DEFAULTS))
+        self.assertIn("terminal", payload["defaults"])
+
+        # 越界的值按范围收，非法枚举退回默认，字体名去掉多余空白。
+        store.update({"terminal": {
+            "font_family": "  Fira   Code  ",
+            "font_size": 99,
+            "line_height": 5,
+            "font_weight": "heavy",
+            "letter_spacing": -9,
+            "cursor_style": "diagonal",
+            "cursor_blink": 0,
+            "scrollback": 10,
+        }})
+        got = gitmod.Settings(str(path)).terminal()
+        self.assertEqual(got["font_family"], "Fira Code")
+        self.assertEqual(got["font_size"], 48)
+        self.assertEqual(got["line_height"], 2)
+        self.assertEqual(got["font_weight"], "normal")
+        self.assertEqual(got["letter_spacing"], -2)
+        self.assertEqual(got["cursor_style"], "block")
+        self.assertFalse(got["cursor_blink"])
+        self.assertEqual(got["scrollback"], 1000)
+
+        # 没提到的字段保持原值，别的设置也不受影响。
+        store.update({"terminal": {"cursor_style": "bar"}})
+        again = gitmod.Settings(str(path))
+        self.assertEqual(again.terminal()["cursor_style"], "bar")
+        self.assertEqual(again.terminal()["font_size"], 48)
 
 
 class SearchSettingsApi(unittest.TestCase):

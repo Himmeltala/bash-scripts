@@ -27,6 +27,12 @@ export function groupRows(groups, workspaces) {
   return rows
 }
 
+// 刷新后接回服务端还活着的会话：本地已有的跳过，只挑没接上的。
+export function missingSessions(items, sessions) {
+  const have = new Set((items || []).map((item) => item.id).filter(Boolean))
+  return (sessions || []).filter((session) => session && session.id && !have.has(session.id))
+}
+
 // Dock 当前该显示哪一组：查看组还有终端就用它，否则回到当前工作区。
 export function resolveView(viewWsId, currentId, groups) {
   const found = viewWsId ? groups?.[viewWsId] : null
