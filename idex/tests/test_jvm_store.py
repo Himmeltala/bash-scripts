@@ -7,8 +7,10 @@
 
 """旧版分组迁移：state.json 里的 groups 在启动时挪到 groups.json。"""
 
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -19,7 +21,7 @@ sys.path.insert(0, str(REPO / "idex" / "src" / "idex"))
 
 from fileio import read_json, write_json
 from engines.jvm.engine import App
-from engines.jvm.store import KIND_MVN
+from engines.jvm.store import KIND_MVN, Store
 
 
 class GroupMigrationTest(unittest.TestCase):
@@ -49,6 +51,21 @@ class GroupMigrationTest(unittest.TestCase):
             )
             app.forget_workspace(ws["id"])
             self.assertEqual([node["id"] for node in app.groups.nodes()], ["g1"])
+
+
+class StoreMemoTest(unittest.TestCase):
+    def test_external_write_invalidates_cache(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.json"
+            store = Store(path)
+            write_json(path, {"workspaces": [{"id": "w1", "root": "/a", "alias": "旧"}]})
+            self.assertEqual(store.find("w1")["alias"], "旧")
+
+            # 模拟命令行另写一份：原子替换后 mtime 变，缓存要跟着失效。
+            write_json(path, {"workspaces": [{"id": "w1", "root": "/a", "alias": "新"}]})
+            os.utime(path, (time.time() + 1, time.time() + 1))
+            self.assertEqual(store.find("w1")["alias"], "新")
+            self.assertEqual(store.workspaces()[0]["alias"], "新")
 
 
 if __name__ == "__main__":

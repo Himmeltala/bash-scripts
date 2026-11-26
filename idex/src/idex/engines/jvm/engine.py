@@ -53,8 +53,8 @@ RUN_FIELDS = (
 
 # 自动扫描的两处：SDKMAN 装的与发行版软件包装的。别处的 JDK 由页面手填路径。
 JDK_ROOTS = (Path.home() / ".sdkman" / "candidates" / "java", Path("/usr/lib/jvm"))
-# JDK 候选缓存这么久，状态推送很密，不必每轮都扫目录。
-JDK_CACHE_SECONDS = 10
+# JDK 候选缓存这么久，状态推送很密，不必每轮都扫目录；新装的 JDK 最多晚一分钟出现。
+JDK_CACHE_SECONDS = 60
 
 
 def is_jdk_home(path):
@@ -126,7 +126,12 @@ class App:
             self.groups.set(legacy_groups)
         self.runs = RunRegistry(self.home / "runs.json", self.logs)
         self.metrics = Metrics()
+        # 扫描按工作区各一把锁：一个工程扫得慢，别挡住别的工作区。
         self.scan_lock = threading.Lock()
+        self.scan_locks = {}
+        self._home = os.path.expanduser("~")
+        # 状态推送的静态部分缓存：工作区记录没变就不重算。
+        self._static_cache = {}
         self._jdks = []
         self._jdks_at = 0.0
         # 状态与指标各一条后台线程，页面开几个都共用这一份。
@@ -185,9 +190,17 @@ class App:
 
     # 目标
 
+    def scan_lock_for(self, ws_id):
+        """同一个工作区的扫描串行，不同的互不影响。"""
+        with self.scan_lock:
+            lock = self.scan_locks.get(ws_id)
+            if lock is None:
+                lock = self.scan_locks[ws_id] = threading.Lock()
+            return lock
+
     def scan(self, ws_id, strict=True):
         """重新跑工具列目标；失败时留下旧目标并记下原因。"""
-        with self.scan_lock:
+        with self.scan_lock_for(ws_id):
             ws = self.store.find(ws_id)
             if ws is None:
                 raise ApiError(404, "没有这个工作区：%s" % ws_id)
@@ -250,6 +263,37 @@ class App:
         out.sort(key=lambda item: (item["display"], item["id"]))
         return out
 
+    # 每次推送都要拼的静态字段：相对路径、别名、JDK 检查、模块清单。
+    # 工作区记录没变就复用上次算好的，服务行仍按运行表每次重拼。
+    def _ws_static(self, ws):
+        targets = ws.get("targets") or []
+        paths = tuple(str(t.get("path") or ".") for t in targets)
+        fingerprint = (
+            ws.get("root"),
+            ws.get("alias") or "",
+            ws.get("jdk") or "",
+            ws.get("kind", ""),
+            ws.get("added", 0),
+            paths,
+        )
+        cached = self._static_cache.get(ws.get("id"))
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        try:
+            rel = os.path.relpath(ws["root"], self._home)
+        except (TypeError, ValueError):
+            rel = ws["root"]
+        jdk = ws.get("jdk") or ""
+        data = {
+            "rel": rel,
+            "jdk": jdk,
+            "jdk_missing": bool(jdk) and not is_jdk_home(jdk),
+            # 模块清单只给页面展示；根项目自身用「.」占位。
+            "poms": sorted(set(paths)) if ws.get("kind") == "mvn" else [],
+        }
+        self._static_cache[ws.get("id")] = (fingerprint, data)
+        return data
+
     def state_payload(self):
         self.runs.advance()
         workspaces = self.store.workspaces()
@@ -260,31 +304,21 @@ class App:
             if node.get("kind") == "ws" and node.get("id")
         )
         latest = self.runs.latest_map()
-        home = os.path.expanduser("~")
         out = []
         for ws in workspaces:
-            try:
-                rel = os.path.relpath(ws["root"], home)
-            except (TypeError, ValueError):
-                rel = ws["root"]
-            targets = ws.get("targets") or []
-            poms = []
-            if ws.get("kind") == "mvn":
-                # 模块清单只给页面展示；根项目自身用「.」占位。
-                poms = sorted(set(str(t.get("path") or ".") for t in targets))
-            jdk = ws.get("jdk") or ""
+            static = self._ws_static(ws)
             out.append(
                 {
                     "id": ws["id"],
                     "root": ws["root"],
-                    "rel": rel,
+                    "rel": static["rel"],
                     "alias": ws.get("alias") or "",
                     "group": group_of.get(ws["id"], ""),
                     "added": ws.get("added", 0),
                     "kind": ws.get("kind", ""),
-                    "jdk": jdk,
-                    "jdk_missing": bool(jdk) and not is_jdk_home(jdk),
-                    "poms": poms,
+                    "jdk": static["jdk"],
+                    "jdk_missing": static["jdk_missing"],
+                    "poms": static["poms"],
                     "scan_error": ws.get("scan_error") or "",
                     "services": self.services_for(ws, latest),
                 }
@@ -307,6 +341,9 @@ class App:
         live = self.runs.live_for(ws["id"], target.get("tag", ""))
         if live is not None:
             raise ApiError(409, "「%s」正在跑，先停掉" % (live.get("cmd") or live.get("display") or svc_id))
+        stopping = self.runs.stopping_for(ws["id"], target.get("tag", ""))
+        if stopping is not None:
+            raise ApiError(409, "「%s」正在停止，等退出后再启动" % (stopping.get("display") or svc_id))
 
         row = self.store.row(ws["id"], svc_id)
         extra = str(body.get("extra") or "").strip()
@@ -388,6 +425,9 @@ class App:
         if run is None or run.get("status") not in LIVE:
             raise ApiError(409, "这个服务没有在跑")
         self.runs.stop(runid)
+        # 停止改成后台收进程，重启得等旧进程真退干净才能占回端口。
+        if not self.runs.wait_stopped(runid):
+            raise ApiError(409, "停止还没完成，稍后再重启")
         return self.start_service({"svc": run.get("svc", "")})
 
     def update_service(self, body):
@@ -415,6 +455,7 @@ class App:
             raise ApiError(404, "没有这个工作区：%s" % ws_id)
         self.runs.stop_workspace(ws_id)
         self.store.remove(ws_id)
+        self._static_cache.pop(ws_id, None)
         self.groups.drop("ws", ws_id)
         self.runs.remove_workspace(ws_id)
         shutil.rmtree(self.logs / ws_id, ignore_errors=True)

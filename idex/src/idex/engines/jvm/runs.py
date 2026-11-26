@@ -23,6 +23,8 @@ from web import ApiError, log
 
 # 与共享层一致的存活状态。
 LIVE = ("starting", "ready")
+# 运行历史只留最近这么多条，runs.json 不跟着构建次数无限长。
+MAX_RUNS = 500
 # 进程没了以后等退出码落盘的次数：退出码总会由 Sessions 写下来，等不到就按停止算。
 DEAD_WAIT_TICKS = 8
 # 监视循环的间隔。
@@ -60,17 +62,16 @@ def detect_port(path):
 
 
 def error_text(path):
-    """日志里第一条错误，页面直接展示，省得去翻整份日志。"""
+    """日志里第一条错误，页面直接展示；按行读到就停，构建日志几十 MB 也不整份载入。"""
     try:
-        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        with open(str(path), "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if "[ERROR]" in line:
+                    return line.split("[ERROR]", 1)[1].strip()[:300]
+                if line.startswith("FAILURE:") or line.startswith("BUILD FAILED"):
+                    return line.rstrip("\r\n")[:300]
     except OSError:
         return ""
-    for line in text.splitlines():
-        if "[ERROR]" in line:
-            line = line.split("[ERROR]", 1)[1].strip()
-            return line[:300]
-        if line.startswith("FAILURE:") or line.startswith("BUILD FAILED"):
-            return line[:300]
     return ""
 
 
@@ -129,7 +130,18 @@ class RunRegistry:
 
     def _save(self):
         with self.lock:
-            write_json(self.path, {"runs": self.runs})
+            # 紧凑写：这份文件只给引擎自己读，缩进白占体积。
+            write_json(self.path, {"runs": self.runs}, indent=None)
+
+    # 超出上限时先丢最旧的已结束记录；在跑的永远留着。
+    def _trim(self):
+        excess = len(self.runs) - MAX_RUNS
+        if excess <= 0:
+            return
+        done = [run for run in self.runs if run.get("status") not in LIVE]
+        done.sort(key=lambda item: item.get("started_ns", 0))
+        drop = set(id(run) for run in done[:excess])
+        self.runs = [run for run in self.runs if id(run) not in drop]
 
     def start(self):
         if self._thread is not None:
@@ -208,14 +220,30 @@ class RunRegistry:
         )
         with self.lock:
             self.runs.append(run)
+            self._trim()
             self._save()
         return runid
 
     def stop(self, runid):
-        run = self.find(runid)
-        if run is None or run.get("status") not in LIVE:
-            raise ApiError(409, "这个服务没有在跑")
-        pid = run.get("pid", "")
+        """先标记停止中并立即回话，真正的收进程放后台，别让请求等满 grace。"""
+        with self.lock:
+            run = next((item for item in self.runs if item.get("id") == runid), None)
+            if run is None or run.get("status") not in LIVE:
+                raise ApiError(409, "这个服务没有在跑")
+            pid = str(run.get("pid") or "")
+            run["status"] = "stopping"
+            run["miss"] = 0
+            self._save()
+        threading.Thread(
+            target=self._reap,
+            args=(runid, pid),
+            name="idex-jvm-stop",
+            daemon=True,
+        ).start()
+        return True
+
+    def _reap(self, runid, pid):
+        """后台把进程组收干净，再把记录落成已停止。"""
         self.sessions.kill_group(pid, grace=self.grace)
         with self.lock:
             for item in self.runs:
@@ -225,7 +253,24 @@ class RunRegistry:
                 item["status"] = "stopped"
                 item["miss"] = 0
             self._save()
-        return True
+
+    def stopping_for(self, ws_id, tag):
+        with self.lock:
+            for run in self.runs:
+                if run.get("status") == "stopping" and run.get("ws") == ws_id and run.get("tag") == tag:
+                    return dict(run)
+        return None
+
+    def wait_stopped(self, runid, timeout=None):
+        """等某条记录彻底停下；重启要等旧进程退干净才能占回端口。"""
+        deadline = time.monotonic() + (self.grace + 5 if timeout is None else timeout)
+        while time.monotonic() < deadline:
+            with self.lock:
+                run = next((item for item in self.runs if item.get("id") == runid), None)
+            if run is None or (run.get("status") not in LIVE and run.get("status") != "stopping"):
+                return True
+            time.sleep(0.05)
+        return False
 
     def stop_workspace(self, ws_id):
         """移出工作区前把还在跑的进程停干净。"""
@@ -241,52 +286,70 @@ class RunRegistry:
             self._save()
 
     def advance(self):
-        """收拾在跑的记录：进程还活着就找端口，没了就按退出码落状态。"""
+        """收拾在跑的记录：进程还活着就找端口，没了就按退出码落状态。
+
+        探测端口、读日志这些文件操作都在锁外做，别让心跳卡住启停与状态查询。
+        """
+        with self.lock:
+            watching = [dict(run) for run in self.runs if run.get("status") in LIVE]
+        updates = dict((run["id"], self._advance_one(run)) for run in watching)
+
         changed = False
         with self.lock:
             for run in self.runs:
                 if run.get("status") not in LIVE:
                     continue
-                pid = str(run.get("pid") or "")
-                log_path = run.get("log") or ""
-                try:
-                    pgid = int(pid)
-                except ValueError:
-                    pgid = 0
-                if pgid and group_alive(pgid):
-                    if run.get("status") == "starting":
-                        port = detect_port(log_path)
-                        if port:
-                            run["port"] = port
-                            run["status"] = "ready"
-                            changed = True
-                    run["miss"] = 0
+                update = updates.get(run.get("id"))
+                if not update:
                     continue
-
-                code = read_code(log_path)
-                if code is None:
-                    # Sessions 的回收线程可能还没把退出码写下来，等几轮再说。
-                    run["miss"] = int(run.get("miss") or 0) + 1
-                    if run["miss"] < DEAD_WAIT_TICKS:
-                        continue
-                    run["pid"] = ""
-                    run["status"] = "stopped"
+                if update.pop("_changed", False):
                     changed = True
-                    continue
-
-                run["pid"] = ""
-                run["code"] = str(code)
-                run["status"] = "exited" if code == 0 else "failed"
-                run["err"] = "" if code == 0 else error_text(log_path)
-                if code == 0 and run.get("type") == "package":
-                    # 装成功才记产物；失败了不留下上一次的下载入口。
-                    artifact = find_artifact(run)
-                    if artifact:
-                        run["artifact"] = artifact
-                    else:
-                        run.pop("artifact", None)
-                run["miss"] = 0
-                changed = True
+                if update.pop("_drop_artifact", False):
+                    run.pop("artifact", None)
+                run.update(update)
             if changed:
                 self._save()
         return changed
+
+    def _advance_one(self, run):
+        """单条记录的判定；返回要写回运行表的字段。"""
+        log_path = run.get("log") or ""
+        update: dict = {}
+        try:
+            pgid = int(str(run.get("pid") or ""))
+        except ValueError:
+            pgid = 0
+        if pgid and group_alive(pgid):
+            update = {"miss": 0}
+            if run.get("status") == "starting":
+                port = detect_port(log_path)
+                if port:
+                    update["port"] = port
+                    update["status"] = "ready"
+                    update["_changed"] = True
+            return update
+
+        code = read_code(log_path)
+        if code is None:
+            # Sessions 的回收线程可能还没把退出码写下来，等几轮再说。
+            miss = int(run.get("miss") or 0) + 1
+            if miss < DEAD_WAIT_TICKS:
+                return {"miss": miss}
+            return {"pid": "", "status": "stopped", "_changed": True}
+
+        update = {
+            "pid": "",
+            "code": str(code),
+            "status": "exited" if code == 0 else "failed",
+            "err": "" if code == 0 else error_text(log_path),
+            "miss": 0,
+            "_changed": True,
+        }
+        if code == 0 and run.get("type") == "package":
+            # 装成功才记产物；失败了不留下上一次的下载入口。
+            artifact = find_artifact(run)
+            if artifact:
+                update["artifact"] = artifact
+            else:
+                update["_drop_artifact"] = True
+        return update

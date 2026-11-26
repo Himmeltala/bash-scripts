@@ -122,6 +122,9 @@ class Store:
     def __init__(self, path):
         self.path = Path(path)
         self.lock = threading.RLock()
+        # 解析结果按文件 mtime 缓存：状态推送很密，不必每次都重读重解析整份 state.json。
+        self._memo = None
+        self._memo_mtime = None
 
     def _read(self):
         data = read_json(self.path, default=None)
@@ -139,11 +142,28 @@ class Store:
         }
 
     def _write(self, data):
-        write_json(self.path, data)
+        write_json(self.path, data, indent=None)
+        self._memo = None
+
+    def _mtime(self):
+        try:
+            return self.path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    # 读路径用这份：文件没动过就交缓存，外部（命令行）改过文件时 mtime 变了会重读。
+    def _data(self):
+        mtime = self._mtime()
+        if self._memo is not None and mtime is not None and mtime == self._memo_mtime:
+            return self._memo
+        data = self._read()
+        self._memo = data
+        self._memo_mtime = mtime
+        return data
 
     def workspaces(self):
         with self.lock:
-            return copy.deepcopy(self._read()["workspaces"])
+            return copy.deepcopy(self._data()["workspaces"])
 
     def take_groups(self):
         """旧版把分组存在 state.json 里；启动时取出来交给 LayoutStore，并从状态文件删掉。"""
@@ -158,9 +178,10 @@ class Store:
             return groups
 
     def find(self, ws_id):
-        for item in self.workspaces():
-            if item["id"] == ws_id:
-                return item
+        with self.lock:
+            for item in self._data()["workspaces"]:
+                if item["id"] == ws_id:
+                    return copy.deepcopy(item)
         return None
 
     def add(self, root, kind):

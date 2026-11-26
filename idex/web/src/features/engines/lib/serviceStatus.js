@@ -10,15 +10,17 @@
 export const STATUS_TEXT = {
   starting: '启动中',
   ready: '运行中',
+  stopping: '停止中',
   exited: '已结束',
   failed: '失败',
   stopped: '已停止',
 }
 
-// 五种状态各用一色，别让「已结束」和「已停止」混成同一个灰。
+// 每种状态各用一色，别让「已结束」和「已停止」混成同一个灰。
 export const STATUS_COLOR = {
   starting: 'warning',
   ready: 'ready',
+  stopping: 'warning',
   exited: 'info',
   failed: 'failed',
   stopped: 'grey',

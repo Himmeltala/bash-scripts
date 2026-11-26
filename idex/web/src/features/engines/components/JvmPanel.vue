@@ -168,6 +168,8 @@ const props = defineProps({
 })
 
 const LIVE = LIVE_STATUSES
+// 停止中也要按「有进程」显示：按钮留在停止一侧，别跳出个启动按钮。
+const BUSY = [...LIVE_STATUSES, 'stopping']
 
 const ENGINE_LABELS = {
   engine: 'JVM',
@@ -184,7 +186,7 @@ const engineId = computed(() => {
   return (jvm && jvm.id) || ''
 })
 
-const { state: engineState, ws: engineWs, registered, loading, error, refresh, reload } = useToolWorkspace({
+const { state: engineState, ws: engineWs, registered, loading, error, reload } = useToolWorkspace({
   api: jvmApi,
   engineId: () => engineId.value,
   localApi: toolsApi,
@@ -285,7 +287,6 @@ async function setJdk(jdk) {
   try {
     await jvmApi.setJdk(props.ws.id, jdk)
     toast(jdk ? 'JDK 已设置，下次启动生效' : '已改为跟随当前环境', 'primary')
-    await refresh()
     return true
   } catch (err) {
     toast(`设置 JDK 失败：${err.message}`, 'error')
@@ -311,7 +312,6 @@ async function rescan() {
   try {
     await jvmApi.rescan(props.ws.id)
     toast('已开始重新扫描', 'primary')
-    await refresh()
   } catch (err) {
     toast(`重新扫描失败：${err.message}`, 'error')
   } finally {
@@ -323,7 +323,6 @@ async function startService(payload) {
   try {
     await jvmApi.start(payload)
     toast('已发出启动', 'primary')
-    await refresh()
   } catch (err) {
     toast(`启动失败：${err.message}`, 'error')
   }
@@ -332,8 +331,7 @@ async function startService(payload) {
 async function stopService(runId) {
   try {
     await jvmApi.stop(runId)
-    toast('已停止', 'primary')
-    await refresh()
+    toast('已发出停止', 'primary')
   } catch (err) {
     toast(`停止失败：${err.message}`, 'error')
   }
@@ -348,7 +346,6 @@ async function restart(row) {
   try {
     await jvmApi.restart(row.run.id)
     toast('已发出重启', 'primary')
-    await refresh()
   } catch (err) {
     toast(`重启失败：${err.message}`, 'error')
   } finally {
@@ -361,10 +358,10 @@ const rows = computed(() => {
   return services.value
     .map((svc) => {
       const run = svc.run
-      const live = !!run && LIVE.includes(run.status)
-      // 同一模块上的另一个动作在跑时不能起：打包与启动抢同一个 target；同工作区的别的模块不受影响。
+      const live = !!run && BUSY.includes(run.status)
+      // 同一模块上的另一个动作在跑（含正在停止）时不能起：打包与启动抢同一个 target。
       const blocked = services.value.some(
-        (o) => o !== svc && o.run && LIVE.includes(o.run.status) && o.tag === svc.tag,
+        (o) => o !== svc && o.run && BUSY.includes(o.run.status) && o.tag === svc.tag,
       )
       return {
         key: svc.id,
@@ -385,7 +382,7 @@ const rows = computed(() => {
         port: run && run.port,
         started: run && run.started,
         ago: run ? ago(run.started) : '',
-        stopping: !!stopping.value[svc.id],
+        stopping: !!stopping.value[svc.id] || (run && run.status === 'stopping'),
         starting: !!starting.value[svc.id],
         restarting: !!restarting.value[svc.id],
       }
@@ -403,7 +400,6 @@ async function onSave({ args, mode, refresh: refreshDeps }) {
       refresh: refreshDeps,
     })
     toast('参数已保存', 'primary')
-    await refresh()
   } catch (err) {
     toast(`保存参数失败：${err.message}`, 'error')
   }
