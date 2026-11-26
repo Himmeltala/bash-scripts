@@ -20,14 +20,6 @@
     >
       <v-icon size="13">mdi-console-line</v-icon>
       <span class="name">{{ item.title || '终端' }}</span>
-      <v-icon
-        size="13"
-        class="close"
-        title="关闭终端"
-        @click.stop="$emit('close', item.key)"
-      >
-        mdi-close
-      </v-icon>
     </button>
     <v-btn
       icon="mdi-plus"
@@ -44,7 +36,8 @@ defineProps({
   items: { type: Array, default: () => [] },
   activeKey: { type: String, default: '' },
 })
-defineEmits(['select', 'create', 'close', 'menu'])
+// 关闭只走右键菜单，标签上不放删除按钮，免得点错。
+defineEmits(['select', 'create', 'menu'])
 </script>
 
 <style scoped>
@@ -85,12 +78,5 @@ defineEmits(['select', 'create', 'close', 'menu'])
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-.close {
-  opacity: 0;
-}
-.tab:hover .close,
-.tab.active .close {
-  opacity: 0.8;
 }
 </style>

@@ -14,7 +14,6 @@
         :active-key="activeKey"
         @select="selectTab"
         @create="createTab"
-        @close="closeTab"
         @menu="openTabMenu"
       />
     </div>
