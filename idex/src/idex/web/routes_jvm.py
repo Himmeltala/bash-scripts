@@ -77,13 +77,13 @@ class JvmRoutes(SSEMixin):
                 "error": self._jvm_rescan_errors.get(key, ""),
             }
 
-    def _jvm_download(self, query):
+    def _jvm_download(self, query, head=False):
         """打包产物按运行号下发；文件位置只认引擎记下的那一个。和浏览页下载共用 _send_download。"""
         runid = str((query.get("run") or [""])[0])
         path = self.jvm_app.artifact_path(runid)
         if path is None:
             raise ApiError(404, "这个运行没有可下载的安装包")
-        self._send_download(path, path.name)
+        self._send_download(path, path.name, head=head)
         return STREAMED
 
     def _jvm_dispatch(self, method, route, query, body):
@@ -100,8 +100,8 @@ class JvmRoutes(SSEMixin):
         if route == "jdks":
             self._require_local("读取 JDK 列表")
             return {"jdks": self.jvm_app.jdks(), "current": os.environ.get("JAVA_HOME", "")}
-        if route == "download" and method == "GET":
-            return self._jvm_download(query)
+        if route == "download" and method in ("GET", "HEAD"):
+            return self._jvm_download(query, head=(method == "HEAD"))
         if route == "log":
             return self._jvm_log_page(query)
         if route == "log/stream":

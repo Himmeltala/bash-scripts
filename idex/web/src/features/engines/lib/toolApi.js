@@ -22,6 +22,7 @@ export const nodeApi = {
   ...nodeClient.api,
   nodes: () => nodeClient.call('GET', '/nodes'),
   runs: () => nodeClient.call('GET', '/runs'),
+  downloadUrl: (run) => `/__idex/api/node/download?run=${encodeURIComponent(run ?? '')}`,
   rescanStatus: (ws) => nodeClient.call('GET', `/rescan/status?ws=${encodeURIComponent(ws ?? '')}`),
   restart: (run) => nodeClient.call('POST', '/restart', { run }),
   setNode: (ws, node) => nodeClient.call('POST', '/node', { ws, node }),

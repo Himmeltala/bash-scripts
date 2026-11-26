@@ -115,6 +115,14 @@ class JvmDispatchTest(unittest.TestCase):
     def test_state(self):
         self.assertIn("workspaces", self.make()._jvm_dispatch("GET", "state", {}, {}))
 
+    def test_download_head_passes_flag(self):
+        h = self.make()
+        h.jvm_app.artifact_path = lambda runid: Path(__file__).resolve()
+        sent = {}
+        h._send_download = lambda path, name, head=False: sent.update(name=name, head=head)
+        h._jvm_dispatch("HEAD", "download", {"run": ["r1"]}, {})
+        self.assertTrue(sent["head"])
+
     def test_start(self):
         self.assertEqual(self.make()._jvm_dispatch("POST", "start", {}, {"svc": "x"}), {"run": "r1"})
 

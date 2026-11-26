@@ -15,7 +15,8 @@ import time
 from pathlib import Path
 
 from browse import list_dirs
-from engines.node.engine import current_node_version, discover_nodes
+from engines.node.engine import build_artifact, current_node_version, discover_nodes, ws_root
+from routes_browse import _compress_lock, _zipx_pack
 from runner import run_log_path
 from sse import SSEMixin
 from web import ApiError, STREAMED, log
@@ -95,6 +96,8 @@ class NodeRoutes(SSEMixin):
             return self._node_rescan_status(wid)
         if route == "runs":
             return self.node_service.runs_summary()
+        if route == "download" and method in ("GET", "HEAD"):
+            return self._node_download(query, head=(method == "HEAD"))
         if route == "nodes":
             return nodes_payload()
         if route == "log":
@@ -198,6 +201,50 @@ class NodeRoutes(SSEMixin):
             # 符号链接成环时 resolve 抛 RuntimeError，按路径不对处理。
             raise ApiError(400, "日志路径读不了：%s" % exc)
         return path
+
+    def _node_download(self, query, head=False):
+        """打包产物：把 dist 用 zipx 压成 zip，缓存里已有新于 dist 的就直接下发。"""
+        runid = str((query.get("run") or [""])[0]).strip()
+        info = self.node_service.run_info(runid)
+        dist = build_artifact(info)
+        if dist is None:
+            raise ApiError(404, "这个运行没有可下载的安装包")
+        root = ws_root(self.node_service.state, info.get("ws", ""))
+        try:
+            dist = dist.resolve()
+            dist.relative_to(root.resolve())
+        except (OSError, ValueError):
+            raise ApiError(400, "打包目录不在工作区里")
+        name = "%s.zip" % (info.get("tag") or dist.parent.name or "dist")
+        archive = self.node_service.home / "artifacts" / (str(runid) + ".zip")
+        with _compress_lock(str(archive)):
+            fresh = False
+            try:
+                fresh = archive.is_file() and archive.stat().st_mtime >= dist.stat().st_mtime
+            except OSError:
+                fresh = False
+            if not fresh:
+                archive.parent.mkdir(parents=True, exist_ok=True)
+                _zipx_pack(str(dist), str(archive))
+        self._prune_artifacts(archive.parent)
+        self._send_download(archive, name, head=head)
+        return STREAMED
+
+    # 产物缓存只留一段：每次打包顺带清理超过七天的旧包，缓存目录不会一直涨。
+    ARTIFACT_KEEP_SECONDS = 7 * 24 * 3600
+
+    def _prune_artifacts(self, directory):
+        cutoff = time.time() - self.ARTIFACT_KEEP_SECONDS
+        try:
+            entries = list(Path(directory).iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            try:
+                if entry.is_file() and entry.stat().st_mtime < cutoff:
+                    entry.unlink()
+            except OSError:
+                pass
 
     def _node_log_page(self, query):
         """日志分页仍由 NodeService 拼状态；先确认运行号没跳出日志目录。"""

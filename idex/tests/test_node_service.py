@@ -186,6 +186,36 @@ class SnapshotTest(unittest.TestCase):
             self.assertEqual(svc["run"]["status"], "starting")
 
 
+class BuildArtifactTest(unittest.TestCase):
+    def test_only_finished_build_with_dist_gets_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = Path(tmp) / "app"
+            dist = app / "dist"
+            dist.mkdir(parents=True)
+            run = {"type": "build", "status": "exited", "code": "0", "path": str(app)}
+            self.assertEqual(engine.build_artifact(run), dist)
+            self.assertIsNone(engine.build_artifact({**run, "type": "dev"}))
+            self.assertIsNone(engine.build_artifact({**run, "status": "failed"}))
+            self.assertIsNone(engine.build_artifact({**run, "code": "1"}))
+            self.assertIsNone(engine.build_artifact({**run, "path": str(app / "none")}))
+
+    def test_snapshot_marks_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = Path(tmp) / "app"
+            (app / "dist").mkdir(parents=True)
+            rows = [
+                ["ws", "w1", str(app), "1"],
+                ["svc", "w1.build.demo", "w1", "build", str(app), ".", "", ".", "pnpm build", "pnpm"],
+                ["run", "w1.build.demo.111", "w1", "build", "demo", str(app), ".",
+                 ".", "", "pnpm build", "pnpm build", "", "", "exited", "1", "0", ""],
+            ]
+            path = Path(tmp) / "state.tsv"
+            write_state(path, rows)
+            snap = engine.State(path).snapshot()
+            svc = snap["workspaces"][0]["services"][0]
+            self.assertEqual(svc["run"]["artifact"], {"name": "demo.zip"})
+
+
 class StatePayloadTest(unittest.TestCase):
     def test_carries_aliases_groups_and_custom_flag(self):
         with tempfile.TemporaryDirectory() as tmp:

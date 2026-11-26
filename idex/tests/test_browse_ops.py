@@ -134,6 +134,15 @@ class PlainDirOps(unittest.TestCase):
         self.assertEqual(status, 200, data)
         self.assertEqual((self.root / "existing.txt").read_text("utf-8"), "new")
 
+    def test_upload_rejects_oversize_before_writing(self):
+        from browse_fs import UPLOAD_MAX, save_upload
+        import io
+
+        with self.assertRaises(web.ApiError) as caught:
+            save_upload(str(self.root), "", "big.bin", io.BytesIO(b"x"), UPLOAD_MAX + 1)
+        self.assertEqual(caught.exception.status, 413)
+        self.assertFalse((self.root / "big.bin").exists())
+
     def test_upload_rejects_empty_and_bad_names(self):
         status, data = self.upload("", "empty.txt", b"")
         self.assertEqual(status, 400, data)

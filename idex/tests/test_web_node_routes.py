@@ -5,7 +5,8 @@
 # @FilePath: \idex\tests\test_web_node_routes.py
 # @Description: Node 网页接口的回归测试。
 
-import sys, tempfile, threading, time, unittest
+import shutil
+import sys, tempfile, threading, time, types, unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -17,7 +18,9 @@ sys.path[:0] = [
 ]
 from sse import SSEMixin
 from web import ApiError
+from routes_browse import zipx_command
 from routes_node import NodeRoutes
+import engines.node.engine as engine
 
 class FakeService:
     def __init__(self): self.calls = []
@@ -221,6 +224,67 @@ class NodeDispatchTest(unittest.TestCase):
             # 引擎断开时 tick 失败不该挡住状态回话。
             svc.engine = ExplodingEngine()
             self.assertIn("workspaces", svc.state_payload())
+
+
+
+
+class NodeDownloadTest(unittest.TestCase):
+    """打包产物下载：dist 经 zipx 压成 zip，第二次直接复用缓存。"""
+
+    @unittest.skipUnless(zipx_command(), "需要可执行的 zipx")
+    def test_download_packs_dist_and_reuses_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            app = home / "app"
+            (app / "dist").mkdir(parents=True)
+            (app / "dist" / "index.js").write_text("console.log(1)\n", encoding="utf-8")
+            state_path = home / "state.tsv"
+            state_path.write_text(
+                "\n".join(
+                    [
+                        "\x1f".join(["ws", "w1", str(app), "1"]),
+                        "\x1f".join(
+                            ["run", "w1.build.demo.1", "w1", "build", "demo", str(app), ".",
+                             ".", "", "pnpm build", "pnpm build", "", "", "exited", "1", "0", ""]
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            service = types.SimpleNamespace()
+            service.state = engine.State(state_path)
+            service.home = home
+            service.run_info = lambda rid: engine.run_info(service.state.find(engine.RUN_KIND, rid))
+
+            h = NodeRoutes()
+            h.node_service = service
+            sent = {}
+            h._send_download = lambda path, name, head=False: sent.update(
+                path=str(path), name=name, head=head
+            )
+
+            h._node_download({"run": ["w1.build.demo.1"]})
+            self.assertEqual(sent["name"], "demo.zip")
+            first = Path(sent["path"])
+            self.assertTrue(first.is_file())
+            mtime = first.stat().st_mtime_ns
+
+            h._node_download({"run": ["w1.build.demo.1"]})
+            self.assertEqual(Path(sent["path"]).stat().st_mtime_ns, mtime)
+
+            # HEAD 带同样的响应头，不再写正文。
+            h._node_download({"run": ["w1.build.demo.1"]}, head=True)
+            self.assertTrue(sent["head"])
+
+    def test_download_requires_finished_build(self):
+        service = types.SimpleNamespace()
+        service.run_info = lambda rid: {"type": "dev", "status": "ready", "code": ""}
+        h = NodeRoutes()
+        h.node_service = service
+        with self.assertRaises(ApiError) as caught:
+            h._node_download({"run": ["x"]})
+        self.assertEqual(caught.exception.status, 404)
 
 
 if __name__ == "__main__":

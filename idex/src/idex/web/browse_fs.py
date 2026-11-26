@@ -384,6 +384,8 @@ def make_entry(root, rel, name, kind):
 
 # 上传按块从连接里读，边收边写，多大都不占内存。
 UPLOAD_CHUNK = 64 * 1024
+# 单个文件上传上限；超过直接拒绝，别把磁盘写满。
+UPLOAD_MAX = 512 * 1024 * 1024
 
 
 def _owner_name(uid):
@@ -447,6 +449,8 @@ def save_upload(root, rel, name, stream, length, overwrite=False):
         raise ApiError(409, "已经有同名的文件或目录：%s" % name)
     if length <= 0:
         raise ApiError(400, "上传内容为空")
+    if length > UPLOAD_MAX:
+        raise ApiError(413, "文件太大：%d MB，上限 %d MB" % (length // (1024 * 1024), UPLOAD_MAX // (1024 * 1024)))
     fd, tmp = tempfile.mkstemp(prefix=".upload-", suffix=".part", dir=parent)
     total = 0
     try:
@@ -459,7 +463,21 @@ def save_upload(root, rel, name, stream, length, overwrite=False):
                 out.write(chunk)
                 total += len(chunk)
                 remain -= len(chunk)
-        os.replace(tmp, target)
+        # 不带 overwrite 时用硬链接落位：目标名已存在会原子失败，不会盖掉别人刚建的同名文件。
+        if overwrite:
+            os.replace(tmp, target)
+        else:
+            try:
+                os.link(tmp, target)
+            except FileExistsError:
+                raise ApiError(409, "已经有同名的文件或目录：%s" % name)
+            except OSError:
+                # 有的文件系统不支持硬链接：退回改名，前面的存在性检查仍然先挡一遍。
+                if os.path.lexists(target):
+                    raise ApiError(409, "已经有同名的文件或目录：%s" % name)
+                os.replace(tmp, target)
+            else:
+                os.unlink(tmp)
     except BaseException:
         try:
             os.unlink(tmp)

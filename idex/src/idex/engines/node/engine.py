@@ -70,6 +70,18 @@ def parse_rows(text):
     return parse_fixed_rows(text, WIDTHS)
 
 
+def build_artifact(run):
+    """打包成功且产出 dist 目录时返回该目录，供页面显示下载入口。"""
+    if not isinstance(run, dict):
+        return None
+    if run.get("type") != "build":
+        return None
+    if run.get("status") != "exited" or str(run.get("code", "")) != "0":
+        return None
+    dist = Path(str(run.get("path") or "")) / "dist"
+    return dist if dist.is_dir() else None
+
+
 def one_line(value):
     """命令与名称都压成一行：引擎按行收请求，换行会把协议打断。"""
     return " ".join(str(value or "").split())
@@ -206,6 +218,10 @@ class State(StateRows):
             if ws is None:
                 continue
             run = runs.get(r[1])
+            info = run_info(run) if run else None
+            if info is not None and build_artifact(info) is not None:
+                # 打包留下的 dist 可以下载；只给名字，大小等真正打包时再说。
+                info["artifact"] = {"name": "%s.zip" % (info.get("tag") or "dist")}
             ws["services"].append(
                 {
                     "id": r[1],
@@ -218,7 +234,7 @@ class State(StateRows):
                     "pm": r[9],
                     "tag": r[1].split(".", 2)[-1],
                     "custom": r[1] in custom_ids,
-                    "run": run_info(run) if run else None,
+                    "run": info,
                 }
             )
 
@@ -376,6 +392,10 @@ class NodeService:
                 }
             )
         return {"runs": rows}
+
+    def run_info(self, runid):
+        row = self.state.find(RUN_KIND, str(runid or "").strip())
+        return run_info(row) if row is not None else None
 
     def state_payload(self):
         # 与原 nodex 的状态接口一致：取状态前先让引擎收拾一遍在跑的记录。

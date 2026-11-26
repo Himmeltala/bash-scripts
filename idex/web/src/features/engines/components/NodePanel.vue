@@ -87,6 +87,16 @@
       >
         <template #row-extra="{ row }">
           <v-btn
+            v-if="row.run && row.run.artifact"
+            size="small"
+            variant="text"
+            prepend-icon="mdi-download"
+            :href="nodeApi.downloadUrl(row.run.id)"
+            :title="row.run.artifact.name"
+          >
+            下载
+          </v-btn>
+          <v-btn
             v-if="row.svc.custom && !row.live"
             size="small"
             variant="text"
