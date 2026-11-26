@@ -9,6 +9,8 @@
 from web import ApiError
 import os
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from vcs_cli import git
 
@@ -24,10 +26,37 @@ from vcs_common import (
 )
 
 
+# 仓库根、相对前缀与 remote URL 登记后基本不变；短时缓存省掉每个请求一次子进程。
+_INFO_TTL = 60
+_info_cache = {}
+_prefix_cache = {}
+
+
+def _cache_get(cache, key):
+    hit = cache.get(key)
+    if hit is None:
+        return None
+    at, value = hit
+    if time.time() - at > _INFO_TTL:
+        cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_put(cache, key, value):
+    cache[key] = (time.time(), value)
+
+
 def git_prefix(root):
     """工作区在仓库里的路径前缀；根就是仓库时为空串。"""
+    cached = _cache_get(_prefix_cache, str(root))
+    if cached is not None:
+        return cached
     rc, out, _ = git(["rev-parse", "--show-prefix"], cwd=root)
-    return out.decode("utf-8", "replace").strip() if rc == 0 else ""
+    prefix = out.decode("utf-8", "replace").strip() if rc == 0 else ""
+    if rc == 0:
+        _cache_put(_prefix_cache, str(root), prefix)
+    return prefix
 
 
 def strip_prefix(path, prefix):
@@ -216,16 +245,29 @@ def git_head(root):
     return rc == 0, out.decode("utf-8", "replace").strip()
 
 
+def git_head_branch(root):
+    """HEAD 提交号与当前分支一次取回，省一次子进程；空仓库返回 (False, '', '')。"""
+    rc, out, _ = git(["rev-parse", "HEAD", "--abbrev-ref", "HEAD"], cwd=root)
+    parts = out.decode("utf-8", "replace").split() if rc == 0 else []
+    head = parts[0] if parts else ""
+    branch = parts[1] if len(parts) > 1 else ""
+    return bool(head), head, branch
+
+
 def git_info(root):
-    rc, out, err = git(["rev-parse", "--show-toplevel"], cwd=root)
-    if rc != 0:
-        raise ApiError(400, "这个目录不是 Git 仓库：%s" % (err or root))
-    top = out.decode("utf-8", "replace").strip()
-    has_head, head = git_head(root)
-    rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=root)
-    branch = branch.decode("utf-8", "replace").strip() if rc == 0 else ""
-    rc, remote, _ = git(["remote", "get-url", "origin"], cwd=root)
-    remote = remote.decode("utf-8", "replace").strip() if rc == 0 else ""
+    key = str(root)
+    cached = _cache_get(_info_cache, key)
+    if cached is not None:
+        top, remote = cached
+    else:
+        rc, out, err = git(["rev-parse", "--show-toplevel"], cwd=root)
+        if rc != 0:
+            raise ApiError(400, "这个目录不是 Git 仓库：%s" % (err or root))
+        top = out.decode("utf-8", "replace").strip()
+        rc, remote_out, _ = git(["remote", "get-url", "origin"], cwd=root)
+        remote = remote_out.decode("utf-8", "replace").strip() if rc == 0 else ""
+        _cache_put(_info_cache, key, (top, remote))
+    has_head, head, branch = git_head_branch(root)
     return {
         "root": root,
         "top": top,
@@ -261,7 +303,13 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
     if not has_head:
         return []
     # 本地分支与远端跟踪分支一起列：还没拉进本地分支的提交也要看得见。
-    tracking = bool(upstream) and git_ref_exists(root, upstream)
+    # 上游尖端一次取回，同时用来判断上游是否存在，省掉单独一次 rev-parse。
+    tip = ""
+    if upstream:
+        rc, out, _ = git(["rev-parse", "--verify", "--quiet", upstream + "^{commit}"], cwd=root)
+        if rc == 0:
+            tip = out.decode("utf-8", "replace").strip()
+    tracking = bool(tip)
     if all_refs:
         # --branches/--remotes/--tags 代替 HEAD 一个引用，时间线才看得到分叉与合并。
         revs = ["HEAD", "--branches", "--remotes", "--tags"]
@@ -271,40 +319,51 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
     # 不带 --name-status：列表不显示每条提交的文件，带上它每条都要做一次树比对与改名配对，
     # 仓库大时这一项就要一秒多。选中哪条，再由 git_commit_detail 现取那条的路径。
     # -- . 让登记的是仓库子目录时只列这个子目录的提交，跟 svn log 从子目录跑一致。
-    rc, out, err = git(
-        [
-            "log", "-n", str(limit), "--skip=%d" % skip,
-            # --parents 让 git 按路径过滤改写父提交；只用 %P 拿到的是原始父提交，
-            # 工作区是仓库子目录时父提交可能已被省掉，时间线会等一个永远不出现的提交。
-            "--parents", "--no-color", "--topo-order",
-            # 路径过滤默认会把没改这个目录的合并提交省掉，时间线就断开了；--full-history 留住它们。
-            "--full-history",
-            "--date=iso-strict", "--format=" + LOG_FMT, *revs, "--", ".",
-        ],
-        cwd=root,
-    )
-    if rc != 0:
-        raise ApiError(500, err or "git log 失败")
-    entries = parse_git_log(out.decode("utf-8", "replace"))
-    # 标出每条提交的位置：在所有本地分支上、已经进了远端分支，还是只在远端。
+    log_args = [
+        "log", "-n", str(limit), "--skip=%d" % skip,
+        # --parents 让 git 按路径过滤改写父提交；只用 %P 拿到的是原始父提交，
+        # 工作区是仓库子目录时父提交可能已被省掉，时间线会等一个永远不出现的提交。
+        "--parents", "--no-color", "--topo-order",
+        # 路径过滤默认会把没改这个目录的合并提交省掉，时间线就断开了；--full-history 留住它们。
+        "--full-history",
+        "--date=iso-strict", "--format=" + LOG_FMT, *revs, "--", ".",
+    ]
+    # 这几条互不相干，各跑各的 git 进程：大仓库里 rev-list 比 log 还慢，串行就是白等。
     local_revs = ["HEAD", "--branches"] if all_refs else ["HEAD"]
     # 与上面的 log 一样带 --full-history：默认的路径简化会省掉与某一父提交相同的合并提交，
     # 列表里有而这里没有，就会把已经拉下来的合并提交误标成「待拉取」。
-    rc, out, _ = git(["rev-list", "--full-history", *local_revs, "--", "."], cwd=root)
-    local = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
-    pushed = set()
-    tip = ""
-    if tracking:
-        rc, out, _ = git(["rev-parse", "--verify", "--quiet", upstream + "^{commit}"], cwd=root)
-        tip = out.decode("utf-8", "replace").strip() if rc == 0 else ""
-    # 全部引用时按“在任意远端跟踪分支上”算，单查当前上游会把别的远端分支误标成未推送；
-    # 仓库根本没有远端时不标，免得每条都写“未推送”。
-    has_remote = bool(git_remotes(root))
-    if tracking or (all_refs and has_remote):
-        pushed_revs = ["--remotes"] if all_refs else [upstream]
-        rc, out, _ = git(["rev-list", "--full-history", *pushed_revs, "--", "."], cwd=root)
-        pushed = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
-    labels = git_ref_labels(root)
+    local_args = ["rev-list", "--full-history", *local_revs, "--", "."]
+    pushed_revs = None
+    if tracking and not all_refs:
+        pushed_revs = [upstream]
+    elif all_refs:
+        # 有没有配远端要看引用表或 remote 才知道，先按 --remotes 跑着；没有远端时这条几乎不花时间。
+        pushed_revs = ["--remotes"]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        log_future = pool.submit(git, log_args, cwd=root)
+        local_future = pool.submit(git, local_args, cwd=root)
+        labels_future = pool.submit(git_ref_labels, root)
+        pushed_future = (
+            pool.submit(git, ["rev-list", "--full-history", *pushed_revs, "--", "."], cwd=root)
+            if pushed_revs
+            else None
+        )
+        rc, out, err = log_future.result()
+        if rc != 0:
+            raise ApiError(500, err or "git log 失败")
+        entries = parse_git_log(out.decode("utf-8", "replace"))
+        rc, out, _ = local_future.result()
+        local = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
+        labels, has_remote = labels_future.result()
+        # 引用表里没有远端分支时，还可能只是配了远端但从没抓过；这时才多问一次 remote。
+        if not has_remote:
+            has_remote = bool(git_remotes(root))
+        pushed = set()
+        # 全部引用时按“在任意远端跟踪分支上”算，单查当前上游会把别的远端分支误标成未推送；
+        # 仓库根本没有远端时不标，免得每条都写“未推送”。
+        if pushed_future is not None and (tracking or (all_refs and has_remote)):
+            rc, out, _ = pushed_future.result()
+            pushed = set(out.decode("utf-8", "replace").split()) if rc == 0 else set()
     for entry in entries:
         revision = entry["revision"]
         entry["local"] = revision in local
@@ -335,7 +394,7 @@ def git_ref_exists(root, ref):
 
 
 def git_ref_labels(root):
-    """提交号到分支/标签的对应，列表里给提交旁边标引用用。
+    """提交号到分支/标签的对应，顺便说明仓库有没有远端。
 
     附注标签要取它指到的提交号：%(objectname) 是标签对象本身，*objectname 才是提交。
     """
@@ -346,7 +405,8 @@ def git_ref_labels(root):
     )
     labels = {}
     if rc != 0:
-        return labels
+        return labels, False
+    has_remote = False
     for line in out.decode("utf-8", "replace").splitlines():
         parts = line.split("\t")
         if len(parts) < 4 or not parts[0]:
@@ -361,8 +421,9 @@ def git_ref_labels(root):
             kind = "tag"
         else:
             kind = "remote"
+            has_remote = True
         labels.setdefault(peeled, []).append({"name": short, "kind": kind})
-    return labels
+    return labels, has_remote
 
 
 def git_remote_sync(root, fetch=True):

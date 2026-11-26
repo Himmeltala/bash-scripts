@@ -17,7 +17,7 @@ from vcs_cli import git, svn
 from vcs_query import (
     expand_unversioned,
     git_changes,
-    git_head,
+    git_head_branch,
     git_info,
     git_prefix,
     parse_git_status,
@@ -58,12 +58,12 @@ def changes_report(ws):
         if rc != 0:
             return None, 0, None, []
         files, _ = parse_git_status(out, git_prefix(ws["root"]))
-        has_head, head = git_head(ws["root"])
-        rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=ws["root"])
+        # HEAD 与分支一次取回，省掉一个子进程。
+        has_head, head, branch = git_head_branch(ws["root"])
         sig = hashlib.sha1(out)
         sig.update(head.encode("utf-8") if has_head else b"")
-        if rc == 0:
-            sig.update(branch)
+        if branch:
+            sig.update(branch.encode("utf-8"))
         paths = []
         for item in files:
             if item.get("path"):

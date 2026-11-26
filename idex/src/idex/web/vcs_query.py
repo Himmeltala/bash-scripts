@@ -37,6 +37,7 @@ from git_query import (
     git_commit_detail,
     git_diff_of,
     git_head,
+    git_head_branch,
     git_info,
     git_item,
     git_log,

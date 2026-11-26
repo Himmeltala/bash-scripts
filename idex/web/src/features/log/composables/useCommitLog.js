@@ -19,7 +19,9 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
   const content = ref({ text: '', truncated: false })
   // 提交里的整份文件文本：原版本与本版本，供差异编辑器并排/内联使用。
   const texts = ref({ original: '', current: '', ready: false })
+  // 只留最近看过的几条：两份整文件原文不小，翻得越久越占内存。
   const textCache = new Map()
+  const TEXT_CACHE_MAX = 30
   // 锁文件与构建产物不自动取差异。同一提交里点过“加载差异”的路径记下来，换回来不再拦；
   // 换提交要重新拦一次，同一个路径在不同提交里的差异是另一份。
   const revealed = ref(new Set())
@@ -35,6 +37,9 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
   let diffSeq = 0
   // 连续切工作副本或连点刷新时，晚到的旧结果不能盖住新的一次加载。
   let loadSeq = 0
+  // 连远端 fetch 一次要好几秒；半分钟内已经同步过就不再连，重载只读本地记录。
+  const FETCH_MIN_INTERVAL = 30_000
+  let lastFetchAt = 0
 
   const deferredKey = (path) => `${current.value ? current.value.revision : ''}\n${path}`
   const marked = (path) => isDeferred(path) || widePaths.value.has(deferredKey(path))
@@ -61,6 +66,9 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
   }
 
   async function syncRemote(mine) {
+    // 事件触发的重载很密：半分钟内已经 fetch 过就只读本地已有的远端跟踪分支。
+    if (Date.now() - lastFetchAt < FETCH_MIN_INTERVAL) return
+    lastFetchAt = Date.now()
     syncing.value = true
     try {
       const data = await client.log(wsId(), page, 0, true, allBranches.value)
@@ -189,7 +197,10 @@ export function useCommitLog({ wsId, refresh, allBranches, diffScope, isGit, pag
       // 内容被截断就不拿它画差异，退回普通差异文本。
       ready: !(before && before.truncated) && !(now && now.truncated),
     }
-    if (value.ready) textCache.set(key, value)
+    if (value.ready) {
+      textCache.set(key, value)
+      while (textCache.size > TEXT_CACHE_MAX) textCache.delete(textCache.keys().next().value)
+    }
     texts.value = value
   }
 

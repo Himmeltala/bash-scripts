@@ -529,6 +529,8 @@ async function actRow(key, file) {
 async function runAction(key, task) {
   if (acting.value) return
   if (!(await confirmLeave())) return
+  // 服务端在写操作里就会推 repo 事件；响应本身已经带回新清单，这一轮事件不必再取一遍。
+  localWriteAt = Date.now()
   acting.value = key
   error.value = ''
   try {
@@ -742,8 +744,11 @@ function onKeySave(event) {
 }
 
 watch(() => props.ws.id, load)
+let localWriteAt = 0
 // 外部变化（含刚保存的那次）不打断正在改的内容，等改完再刷新。
 watch(() => props.refresh, () => {
+  // 自己刚写完的那一轮：响应已经换上新清单，跳过紧随其后的推送刷新。
+  if (Date.now() - localWriteAt < 1200) return
   if (saving.value) return
   if (dirty.value) {
     pendingRefresh = true

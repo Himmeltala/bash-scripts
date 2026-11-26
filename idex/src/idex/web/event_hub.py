@@ -67,6 +67,7 @@ class EventHub:
         wid = ws["id"]
         last = None
         last_revision = None
+        quiet = 0
         while True:
             with self.lock:
                 if not self.subs.get(wid):
@@ -78,16 +79,22 @@ class EventHub:
             except Exception:
                 signature, count, revision, paths = None, 0, None, []
             # 第一次也推一次：连接建立前后刚发生的改动不会漏掉，页面重载一次无妨。
-            if signature is not None and signature != last:
+            changed = signature is not None and signature != last
+            if changed:
                 self.broadcast(wid, "changes", {"ws": wid, "count": count, "paths": paths})
-            if signature is not None:
                 last = signature
             # 版本变了说明外面提交或更新过，日志与同步页也要重读。
             if revision is not None and revision != last_revision:
                 self.broadcast(wid, "head", {"ws": wid, "revision": revision})
             if revision is not None:
                 last_revision = revision
-            time.sleep(WATCH_INTERVAL)
+            # 一直没动静就把检查间隔拉长：空闲的工作副本不该每 3 秒跑一次 git status。
+            if changed:
+                quiet = 0
+            elif signature is not None:
+                quiet += 1
+            interval = WATCH_INTERVAL if quiet < 5 else (6 if quiet < 20 else 15)
+            time.sleep(interval)
 
 
 HUB = EventHub()
