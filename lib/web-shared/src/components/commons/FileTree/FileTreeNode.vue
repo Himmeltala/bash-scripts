@@ -2,7 +2,7 @@
   <div class="branch">
     <div
       class="row"
-      :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick, 'drag-over': dragOver }]"
+      :class="[rowClass ? rowClass(node) : null, { clickable: pickOnRowClick, 'drag-over': dragOver, picked }]"
       :data-path="key"
       :data-type="node.type"
       :style="{ paddingLeft: 4 + depth * 18 + 'px' }"
@@ -64,7 +64,10 @@
           :pick-on-row-click="pickOnRowClick"
           :texts="texts"
           :movable="movable"
+          :selectable="selectable"
+          :selected-keys="selectedKeys"
           @toggle="emit('toggle', $event)"
+          @select="emit('select', $event)"
           @pick="emit('pick', $event)"
           @context="emit('context', $event)"
           @drag-start="emit('drag-start', $event)"
@@ -102,9 +105,12 @@ const props = defineProps({
   // 长按后可拖到别的目录：按住一段时间才开启原生拖动，避免误拖。
   movable: { type: Boolean, default: false },
   texts: { type: Object, default: () => ({}) },
+  // 多选：Ctrl/Cmd 点行切换，选中项加虚线框。
+  selectable: { type: Boolean, default: false },
+  selectedKeys: { type: Object, default: null },
 })
 
-const emit = defineEmits(['toggle', 'pick', 'context', 'drag-start', 'drag-end', 'drop-on'])
+const emit = defineEmits(['toggle', 'pick', 'context', 'select', 'drag-start', 'drag-end', 'drop-on'])
 
 // 每层的提示文案由调用方给，这里只兜底。
 const DEFAULTS = {
@@ -115,6 +121,7 @@ const EMPTY = { loading: false, error: '', entries: [], truncated: false }
 
 const key = computed(() => props.keyOf(props.node))
 const isDir = computed(() => props.dirOf(props.node))
+const picked = computed(() => !!(props.selectable && props.selectedKeys && props.selectedKeys.has(String(key.value))))
 
 // 长按 350ms 才开启原生拖动，避免点选、右键时误触。
 const dragReady = ref(false)
@@ -179,7 +186,13 @@ const iconStyle = computed(() => {
   return file.value.color ? { color: file.value.color } : null
 })
 
-function onRowClick() {
+function onRowClick(event) {
+  // Ctrl/Cmd 点行只切换多选，不展开也不打开。
+  if (props.selectable && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault()
+    emit('select', props.node)
+    return
+  }
   // 只有调用方允许整行响应时才处理：压缩树只认复选框，浏览树整行都能点。
   if (!props.pickOnRowClick) return
   if (isDir.value) emit('toggle', key.value)
@@ -214,8 +227,11 @@ function onContext(event) {
 .row.clickable {
   cursor: pointer;
 }
-.row.selected {
-  background: rgba(var(--v-theme-primary), 0.14);
+/* 多选与拖入同一套虚线框；.selected 仍表示当前打开的文件。 */
+.row.picked {
+  outline: 1px dashed rgb(var(--v-theme-primary));
+  outline-offset: -1px;
+  background: rgba(var(--v-theme-primary), 0.12);
 }
 .arrow {
   flex: 0 0 auto;

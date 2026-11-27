@@ -172,5 +172,29 @@ export function useBrowseFiles({ wsId, tabs, activePath, drafts, editorOf, show,
     }
   }
 
-  return { nameAsk, delAsk, nameTitle, nameLabel, onTreeAction, moveNode, submitName, submitDelete }
+  // 多选删除：逐个删，失败的不挡住其余；开着这些路径的页签一并关掉。
+  async function deleteMany(paths) {
+    const list = [...new Set((paths || []).map(String).filter(Boolean))]
+    if (!list.length) return false
+    const touched = new Map()
+    for (const path of list) {
+      for (const tab of affectedTabs(path)) touched.set(tab.path, tab)
+    }
+    if (!(await leaveTabs([...touched.values()]))) return false
+    const data = await api.deleteSelection(wsId(), list)
+    let next = activePath.value
+    for (const tab of touched.values()) {
+      const result = closeTabIn(tabs.value, tab.path, next)
+      tabs.value = result.tabs
+      drafts.delete(tab.path)
+      next = result.active
+    }
+    if (next !== activePath.value) activePath.value = next
+    for (const dir of new Set(list.map((path) => dirName(path)))) {
+      await reload(dir)
+    }
+    return data
+  }
+
+  return { nameAsk, delAsk, nameTitle, nameLabel, onTreeAction, moveNode, submitName, submitDelete, deleteMany }
 }

@@ -19,6 +19,7 @@
         :style="{ '--tree-width': `${treeWidth}px` }"
         @mouseover="onRowHover"
         @mousemove="onRowMove"
+        @click.capture="onTreeClick"
         @mouseleave="cancelHover"
       >
         <div class="tree-head">
@@ -143,6 +144,10 @@
           :root-path="ws.root"
           :download-of="downloadOf"
           :row-class="rowClass"
+          :extractable="extractablePath"
+          :selected="selectedPaths"
+          :selection-menu="selectionMenu"
+          selectable
           pick-on-row-click
           :texts="treeTexts"
           editable
@@ -150,6 +155,8 @@
           movable
           @pick="pick"
           @action="onTreeAction"
+          @select="toggleNodeSelection"
+          @clear-selection="clearSelection"
         />
       </aside>
 
@@ -325,6 +332,28 @@
         <v-btn variant="text" @click="delAsk.on = false">取消</v-btn>
         <v-spacer />
         <v-btn color="error" variant="flat" :loading="delAsk.busy" @click="submitDelete">
+          删除
+        </v-btn>
+      </template>
+    </FloatingDialog>
+
+    <FloatingDialog
+      v-model="selDel.on"
+      :initial-width="480"
+      :initial-height="280"
+      :min-width="380"
+      :min-height="220"
+      persistent
+    >
+      <template #title>删除选中的 {{ selectedPaths.length }} 项</template>
+      <p class="ask-hint">
+        选中的目录会连同里面的文件一起删除。已纳入版本控制的能从版本库里找回，未纳管的删了就没了。
+      </p>
+      <p v-if="selDel.error" class="ask-error">{{ selDel.error }}</p>
+      <template #actions>
+        <v-btn variant="text" @click="selDel.on = false">取消</v-btn>
+        <v-spacer />
+        <v-btn color="error" variant="flat" :loading="selDel.busy" @click="submitSelectionDelete">
           删除
         </v-btn>
       </template>
@@ -739,6 +768,8 @@ import { ContextMenu, FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { formatBytes, formatTimestamp } from '@bash-scripts/web-shared/format'
 import { PREVIEW_MAX, isHeldNode } from '../lib/browseOps'
 import { compressiblePath } from '../lib/browseCompress'
+import { extractablePath } from '../lib/browseArchive'
+import { sharesParent, togglePath } from '../lib/browseSelection'
 import { SOURCE_LABELS, previewKindOf } from '../../editor/core/previews/previewTypes'
 import { SYMBOL_MENU, TAB_MENU } from '../lib/browseMenus'
 import { matchesBinding } from '../../settings/lib/shortcuts'
@@ -1113,6 +1144,44 @@ const saveFile = (path, text) => api.save(props.ws.id, path, text)
 
 const held = computed(() => (isHeldNode(activeTab.value) ? activeTab.value : null))
 
+// 多选：Ctrl/Cmd 点行加入或移出；多选时右键换成压缩、下载、删除这一套菜单。
+const selectedPaths = ref([])
+const sameParent = computed(() => sharesParent(selectedPaths.value))
+const selectionMenu = computed(() => [
+  {
+    action: 'selection-compress',
+    label: '压缩为 zip',
+    icon: 'mdi-zip-box-outline',
+    disabled: !sameParent.value,
+  },
+  // 下载不受同目录限制：跨目录时按工作区相对路径打进一个包。
+  { action: 'selection-download', label: '下载', icon: 'mdi-download' },
+  { action: 'selection-copy', label: '复制相对路径', icon: 'mdi-content-copy' },
+  { sep: true },
+  { action: 'selection-delete', label: '删除', icon: 'mdi-trash-can-outline', danger: true },
+])
+
+function toggleNodeSelection(node) {
+  const path = String((node && node.path) || '')
+  if (!path) return
+  selectedPaths.value = togglePath(selectedPaths.value, path)
+}
+
+function clearSelection() {
+  if (selectedPaths.value.length) selectedPaths.value = []
+}
+
+// 不按 Ctrl 点树里的任何一行，都先清掉多选再走原来的打开/展开。
+function onTreeClick(event) {
+  if (event.ctrlKey || event.metaKey) return
+  clearSelection()
+}
+
+watch(
+  () => props.ws.id,
+  () => clearSelection(),
+)
+
 function pick(node) {
   return show(node)
 }
@@ -1422,6 +1491,7 @@ watch(
   { immediate: true },
 )
 watch(searching, (on) => {
+  if (on) clearSelection()
   if (!on) {
     // 搜索期间攒下的外部变化，退出搜索时把目录树补读一遍。
     diskSync.flushSearchStale()
@@ -1439,6 +1509,7 @@ const {
   moveNode,
   submitName,
   submitDelete,
+  deleteMany,
 } = useBrowseFiles({
   wsId: () => props.ws.id,
   tabs,
@@ -1473,6 +1544,26 @@ function onTreeAction(payload) {
     compressDir(payload.node)
     return
   }
+  if (payload.action === 'extract') {
+    extractArchive(payload.node)
+    return
+  }
+  if (payload.action === 'selection-compress') {
+    compressSelection()
+    return
+  }
+  if (payload.action === 'selection-download') {
+    downloadSelection()
+    return
+  }
+  if (payload.action === 'selection-copy') {
+    copySelection()
+    return
+  }
+  if (payload.action === 'selection-delete') {
+    Object.assign(selDel, { on: true, error: '', busy: false })
+    return
+  }
   if (payload.action === 'props') {
     openProps(payload.node ? payload.node.path : '')
     return
@@ -1490,6 +1581,85 @@ async function compressDir(node) {
     treeRef.value?.reloadDir(dirName(path))
   } catch (err) {
     flash(err && err.message ? err.message : '压缩失败')
+  }
+}
+
+// 解压 zip：解到同级同名目录，目标已存在时服务端会拒绝；成功后重读父目录。
+async function extractArchive(node) {
+  const path = extractablePath(node)
+  if (!path) return
+  try {
+    const data = await api.extract(props.ws.id, path)
+    flash(`已解压到 ${data.path}`)
+    treeRef.value?.reloadDir(dirName(path))
+  } catch (err) {
+    flash(err && err.message ? err.message : '解压失败')
+  }
+}
+
+// 多选压缩：服务端要求同一目录，包名按「名字.zip」或「父目录名-选中.zip」。
+async function compressSelection() {
+  const paths = [...selectedPaths.value]
+  if (!paths.length) return
+  try {
+    const data = await api.compressSelection(props.ws.id, paths)
+    flash(`已生成 ${data.path}`)
+    reloadParents(paths)
+    clearSelection()
+  } catch (err) {
+    flash(err && err.message ? err.message : '压缩失败')
+  }
+}
+
+// 多选下载：单个文件直接下发，其余打成 zip 再下发。
+async function downloadSelection() {
+  const paths = [...selectedPaths.value]
+  if (!paths.length) return
+  try {
+    api.downloadSelection(props.ws.id, paths)
+    flash('已开始下载所选内容')
+    clearSelection()
+  } catch (err) {
+    flash(err && err.message ? err.message : '下载失败')
+  }
+}
+
+async function copySelection() {
+  try {
+    await navigator.clipboard.writeText(selectedPaths.value.join('\n'))
+    flash(`已复制 ${selectedPaths.value.length} 条路径`)
+  } catch (err) {
+    flash('复制失败，浏览器不允许写剪贴板')
+  }
+}
+
+function reloadParents(paths) {
+  for (const dir of new Set(paths.map((path) => dirName(path)))) {
+    treeRef.value?.reloadDir(dir)
+  }
+}
+
+// 多选删除：先问清有草稿的页签，删完关掉对应页签并重读各自目录。
+const selDel = reactive({ on: false, error: '', busy: false })
+
+async function submitSelectionDelete() {
+  if (selDel.busy) return
+  selDel.busy = true
+  selDel.error = ''
+  try {
+    const data = await deleteMany([...selectedPaths.value])
+    if (data === false) return
+    selDel.on = false
+    clearSelection()
+    if (data.failed && data.failed.length) {
+      flash(`已删除 ${data.deleted.length} 项，${data.failed.length} 项失败：${data.failed[0].message}`)
+    } else {
+      flash(`已删除 ${data.deleted.length} 项`)
+    }
+  } catch (err) {
+    selDel.error = err && err.message ? err.message : '删除失败'
+  } finally {
+    selDel.busy = false
   }
 }
 

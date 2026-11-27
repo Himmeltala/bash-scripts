@@ -23,7 +23,10 @@
         :pick-on-row-click="pickOnRowClick"
         :texts="texts"
         :movable="movable"
+        :selectable="selectable"
+        :selected-keys="selectedSet"
         @toggle="toggle"
+        @select="emit('select', $event)"
         @pick="emit('pick', $event)"
         @context="openMenu"
         @drag-start="onDragStart"
@@ -61,7 +64,10 @@
           :pick-on-row-click="pickOnRowClick"
           :texts="texts"
           :movable="movable"
+          :selectable="selectable"
+          :selected-keys="selectedSet"
           @toggle="toggle"
+          @select="emit('select', $event)"
           @pick="emit('pick', $event)"
           @context="openMenu"
           @drag-start="onDragStart"
@@ -118,9 +124,15 @@ const props = defineProps({
   // 长按节点可拖到别的目录，松手后由调用方执行移动。
   movable: { type: Boolean, default: false },
   texts: { type: Object, default: () => ({}) },
+  // 传一个判定函数：节点是压缩包时返回真，右键菜单才多出「解压」。
+  extractable: { type: Function, default: null },
+  // 多选：按住 Ctrl 点行切换选中；右键选中的行给出调用方准备的多选菜单。
+  selectable: { type: Boolean, default: false },
+  selected: { type: Array, default: () => [] },
+  selectionMenu: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['pick', 'action'])
+const emit = defineEmits(['pick', 'action', 'select', 'clear-selection'])
 
 const DEFAULTS = {
   truncated: '这一层文件太多，只列了前面一部分。',
@@ -133,6 +145,7 @@ const DEFAULTS = {
   newDir: '新建目录',
   upload: '上传文件',
   compress: '压缩为 zip',
+  extract: '解压',
   props: '属性',
   rename: '重命名',
   delete: '删除',
@@ -148,6 +161,7 @@ const started = ref(false)
 const rootRef = ref(null)
 
 const rootKey = computed(() => (props.root ? props.keyOf(props.root) : ''))
+const selectedSet = computed(() => new Set(props.selected.map(String)))
 const rootState = computed(() => cache[rootKey.value] || EMPTY)
 
 async function load(key, force = false) {
@@ -304,6 +318,9 @@ const absolutePath = computed(() => {
 const isDirNode = computed(() => (menu.node ? props.dirOf(menu.node) : false))
 
 function openMenu({ node, event }) {
+  if (props.selectable && !selectedSet.value.has(String(props.keyOf(node)))) {
+    emit('clear-selection')
+  }
   menu.node = node
   menu.copied = ''
   menu.x = event.clientX
@@ -313,6 +330,15 @@ function openMenu({ node, event }) {
 
 // 按当前右键的节点算菜单项：可编辑、目录、路径是否有效都会影响条目。
 const menuItems = computed(() => {
+  // 右键点在已选中的条目上、且不止一项：整套菜单换成调用方给的多选动作。
+  if (
+    props.selectable
+    && selectedSet.value.size > 1
+    && menu.node
+    && selectedSet.value.has(String(props.keyOf(menu.node)))
+  ) {
+    return props.selectionMenu
+  }
   const items = []
   const path = relativePath.value
   if (props.editable) {
@@ -323,6 +349,9 @@ const menuItems = computed(() => {
         { action: 'upload', label: text.value.upload, icon: 'mdi-cloud-upload-outline' },
         { action: 'compress', label: text.value.compress, icon: 'mdi-zip-box-outline', disabled: !path },
       )
+    }
+    if (!isDirNode.value && props.extractable && props.extractable(menu.node)) {
+      items.push({ action: 'extract', label: text.value.extract, icon: 'mdi-folder-zip-outline', disabled: !path })
     }
     items.push(
       { action: 'rename', label: text.value.rename, icon: 'mdi-form-textbox', disabled: !path },

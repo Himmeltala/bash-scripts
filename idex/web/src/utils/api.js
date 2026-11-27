@@ -112,7 +112,23 @@ export const api = {
   renameEntry: (ws, path, name) => call('POST', '/rename', { ws, path, name }),
   moveEntry: (ws, path, dir) => call('POST', '/move', { ws, path, dir }),
   deleteEntry: (ws, path) => call('POST', '/delete', { ws, path }),
+  // 多选：同一目录下的条目打成一个 zip；下载时单文件直发、其余打包。
+  compressSelection: (ws, paths) => call('POST', '/compress-selection', { ws, paths }),
+  deleteSelection: (ws, paths) => call('POST', '/delete-selection', { ws, paths }),
+  // 多选下载走 GET：在点击里同步挂地址，浏览器按普通附件处理，不受异步拦截影响。
+  downloadSelection: (ws, paths) => {
+    const params = new URLSearchParams({ ws })
+    for (const path of paths || []) params.append('path', path)
+    const link = document.createElement('a')
+    link.href = `${PREFIX}/download-selection?${params}`
+    link.rel = 'noopener'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  },
   compress: (ws, path) => call('POST', '/compress', { ws, path }),
+  extract: (ws, path) => call('POST', '/extract', { ws, path }),
   search: (ws, text, mode = 'name', path = '', token = '') =>
     call(
       'GET',

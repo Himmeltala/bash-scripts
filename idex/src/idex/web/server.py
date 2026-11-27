@@ -312,6 +312,9 @@ READ_ROUTES = {
     "settings": lambda h, m, q, b: h._settings_payload() if m == "GET" else _NOT_HANDLED,
     "lsp/status": lambda h, m, q, b: h._lsp_status(),
     "download": lambda h, m, q, b: h._download(q, head=(m == "HEAD")),
+    "download-selection": lambda h, m, q, b: (
+        h._browse_download_selection(q) if m == "GET" else _NOT_HANDLED
+    ),
     "operations": lambda h, m, q, b: h._latest_job(q) if m == "GET" else _NOT_HANDLED,
     "logs": lambda h, m, q, b: h._logs_read(q) if m == "GET" else _NOT_HANDLED,
     "terminal/sessions": lambda h, m, q, b: h._terminal_sessions(q),
@@ -340,6 +343,9 @@ WRITE_ROUTES = {
     "move": lambda h, m, q, b: h._browse_move(b),
     "delete": lambda h, m, q, b: h._browse_delete(b),
     "compress": lambda h, m, q, b: h._browse_compress(b),
+    "extract": lambda h, m, q, b: h._browse_extract(b),
+    "compress-selection": lambda h, m, q, b: h._browse_compress_selection(b),
+    "delete-selection": lambda h, m, q, b: h._browse_delete_selection(b),
     "stage": lambda h, m, q, b: h._stage(b),
     "unstage": lambda h, m, q, b: h._unstage(b),
     "restore-hunk": lambda h, m, q, b: h._restore_hunk(b),
