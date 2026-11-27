@@ -18,7 +18,7 @@ from . import report
 from .config import Config, ConfigError, load
 from .model import Record
 from .pricing import PriceBook
-from .snapshot import Snapshot
+from .snapshot import Snapshot, snapshot_for
 from .sources import SOURCE_LABELS, SOURCE_ORDER, SourceError, collect
 from .store import Store, StoreError
 
@@ -410,7 +410,7 @@ def _scan(config: Config, sources: list[str]):
     for source in sources:
         snapshot = None
         if config.store.enabled:
-            snapshot = Snapshot(source, config.store.cache_dir / f"{source}.json")
+            snapshot = snapshot_for(source, config.store.cache_dir / f"{source}.json")
             snapshots[source] = snapshot
         try:
             found = collect(source, config.paths, snapshot)

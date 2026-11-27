@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -75,8 +76,9 @@ DEFAULT_WINDOWS: tuple[tuple[time, time], ...] = (
 DEFAULT_WEEKDAYS = frozenset({0, 1, 2, 3, 4})
 
 
+@functools.lru_cache(maxsize=1024)
 def normalize_model(name: str) -> str:
-    """去掉方括号后缀与厂商前缀，统一成小写模型名。"""
+    """去掉方括号后缀与厂商前缀，统一成小写模型名；模型名就那几种，缓存起来。"""
     value = (name or "").strip().lower()
     value = re.sub(r"\[[^\]]*\]$", "", value)
     value = value.rsplit("/", 1)[-1]
@@ -91,27 +93,68 @@ class PriceBook:
     weekdays: frozenset[int] = DEFAULT_WEEKDAYS
     holidays: frozenset[date] = frozenset()
     tz: ZoneInfo = ZoneInfo(DEFAULT_TZ)
+    # 同一次请求里几万条记录反复查同一个模型与同一个时段；按模型名/小时把结果记住。
+    _memo: dict = field(default_factory=dict, compare=False, repr=False)
 
     def resolve(self, model: str) -> str:
-        name = normalize_model(model)
-        return self.aliases.get(name, name)
+        memo = self._memo
+        key = ("resolve", model)
+        hit = memo.get(key)
+        if hit is None:
+            name = normalize_model(model)
+            hit = self.aliases.get(name, name)
+            memo[key] = hit
+        return hit
 
     def price_for(self, model: str) -> ModelPrice | None:
         """查不到价格时返回 None，调用方据此把请求算作未计价。"""
+        memo = self._memo
+        key = ("price", model)
+        if key in memo:
+            return memo[key]
         name = self.resolve(model)
         found = self.models.get(name)
-        if found is not None:
-            return found
-        if "free" in name:
-            return ModelPrice(off=ZERO_TIER, peak=ZERO_TIER, free=True)
-        return None
+        if found is None and "free" in name:
+            found = ModelPrice(off=ZERO_TIER, peak=ZERO_TIER, free=True)
+        memo[key] = found
+        return found
 
     def is_peak(self, at: datetime) -> bool:
+        # 同一条记录在 cost / cache_saved / parts 里各问一次，按时时刻记住答案。
+        memo = self._memo
+        key = ("peak_at", at)
+        hit = memo.get(key)
+        if hit is not None:
+            return hit
         local = at.astimezone(self.tz)
         if local.date() in self.holidays or local.weekday() not in self.weekdays:
             return False
         clock = local.time()
-        return any(start <= clock < end for start, end in self.windows)
+        # 时段边界都在整点时判峰与分钟内无关，按「日期 + 小时」缓存；否则照旧逐条算。
+        if self._hour_aligned():
+            key = ("peak", local.date(), local.hour)
+            memo = self._memo
+            hit = memo.get(key)
+            if hit is None:
+                hit = any(start <= clock < end for start, end in self.windows)
+                memo[key] = hit
+            memo[("peak_at", at)] = hit
+            return hit
+        result = any(start <= clock < end for start, end in self.windows)
+        memo[("peak_at", at)] = result
+        return result
+
+    def _hour_aligned(self) -> bool:
+        memo = self._memo
+        hit = memo.get("hour_aligned")
+        if hit is None:
+            hit = all(
+                start.minute == 0 and start.second == 0 and start.microsecond == 0
+                and end.minute == 0 and end.second == 0 and end.microsecond == 0
+                for start, end in self.windows
+            )
+            memo["hour_aligned"] = hit
+        return hit
 
     def cost(self, model: str, usage: Usage, at: datetime) -> float | None:
         """按请求发生时刻选档，算出人民币金额；未知模型返回 None。"""

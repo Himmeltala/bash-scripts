@@ -42,7 +42,8 @@ STATIC = Path(__file__).resolve().parents[3] / "web" / "dist"
 INDEX = STATIC / "index.html"
 COMMANDS = ("daily", "session", "hour", "project", "api")
 # 同时只跑一次扫描，第二个请求排队，免得几个标签页各扫一遍。
-LOCK = threading.Lock()
+# 可重入：普通接口的 _guarded 已经持锁，缓存构建再进一次不会自己把自己锁死。
+LOCK = threading.RLock()
 
 
 class _PayloadCache:
@@ -53,6 +54,10 @@ class _PayloadCache:
         self._lock = threading.Lock()
         self._entries = {}
         self._key_locks = {}
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
 
     def get(self, key, ttl, build):
         now = self._clock()
@@ -294,13 +299,16 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                     return self._config_save(body)
                 return self._config_get()
             if route == "usage":
-                return _guarded(lambda: _payload(config, query))
+                # 多标签页与手动刷新共用两秒内的同一份；写操作会主动清缓存。
+                return _guarded(lambda: _cached_payload(config, query, 2))
             if route == "session":
                 return _guarded(lambda: _session_payload(config, query))
             if route == "budget":
                 if method == "POST":
                     self._require_local("写预算")
-                    return _budget(lambda: budget.save(config.paths.state, body))
+                    result = _budget(lambda: budget.save(config.paths.state, body))
+                    PAYLOAD_CACHE.clear()
+                    return result
                 return _budget(lambda: budget.load(config.paths.state))
             if route == "store":
                 if method == "POST":
@@ -309,9 +317,13 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                     current = _current(config)
                     if action == "gc":
                         keep = body.get("keep_days")
-                        return _guarded(lambda: cli.store_gc(current, int(keep) if keep else None))
+                        result = _guarded(lambda: cli.store_gc(current, int(keep) if keep else None))
+                        PAYLOAD_CACHE.clear()
+                        return result
                     if action == "import":
-                        return _guarded(lambda: cli.store_import(current))
+                        result = _guarded(lambda: cli.store_import(current))
+                        PAYLOAD_CACHE.clear()
+                        return result
                     raise ApiError(HTTPStatus.BAD_REQUEST, "不认识的账本动作：%s" % action)
                 return _guarded(lambda: cli.store_health(_current(config)))
             if route == "prices":
@@ -453,6 +465,8 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                 fileio.atomic_write_text(path, text)
             except OSError as exc:
                 raise ApiError(HTTPStatus.FORBIDDEN, f"写不了配置文件：{exc}")
+            # 配置影响价格与范围，之前的用量结果不能再用。
+            PAYLOAD_CACHE.clear()
             return {"path": str(path), "size": len(text.encode("utf-8"))}
 
         def _is_local(self):
@@ -497,7 +511,9 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
             """一条长连接按间隔推用量：连上先推当前值，之后每轮重算并重读配置。"""
             try:
                 every = _stream_seconds(query)
-                payload = _cached_payload(config, query, every)
+                # 推送仍按 every 走，但重算放宽到 10 秒：数据没变时不必每 3 秒扫一遍。
+                ttl = max(every, 10)
+                payload = _cached_payload(config, query, ttl)
             except cli.UsageError as exc:
                 raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
             except Exception as exc:  # noqa: BLE001 - 首次采集失败按普通接口报错
@@ -515,7 +531,7 @@ def _make_handler(config: Config, allow_write: bool = False) -> type[BaseHTTPReq
                     if _peer_closed(self.connection):
                         break
                     try:
-                        payload = _cached_payload(config, query, every)
+                        payload = _cached_payload(config, query, ttl)
                     except Exception as exc:  # noqa: BLE001 - 单轮失败不掐断流
                         self._sse_send({"error": f"{type(exc).__name__}: {exc}"}, "failure")
                         last_write = time.time()

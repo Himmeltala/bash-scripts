@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,35 @@ FORMAT = 2
 
 # session.v4.jsonl.zstd、session.jsonl 都认，只取版本号最大的那一代。
 _DSH_FILE = re.compile(r"^session(?:\.v(?P<version>\d+))?\.jsonl(?:\.[A-Za-z0-9]+)?$")
+
+
+# 快照文件 1MB 以上，每次请求都重新读盘不值；文件没变就复用上次解析好的对象。
+_INSTANCES: dict = {}
+_INSTANCES_LOCK = threading.Lock()
+
+
+def snapshot_for(source: str, path: Path | None) -> "Snapshot":
+    """按文件修改时间复用快照对象；文件变了才重新读。"""
+    if path is None:
+        return Snapshot(source, None)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        mtime = None
+    key = str(path)
+    if mtime is not None:
+        with _INSTANCES_LOCK:
+            hit = _INSTANCES.get(key)
+        if hit is not None and hit[0] == mtime:
+            snap = hit[1]
+            # 上一轮记下的变更集合只对上一轮有效。
+            snap.changed = set()
+            return snap
+    snap = Snapshot(source, path)
+    if mtime is not None:
+        with _INSTANCES_LOCK:
+            _INSTANCES[key] = (mtime, snap)
+    return snap
 
 
 class Snapshot:
