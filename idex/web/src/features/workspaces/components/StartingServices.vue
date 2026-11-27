@@ -76,6 +76,11 @@ import { baseName } from '../../../utils/format'
 import { STATUS_COLOR, STATUS_TEXT } from '../../engines/lib/serviceStatus'
 import { jvmApi, nodeApi } from '../../engines/lib/toolApi'
 import { toast } from '../../../utils/notice'
+import { useHeaderSettings } from '../../settings/composables/useSettings'
+import { runTypeVisible } from '../../settings/lib/runTypes'
+
+// 顶栏设置里可以只显示启动、打包或安装中的某几类；默认三类都显示。
+const headerSettings = useHeaderSettings()
 
 const props = defineProps({
   workspaces: { type: Array, default: () => [] },
@@ -161,6 +166,7 @@ const items = computed(() => {
     const name = kind === 'node' ? 'Node' : 'JVM'
     const icon = kind === 'node' ? 'mdi-nodejs' : 'mdi-language-java'
     for (const run of engines.value[kind] || []) {
+      if (!runTypeVisible(headerSettings.value, run.type)) continue
       const owner = ownerOf(kind, run.ws)
       if (!owner) continue
       const status = run.status

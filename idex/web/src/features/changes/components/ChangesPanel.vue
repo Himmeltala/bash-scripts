@@ -185,8 +185,8 @@
             :writable="canEdit"
             :inline="mergeInline"
             :collapse="diffScope === 'hunks'"
-            :theme="preferences.editorTheme"
-            :minimap="preferences.minimap"
+            :theme="editorSettings.theme"
+            :minimap="editorSettings.minimap"
             :markers="markers"
             :complete="complete"
             :format="formatText"
@@ -252,6 +252,7 @@ import { useLeaveGuard } from '../composables/useLeaveGuard'
 import { isDeferred } from '../../../utils/deferred'
 import { toast } from '../../../utils/notice'
 import { usePreferencesStore } from '../../../stores/preferences'
+import { useEditorSettings, useShortcutBindings } from '../../settings/composables/useSettings'
 import { matchesBinding } from '../../settings/lib/shortcuts'
 import { useFileTree } from '@bash-scripts/web-shared'
 import { useSplitPane } from '@bash-scripts/web-shared'
@@ -295,6 +296,8 @@ watch(saveError, (text) => {
 
 // 查看方式来自全局偏好，所有工作区共用；树形默认全部展开。
 const preferences = usePreferencesStore()
+const editorSettings = useEditorSettings()
+const shortcuts = useShortcutBindings()
 const { changesMode: mode, diffScope, changesDiffInline: mergeInline } = storeToRefs(preferences)
 // 左侧列表的宽度随分隔条拖动改变，双击分隔条还原。
 const splitRef = ref(null)
@@ -737,7 +740,7 @@ async function saveNow() {
 
 
 function onKeySave(event) {
-  if (!matchesBinding(preferences.shortcuts.save, event)) return
+  if (!matchesBinding(shortcuts.value.save, event)) return
   if (!dirty.value || saving.value) return
   event.preventDefault()
   saveNow()

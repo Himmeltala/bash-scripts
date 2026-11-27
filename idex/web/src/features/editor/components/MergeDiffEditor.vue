@@ -26,7 +26,7 @@ import { search } from '@codemirror/search'
 import { MergeView, unifiedMergeView } from '@codemirror/merge'
 import { symbolAt } from '@bash-scripts/web-shared'
 import { handlerOf } from '../core/handlers/registry.js'
-import { usePreferencesStore } from '../../../stores/preferences'
+import { useShortcutBindings } from '../../settings/composables/useSettings'
 import { toCmKey } from '../../settings/lib/shortcuts'
 import { useEditorFind } from '../composables/useEditorFind.js'
 import EditorFindBar from './EditorFindBar.vue'
@@ -83,7 +83,7 @@ let debounceTimer = 0
 let pendingResolve = null
 let hoverTimer = 0
 let hoverKey = ''
-const preferences = usePreferencesStore()
+const shortcuts = useShortcutBindings()
 const appearance = new Compartment()
 const minimapConf = new Compartment()
 const keymapConf = new Compartment()
@@ -234,7 +234,7 @@ async function formatDocument() {
 // 绑定从设置里读；只看历史版本（lsp=false）时不挂补全与格式化。
 function findKeys() {
   const keys = []
-  const open = toCmKey(preferences.shortcuts.editorFind)
+  const open = toCmKey(shortcuts.value.editorFind)
   if (open) {
     keys.push({
       key: open,
@@ -257,11 +257,11 @@ function findKeys() {
 
 function editorKeys() {
   if (!props.lsp) return [indentWithTab]
-  const shortcuts = preferences.shortcuts
+  const keys = shortcuts.value
   const bindings = [indentWithTab]
-  const complete = toCmKey(shortcuts.complete)
+  const complete = toCmKey(keys.complete)
   if (complete) bindings.push({ key: complete, run: startCompletion })
-  const format = toCmKey(shortcuts.format)
+  const format = toCmKey(keys.format)
   if (format) {
     bindings.push({
       key: format,
@@ -433,7 +433,7 @@ watch(
   () => reconfigure(appearance, editorThemeExtensions(props.theme)),
 )
 watch(
-  () => preferences.shortcuts,
+  shortcuts,
   () => {
     const views = merge.value ? [merge.value.a, merge.value.b] : single.value ? [single.value] : []
     for (const view of views) {

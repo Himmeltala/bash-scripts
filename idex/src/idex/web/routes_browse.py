@@ -239,7 +239,7 @@ class BrowseRoutes:
         text = (query.get("q") or [""])[0]
         mode = (query.get("mode") or ["name"])[0]
         ignore = (
-            self.settings.search_ignore()
+            self.settings.values().get("search.ignore") or []
             if self.settings is not None
             else list(SEARCH_IGNORE_DEFAULTS)
         )
@@ -256,7 +256,7 @@ class BrowseRoutes:
     def _files(self, query):
         ws = self._ws(query)
         ignore = (
-            self.settings.search_ignore()
+            self.settings.values().get("search.ignore") or []
             if self.settings is not None
             else list(SEARCH_IGNORE_DEFAULTS)
         )

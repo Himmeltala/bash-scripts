@@ -2,18 +2,18 @@
  * @Author: Himmeltala
  * @Date: 2026-11-18 23:19:43
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-24 23:11:07
+ * @LastEditTime: 2026-11-28 10:40:00
  * @FilePath: \idex\web\src\features\settings\components\SettingsDialog.vue
- * @Description: 设置外壳：左侧按登记表列分类，右侧按需加载对应 section，保存交给 section 自己。
+ * @Description: 设置外壳：分类来自后端登记表，右侧按类型生成行，搜索、脏标记与保存都由 store 承担。
 -->
 <template>
   <FloatingDialog
     v-model="open"
     storage-key="idex-settings"
-    :initial-width="780"
-    :initial-height="600"
-    :min-width="520"
-    :min-height="420"
+    :initial-width="900"
+    :initial-height="640"
+    :min-width="620"
+    :min-height="440"
     persistent
   >
     <template #title>设置</template>
@@ -21,50 +21,95 @@
     <div class="layout">
       <nav class="nav">
         <button
-          v-for="item in sections"
-          :key="item.id"
+          v-for="group in navGroups"
+          :key="group.title"
           type="button"
           class="nav-item"
-          :class="{ active: section === item.id }"
-          @click="section = item.id"
+          :class="{ active: !searching && activeGroup === group.title }"
+          @click="pickGroup(group.title)"
         >
-          <v-icon size="16">{{ item.icon }}</v-icon>
-          {{ item.title }}
+          <v-icon size="16">{{ groupIcon(group.title) }}</v-icon>
+          <span class="nav-text">{{ group.title }}</span>
+          <span v-if="group.dirty" class="dot" title="这一类有未保存的修改" />
         </button>
+        <template v-if="!searching">
+          <button
+            v-for="item in DIAGNOSTIC_SECTIONS"
+            :key="item.id"
+            type="button"
+            class="nav-item"
+            :class="{ active: activeGroup === item.id }"
+            @click="activeGroup = item.id"
+          >
+            <v-icon size="16">{{ item.icon }}</v-icon>
+            <span class="nav-text">{{ item.title }}</span>
+          </button>
+        </template>
       </nav>
 
       <section class="pane">
-        <div
-          v-for="item in sections"
-          v-show="section === item.id"
-          :key="`${item.id}-${openSeq}`"
-          class="section"
-        >
-          <component :is="views.get(item.id)" :ref="(el) => setPane(item.id, el)" />
+        <div class="toolbar">
+          <v-text-field
+            v-model="query"
+            density="compact"
+            variant="outlined"
+            hide-details
+            placeholder="搜索设置（标题、说明或键名）"
+            prepend-inner-icon="mdi-magnify"
+            clearable
+            class="search"
+          />
+          <v-switch
+            v-model="onlyModified"
+            label="只看已修改"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+          />
+        </div>
+
+        <div class="list">
+          <div v-if="showDiagnostics" class="diagnostics">
+            <component :is="diagnosticsView" />
+          </div>
+
+          <template v-else>
+            <div v-if="!visibleGroups.length" class="empty">没有匹配的设置。</div>
+            <div v-for="group in visibleGroups" :key="group.title" class="group">
+              <p v-if="searching || visibleGroups.length > 1" class="group-title">{{ group.title }}</p>
+              <template v-for="(item, index) in group.items" :key="item.key">
+                <p
+                  v-if="item.section && (index === 0 || group.items[index - 1].section !== item.section)"
+                  class="section-title"
+                >
+                  {{ item.section }}
+                </p>
+                <SettingsRow :item="item" />
+              </template>
+            </div>
+          </template>
         </div>
       </section>
     </div>
 
     <template #actions>
-      <v-btn
-        variant="text"
-        :disabled="!resettable"
-        :title="resettable ? '恢复这一类的默认值' : '这一类没有可重置的设置'"
-        @click="reset"
-      >
-        重置
+      <v-btn variant="text" :disabled="!settings.dirtyCount" @click="settings.discard()">
+        撤销修改
+      </v-btn>
+      <v-btn variant="text" :disabled="!settings.dirtyCount" @click="resetAll">
+        恢复默认
       </v-btn>
       <v-spacer />
       <v-btn variant="text" @click="open = false">关闭</v-btn>
       <v-btn
         color="primary"
         variant="flat"
-        :loading="saving"
-        :disabled="!savable"
-        title="保存所有类别的设置"
+        :loading="settings.saving"
+        :disabled="!settings.dirtyCount"
         @click="save"
       >
-        保存
+        保存<span v-if="settings.dirtyCount">（{{ settings.dirtyCount }}）</span>
       </v-btn>
     </template>
   </FloatingDialog>
@@ -74,65 +119,89 @@
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { toast } from '../../../utils/notice'
-import { SETTINGS_SECTIONS } from '../lib/sections'
+import { useSettingsStore } from '../../../stores/settings'
+import { DIAGNOSTIC_SECTIONS, groupIcon } from '../lib/sections'
+import { filterSettings, groupModified, groupSettings } from '../lib/settingsView'
+import SettingsRow from './SettingsRow.vue'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })
 const emit = defineEmits(['update:modelValue', 'saved'])
 
-const sections = SETTINGS_SECTIONS
-const section = ref(sections[0].id)
-const panes = new Map()
-const saving = ref(false)
-const openSeq = ref(0)
+const settings = useSettingsStore()
+const query = ref('')
+const onlyModified = ref(false)
+const activeGroup = ref('')
 
-function setPane(id, el) {
-  if (el) panes.set(id, el)
-  else panes.delete(id)
-}
-const views = new Map(
-  sections.map((item) => [item.id, defineAsyncComponent(item.load)]),
-)
+const diagnostics = DIAGNOSTIC_SECTIONS.map((item) => ({
+  ...item,
+  view: defineAsyncComponent(item.load),
+}))
+const diagnosticsView = computed(() => diagnostics[0]?.view)
 
 const open = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 })
 
-// 保存是整份设置：只要有一类需要单独保存，按钮就可用，点击时逐类提交。
-const savable = computed(() => sections.some((item) => item.savable))
-const resettable = computed(() => {
-  const hit = sections.find((item) => item.id === section.value)
-  return !!(hit && hit.resettable)
-})
+const dirtySet = computed(() => new Set(settings.dirtyKeys))
+const searching = computed(() => !!query.value.trim() || onlyModified.value)
 
-watch(
-  () => props.modelValue,
-  (on) => {
-    // 每次打开都重挂当前 section，让它按最新的服务端数据自己读一遍。
-    if (on) openSeq.value += 1
-  },
+// 导航分类来自登记表；每类带一个「有修改」的小点。
+const navGroups = computed(() =>
+  groupSettings(settings.schema).map((group) => ({
+    title: group.title,
+    dirty: groupModified(group, dirtySet.value),
+  })),
 )
 
-// 重置只作用于当前查看的类别。
-function reset() {
-  panes.get(section.value)?.reset?.()
+watch(
+  navGroups,
+  (groups) => {
+    if (!activeGroup.value && groups.length) activeGroup.value = groups[0].title
+    if (activeGroup.value && !groups.some((g) => g.title === activeGroup.value)) {
+      activeGroup.value = groups[0]?.title || ''
+    }
+  },
+  { immediate: true },
+)
+
+// 搜索或「只看已修改」时跨分类平铺；否则只显示当前分类。
+const visibleGroups = computed(() => {
+  const list = filterSettings(settings.schema, query.value, {
+    dirty: dirtySet.value,
+    onlyModified: onlyModified.value,
+  })
+  if (searching.value) return groupSettings(list)
+  const one = list.filter((item) => (item.group || '其他') === activeGroup.value)
+  return groupSettings(one)
+})
+
+const showDiagnostics = computed(() => !searching.value && activeGroup.value === 'lsp')
+
+function pickGroup(title) {
+  activeGroup.value = title
+  if (searching.value) {
+    query.value = ''
+    onlyModified.value = false
+  }
+}
+
+function resetAll() {
+  for (const item of settings.schema) {
+    if (JSON.stringify(settings.get(item.key)) !== JSON.stringify(item.default)) {
+      settings.resetToDefault(item.key)
+    }
+  }
 }
 
 async function save() {
-  saving.value = true
   try {
-    for (const item of sections) {
-      const pane = panes.get(item.id)
-      if (!pane || typeof pane.save !== 'function') continue
-      const ok = await pane.save()
-      if (ok === false) return
-    }
+    await settings.save()
+    toast('设置已保存', 'success')
     emit('saved')
     open.value = false
   } catch (err) {
-    toast(err.message || '保存失败', 'error')
-  } finally {
-    saving.value = false
+    toast(`保存失败：${err.message}`, 'error')
   }
 }
 </script>
@@ -144,7 +213,7 @@ async function save() {
   display: flex;
 }
 .nav {
-  flex: 0 0 152px;
+  flex: 0 0 150px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -171,13 +240,67 @@ async function save() {
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.12);
 }
+.nav-text {
+  flex: 1 1 auto;
+}
+.dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-primary));
+}
 .pane {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: auto;
-  padding: 4px 4px 4px 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 4px 0 16px;
 }
-.section {
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 2px 4px 8px 0;
+}
+.search {
+  flex: 1 1 auto;
+  max-width: 380px;
+}
+/* 只有列表区滚动，搜索栏与分类栏固定。 */
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
+}
+.diagnostics,
+.group {
   min-width: 0;
+}
+.group + .group {
+  margin-top: 6px;
+}
+.group-title {
+  margin: 10px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.section-title {
+  margin: 12px 0 0;
+  padding-left: 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+.empty {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 0.84rem;
+  color: rgb(var(--v-theme-on-surface-variant));
 }
 </style>

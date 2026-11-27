@@ -159,7 +159,7 @@ import { FloatingDialog } from '@bash-scripts/web-shared/feedbacks'
 import { api } from '../../../utils/api'
 import { toast } from '../../../utils/notice'
 import { useSyncJob } from '../composables/useSyncJob'
-import { usePreferencesStore } from '../../../stores/preferences'
+import { useShortcutBindings } from '../../settings/composables/useSettings'
 import { matchesBinding } from '../../settings/lib/shortcuts'
 import {
   PULL_MODES,
@@ -171,10 +171,10 @@ import {
   findBranchOf,
 } from '../lib/syncView'
 
-const preferences = usePreferencesStore()
+const shortcuts = useShortcutBindings()
 
 function onCommitKey(event) {
-  if (!matchesBinding(preferences.shortcuts.commit, event)) return
+  if (!matchesBinding(shortcuts.value.commit, event)) return
   event.preventDefault()
   ask('commit')
 }

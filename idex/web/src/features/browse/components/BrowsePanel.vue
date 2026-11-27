@@ -242,7 +242,7 @@
                       :model-value="value"
                       @update:model-value="update"
                       :path="tab.path"
-                      :minimap="preferences.minimap"
+                      :minimap="editorSettings.minimap"
                       :register="register"
                       :markers="markers"
                       v-bind="editorViewProps"
@@ -759,6 +759,7 @@ import { toast } from '../../../utils/notice'
 import { dirName } from '../../../utils/format'
 import { diffMarks, hunkOriginal, parseDiffHunks } from '../../editor/core/diffLines'
 import { usePreferencesStore } from '../../../stores/preferences'
+import { useEditorSettings, useShortcutBindings } from '../../settings/composables/useSettings'
 import { useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
@@ -864,7 +865,7 @@ const editorViewProps = computed(() => ({
   },
   capabilities: capabilitiesOf,
   notice: (text) => flash(text),
-  theme: preferences.editorTheme,
+  theme: editorSettings.value.theme,
   diff: diffCache.value,
 }))
 
@@ -976,6 +977,8 @@ const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useS
 })
 // 搜索：query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
 const preferences = usePreferencesStore()
+const editorSettings = useEditorSettings()
+const shortcuts = useShortcutBindings()
 const { searchMode: mode } = storeToRefs(preferences)
 const searchOpen = ref(false)
 const searchRef = ref(null)
@@ -1238,7 +1241,7 @@ function onPanelKey(event) {
     return
   }
   for (const [id, run] of Object.entries(SHORTCUT_RUN)) {
-    if (!matchesBinding(preferences.shortcuts[id], event)) continue
+    if (!matchesBinding(shortcuts.value[id], event)) continue
     event.preventDefault()
     run()
     return

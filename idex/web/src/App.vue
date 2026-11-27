@@ -18,9 +18,29 @@
         <span class="brand">idex</span>
       </v-app-bar-title>
       <v-spacer />
-      <StartingServices :workspaces="state.workspaces" @open="openService" />
-      <Metrics :dark="dark" :metrics="metrics" />
+      <RecentWorkspaces
+        v-if="header.recent"
+        :workspaces="state.workspaces"
+        :ids="recent"
+        :current="currentId || ''"
+        @select="select"
+        @drop="dropRecent"
+        @clear="clearRecent"
+      />
+      <StartingServices
+        v-if="header.services"
+        :workspaces="state.workspaces"
+        @open="openService"
+      />
+      <Metrics
+        v-if="showMetrics"
+        :dark="dark"
+        :metrics="metrics"
+        :visible="header.metrics"
+        class="ml-5"
+      />
       <v-btn
+        v-if="header.theme"
         :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
         variant="text"
         title="切换深浅色"
@@ -29,7 +49,7 @@
     </v-app-bar>
 
     <ToastHost v-model="snack.on" :text="snack.text" :color="snack.color" />
-    <SettingsDialog v-model="settingsOpen" @saved="onSettingsSaved" />
+    <SettingsDialog v-model="settingsOpen" />
 
     <v-main class="fill-height">
       <div ref="shellRef" class="shell">
@@ -97,6 +117,8 @@ import { useLocalStorage } from '@vueuse/core'
 import WorkspaceList from './features/workspaces/components/WorkspaceList.vue'
 import WorkspacePanel from './features/workspaces/components/WorkspacePanel.vue'
 import StartingServices from './features/workspaces/components/StartingServices.vue'
+import RecentWorkspaces from './features/workspaces/components/RecentWorkspaces.vue'
+import { pruneRecent, pushRecent } from './features/workspaces/lib/recent'
 import SettingsDialog from './features/settings/components/SettingsDialog.vue'
 import DockItem from './features/dock/components/DockItem.vue'
 import DockShell from './features/dock/components/DockShell.vue'
@@ -110,7 +132,14 @@ import { Metrics } from '@bash-scripts/web-shared/metrics'
 import { api, metricsEventsUrl, stateEventsUrl } from './utils/api'
 import { snack, toast } from './utils/notice'
 import { usePreferencesStore } from './stores/preferences'
-import { SHORTCUT_DEFAULTS, matchesBinding } from './features/settings/lib/shortcuts'
+import { useSettingsStore } from './stores/settings'
+import { matchesBinding } from './features/settings/lib/shortcuts'
+import {
+  useAnimationSettings,
+  useEditorSettings,
+  useHeaderSettings,
+  useShortcutBindings,
+} from './features/settings/composables/useSettings'
 import { applyEditorFont } from './features/editor/core/fonts'
 import { useTerminalsStore } from './stores/terminals'
 import { useDockStore } from './stores/dock'
@@ -121,6 +150,8 @@ const VIEW_KEY = 'idex-ws'
 const { dark, toggle: toggleTheme } = useThemeToggle({ rememberTheme })
 const state = reactive({ workspaces: [], groups: [] })
 const currentId = useLocalStorage(VIEW_KEY, '', { writeDefaults: false })
+// 最近打开的工作区只存 id，按打开顺序排在顶栏菜单里；名称与路径每次从登记表取。
+const recent = useLocalStorage('idex-ws-recent', [], { writeDefaults: false })
 const adding = ref(false)
 const settingsOpen = ref(false)
 // 顶栏点正在启动的服务时记下目标，右侧页签据此滚动并高亮那一行。
@@ -128,8 +159,8 @@ const focus = ref(null)
 
 // 左侧工作副本列表的宽度随分隔条拖动改变，双击分隔条还原；记在本地下次打开接着用。
 const shellRef = ref(null)
-// 左侧列表是否展开；用头部按钮收起，收起后正文占满。
-const sideOpen = ref(true)
+// 左侧列表是否展开；用头部按钮收起，收起后正文占满。状态记在浏览器里，下次打开接着用。
+const sideOpen = useLocalStorage('idex.side-open', true)
 const { size: sideWidth, resizing, start: startSplit, reset: resetSplit } = useSplitPane({
   area: shellRef,
   initial: 268,
@@ -150,33 +181,52 @@ function select(id) {
 }
 
 const preferences = usePreferencesStore()
+const settings = useSettingsStore()
 const terminals = useTerminalsStore()
 const dock = useDockStore()
+const shortcuts = useShortcutBindings()
+const header = useHeaderSettings()
+const editorSettings = useEditorSettings()
+const animationSettings = useAnimationSettings()
 
 const current = computed(() => state.workspaces.find((w) => w.id === currentId.value) || null)
+// 五个指标一个都不显示时整块隐藏，右上角不留空白。
+const showMetrics = computed(() => Object.values(header.value.metrics).some(Boolean))
 
-// 动画方案落到根节点的 CSS 变量上，Dock、对话框、提示条都读同一份。
-watch(() => preferences.animation, (value) => applyAnimation(value), { deep: true, immediate: true })
+// 当前工作区一变就记进最近列表；启动时上次选中的那个也补进来。
+watch(
+  currentId,
+  (id) => {
+    if (id) recent.value = pushRecent(recent.value, id)
+  },
+  { immediate: true }
+)
 
-// 设置存在服务端：启动时应用编辑器配色与代码地图开关，保存后重新读一遍。
-async function loadSettings() {
-  try {
-    const data = await api.settings()
-    preferences.editorTheme = data.editor_theme || 'auto'
-    preferences.minimap = !!data.minimap
-    preferences.shortcuts = { ...SHORTCUT_DEFAULTS, ...(data.shortcuts || {}) }
-    preferences.terminal = { ...(data.defaults?.terminal || {}), ...(data.terminal || {}) }
-    preferences.editorFont = { ...(data.defaults?.editor_font || {}), ...(data.editor_font || {}) }
-    applyEditorFont(preferences.editorFont)
-    preferences.animation = { ...(data.defaults?.animation || {}), ...(data.animation || {}) }
-  } catch (err) {
-    // 读不到就沿用本地默认值。
-  }
+// 从最近列表里去掉一个：工作区仍在左侧登记表里，下次打开还会再加回来。
+function dropRecent(id) {
+  recent.value = recent.value.filter((item) => item !== id)
 }
+
+function clearRecent() {
+  recent.value = []
+}
+
+// 服务端设置的副作用只在这里落一次：动画变量与编辑器字体写根节点。
+watch(animationSettings, (value) => applyAnimation(value), { deep: true, immediate: true })
+watch(() => editorSettings.value.font, (font) => applyEditorFont(font), { deep: true, immediate: true })
+// 代码地图底色透明度：0–100 的百分比换成 CSS alpha，主题切换时底色跟着 surface 走。
+watch(
+  () => editorSettings.value.minimapOpacity,
+  (percent) => {
+    const alpha = Math.max(0, Math.min(100, Number(percent) || 0)) / 100
+    document.documentElement.style.setProperty('--idex-minimap-alpha', String(alpha))
+  },
+  { immediate: true },
+)
 
 // 终端快捷键是全局的：显示/收起、新建、关闭当前，切工作区不影响。
 function onGlobalKey(event) {
-  const keys = preferences.shortcuts
+  const keys = shortcuts.value
   if (matchesBinding(keys.terminalToggle, event)) {
     if (!currentId.value) return
     event.preventDefault()
@@ -205,11 +255,6 @@ function onGlobalKey(event) {
   }
 }
 
-async function onSettingsSaved() {
-  await loadSettings()
-  toast('设置已保存', 'success')
-}
-
 // 顶栏点一条正在启动的服务：切到它的工作区与 Node / JVM 页签。
 function openService(item) {
   if (!item || !item.wsId) return
@@ -234,6 +279,9 @@ async function setGroups(nodes) {
 function applyState(data) {
   state.workspaces = data.workspaces || []
   state.groups = data.groups || []
+  // 登记表里已经没有的工作区，从最近列表里一并清掉，菜单里不留死项。
+  const kept = pruneRecent(recent.value, state.workspaces.map((w) => w.id))
+  if (kept.length !== recent.value.length) recent.value = kept
   // 工作区被移出后，它名下的终端也跟着收掉，别把 Dock 留在一个不存在的组上。
   for (const wsId of Object.keys(terminals.groups)) {
     if (!state.workspaces.some((w) => w.id === wsId)) terminals.disposeGroup(wsId)
@@ -307,7 +355,11 @@ onMounted(async () => {
   document.addEventListener('keydown', onGlobalKey)
   connectState()
   connectMetrics()
-  await loadSettings()
+  try {
+    await settings.load()
+  } catch (err) {
+    // 读不到设置就按登记表默认值跑，不影响页面打开。
+  }
   await refresh()
 })
 

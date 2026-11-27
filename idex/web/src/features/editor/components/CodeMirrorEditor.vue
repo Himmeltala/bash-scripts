@@ -44,7 +44,7 @@ import {
   resetViewScroll,
 } from '../core/editorBase.js'
 import { showMinimap } from '@replit/codemirror-minimap'
-import { usePreferencesStore } from '../../../stores/preferences'
+import { useShortcutBindings } from '../../settings/composables/useSettings'
 import { toCmKey } from '../../settings/lib/shortcuts'
 import { useEditorFind } from '../composables/useEditorFind.js'
 import EditorFindBar from './EditorFindBar.vue'
@@ -78,7 +78,7 @@ const emit = defineEmits([
   'diffhunk',
 ])
 
-const preferences = usePreferencesStore()
+const shortcuts = useShortcutBindings()
 const host = ref(null)
 const language = new Compartment()
 const appearance = new Compartment()
@@ -251,7 +251,7 @@ const findCtl = useEditorFind(() => view)
 
 function findKeys() {
   const keys = []
-  const open = toCmKey(preferences.shortcuts.editorFind)
+  const open = toCmKey(shortcuts.value.editorFind)
   if (open) {
     keys.push({
       key: open,
@@ -274,11 +274,11 @@ function findKeys() {
 
 // 绑定从设置里读；改完设置重配置，旧的组合不再拦截。
 function editorKeys() {
-  const shortcuts = preferences.shortcuts
+  const keys = shortcuts.value
   const bindings = [indentWithTab]
-  const complete = toCmKey(shortcuts.complete)
+  const complete = toCmKey(keys.complete)
   if (complete) bindings.push({ key: complete, run: startCompletion })
-  const format = toCmKey(shortcuts.format)
+  const format = toCmKey(keys.format)
   if (format) {
     bindings.push({
       key: format,
@@ -288,7 +288,7 @@ function editorKeys() {
       },
     })
   }
-  const rename = toCmKey(shortcuts.rename)
+  const rename = toCmKey(keys.rename)
   if (rename) {
     bindings.push({
       key: rename,
@@ -434,7 +434,7 @@ watch(
 )
 
 watch(
-  () => preferences.shortcuts,
+  shortcuts,
   () => {
     if (!view) return
     view.dispatch({

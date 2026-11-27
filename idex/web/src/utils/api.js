@@ -121,6 +121,8 @@ export const api = {
   settings: () => call('GET', '/settings'),
   saveSettings: (patch) =>
     call('POST', '/settings', Array.isArray(patch) ? { search_ignore: patch } : patch),
+  // 新设置模型：只提交改过的点路径键，服务端整份校验后一次落盘。
+  saveSettingValues: (values) => call('POST', '/settings', { values }),
   // 代码索引：把编辑框里这份文本和词的位置交给服务端的语言服务器。
   definition: (ws, path, text, line, character) =>
     call('POST', '/lsp/definition', { ws, path, text, line, character }),

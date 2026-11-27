@@ -61,6 +61,7 @@ import { workspaceEventsUrl } from '../../../utils/api'
 import { toolsApi } from '../../engines/lib/toolApi'
 import { needsToolDetection, workspaceTabs } from '../lib/workspaceTabs'
 import { usePreferencesStore } from '../../../stores/preferences'
+import { useShortcutBindings } from '../../settings/composables/useSettings'
 import { matchesBinding } from '../../settings/lib/shortcuts'
 
 const props = defineProps({
@@ -80,6 +81,7 @@ const TAB_META = {
 
 // 页签选择与查看方式一样记在全局偏好里，换工作副本也停在原处。
 const preferences = usePreferencesStore()
+const shortcuts = useShortcutBindings()
 const { activeTab: tab, pendingSearch } = storeToRefs(preferences)
 // 不是 SVN 工作副本或 Git 仓库时留资源管理器，探测到 Node 或 JVM 工程再加对应页签。
 const tabs = computed(() => workspaceTabs(props.ws))
@@ -165,11 +167,11 @@ function openSearch(mode, event) {
 }
 
 function onGlobalKey(event) {
-  if (matchesBinding(preferences.shortcuts.browseSearch, event)) {
+  if (matchesBinding(shortcuts.value.browseSearch, event)) {
     openSearch('name', event)
     return
   }
-  if (matchesBinding(preferences.shortcuts.browseContentSearch, event)) {
+  if (matchesBinding(shortcuts.value.browseContentSearch, event)) {
     openSearch('content', event)
   }
 }

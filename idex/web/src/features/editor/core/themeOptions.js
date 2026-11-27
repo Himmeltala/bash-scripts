@@ -16,4 +16,3 @@ export const EDITOR_THEME_OPTIONS = [
   { id: 'dracula', title: 'Dracula' },
 ]
 
-export const EDITOR_THEME_IDS = EDITOR_THEME_OPTIONS.map((item) => item.id)

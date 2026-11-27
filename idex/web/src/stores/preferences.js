@@ -2,21 +2,16 @@
  * @Author: Himmeltala
  * @Date: 2026-11-23 23:09:19
  * @LastEditors: Himmeltala
- * @LastEditTime: 2026-11-26 17:05:00
+ * @LastEditTime: 2026-11-28 10:45:00
  * @FilePath: \idex\web\src\stores\preferences.js
- * @Description: idex 的界面偏好：变更、差异、搜索、页签与编辑器配色的本地选择。
+ * @Description: 本浏览器的界面偏好：变更、差异、搜索与页签的查看方式，只存本地，不上传。
 */
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useStoredChoice } from '@bash-scripts/web-shared'
-import { EDITOR_THEME_IDS } from '../features/editor/core/themeOptions'
-import { SHORTCUT_DEFAULTS } from '../features/settings/lib/shortcuts'
-import { TERMINAL_DEFAULTS } from '../features/terminal/lib/options'
-import { EDITOR_FONT_FALLBACK } from '../features/editor/core/fonts'
-import { ANIMATION_DEFAULTS } from '@bash-scripts/web-shared'
 
-// 变更清单、差异、搜索与页签的查看方式，都记在浏览器里，换工作区保持不变。
+// 服务端设置（字体、快捷键、顶栏……）在 stores/settings.js；这里只留浏览器查看状态。
 export const usePreferencesStore = defineStore('preferences', () => {
   const changesMode = useStoredChoice('idex.changes-mode', ['tree', 'flat'], 'flat')
   const diffScope = useStoredChoice('idex.diff-scope', ['file', 'hunks'], 'hunks')
@@ -27,21 +22,9 @@ export const usePreferencesStore = defineStore('preferences', () => {
   // 差异编辑器默认并排；两个页面各自记住自己的选择。
   const changesDiffInline = useStoredChoice('idex.changes-diff-inline', [false, true], false)
   const logDiffInline = useStoredChoice('idex.log-diff-inline', [false, true], false)
-  // 代码编辑器的配色只影响浏览页，跟随界面与四套固定预设。
-  const editorTheme = useStoredChoice('idex.editor-theme', EDITOR_THEME_IDS, 'auto')
-  // 编辑器右侧的代码地图，同样由服务端设置加载。
-  const minimap = ref(false)
-  // 快捷键绑定，由服务端设置加载，各处按键处理都读这一份。
-  const shortcuts = ref({ ...SHORTCUT_DEFAULTS })
-  // 终端外观，同样由服务端设置加载；xterm 建好后按这份值实时改选项。
-  const terminal = ref({ ...TERMINAL_DEFAULTS })
-  // 编辑器字体，单独一份，不影响终端。
-  const editorFont = ref({ ...EDITOR_FONT_FALLBACK })
-  // 全局动画方案与速度，菜单开合不受它影响。
-  const animation = ref({ ...ANIMATION_DEFAULTS })
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
   // 全局搜索快捷键带来的请求：{ mode, seq }，资源管理器消费后清空。
   const pendingSearch = ref(null)
-  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, editorTheme, minimap, shortcuts, terminal, editorFont, animation, pendingOpen, pendingSearch }
+  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, pendingOpen, pendingSearch }
 })

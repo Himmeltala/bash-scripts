@@ -20,77 +20,7 @@ from vcs_summary import (
     detect_vcs,
 )
 
-# 搜索默认跳过的目录：依赖、缓存与构建产物，列出来也翻不动。
-SEARCH_IGNORE_DEFAULTS = [".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target"]
-SEARCH_IGNORE_MAX = 50
-SEARCH_IGNORE_LEN = 80
-# 编辑器配色与代码地图。
-EDITOR_THEMES = ("auto", "github-light", "github-dark", "one-dark", "dracula")
-# 默认设置模板：重置与「未设置」时的回退都读这一份，别的模块不再各写一份。
-SHORTCUT_DEFAULTS = {
-    "save": "Ctrl+S",
-    "commit": "Ctrl+Enter",
-    "browseSearch": "Ctrl+Shift+E",
-    "browseContentSearch": "Ctrl+Shift+F",
-    "quickOpen": "Ctrl+P",
-    "gotoLine": "Ctrl+G",
-    "outline": "Ctrl+Shift+O",
-    "problems": "Ctrl+Shift+M",
-    "hover": "Ctrl+I",
-    "editorFind": "Ctrl+F",
-    "complete": "Ctrl+Space",
-    "format": "Shift+Alt+F",
-    "rename": "F2",
-    "terminalToggle": "Ctrl+`",
-    "terminalNew": "Ctrl+Shift+`",
-    "terminalClose": "Ctrl+Alt+W",
-}
-
-
-# 终端外观：字体空着表示跟随代码字体，字号 0 表示跟随代码字号。
-TERMINAL_DEFAULTS = {
-    "font_family": (
-        "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', "
-        "'PingFang SC', 'Microsoft YaHei', sans-serif"
-    ),
-    "font_size": 14,
-    "line_height": 1.15,
-    "font_weight": "normal",
-    "letter_spacing": 0,
-    "cursor_style": "block",
-    "cursor_blink": True,
-    "scrollback": 5000,
-}
-TERMINAL_CURSORS = ("block", "bar", "underline")
-TERMINAL_WEIGHTS = ("normal", "bold", "500")
-
-# 编辑器字体：与终端分开存，改编辑器不影响终端。
-EDITOR_FONT_DEFAULTS = {
-    "font_family": (
-        "'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC', "
-        "'PingFang SC', 'Microsoft YaHei', sans-serif"
-    ),
-    "font_size": 14,
-    "line_height": 1.6,
-    "font_weight": "normal",
-    "letter_spacing": 0,
-}
-
-
-# 全局动画方案：预设一套手感，速度再整体缩放。
-ANIMATION_PRESETS = ("none", "quick", "standard", "spring", "soft")
-ANIMATION_DEFAULTS = {"preset": "standard", "speed": 1}
-
-
-SETTINGS_DEFAULTS = {
-    "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
-    "editor_theme": "auto",
-    "minimap": False,
-    "shortcuts": dict(SHORTCUT_DEFAULTS),
-    "terminal": dict(TERMINAL_DEFAULTS),
-    "editor_font": dict(EDITOR_FONT_DEFAULTS),
-    "animation": dict(ANIMATION_DEFAULTS),
-}
+from settings_schema import SETTINGS_BY_KEY, clean_value, defaults_flat, schema_payload, values_flat
 
 
 def clean_tools(tools):
@@ -109,21 +39,6 @@ def clean_tools(tools):
             "id": str(jvm["id"]),
         }
     return out
-
-
-def clean_search_ignore(values):
-    """只收目录名：去空白、去重，带路径分隔符的条目丢掉，数量与长度都设上限。"""
-    names = []
-    for value in values if isinstance(values, (list, tuple)) else []:
-        name = str(value).strip()
-        if not name or name in (".", "..") or "/" in name or "\\" in name:
-            continue
-        if len(name) > SEARCH_IGNORE_LEN or name in names:
-            continue
-        names.append(name)
-        if len(names) >= SEARCH_IGNORE_MAX:
-            break
-    return names
 
 
 class Workspaces:
@@ -256,9 +171,8 @@ class Workspaces:
             )
         return out
 
-
 class Settings:
-    """全局设置，存在 settings.json 里：搜索跳过目录、编辑器配色与默认视图。"""
+    """全局设置，存在 settings.json 里：扁平键值，键与类型都由登记表声明。"""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -268,194 +182,36 @@ class Settings:
         value = read_json(self.path, default=None)
         return value if isinstance(value, dict) else {}
 
-    def search_ignore(self):
-        values = self.data().get("search_ignore")
-        if not isinstance(values, list):
-            return list(SEARCH_IGNORE_DEFAULTS)
-        return clean_search_ignore(values)
-
-    def editor_theme(self):
-        value = self.data().get("editor_theme")
-        return value if value in EDITOR_THEMES else SETTINGS_DEFAULTS["editor_theme"]
-
-    def minimap(self):
-        return bool(self.data().get("minimap"))
-
-    def shortcuts(self):
-        saved = self.data().get("shortcuts")
-        if not isinstance(saved, dict):
-            return dict(SHORTCUT_DEFAULTS)
-        return {**SHORTCUT_DEFAULTS, **{key: saved[key] for key in SHORTCUT_DEFAULTS if key in saved}}
-
-    def terminal(self):
-        return clean_terminal(self.data().get("terminal"))
-
-    def editor_font(self):
-        return clean_editor_font(self.data().get("editor_font"))
-
-    def animation(self):
-        return clean_animation(self.data().get("animation"))
+    def values(self):
+        return values_flat(self.data())
 
     def payload(self):
         return {
-            "search_ignore": self.search_ignore(),
-            "defaults": dict(
-                SETTINGS_DEFAULTS,
-                search_ignore=list(SETTINGS_DEFAULTS["search_ignore"]),
-                shortcuts=dict(SHORTCUT_DEFAULTS),
-                terminal=dict(TERMINAL_DEFAULTS),
-                editor_font=dict(EDITOR_FONT_DEFAULTS),
-                animation=dict(ANIMATION_DEFAULTS),
-            ),
-            "editor_theme": self.editor_theme(),
-            "minimap": self.minimap(),
-            "shortcuts": self.shortcuts(),
-            "terminal": self.terminal(),
-            "editor_font": self.editor_font(),
-            "animation": self.animation(),
+            "version": 2,
+            "schema": schema_payload(),
+            "values": self.values(),
+            "defaults": defaults_flat(),
         }
 
-    def set_search_ignore(self, values):
-        """只改搜索名单，保留其余设置。"""
-        names = clean_search_ignore(values)
-        with self.lock:
-            data = self.data()
-            data["search_ignore"] = names
-            write_json(self.path, data, indent=2, ensure_ascii=False)
-        return names
-
     def update(self, body):
-        """按页面提交的字段更新设置；没提到的字段保持原值。"""
+        """只接受 {"values": {键: 值}}；先整份校验，有一项不认识就整份拒绝。"""
+        if not isinstance(body, dict) or not isinstance(body.get("values"), dict):
+            raise ApiError(400, "设置请求缺少 values")
+        patch = {}
+        errors = []
+        for key, raw in body["values"].items():
+            setting = SETTINGS_BY_KEY.get(key)
+            if setting is None:
+                errors.append(f"未知设置：{key}")
+                continue
+            patch[key] = clean_value(setting, raw)
+        if errors:
+            raise ApiError(400, "；".join(errors))
         with self.lock:
             data = self.data()
-            if "search_ignore" in body:
-                data["search_ignore"] = clean_search_ignore(body.get("search_ignore") or [])
-            if "editor_theme" in body:
-                theme = str(body.get("editor_theme") or "")
-                data["editor_theme"] = theme if theme in EDITOR_THEMES else "auto"
-            if "minimap" in body:
-                data["minimap"] = bool(body.get("minimap"))
-            if "shortcuts" in body:
-                data["shortcuts"] = clean_shortcuts(body.get("shortcuts"))
-            if "animation" in body:
-                data["animation"] = clean_animation(body.get("animation"))
-            if "terminal" in body:
-                incoming = body.get("terminal")
-                if not isinstance(incoming, dict):
-                    incoming = {}
-                # 只传真改过的字段也行，没提到的沿用已存的值。
-                current = data.get("terminal")
-                if not isinstance(current, dict):
-                    current = {}
-                data["terminal"] = clean_terminal({**current, **incoming})
-            if "editor_font" in body:
-                incoming = body.get("editor_font")
-                if not isinstance(incoming, dict):
-                    incoming = {}
-                current = data.get("editor_font")
-                if not isinstance(current, dict):
-                    current = {}
-                data["editor_font"] = clean_editor_font({**current, **incoming})
-            write_json(self.path, data, indent=2, ensure_ascii=False)
+            stored = data.get("values")
+            if not isinstance(stored, dict):
+                stored = {}
+            stored.update(patch)
+            write_json(self.path, {"version": 2, "values": stored}, indent=2, ensure_ascii=False)
         return self.payload()
-
-
-def clean_animation(values):
-    """动画方案只认登记的预设，速度钳在 0.5–2 倍。"""
-    out = dict(ANIMATION_DEFAULTS)
-    if not isinstance(values, dict):
-        return out
-    preset = values.get("preset")
-    if preset in ANIMATION_PRESETS:
-        out["preset"] = preset
-    speed = values.get("speed")
-    if isinstance(speed, (int, float)) and not isinstance(speed, bool):
-        out["speed"] = round(max(0.5, min(2, float(speed))), 2)
-    return out
-
-
-def clean_terminal(values):
-    """终端外观按范围收：枚举只认登记值，数字钳到区间，写坏的字段退回默认。"""
-    out = dict(TERMINAL_DEFAULTS)
-    if not isinstance(values, dict):
-        return out
-
-    family = values.get("font_family")
-    if isinstance(family, str):
-        # 旧数据里存过空串；空着就按默认字体算，别让下拉框显示成空白。
-        out["font_family"] = " ".join(family.split())[:300] or TERMINAL_DEFAULTS["font_family"]
-
-    size = values.get("font_size")
-    if isinstance(size, (int, float)) and not isinstance(size, bool):
-        # 直接填像素值，允许小数；越界钳到 4–48，旧数据里的 0 按默认字号算。
-        number = float(size)
-        out["font_size"] = round(max(4, min(48, number if number > 0 else 14)), 1)
-
-    height = values.get("line_height")
-    if isinstance(height, (int, float)) and not isinstance(height, bool):
-        out["line_height"] = round(max(0.8, min(2.0, float(height))), 2)
-
-    weight = values.get("font_weight")
-    if weight in TERMINAL_WEIGHTS:
-        out["font_weight"] = weight
-
-    spacing = values.get("letter_spacing")
-    if isinstance(spacing, (int, float)) and not isinstance(spacing, bool):
-        out["letter_spacing"] = round(max(-2, min(5, float(spacing))), 2)
-
-    cursor = values.get("cursor_style")
-    if cursor in TERMINAL_CURSORS:
-        out["cursor_style"] = cursor
-
-    if "cursor_blink" in values:
-        out["cursor_blink"] = bool(values.get("cursor_blink"))
-
-    scrollback = values.get("scrollback")
-    if isinstance(scrollback, (int, float)) and not isinstance(scrollback, bool):
-        out["scrollback"] = max(1000, min(100000, int(scrollback)))
-
-    return out
-
-
-def clean_editor_font(values):
-    """编辑器字体按范围收：枚举只认登记值，数字钳到区间，写坏的字段退回默认。"""
-    out = dict(EDITOR_FONT_DEFAULTS)
-    if not isinstance(values, dict):
-        return out
-
-    family = values.get("font_family")
-    if isinstance(family, str):
-        out["font_family"] = " ".join(family.split())[:300] or EDITOR_FONT_DEFAULTS["font_family"]
-
-    size = values.get("font_size")
-    if isinstance(size, (int, float)) and not isinstance(size, bool):
-        number = float(size)
-        out["font_size"] = round(max(4, min(48, number if number > 0 else 14)), 1)
-
-    height = values.get("line_height")
-    if isinstance(height, (int, float)) and not isinstance(height, bool):
-        out["line_height"] = round(max(1.0, min(3.0, float(height))), 2)
-
-    weight = values.get("font_weight")
-    if weight in TERMINAL_WEIGHTS:
-        out["font_weight"] = weight
-
-    spacing = values.get("letter_spacing")
-    if isinstance(spacing, (int, float)) and not isinstance(spacing, bool):
-        out["letter_spacing"] = round(max(-2, min(5, float(spacing))), 2)
-
-    return out
-
-
-def clean_shortcuts(values):
-    """快捷键按登记表收：未知项丢掉，写坏的值退回默认，空串表示停用。"""
-    out = dict(SHORTCUT_DEFAULTS)
-    if not isinstance(values, dict):
-        return out
-    for key in SHORTCUT_DEFAULTS:
-        value = values.get(key)
-        if not isinstance(value, str):
-            continue
-        text = " ".join(value.split())
-        out[key] = text if len(text) <= 40 else SHORTCUT_DEFAULTS[key]
-    return out

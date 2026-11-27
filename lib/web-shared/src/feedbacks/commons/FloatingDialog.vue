@@ -12,6 +12,7 @@
     :width="size.w"
     :height="size.h"
     :content-props="{ style: positionStyle }"
+    :z-index="zIndex"
     :persistent="persistent"
     scrollable
     @update:model-value="emit('update:modelValue', $event)"
@@ -52,6 +53,8 @@ const props = defineProps({
   storage: { type: String, default: 'dialog-layouts' },
   // 必须明确作答（比如“文件还没保存”）时用，点遮罩与 Esc 都不关。
   persistent: { type: Boolean, default: false },
+  // Dock 面板里的弹窗要压过面板（3090）与右键菜单（3200），由调用方传更大的值。
+  zIndex: { type: [Number, String], default: undefined },
 })
 const emit = defineEmits(['update:modelValue'])
 

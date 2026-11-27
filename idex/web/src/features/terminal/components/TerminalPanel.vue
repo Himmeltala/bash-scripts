@@ -48,6 +48,7 @@
     :initial-height="240"
     :min-width="340"
     :min-height="200"
+    :z-index="3300"
   >
     <template #title>重命名终端</template>
     <v-text-field

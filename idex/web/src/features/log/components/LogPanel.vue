@@ -277,8 +277,8 @@
                   :path="activePath"
                   :inline="mergeInline"
                   :collapse="logDiffScope === 'hunks'"
-                  :theme="preferences.editorTheme"
-                  :minimap="preferences.minimap"
+                  :theme="editorSettings.theme"
+                  :minimap="editorSettings.minimap"
                   :lsp="false"
                 />
               </template>
@@ -327,7 +327,7 @@ import {
 import { useCommitLog } from '../composables/useCommitLog'
 import MergeDiffEditor from '../../editor/components/MergeDiffEditor.vue'
 import { toast } from '../../../utils/notice'
-import { usePreferencesStore } from '../../../stores/preferences'
+import { useEditorSettings } from '../../settings/composables/useSettings'
 import { useFileTree, useSplitPane } from '@bash-scripts/web-shared'
 
 const props = defineProps({
@@ -336,7 +336,7 @@ const props = defineProps({
 })
 
 // 差异口径与文件列表的查看方式记在全局偏好里，换工作副本也保持。
-const preferences = usePreferencesStore()
+const editorSettings = useEditorSettings()
 const { logDiffScope, logFilesMode, logDiffInline: mergeInline } = storeToRefs(preferences)
 
 const theme = useTheme()

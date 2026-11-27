@@ -30,7 +30,7 @@ gitmod = load_module("idex_server", SERVER_PY)
 WEB = HERE.parent / "src" / "idex" / "web"
 sys.path.insert(0, str(WEB))
 # 重构后函数分散到各模块；用例仍从一个命名空间取，测试侧合并，产品代码不加重导出。
-for _name in ("browse_fs", "git_query", "vcs_ops", "vcs_summary", "server_common", "server_stores", "vcs_common"):
+for _name in ("browse_fs", "git_query", "vcs_ops", "vcs_summary", "server_common", "server_stores", "settings_schema", "vcs_common"):
     _mod = load_module("idex_" + _name, WEB / (_name + ".py"))
     for _key, _value in vars(_mod).items():
         if not _key.startswith("_") and not hasattr(gitmod, _key):
@@ -1197,109 +1197,157 @@ class SearchSettings(unittest.TestCase):
     def test_settings_store_defaults_sanitizes_and_persists(self):
         path = self.base / "settings.json"
         store = gitmod.Settings(str(path))
-        self.assertEqual(store.search_ignore(), list(gitmod.SEARCH_IGNORE_DEFAULTS))
+        values = store.values()
+        self.assertEqual(values["search.ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
+        self.assertEqual(values["editor.theme"], "auto")
+        self.assertFalse(values["editor.minimap"])
 
-        names = store.set_search_ignore(
-            [" node_modules ", "node_modules", "/etc", "dist/", "", ".."]
-        )
-        self.assertEqual(names, ["node_modules"])
-        self.assertEqual(gitmod.Settings(str(path)).search_ignore(), ["node_modules"])
+        # 只收目录名：去空白、去重，带路径分隔符的丢掉。
+        store.update({"values": {"search.ignore": [" node_modules ", "node_modules", "/etc", "dist/", "", ".."]}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["search.ignore"], ["node_modules"])
 
         # 存一份空名单就是不跳过任何目录，不会退回默认。
-        gitmod.Settings(str(path)).set_search_ignore([])
-        self.assertEqual(gitmod.Settings(str(path)).search_ignore(), [])
+        store.update({"values": {"search.ignore": []}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["search.ignore"], [])
 
         # 编辑器设置按字段更新，没提到的字段不动；非法配色回 auto。
-        store.update({"editor_theme": "dracula", "minimap": True})
+        store.update({"values": {"editor.theme": "dracula", "editor.minimap": True}})
         again = gitmod.Settings(str(path))
-        self.assertEqual(again.editor_theme(), "dracula")
-        self.assertTrue(again.minimap())
-        again.update({"editor_theme": "不存在"})
-        self.assertEqual(gitmod.Settings(str(path)).editor_theme(), "auto")
-        self.assertTrue(gitmod.Settings(str(path)).minimap())
+        self.assertEqual(again.values()["editor.theme"], "dracula")
+        self.assertTrue(again.values()["editor.minimap"])
+        again.update({"values": {"editor.theme": "不存在"}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["editor.theme"], "auto")
+        self.assertTrue(gitmod.Settings(str(path)).values()["editor.minimap"])
 
     def test_terminal_settings_defaults_and_clamp(self):
         path = self.base / "settings.json"
         store = gitmod.Settings(str(path))
-        self.assertEqual(store.terminal(), dict(gitmod.TERMINAL_DEFAULTS))
-        payload = store.payload()
-        self.assertEqual(payload["terminal"], dict(gitmod.TERMINAL_DEFAULTS))
-        self.assertIn("terminal", payload["defaults"])
+        values = store.values()
+        for key, value in gitmod.TERMINAL_DEFAULTS.items():
+            self.assertEqual(values[f"terminal.{key}"], value)
 
         # 越界的值按范围收，非法枚举退回默认，字体名去掉多余空白。
-        store.update({"terminal": {
-            "font_family": "  Fira   Code  ",
-            "font_size": 99,
-            "line_height": 5,
-            "font_weight": "heavy",
-            "letter_spacing": -9,
-            "cursor_style": "diagonal",
-            "cursor_blink": 0,
-            "scrollback": 10,
+        store.update({"values": {
+            "terminal.font_family": "  Fira   Code  ",
+            "terminal.font_size": 99,
+            "terminal.line_height": 5,
+            "terminal.font_weight": "heavy",
+            "terminal.letter_spacing": -9,
+            "terminal.cursor_style": "diagonal",
+            "terminal.cursor_blink": 0,
+            "terminal.scrollback": 10,
         }})
-        got = gitmod.Settings(str(path)).terminal()
-        self.assertEqual(got["font_family"], "Fira Code")
-        self.assertEqual(got["font_size"], 48)
-        self.assertEqual(got["line_height"], 2)
-        self.assertEqual(got["font_weight"], "normal")
-        self.assertEqual(got["letter_spacing"], -2)
-        self.assertEqual(got["cursor_style"], "block")
-        self.assertFalse(got["cursor_blink"])
-        self.assertEqual(got["scrollback"], 1000)
+        got = gitmod.Settings(str(path)).values()
+        self.assertEqual(got["terminal.font_family"], "Fira Code")
+        self.assertEqual(got["terminal.font_size"], 48)
+        self.assertEqual(got["terminal.line_height"], 2)
+        self.assertEqual(got["terminal.font_weight"], "normal")
+        self.assertEqual(got["terminal.letter_spacing"], -2)
+        self.assertEqual(got["terminal.cursor_style"], "block")
+        self.assertFalse(got["terminal.cursor_blink"])
+        self.assertEqual(got["terminal.scrollback"], 1000)
 
         # 没提到的字段保持原值，别的设置也不受影响。
-        store.update({"terminal": {"cursor_style": "bar"}})
-        again = gitmod.Settings(str(path))
-        self.assertEqual(again.terminal()["cursor_style"], "bar")
-        self.assertEqual(again.terminal()["font_size"], 48)
+        store.update({"values": {"terminal.cursor_style": "bar"}})
+        again = gitmod.Settings(str(path)).values()
+        self.assertEqual(again["terminal.cursor_style"], "bar")
+        self.assertEqual(again["terminal.font_size"], 48)
+        self.assertEqual(again["editor.theme"], "auto")
 
     def test_editor_font_defaults_and_clamp(self):
         path = self.base / "settings.json"
         store = gitmod.Settings(str(path))
-        self.assertEqual(store.editor_font(), dict(gitmod.EDITOR_FONT_DEFAULTS))
-        payload = store.payload()
-        self.assertEqual(payload["editor_font"], dict(gitmod.EDITOR_FONT_DEFAULTS))
-        self.assertIn("editor_font", payload["defaults"])
+        values = store.values()
+        for key, value in gitmod.EDITOR_FONT_DEFAULTS.items():
+            self.assertEqual(values[f"editor.{key}"], value)
 
-        store.update({"editor_font": {
-            "font_family": "  Fira   Code  ",
-            "font_size": 99,
-            "line_height": 5,
-            "font_weight": "heavy",
-            "letter_spacing": -9,
+        store.update({"values": {
+            "editor.font_family": "  Fira   Code  ",
+            "editor.font_size": 99,
+            "editor.line_height": 5,
+            "editor.font_weight": "heavy",
+            "editor.letter_spacing": -9,
         }})
-        got = gitmod.Settings(str(path)).editor_font()
-        self.assertEqual(got["font_family"], "Fira Code")
-        self.assertEqual(got["font_size"], 48)
-        self.assertEqual(got["line_height"], 3)
-        self.assertEqual(got["font_weight"], "normal")
-        self.assertEqual(got["letter_spacing"], -2)
+        got = gitmod.Settings(str(path)).values()
+        self.assertEqual(got["editor.font_family"], "Fira Code")
+        self.assertEqual(got["editor.font_size"], 48)
+        self.assertEqual(got["editor.line_height"], 3)
+        self.assertEqual(got["editor.font_weight"], "normal")
+        self.assertEqual(got["editor.letter_spacing"], -2)
 
         # 没提到的字段保持原值，终端设置不受影响。
-        store.update({"editor_font": {"font_weight": "bold"}})
-        again = gitmod.Settings(str(path))
-        self.assertEqual(again.editor_font()["font_weight"], "bold")
-        self.assertEqual(again.editor_font()["font_size"], 48)
-        self.assertEqual(again.terminal(), dict(gitmod.TERMINAL_DEFAULTS))
+        store.update({"values": {"editor.font_weight": "bold"}})
+        again = gitmod.Settings(str(path)).values()
+        self.assertEqual(again["editor.font_weight"], "bold")
+        self.assertEqual(again["editor.font_size"], 48)
+        for key, value in gitmod.TERMINAL_DEFAULTS.items():
+            self.assertEqual(again[f"terminal.{key}"], value)
 
     def test_animation_settings_defaults_and_clamp(self):
         path = self.base / "settings.json"
         store = gitmod.Settings(str(path))
-        self.assertEqual(store.animation(), dict(gitmod.ANIMATION_DEFAULTS))
-        self.assertEqual(store.payload()["animation"], dict(gitmod.ANIMATION_DEFAULTS))
-        self.assertIn("animation", store.payload()["defaults"])
+        got = store.values()
+        self.assertEqual(got["animation.preset"], "standard")
+        self.assertEqual(got["animation.speed"], 1)
 
-        store.update({"animation": {"preset": "spring", "speed": 1.5}})
-        self.assertEqual(gitmod.Settings(str(path)).animation(),
-                         {"preset": "spring", "speed": 1.5})
+        store.update({"values": {"animation.preset": "spring", "animation.speed": 1.5}})
+        got = gitmod.Settings(str(path)).values()
+        self.assertEqual(got["animation.preset"], "spring")
+        self.assertEqual(got["animation.speed"], 1.5)
 
         # 未知预设退回标准，速度越界钳位。
-        store.update({"animation": {"preset": "乱填", "speed": 9}})
-        self.assertEqual(gitmod.Settings(str(path)).animation(),
-                         {"preset": "standard", "speed": 2})
-        store.update({"animation": {"speed": 0.1}})
-        self.assertEqual(gitmod.Settings(str(path)).animation()["speed"], 0.5)
-        self.assertEqual(gitmod.Settings(str(path)).animation()["preset"], "standard")
+        store.update({"values": {"animation.preset": "乱填", "animation.speed": 9}})
+        got = gitmod.Settings(str(path)).values()
+        self.assertEqual(got["animation.preset"], "standard")
+        self.assertEqual(got["animation.speed"], 2)
+        store.update({"values": {"animation.speed": 0.1}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["animation.speed"], 0.5)
+
+    def test_header_settings_and_booleans(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        got = store.values()
+        for key in gitmod.HEADER_METRICS:
+            self.assertTrue(got[f"header.metrics.{key}"])
+        for key in gitmod.HEADER_RUN_TYPES:
+            self.assertTrue(got[f"header.runs.{key}"])
+        self.assertTrue(got["header.services"])
+        self.assertTrue(got["header.recent"])
+        self.assertTrue(got["header.theme"])
+
+        # 只改提到的开关，其余不动；真值统一成布尔。
+        store.update({"values": {"header.metrics.cpu": False, "header.theme": 0,
+                                 "header.runs.package": False}})
+        got = gitmod.Settings(str(path)).values()
+        self.assertFalse(got["header.metrics.cpu"])
+        self.assertTrue(got["header.metrics.memory"])
+        self.assertFalse(got["header.theme"])
+        self.assertFalse(got["header.runs.package"])
+        self.assertTrue(got["header.runs.start"])
+
+    def test_settings_payload_schema_and_atomic_reject(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        payload = store.payload()
+        self.assertEqual(payload["version"], 2)
+        keys = [item["key"] for item in payload["schema"]]
+        self.assertIn("terminal.font_size", keys)
+        self.assertIn("header.metrics.cpu", keys)
+        # 登记过的每一项都有值、有默认值。
+        self.assertEqual(sorted(payload["values"]), sorted(keys))
+        self.assertEqual(sorted(payload["defaults"]), sorted(keys))
+        for item in payload["schema"]:
+            self.assertIn("default", item)
+
+        # 有一项不认识就整份拒绝，合法项也不落盘。
+        with self.assertRaises(gitmod.ApiError):
+            store.update({"values": {"terminal.font_size": 12, "no.such.key": 1}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["terminal.font_size"], 14)
+
+        # 非 values 结构直接拒绝。
+        with self.assertRaises(gitmod.ApiError):
+            store.update({"terminal.font_size": 12})
+
 
 
 class SearchSettingsApi(unittest.TestCase):
@@ -1338,19 +1386,17 @@ class SearchSettingsApi(unittest.TestCase):
     def test_settings_roundtrip_and_search(self):
         code, data = self.call("/settings")
         self.assertEqual(code, 200, data)
-        self.assertEqual(data["search_ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
-        # 默认模板一份：接口返回的 defaults 覆盖搜索、配色与代码地图。
-        self.assertEqual(data["defaults"]["search_ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
-        self.assertEqual(data["defaults"]["editor_theme"], "auto")
-        self.assertFalse(data["defaults"]["minimap"])
+        self.assertEqual(data["values"]["search.ignore"], list(gitmod.SEARCH_IGNORE_DEFAULTS))
+        self.assertEqual(data["defaults"]["editor.theme"], "auto")
+        self.assertFalse(data["defaults"]["editor.minimap"])
 
         code, data = self.call("/search?ws=%s&q=x.txt&mode=name" % self.ws)
         self.assertEqual(code, 200, data)
         self.assertEqual([m["path"] for m in data["matches"]], ["vendor/x.txt"])
 
-        code, data = self.call("/settings", {"search_ignore": ["vendor"]})
+        code, data = self.call("/settings", {"values": {"search.ignore": ["vendor"]}})
         self.assertEqual(code, 200, data)
-        self.assertEqual(data["search_ignore"], ["vendor"])
+        self.assertEqual(data["values"]["search.ignore"], ["vendor"])
 
         code, data = self.call("/search?ws=%s&q=x.txt&mode=name" % self.ws)
         self.assertEqual(code, 200, data)
@@ -1358,20 +1404,41 @@ class SearchSettingsApi(unittest.TestCase):
 
         # 带斜杠的、重复的都清掉。
         code, data = self.call(
-            "/settings", {"search_ignore": [" /tmp ", "dist", "node_modules", "dist"]}
+            "/settings", {"values": {"search.ignore": [" /tmp ", "dist", "node_modules", "dist"]}}
         )
-        self.assertEqual(data["search_ignore"], ["dist", "node_modules"])
+        self.assertEqual(data["values"]["search.ignore"], ["dist", "node_modules"])
 
-        # 编辑器设置与服务端持久化；只改一个字段时其余字段保留。
-        code, data = self.call("/settings", {"editor_theme": "one-dark", "minimap": True})
+        # 编辑器设置与服务端持久化；只改提到的键，其余保留。
+        code, data = self.call(
+            "/settings", {"values": {"editor.theme": "one-dark", "editor.minimap": True}}
+        )
         self.assertEqual(code, 200, data)
-        self.assertEqual(data["editor_theme"], "one-dark")
-        self.assertTrue(data["minimap"])
-        code, data = self.call("/settings", {"search_ignore": ["vendor"]})
-        self.assertEqual(data["editor_theme"], "one-dark")
-        self.assertTrue(data["minimap"])
+        self.assertEqual(data["values"]["editor.theme"], "one-dark")
+        self.assertTrue(data["values"]["editor.minimap"])
+        code, data = self.call("/settings", {"values": {"search.ignore": ["vendor"]}})
+        self.assertEqual(data["values"]["editor.theme"], "one-dark")
+        self.assertTrue(data["values"]["editor.minimap"])
         code, data = self.call("/settings")
-        self.assertEqual(data["editor_theme"], "one-dark")
+        self.assertEqual(data["values"]["editor.theme"], "one-dark")
+
+    def test_settings_values_patch(self):
+        code, data = self.call("/settings")
+        self.assertEqual(code, 200, data)
+        self.assertIn("terminal.font_size", data["values"])
+        self.assertIn("schema", data)
+
+        code, data = self.call(
+            "/settings", {"values": {"terminal.font_size": 16, "header.theme": False}}
+        )
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data["values"]["terminal.font_size"], 16)
+        self.assertFalse(data["values"]["header.theme"])
+
+        # 未知键整份拒绝，原有值不受影响。
+        code, data = self.call("/settings", {"values": {"terminal.font_size": 12, "nope.key": 1}})
+        self.assertEqual(code, 400, data)
+        code, data = self.call("/settings")
+        self.assertEqual(data["values"]["terminal.font_size"], 16)
 
 
 if __name__ == "__main__":

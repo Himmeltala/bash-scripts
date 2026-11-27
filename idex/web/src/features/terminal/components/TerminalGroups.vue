@@ -51,6 +51,7 @@
     :initial-height="260"
     :min-width="360"
     :min-height="200"
+    :z-index="3300"
   >
     <template #title>重命名工作区</template>
     <v-text-field
@@ -77,6 +78,7 @@
     :initial-height="220"
     :min-width="360"
     :min-height="180"
+    :z-index="3300"
   >
     <template #title>移除工作区终端</template>
     <p class="remove-text">

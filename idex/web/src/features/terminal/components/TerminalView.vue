@@ -51,7 +51,7 @@ import { encodeInput } from '../lib/protocol'
 import { connectTerminal } from '../composables/useTerminalConnection'
 import { terminalOptions } from '../lib/options'
 import { dropWebgl, holdWebgl } from '../lib/webglCache'
-import { usePreferencesStore } from '../../../stores/preferences'
+import { useTerminalSettings } from '../../settings/composables/useSettings'
 
 const props = defineProps({
   session: { type: Object, required: true },
@@ -62,7 +62,7 @@ const wrap = ref(null)
 const findInput = ref(null)
 const find = reactive({ on: false, text: '', missing: false })
 const theme = useTheme()
-const preferences = usePreferencesStore()
+const terminalSettings = useTerminalSettings()
 let observer = null
 let fitTimer = 0
 
@@ -133,7 +133,7 @@ function codeSize() {
 
 // 终端外观按设置来；字体名换了也保留代码字体那串中文回退。
 function appearance() {
-  return terminalOptions(preferences.terminal, { font: codeFont(), size: codeSize() })
+  return terminalOptions(terminalSettings.value, { font: codeFont(), size: codeSize() })
 }
 
 function buildTerminal() {
@@ -405,7 +405,7 @@ watch(
 
 // 设置里改终端外观后立即生效，字号变了要重新量一次宽度。
 watch(
-  () => preferences.terminal,
+  terminalSettings,
   () => {
     const term = props.session.term
     if (!term) return

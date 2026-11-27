@@ -13,7 +13,7 @@ from pathlib import Path
 from web import ApiError, log
 
 from server_common import inside
-from server_stores import SEARCH_IGNORE_DEFAULTS, SETTINGS_DEFAULTS
+from settings_schema import defaults_flat, schema_payload
 from tool_detect import detect_tools
 
 
@@ -150,10 +150,10 @@ class WorkspacesRoutes:
     def _settings_payload(self):
         if self.settings is None:
             return {
-                "search_ignore": list(SEARCH_IGNORE_DEFAULTS),
-                "defaults": dict(SETTINGS_DEFAULTS, search_ignore=list(SEARCH_IGNORE_DEFAULTS)),
-                "editor_theme": SETTINGS_DEFAULTS["editor_theme"],
-                "minimap": SETTINGS_DEFAULTS["minimap"],
+                "version": 2,
+                "schema": schema_payload(),
+                "values": defaults_flat(),
+                "defaults": defaults_flat(),
             }
         return self.settings.payload()
 

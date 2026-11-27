@@ -144,11 +144,23 @@ function diffTextStyle() {
   }
 }
 
+// 十六进制色转 rgba；代码地图底色要在 gutter 色上叠用户设置的透明度。
+function withAlpha(hex, alpha) {
+  const value = hex.replace('#', '')
+  const full = value.length === 3 ? value.split('').map((c) => c + c).join('') : value
+  const number = Number.parseInt(full, 16)
+  return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`
+}
+
 function chrome(palette) {
   return EditorView.theme(
     {
       '&': { height: '100%', color: palette.fg, backgroundColor: palette.bg },
       '.cm-scroller': SCROLLER_FONT,
+      // 代码地图底色跟 gutter 一致，透明度由编辑器设置写根节点变量。
+      '.cm-gutters.cm-minimap-box': {
+        backgroundColor: withAlpha(palette.gutterBg, 'var(--idex-minimap-alpha, 1)'),
+      },
       '.cm-content': { caretColor: palette.fg },
       '.cm-gutters': {
         backgroundColor: palette.gutterBg,
@@ -242,6 +254,9 @@ function autoTheme() {
         backgroundColor: 'rgb(var(--v-theme-surface))',
       },
       '.cm-scroller': SCROLLER_FONT,
+      '.cm-gutters.cm-minimap-box': {
+        backgroundColor: 'rgba(var(--v-theme-surface), var(--idex-minimap-alpha, 1))',
+      },
       '.cm-content': { caretColor: 'rgb(var(--v-theme-on-surface))' },
       '.cm-gutters': {
         backgroundColor: 'rgb(var(--v-theme-surface))',
