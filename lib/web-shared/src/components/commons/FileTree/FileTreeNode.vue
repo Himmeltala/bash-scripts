@@ -227,7 +227,7 @@ function onContext(event) {
 .row.clickable {
   cursor: pointer;
 }
-/* 多选与拖入同一套虚线框；.selected 仍表示当前打开的文件。 */
+/* .selected 表示当前打开的文件。 */
 .row.picked {
   outline: 1px dashed rgb(var(--v-theme-primary));
   outline-offset: -1px;

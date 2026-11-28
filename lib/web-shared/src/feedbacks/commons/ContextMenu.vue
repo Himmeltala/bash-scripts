@@ -177,7 +177,7 @@ onBeforeUnmount(unbind)
 <style scoped>
 .ctx-menu {
   position: fixed;
-  /* 要压过 Dock 与它的面板（3080–3100），右键菜单才不会被挡。 */
+  /* 压过 Dock 与面板（3080–3100）。 */
   z-index: 3200;
   min-width: 196px;
   max-width: 320px;

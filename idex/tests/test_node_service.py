@@ -5,11 +5,7 @@
 # @FilePath: \idex\tests\test_node_service.py
 # @Description: Node 引擎的服务层：状态快照、Node 版本发现，以及执行端的启停。
 
-"""Node 引擎的服务层：状态快照、Node 版本发现，以及执行端的启停。
-
-原来 nodex 网页用例里的扫描结果解析、Node 版本选择与启停，改成直接调用引擎类；
-另有一条走 ``engine.sh --engine`` 的协议测试，验证搬迁后的状态文件与扫描。
-"""
+"""原来 nodex 网页用例的扫描解析、Node 版本选择与启停改为直接调用引擎类；另有一条走 ``engine.sh --engine`` 的协议测试，验证状态文件与扫描。"""
 
 import json
 import os

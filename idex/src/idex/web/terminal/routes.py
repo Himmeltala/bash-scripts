@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\terminal\routes.py
 # @Description: 终端的 HTTP 与 WebSocket 入口：会话管理、输入输出、重放与心跳。
 
-"""终端的 HTTP 与 WebSocket 入口：会话管理、输入输出、重放与心跳。"""
-
 import json
 import queue
 import socket

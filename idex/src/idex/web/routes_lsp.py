@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\routes_lsp.py
 # @Description: 代码索引的网页接口：定义、引用、符号、悬停、诊断与重命名。
 
-"""代码索引的网页接口：定义、引用、符号、悬停、诊断与重命名。"""
-
 import os
 
 from web import ApiError

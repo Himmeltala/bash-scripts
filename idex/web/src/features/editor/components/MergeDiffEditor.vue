@@ -482,7 +482,6 @@ defineExpose({ locate, resetScroll })
   display: flex;
   overflow: hidden;
 }
-/* 内联时编辑器是 flex 子项，不撑开就会缩到内容宽度。 */
 .merge-host > :deep(.cm-editor) {
   flex: 1 1 auto;
   width: 100%;

@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\lsp\manager.py
 # @Description: 按（工作区, 语言）管理语言服务器：懒启动、空闲回收、五种操作与重命名。
 
-"""按（工作区, 语言）管理语言服务器：懒启动、空闲回收、五种操作与重命名。"""
-
 import os
 import shutil
 import threading
@@ -28,7 +26,6 @@ from .vue import TsslsBridge, merge_diagnostics, vue_block
 
 
 class LspManager:
-    """按（工作区, 语言）管理语言服务器进程。"""
 
     def __init__(
         self,

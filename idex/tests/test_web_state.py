@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_web_state.py
 # @Description: 网页 SSE 的回归测试：登记表一变就推一份，外面提交或更新后推一条 head。
 
-"""网页 SSE 的回归测试：登记表一变就推一份，外面提交或更新后推一条 head。"""
-
 import http.client
 import json
 import os

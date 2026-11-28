@@ -1776,7 +1776,6 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
 }
-/* 悬浮信息卡：跟着行定位，不挡鼠标，也不吃目录树的点击。 */
 .hover-card {
   position: fixed;
   z-index: 30;
@@ -1807,14 +1806,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   color: rgb(var(--v-theme-on-surface));
 }
-/* 落点目录的虚线只在那一行上。 */
 .panel :deep(.row.drop-target) {
   outline: 2px dashed rgb(var(--v-theme-primary));
   outline-offset: -2px;
   border-radius: 4px;
   background: rgba(var(--v-theme-primary), 0.08);
 }
-/* 上传进度：右下角小卡片，不挡目录树的操作。 */
 .upload-panel {
   position: absolute;
   right: 16px;
@@ -1901,7 +1898,6 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   margin-right: 4px;
 }
-/* 问题弹窗顶部的分类统计：图标、级别与条数。 */
 .problem-stats {
   display: flex;
   flex-wrap: wrap;
@@ -1989,8 +1985,6 @@ onBeforeUnmount(() => {
 .cell.muted {
   color: rgb(var(--v-theme-warning));
 }
-/* 弹窗正文是纵向 flex，v-input 默认 flex: 1 1 auto，会被拉高一整块；
-   筛选框只占自己那一行，剩下的空间留给列表。 */
 .dialog-filter {
   flex: 0 0 auto;
   margin-bottom: 8px;
@@ -2222,7 +2216,6 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: rgb(var(--v-theme-modified));
 }
-/* 外部改过、页面还没换内容：点页签才重读。 */
 .tab-stale {
   flex: 0 0 auto;
   width: 6px;
@@ -2261,7 +2254,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
 }
-/* 预览切源码时顶上一颗按钮；预览器自己的样式跟组件走。 */
 .preview-bar {
   display: flex;
   justify-content: flex-end;
@@ -2285,7 +2277,6 @@ onBeforeUnmount(() => {
   overflow: auto;
   padding: 6px 4px;
 }
-/* 树顶固定搜索区：输入框在上，查看方式与收起按钮在下，滚动时贴住。 */
 .tree-head {
   position: sticky;
   top: 0;

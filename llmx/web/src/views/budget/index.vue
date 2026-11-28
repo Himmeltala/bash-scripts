@@ -246,7 +246,7 @@ function tone(spent, limit) {
   height: calc(100vh - var(--v-layout-top));
   overflow: auto;
 }
-/* 多个告警并排一行；放不下时再换行，不各自占一整行。 */
+
 .alerts {
   display: flex;
   flex-wrap: wrap;
@@ -312,7 +312,6 @@ function tone(spent, limit) {
   background: transparent;
 }
 
-/* v-table 默认按内容收窄，撑满所在卡片。 */
 .table :deep(.v-table__wrapper > table) {
   width: 100%;
 }

@@ -6,8 +6,6 @@
 # @FilePath: \idex\tests\test_terminal.py
 # @Description: 终端回归：WebSocket 帧编解码与 PTY 会话的输入输出、缓冲与清理。
 
-"""终端回归：WebSocket 帧编解码与 PTY 会话的输入输出、缓冲与清理。"""
-
 import os
 import socket
 import struct

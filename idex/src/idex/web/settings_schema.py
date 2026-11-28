@@ -5,13 +5,7 @@
 # @FilePath: \idex\src\idex\web\settings_schema.py
 # @Description: 设置登记表：每一项的键、类型、默认值、范围与界面元数据，读写与校验都由它派生。
 
-"""设置登记表：键、类型、默认值、范围与界面元数据。
-
-加一项设置只改这里；默认值、归一化、接口载荷与前端控件都由登记表派生。
-settings.json 直接存扁平键值：{"version": 2, "values": {"terminal.font_size": 15}}。
-"""
-
-# ---- 默认值 ----------------------------------------------------------------
+"""加一项设置只改这里；默认值、归一化、载荷与前端控件都由登记表派生。settings.json 存扁平键值：{"version": 2, "values": {...}}。"""
 
 # 搜索默认跳过的目录：依赖、缓存与构建产物，列出来也翻不动。
 SEARCH_IGNORE_DEFAULTS = [".git", ".svn", ".hg", "node_modules", "__pycache__", "dist", "build", "target"]
@@ -114,14 +108,8 @@ WEIGHT_LABELS = (("normal", "常规"), ("500", "中等"), ("bold", "加粗"))
 CURSOR_LABELS = (("block", "方块"), ("bar", "竖线"), ("underline", "下划线"))
 
 
-# ---- 登记表 ----------------------------------------------------------------
-
-
 class Setting:
-    """一项设置：默认值与界面元数据都从这里读，清洗按 type 与范围做。
-
-    不用 dataclass：测试加载器按文件路径建模块，dataclass 在导入时反查 sys.modules 会失败。
-    """
+    """一项设置：默认值与界面元数据从这里读，清洗按 type 与范围做；不用 dataclass，测试加载器按路径建模块会让它反查 sys.modules 失败。"""
 
     __slots__ = (
         "key", "type", "default", "label", "description", "group", "section", "order",
@@ -322,9 +310,6 @@ SETTINGS = (
 )
 
 SETTINGS_BY_KEY = {item.key: item for item in SETTINGS}
-
-
-# ---- 派生 ------------------------------------------------------------------
 
 
 def _copy(value):

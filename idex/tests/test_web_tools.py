@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_web_tools.py
 # @Description: 工作区记录里的工具映射：登记、读取、删除，以及旧记录没有这项时为 None。
 
-"""工作区记录里的工具映射：登记、读取、删除，以及旧记录没有这项时为 None。"""
-
 import sys, tempfile, unittest
 from pathlib import Path
 

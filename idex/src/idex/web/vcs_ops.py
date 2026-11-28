@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\vcs_ops.py
 # @Description: 写操作的命令拼装：拉取、推送、切分支、提交、更新。
 
-"""写操作的命令拼装：拉取、推送、切分支、提交、更新。"""
-
 import os
 import shlex
 import subprocess
@@ -94,11 +92,7 @@ def svn_commit(root, message, paths):
 
 
 def git_op(root, args, label):
-    """跑一条会动工作区或远端的 git 命令，把输出原样带回页面。
-
-    非零退出不抛接口错误：冲突、认证失败这类原因都写在输出里，
-    页面要能完整看到；是否成功由 ok 告诉调用方。
-    """
+    """跑一条会动工作区或远端的 git 命令，输出原样带回页面；非零退出不抛接口错误，冲突与认证失败要完整可见，成功与否看 ok。"""
     try:
         cp = subprocess.run(
             ["git", "--no-pager", *args],
@@ -166,10 +160,7 @@ def git_push(root, set_upstream=False):
 
 
 def git_checkout_args(root, body):
-    """切分支的参数：本地分支直接切，远端分支建跟踪分支，新建分支从当前提交起。
-
-    工作区有未提交的改动且会被切换覆盖时，git switch 自己会拒绝，输出原样带回页面。
-    """
+    """切分支参数：本地分支直接切，远端分支建跟踪分支，新建分支从当前提交起；未提交改动会被 switch 拒绝，输出原样带回。"""
     branch = str(body.get("branch", "")).strip()
     if not branch:
         raise ApiError(400, "没给分支名")
@@ -194,12 +185,7 @@ def git_checkout_args(root, body):
 
 
 def git_commit_commands(root, message, stage_all=False):
-    """只提交索引里的暂存内容。
-
-    页面勾选即暂存，提交不再接受路径；未暂存的文件留在工作区不提交。
-    stage_all 时先整目录 git add -A。有冲突时一律拒绝，免得把冲突标记
-    当成解决结果提交。
-    """
+    """只提交索引里的暂存内容；页面勾选即暂存，提交不再接受路径，stage_all 时先 git add -A，有冲突一律拒绝。"""
     message = (message or "").strip()
     if not message:
         raise ApiError(400, "提交说明不能为空")

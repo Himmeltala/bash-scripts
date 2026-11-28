@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\browse_fs.py
 # @Description: 浏览目录的读写：列目录、取文件、搜索、保存，以及新建、改名、删除。
 
-"""浏览目录的读写：列目录、取文件、搜索、保存，以及新建、改名、删除。"""
-
 import grp
 import io
 import os
@@ -44,10 +42,7 @@ def browse_rel(rel):
 
 
 def browse_list(root, rel):
-    """列一层目录，目录在前、文件在后；只认登记目录底下的东西。
-
-    先收名字排序，只给真正要显示的那一段取大小；大目录不必为截断掉的部分逐个 stat。
-    """
+    """列一层目录，目录在前、文件在后；先收名字排序，只给真正显示的那段取大小，大目录不必逐个 stat。"""
     rel = browse_rel(rel).rstrip("/")
     target = os.path.join(root, rel) if rel else root
     if not inside(root, target):
@@ -97,10 +92,7 @@ def _contains_bytes(data, needle, chunk=64 * 1024):
 
 
 def search_lines(path, needle, should_stop=None, needle_bytes=None):
-    """逐行找内容，跳过二进制、超大与不是 UTF-8 的文件，产出 (行号, 行文本)。
-
-    纯 ASCII 的查询先用字节比一遍，整份文件没有命中的就不做 UTF-8 解码。
-    """
+    """逐行找内容，跳过二进制、超大与非 UTF-8 文件；纯 ASCII 查询先用字节预筛，整份未命中就不解码。"""
     try:
         if os.path.getsize(path) > MAX_FILE:
             return
@@ -138,11 +130,7 @@ def _ignored_path(relpath, skip):
 
 
 def browse_files(root, ignore=(), vcs="none"):
-    """快速打开用的文件清单：跳过 ignore 里的目录，按路径排序，到上限就停。
-
-    Git 工作区直接用 git ls-files，它认得忽略规则，也比 Python 逐层走快。
-    结果缓存一小段时间，页面切走再回来不必重扫。
-    """
+    """快速打开用的文件清单：跳过 ignore 目录，按路径排序，到上限就停；Git 工作区用 git ls-files，结果缓存一小段时间。"""
     skip = {str(name) for name in ignore if name}
     key = (root, tuple(sorted(skip)), vcs)
     now = time.time()
@@ -190,13 +178,7 @@ def _file_size(path):
 
 
 def browse_search(root, rel, query, mode, ignore=(), should_stop=None):
-    """在工作副本里按文件名或文件内容找。
-
-    文件名只看文件本身的名字，做不区分大小写的包含匹配，不看所在目录；内容逐行
-    找，只读预览得了的文本文件。ignore 里的目录名在任何一层出现都不往里走。
-    命中或扫过的文件到上限就停，truncated 说明还有没扫完的。
-    should_stop 由调用方给：查询换了代就让它尽快收手，别把旧结果扫完。
-    """
+    """按文件名或内容搜索，跳过 ignore 目录与二进制；命中或扫过的文件到上限就停，should_stop 由调用方控制。"""
     base = browse_rel(rel).rstrip("/")
     target = os.path.join(root, base) if base else root
     if not inside(root, target):
@@ -458,10 +440,7 @@ def entry_stat(root, rel):
 
 
 def save_upload(root, rel, name, stream, length, overwrite=False):
-    """收一个上传的文件：先写同目录的临时文件，收全了再原子改名。
-
-    断网、取消、写盘失败都不会在目标位置留下半截文件。
-    """
+    """先写同目录临时文件，收全了再原子改名；断网、取消、写盘失败都不会在目标位置留下半截文件。"""
     parent_rel, parent = browse_parent(root, rel)
     name = entry_name(name)
     target = os.path.join(parent, name)

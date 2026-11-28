@@ -109,7 +109,7 @@ const { dark, toggle: flipTheme } = useThemeToggle({
 </script>
 
 <style scoped>
-/* 收起展开的节奏跟 idex 一致：侧栏滑出 0.18s、淡出 0.14s，正文宽度直接让位不跟着动。 */
+
 .nav-drawer {
   transition: transform 0.18s ease, opacity 0.14s ease;
 }
@@ -132,7 +132,7 @@ const { dark, toggle: flipTheme } = useThemeToggle({
 .title {
   font-weight: 700;
 }
-/* 菜单内容自己滚，右沿留一条拖拽手柄。 */
+
 .nav {
   display: flex;
   height: 100%;

@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\routes_workspaces.py
 # @Description: 工作区列表、登记与设置页的接口。
 
-"""工作区列表、登记与设置页的接口。"""
-
 import os
 from pathlib import Path
 

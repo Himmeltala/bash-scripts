@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# 开发者模式：后端直接跑仓库里的源码，前端交给 Vite 热更新；改 Python 自动重启后端。
+# @Author: Himmeltala
+# @Date: 2026-11-24 00:52:47
+# @LastEditors: Himmeltala
+# @LastEditTime: 2026-11-28 21:58:49
+# @FilePath: \dev.sh
+# @Description: 开发者模式：后端跑仓库源码，前端走 Vite 热更新，Python 改动自动重启后端。
+
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

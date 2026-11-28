@@ -5,10 +5,7 @@
 # @FilePath: \idex\src\idex\engines\jvm\targets.py
 # @Description: 找 mvnx / gradlex 入口，并在工作区根目录取目标清单。
 
-"""找 mvnx / gradlex 入口，并在工作区根目录取目标清单。
-
-目标是工具自己算出来的：引擎不读 pom，也不读 settings.gradle。
-"""
+"""目标是工具自己算出来的：引擎不读 pom，也不读 settings.gradle。"""
 
 import json
 import os
@@ -79,10 +76,7 @@ def _scan_command(kind, command, root, argv):
 
 
 def scan_workspace(ws, tools=None):
-    """列一个工作区的全部目标，合成一张平铺表。
-
-    两次调用之间工程可能变化，所以 rescan 永远重新跑工具，不读缓存。
-    """
+    """列工作区全部目标并合成平铺表；两次调用间工程可能变化，所以永远重跑工具，不读缓存。"""
     kind = ws.get("kind")
     if kind not in COMMANDS:
         raise ScanError("工作区类型不认识：%s" % kind)

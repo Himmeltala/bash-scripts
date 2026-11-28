@@ -384,7 +384,6 @@ onBeforeUnmount(() => {
   height: calc(100vh - 64px);
   overflow: hidden;
 }
-/* 占位层跟着开关一次性改变宽度；侧栏本体绝对定位，靠 transform 滑出，不再逐帧重排正文。 */
 .side-slot {
   flex: 0 0 auto;
 }

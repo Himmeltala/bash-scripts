@@ -88,8 +88,7 @@ const props = defineProps({
 const emit = defineEmits(['open'])
 
 // 只取两个引擎的运行清单，不拉整份状态：整份要拼所有工作区与服务，这里只要「跑过什么」。
-// 走定时 GET，不占同源的第 7 条长连接：浏览器每个源只给 6 条 HTTP/1.1 连接，
-// 全局状态、指标、工作区事件与页签推送已经用掉 4 到 6 条。
+// 走定时 GET 而非长连接：浏览器每源只给 6 条 HTTP/1.1 连接，状态、指标、事件与页签推送已占 4 到 6 条。
 const engines = ref({ node: [], jvm: [] })
 const POLL_MS = 3000
 let timer = null
@@ -234,12 +233,10 @@ async function halt(item) {
   min-width: 380px;
   max-width: 620px;
 }
-/* 动作 chip 跟在「JVM · 工作区」这一行，不与状态混在一起。 */
 .action-chip {
   margin-left: 6px;
   height: 18px;
 }
-/* 路径整行换行显示，不截断。 */
 .path {
   margin-top: 2px;
   font-size: 0.72rem;
@@ -247,7 +244,6 @@ async function halt(item) {
   opacity: 0.6;
   word-break: break-all;
 }
-/* 按动作类型给行一点底色，和引擎页签的表格口径一致。 */
 .tint-primary {
   background: rgba(var(--v-theme-primary), 0.08);
 }
@@ -257,7 +253,6 @@ async function halt(item) {
 .tint-success {
   background: rgba(var(--v-theme-success), 0.08);
 }
-/* 服务名与右侧状态标签之间留出空隙。 */
 .menu :deep(.v-list-item__content) {
   padding-right: 12px;
 }

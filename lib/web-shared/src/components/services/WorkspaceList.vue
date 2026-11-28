@@ -664,7 +664,7 @@ function drop() {
 
 <style scoped>
 .list {
-  /* 撑满侧栏，列表下方那片留白也算列表的一部分，右键才接得住。 */
+  
   min-height: 100%;
   padding: 8px 4px 16px;
 }
@@ -683,7 +683,7 @@ function drop() {
   border-radius: 8px;
   position: relative;
 }
-/* 子项左侧的层级参考线，对着上一级图标的中线。 */
+
 .guide {
   position: absolute;
   top: 3px;
@@ -692,7 +692,7 @@ function drop() {
   background: rgba(var(--v-theme-on-surface), 0.14);
   pointer-events: none;
 }
-/* 拖着的这一行淡下去，插入位置在目标行的上沿画一条线。 */
+
 .items :deep(.drag-src) {
   opacity: 0.45;
 }
@@ -702,7 +702,7 @@ function drop() {
 .items :deep(.drop-after) {
   box-shadow: inset 0 -2px 0 rgb(var(--v-theme-primary));
 }
-/* 拖到分组中间：整行高亮，表示放进这个分组。 */
+
 .items :deep(.drop-into) {
   background: rgba(var(--v-theme-primary), 0.14);
 }
@@ -718,7 +718,7 @@ function drop() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 名字太长时只把名字截掉，右边的标签与图标始终露出来。 */
+
 .name {
   display: flex;
   align-items: center;

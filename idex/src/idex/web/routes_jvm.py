@@ -5,10 +5,7 @@
 # @FilePath: \idex\src\idex\web\routes_jvm.py
 # @Description: JVM 引擎的接口：状态、JDK、启停、重扫与日志。
 
-"""JVM 引擎的接口：状态、JDK、启停、重扫与日志。
-
-只做参数、工作区映射、权限与调用；工作区、目标与运行记录都在 engines.jvm 里。
-"""
+"""只做参数、工作区映射、权限与调用；工作区、目标与运行记录都在 engines.jvm 里。"""
 
 import os
 import threading
@@ -167,12 +164,7 @@ class JvmRoutes(SSEMixin):
         }
 
     def _jvm_rescan(self, wid):
-        """重扫一个工作区：引擎状态里没有就按根目录登记，再后台扫描。
-
-        探测到的 ``tools.jvm.id`` 只证明 idex 这边的映射，不代表引擎状态里已有这个
-        工作区；直接 scan 未知 id 会报 404。扫描要几秒，放守护线程里做；同一引擎
-        工作区同时只允许一条。
-        """
+        """重扫工作区：引擎状态里没有就按根目录登记再后台扫描；tools.jvm.id 只证明 idex 映射，直接 scan 未知 id 会 404。"""
         engine_id, root, kind = self._jvm_rescan_target(wid)
         known = self.jvm_app.store.find(engine_id) is not None
         if not known:

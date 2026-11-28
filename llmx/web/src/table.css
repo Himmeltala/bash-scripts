@@ -1,5 +1,4 @@
-/* 所有表格的表头与单元格统一居中，包括各组件里原本靠右的数字列。
-   Vuetify 的 th 选择器带整条后代链，这里用 !important 才盖得住。 */
+
 .v-table th,
 .v-table td,
 .v-data-table th,

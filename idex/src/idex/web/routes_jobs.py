@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\routes_jobs.py
 # @Description: 操作与任务的接口：起一个后台任务，查状态、查最近一次、取消。
 
-"""操作与任务的接口：起一个后台任务，查状态、查最近一次、取消。"""
-
 import threading
 
 from web import ApiError

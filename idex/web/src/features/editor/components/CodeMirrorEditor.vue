@@ -515,7 +515,6 @@ defineExpose({ locate, resetScroll, setCollapsedRanges })
 </script>
 
 <style scoped>
-/* 缩略图画布由扩展自己排版，这里只定宽高。 */
 :deep(.cm-minimap-box) {
   width: 72px;
   height: 100%;

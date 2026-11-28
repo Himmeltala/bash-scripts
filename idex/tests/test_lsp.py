@@ -6,8 +6,6 @@
 # @FilePath: \idex\tests\test_lsp.py
 # @Description: idex 代码索引：LSP 帧、会话、管理器与网页接口。
 
-"""idex 代码索引：LSP 帧、会话、管理器与网页接口。"""
-
 import io
 import json
 import os

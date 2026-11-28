@@ -6,8 +6,6 @@
 # @FilePath: \idex\tests\test_git.py
 # @Description: idex 回归：临时 Git 仓库上的状态解析、差异、日志与网页接口。
 
-"""idex 回归：临时 Git 仓库上的状态解析、差异、日志与网页接口。"""
-
 import json
 import os
 import shutil

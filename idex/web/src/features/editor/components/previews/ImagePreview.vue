@@ -53,7 +53,6 @@ const meta = computed(() => {
 </script>
 
 <style scoped>
-/* 棋盘格衬底方便看透明区域；默认缩进窗口，点一下按原始大小并可滚动。 */
 .image-pane {
   position: relative;
   flex: 1 1 auto;

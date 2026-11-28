@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\lsp\tsserver.py
 # @Description: Vue 用的 tsserver 桥：输入一行 JSON，输出 Content-Length 帧。
 
-"""Vue 用的 tsserver 桥：输入一行 JSON，输出 Content-Length 帧。"""
-
 import json
 import os
 import queue
@@ -19,10 +17,7 @@ from .servers import STABLE_BIN
 
 
 class TsserverBridge:
-    """给 @vue/language-server 用的 tsserver：它反向问的 _vue:* 命令由带 Vue 插件的 tsserver 回答。
-
-    输入一行一条 JSON；tsserver 的输出是 Content-Length 帧，读法同 LSP。
-    """
+    """给 @vue/language-server 用的 tsserver：它反向问的 _vue:* 命令由带 Vue 插件的 tsserver 回答；输入一行 JSON，输出 Content-Length 帧。"""
 
     def __init__(self, command, root, name="tsserver"):
         self.name = name

@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\lsp\servers.py
 # @Description: 语言服务器注册表：每种语言怎么拉起，本机装了没有。
 
-"""语言服务器注册表：每种语言怎么拉起，本机装了没有。"""
-
 import os
 import shutil
 import subprocess

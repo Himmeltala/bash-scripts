@@ -3,7 +3,7 @@
   min-height: 0;
   display: flex;
 }
-/* 行号列与高亮层都不接鼠标，输入落在外层透明的编辑框上。 */
+
 .gutter {
   z-index: 2;
   flex: 0 0 auto;
@@ -48,7 +48,7 @@
   min-width: 0;
   overflow: hidden;
 }
-/* 光标所在行：与变更差异里正在编辑的那一行同一套着色，垫在代码文字底下。 */
+
 .cur-line {
   position: absolute;
   left: 0;
@@ -68,8 +68,7 @@
   line-height: 1.6;
   white-space: pre;
   tab-size: 4;
-  /* 弹窗的 v-card-text 会给内容加 0.5px 字距，而编辑框按表单控件默认用 normal；
-     两层字距不一致，越到行尾错得越多，光标会落在高亮文字前面。 */
+  /* v-card-text 的 0.5px 字距与表单控件不一致。 */
   letter-spacing: normal;
   word-spacing: normal;
   pointer-events: none;
@@ -78,7 +77,7 @@
   display: block;
   will-change: transform;
 }
-/* 编辑框的文字是透明的，颜色由底下这层高亮给；行尾不折行，Tab 由脚本插空格。 */
+
 .editor {
   position: absolute;
   inset: 0;
@@ -105,7 +104,7 @@
 .editor::selection {
   background: rgba(var(--v-theme-primary), 0.28);
 }
-/* 高亮层要跟编辑框逐字对齐，斜体会让字宽对不上，注释一律正体。 */
+
 .layer-code :deep(.hljs-comment),
 .layer-code :deep(.hljs-quote) {
   color: rgb(var(--v-theme-on-surface-variant));

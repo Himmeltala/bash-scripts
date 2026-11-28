@@ -5,12 +5,7 @@
 # @FilePath: \idex\src\idex\engines\jvm\store.py
 # @Description: 工作区登记表：state.json 里存工作区、别名与每行参数。
 
-"""工作区登记表：state.json 里存工作区、别名与每行参数。
-
-JVM 引擎不解析 pom / settings.gradle，目标由 mvnx / gradlex 的 ``--list --json``
-给出，这里只保存扫描结果与用户在页面上改过的参数。分组结构在 groups.json，由共享的
-LayoutStore 管理。
-"""
+"""引擎不解析 pom / settings.gradle，目标由 mvnx / gradlex 的 ``--list --json`` 给出；这里只保存扫描结果与页面改过的参数，分组在 groups.json 由共享 LayoutStore 管理。"""
 
 import copy
 import hashlib
@@ -43,11 +38,7 @@ def workspace_id(root):
 
 
 def detect_project(path):
-    """从选中目录向上找工程根，返回 (根目录, 类型)；两边的标记都没有就拒绝。
-
-    一个目录里同时有 Maven 与 Gradle 标记时无法可靠判断，直接报出来让用户选别处，
-    不替用户挑一种。
-    """
+    """从选中目录向上找工程根，返回 (根目录, 类型)；同时有 Maven 与 Gradle 标记时直接拒绝，不替用户挑一种。"""
     try:
         current = Path(os.path.expanduser(str(path))).resolve()
     except OSError as exc:

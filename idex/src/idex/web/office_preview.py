@@ -5,11 +5,7 @@
 # @FilePath: \idex\src\idex\web\office_preview.py
 # @Description: Office 三件套预览：用 LibreOffice 无头转 PDF，按文件指纹缓存。
 
-"""Office 预览：doc/docx/xls/xlsx/xlsm/ppt/pptx 交给 LibreOffice 转 PDF，再按文件指纹缓存；pdf 原样下发。
-
-只做只读转换，不保留动画；字体缺失会改变排版。缓存放在 state 目录的 previews 下，
-命中直接发文件，源文件变动后指纹变化自动重转。
-"""
+"""只做只读转换，字体缺失会改变排版；缓存放 state 目录的 previews 下，源文件指纹变化自动重转。"""
 
 import hashlib
 import os

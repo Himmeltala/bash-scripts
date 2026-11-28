@@ -5,10 +5,7 @@
 # @FilePath: \idex\src\idex\web\routes_node.py
 # @Description: Node 引擎的接口：状态、版本、启停、重扫与自定义命令。
 
-"""Node 引擎的接口：状态、版本、启停、重扫与自定义命令。
-
-只做参数、工作区映射、权限与调用；状态与执行端都在 NodeService 里。
-"""
+"""只做参数、工作区映射、权限与调用；状态与执行端都在 NodeService 里。"""
 
 import threading
 import time
@@ -148,12 +145,7 @@ class NodeRoutes(SSEMixin):
         raise ApiError(404, "没有这个接口：%s" % route)
 
     def _node_rescan(self, wid):
-        """重扫一个工作区：有根目录就重加一次，引擎的 add 本身幂等并会重扫。
-
-        探测到的 ``tools.node.id`` 只证明 idex 这边的映射，不代表引擎状态里已有这个
-        工作区；拿它直接 scan 遇到未知 id 会静默什么都不做，所以优先按根目录登记。
-        扫描要几秒，放守护线程里做；同一引擎工作区同时只允许一条。
-        """
+        """重扫工作区：有根目录就重加一次，add 幂等并会重扫；探测到的 tools.node.id 不代表引擎里已登记，直接 scan 会静默无操作。"""
         # 两个 idex 工作区可能指向同一个引擎工作区，按引擎 id/根目录去重。
         key, engine_id, root = self._node_rescan_target(wid)
 

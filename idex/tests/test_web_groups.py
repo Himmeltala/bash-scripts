@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_web_groups.py
 # @Description: 网页左侧分组结构的回归测试：整份写入，状态回话与推送都带上它。
 
-"""网页左侧分组结构的回归测试：整份写入，状态回话与推送都带上它。"""
-
 import http.client
 import json
 import sys

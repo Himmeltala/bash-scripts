@@ -5,7 +5,6 @@
 # @FilePath: \idex\src\idex\web\svn_query.py
 # @Description: SVN 的查询：状态、差异、日志、提交详情与同步信息。
 
-"""SVN 的查询：状态、差异、日志、提交详情与同步信息。"""
 from web import ApiError
 import os
 import xml.etree.ElementTree as ET
@@ -118,12 +117,7 @@ def svn_commit_detail(root, rev):
 
 
 def svn_entry_local(entry, prefix, revs, top, base_rev):
-    """这一版的改动是否已经在工作副本里。
-
-    工作副本根已经更新到这一版或更新时，整棵树都带上了这一版的改动，
-    直接算本地已有。否则再按文件各自的版本看：这一版新加的文件后来又被
-    删掉，就不在 revs 里，不能因此把这一版判成还没更新。
-    """
+    """根已更新到这一版或更新时整棵树都算本地已有；否则按文件各自版本看，新加后又被删的文件不在 revs 里，不能判成未更新。"""
     try:
         rev = int(entry["revision"])
     except (TypeError, ValueError):
@@ -277,11 +271,7 @@ def svn_unadd_paths(state, paths):
 
 
 def svn_working_revisions(root):
-    """工作副本里每个条目各自的版本。
-
-    根目录的版本只记着上次更新的位置，自己刚提交的文件版本会更高，
-    所以判断“这一版在不在本地”要按文件各自的版本看。
-    """
+    """工作副本里每个条目各自的版本；根目录版本只记上次更新位置，判断“这一版在本地”要按文件各自的版本看。"""
     rc, out, err = svn(["info", "--xml", "-R"], cwd=root)
     if rc != 0:
         raise ApiError(500, err or "svn info 失败")

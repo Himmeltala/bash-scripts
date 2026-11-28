@@ -196,7 +196,6 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
 }
-/* 页签条本身也套卡片，和下面的 tabbody 同一底色；正文卡片之间留 8px。 */
 .tabsbar {
   flex: 0 0 auto;
   margin: 8px 8px 0;
@@ -207,8 +206,6 @@ onBeforeUnmount(() => {
 .badge {
   margin-left: 6px;
 }
-/* 页签内容自己撑满剩余高度：外层用 flex 给高度，子面板不靠百分比，长差异才有得滚。
-   六个页签统一套一层卡片，与左侧列表、引擎页签里的表格同一底色。 */
 .tabbody {
   flex: 1 1 auto;
   min-height: 0;

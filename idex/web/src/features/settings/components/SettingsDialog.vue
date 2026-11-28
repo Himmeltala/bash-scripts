@@ -269,7 +269,6 @@ async function save() {
   flex: 1 1 auto;
   max-width: 380px;
 }
-/* 只有列表区滚动，搜索栏与分类栏固定。 */
 .list {
   flex: 1 1 auto;
   min-height: 0;

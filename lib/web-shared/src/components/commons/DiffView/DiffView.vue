@@ -523,7 +523,7 @@ defineExpose({ collect, resetEdits })
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  /* 侧栏收放时宽度一直在变，滚动条出现/消失会让整块 diff 反复换行换高。 */
+  
   scrollbar-gutter: stable;
   font-size: 0.78rem;
   line-height: 1.55;
@@ -580,7 +580,7 @@ defineExpose({ collect, resetEdits })
 .text.edit:focus {
   background: rgba(var(--v-theme-primary), 0.1);
 }
-/* 差异里的代码按浏览目录同一套颜色着色。 */
+
 .text :deep(.hljs-comment),
 .text :deep(.hljs-quote) {
   color: rgb(var(--v-theme-on-surface-variant));

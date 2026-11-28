@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\routes_browse.py
 # @Description: 浏览目录的网页接口：目录树、取文件、下载、搜索与增删改。
 
-"""浏览目录的网页接口：目录树、取文件、下载、搜索与增删改。"""
-
 import os
 import posixpath
 import shutil
@@ -226,10 +224,7 @@ def _selection_paths(body):
 
 
 def _selection_entries(root, body, same_parent=True):
-    """校验多选条目：都在工作副本内、都存在；按需要求同一父目录。
-
-    返回 (父目录或 None, [(rel, name, abs)])。父目录只在全部同目录时有值。
-    """
+    """校验多选条目：都在工作副本内且存在，按需同一父目录；返回 (父目录或 None, [(rel, name, abs)])。"""
     parent = None
     entries = []
     for rel in _selection_paths(body):
@@ -298,11 +293,7 @@ def _browse_compress_selection(handler, body):
 
 
 def _browse_download_selection(handler, query):
-    """多选下载：一个文件直接下发，其余从合适的目录打成一个临时 zip 再下发。
-
-    走 GET 是为了让浏览器按普通附件下载处理；前端在点击里同步挂上地址，
-    不需要先异步取 blob，避免被当成非用户手势拦掉。
-    """
+    """多选下载：一个文件直接下发，其余从合适目录打成临时 zip；走 GET 让浏览器按普通附件处理，避免被当成非用户手势拦掉。"""
     ws = handler.store.find(str((query.get("ws") or [""])[0]))
     if ws is None:
         raise ApiError(404, "没有这个工作区")

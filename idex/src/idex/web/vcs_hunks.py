@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\vcs_hunks.py
 # @Description: 统一差异的 hunk 切分：还原单块时按原文比对，不认客户端另编的坐标。
 
-"""统一差异的 hunk 切分：还原单块时按原文比对，不认客户端另编的坐标。"""
-
 import re
 
 

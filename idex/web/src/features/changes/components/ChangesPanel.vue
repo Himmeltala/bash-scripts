@@ -814,7 +814,7 @@ defineExpose({ load })
   align-items: center;
   padding: 0 8px 2px;
 }
-/* 图标按钮的 height:auto 会让这一行高到 48px，压回和分组标题一样高。 */
+/* v-btn 的 height:auto 会撑到 48px。 */
 .list-head :deep(.v-btn),
 .list-head :deep(.v-btn-toggle) {
   height: 24px !important;
@@ -826,7 +826,6 @@ defineExpose({ load })
   gap: 8px;
   padding: 6px 12px 2px;
 }
-/* 分组右侧的小按钮：图标跟着小号文字缩，别用默认 24px，否则图标与文字不在一条线上。 */
 .group-head :deep(.v-btn__prepend .v-icon) {
   font-size: 16px;
   width: 16px;
@@ -937,7 +936,7 @@ defineExpose({ load })
   padding: 4px 10px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
-/* 和左侧列表头的图标切换一样高，别再被 v-btn 的默认高度撑开。 */
+/* 与列表头图标切换同高。 */
 .rich-actions :deep(.v-btn-toggle) {
   height: 24px;
 }

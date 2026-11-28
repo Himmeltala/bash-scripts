@@ -5,14 +5,8 @@
 # @FilePath: \idex\src\idex\web\lsp\vue.py
 # @Description: Vue 单文件组件的分工：模板交给 Vue 语言服务器，脚本交给 TypeScript 语言服务器。
 
-"""Vue 单文件组件的分工：模板交给 Vue 语言服务器，脚本交给 TypeScript 语言服务器。"""
-
-
 def vue_block(text, line):
-    """行号落在哪个顶层块：template、script、style，不在块里返回空串。
-
-    只认行首的 SFC 标签，模板里缩进的 <template v-if> 不算。
-    """
+    """行号落在哪个顶层块：template、script、style，不在块里返回空串；只认行首标签，模板里缩进的 <template v-if> 不算。"""
     lines = str(text or "").splitlines()
     try:
         number = int(line)
@@ -41,11 +35,7 @@ def vue_block(text, line):
 
 
 class TsslsBridge:
-    """把 tsserver 请求交给 typescript-language-server 的 executeCommand。
-
-    Vue 语言服务器问的 _vue:* 命令由带 @vue/typescript-plugin 的 tsserver 回答；
-    typescript-language-server 能直接转发这些命令，不用另起一条 tsserver。
-    """
+    """把 tsserver 请求交给 typescript-language-server 的 executeCommand；Vue 的 _vue:* 命令由带 @vue/typescript-plugin 的 tsserver 回答，不必另起一条。"""
 
     def __init__(self, server, timeout=20.0):
         self.server = server

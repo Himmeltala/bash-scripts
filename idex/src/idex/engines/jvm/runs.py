@@ -5,11 +5,7 @@
 # @FilePath: \idex\src\idex\engines\jvm\runs.py
 # @Description: 运行记录：起进程、整组停止、识别端口与状态，运行历史落在 runs.json。
 
-"""运行记录：起进程、整组停止、识别端口与状态，运行历史落在 runs.json。
-
-进程本身仍由 mvnx / gradlex 的 ``exec`` 拉起，日志写进
-``<缓存>/logs/<工作区>/<运行号>.log``，退出码由共享的 Sessions 写在日志旁边。
-"""
+"""进程由 mvnx / gradlex 的 ``exec`` 拉起，日志写进 ``<缓存>/logs/<工作区>/<运行号>.log``，退出码由共享的 Sessions 写在日志旁。"""
 
 import os
 import re
@@ -286,10 +282,7 @@ class RunRegistry:
             self._save()
 
     def advance(self):
-        """收拾在跑的记录：进程还活着就找端口，没了就按退出码落状态。
-
-        探测端口、读日志这些文件操作都在锁外做，别让心跳卡住启停与状态查询。
-        """
+        """收拾在跑的记录：进程活着就找端口，没了就按退出码落状态；文件操作放在锁外，别让心跳卡住启停与状态查询。"""
         with self.lock:
             watching = [dict(run) for run in self.runs if run.get("status") in LIVE]
         updates = dict((run["id"], self._advance_one(run)) for run in watching)

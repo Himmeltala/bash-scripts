@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_jvm_store.py
 # @Description: 旧版分组迁移：state.json 里的 groups 在启动时挪到 groups.json。
 
-"""旧版分组迁移：state.json 里的 groups 在启动时挪到 groups.json。"""
-
 import os
 import sys
 import tempfile

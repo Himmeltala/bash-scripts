@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_web_logs.py
 # @Description: 页面日志存储：追加、分页、按级别筛选、清空与条数上限。
 
-"""页面日志存储：追加、分页、按级别筛选、清空与条数上限。"""
-
 import sys, tempfile, unittest
 from pathlib import Path
 

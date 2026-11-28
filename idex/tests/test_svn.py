@@ -6,8 +6,6 @@
 # @FilePath: \idex\tests\test_svn.py
 # @Description: idex 回归：临时 SVN 仓库上的状态解析、差异、日志与网页接口。
 
-"""idex 回归：临时 SVN 仓库上的状态解析、差异、日志与网页接口。"""
-
 import http.client
 import importlib.util
 import json

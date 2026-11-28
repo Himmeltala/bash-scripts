@@ -5,10 +5,7 @@
 # @FilePath: \idex\src\idex\web\lsp\protocol.py
 # @Description: LSP 的帧与结果换算：Content-Length 帧、URI、位置、诊断、符号与文本编辑。
 
-"""LSP 的帧与结果换算：Content-Length 帧、URI、位置、诊断、符号与文本编辑。
-
-纯协议层，不拉进程；会话与管理器在这里拿编解码和归一化函数。
-"""
+"""纯协议层，不拉进程；会话与管理器在这里拿编解码与归一化函数。"""
 
 import json
 import os

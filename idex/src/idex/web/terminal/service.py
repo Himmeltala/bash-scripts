@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\terminal\service.py
 # @Description: 工作区终端会话：一条会话一个 PTY，输出按序号缓存，客户端确认后回收。
 
-"""工作区终端会话：一条会话一个 PTY，输出按序号缓存，客户端确认后回收。"""
-
 import fcntl
 import os
 import pty

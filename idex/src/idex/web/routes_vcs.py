@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\routes_vcs.py
 # @Description: 变更、日志与同步的网页接口。
 
-"""变更、日志与同步的网页接口。"""
-
 from web import ApiError
 from netutil import is_loopback_address as is_loopback
 from browse_fs import read_unversioned

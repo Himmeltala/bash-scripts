@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\server_common.py
 # @Description: 网页服务各路由共用的东西：文件大小上限、工作副本路径校验与写操作锁。
 
-"""网页服务各路由共用的东西：文件大小上限、工作副本路径校验与写操作锁。"""
-
 import sys
 import threading
 import time

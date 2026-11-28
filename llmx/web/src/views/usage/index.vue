@@ -159,7 +159,6 @@ onBeforeUnmount(() => {
   color: rgb(var(--v-theme-on-surface-variant));
 }
 
-/* 整页按一屏高排，表格占满余下的空间，行多时只让表格自己滚动。 */
 .page {
   display: flex;
   flex-direction: column;
@@ -167,7 +166,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* 筛选条、卡片、图表都按自身内容占高，不参与伸缩。 */
 .page > * {
   flex: none;
 }
@@ -204,13 +202,11 @@ onBeforeUnmount(() => {
   min-width: 9rem;
 }
 
-/* 多个来源在同一条里用逗号连起来，超出宽度省略，不换行撑高。 */
 .source-pick :deep(.v-field__input) {
   flex-wrap: nowrap;
   overflow: hidden;
 }
 
-/* 范围输入要放下两个日期和清除按钮，比单个下拉宽一些。 */
 .range-pick {
   flex: 0 0 20rem;
   max-width: 100%;

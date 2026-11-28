@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\routes_stream.py
 # @Description: SSE 推送接口：工作区列表、指标、单个工作副本的变化与任务输出。
 
-"""SSE 推送接口：工作区列表、指标、单个工作副本的变化与任务输出。"""
-
 import json
 import queue
 import time

@@ -6,6 +6,7 @@
  * @FilePath: \lib\web-shared\src\components\commons\FileEditor\FileEditor.css
  * @Description: 文件编辑器的布局与提示样式。
  */
+
 .file-editor {
   flex: 1 1 auto;
   min-width: 0;
@@ -19,7 +20,7 @@
   align-items: center;
   gap: 4px;
 }
-/* 与提交记录等页面的图标切换同高：别让 v-btn 的默认高度把文件头撑高。 */
+/* 压回 24px。 */
 .views {
   flex: 0 0 auto;
   height: 24px !important;

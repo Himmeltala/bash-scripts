@@ -5,11 +5,7 @@
 # @FilePath: \idex\src\idex\engines\node\engine.py
 # @Description: Node 引擎的服务层：状态解析、Node 版本发现与执行端客户端。
 
-"""Node 引擎的服务层：状态解析、Node 版本发现与执行端客户端。
-
-状态文件由 ``engine.sh`` 写、这里只读；页面、HTTP 与压缩不在这份文件里。
-状态文件的列号必须与 ``idex/src/idex/engines/node/engine.sh`` 一致。
-"""
+"""状态文件由 ``engine.sh`` 写、这里只读；列号必须与 ``idex/src/idex/engines/node/engine.sh`` 一致。"""
 
 import os
 import re
@@ -307,10 +303,7 @@ class Engine(ToolEngine):
 
 
 class NodeService:
-    """Node 引擎在 idex 里的服务层：状态、执行端、会话与状态推送装成一份。
-
-    原来 nodex 网页进程里的装配搬到这里，HTTP 路由只做参数、映射与权限。
-    """
+    """Node 引擎在 idex 里的服务层：状态、执行端、会话与状态推送；HTTP 路由只做参数、映射与权限。"""
 
     def __init__(self, nodex, home, custom=None):
         self.home = Path(home)
@@ -437,7 +430,6 @@ class NodeService:
         self.engine.remove_workspace(ws)
 
     def has_workspace(self, ws):
-        """引擎状态里是否已经登记了这个工作区。"""
         return self.state.find(WS_KIND, str(ws or "").strip()) is not None
 
     def set_node(self, ws, node):

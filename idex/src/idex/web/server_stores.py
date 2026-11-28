@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\server_stores.py
 # @Description: 工作区登记与全局设置的存储：都落在 state.json 旁边。
 
-"""工作区登记与全局设置的存储：都落在 state.json 旁边。"""
-
 import hashlib
 import os
 import threading

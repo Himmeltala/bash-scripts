@@ -125,7 +125,7 @@ function onClick(event) {
 .md-body :deep(th) {
   background: rgba(var(--v-theme-on-surface), 0.06);
 }
-/* 代码块着色与 EditorPane 同一套。 */
+
 .md-body :deep(.hljs-comment),
 .md-body :deep(.hljs-quote) {
   color: rgb(var(--v-theme-on-surface-variant));

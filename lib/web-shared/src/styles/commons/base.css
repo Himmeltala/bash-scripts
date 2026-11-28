@@ -1,4 +1,4 @@
-/* 界面字体一律 Roboto；Roboto 没有中文字形，中文由后面的系统无衬线字体接住。 */
+
 html,
 body,
 .v-application,
@@ -7,19 +7,17 @@ body,
     'Microsoft YaHei', sans-serif;
 }
 
-/* 代码与日志用等宽字体：比例字体的字距不匀，单词时挤时松，终端里尤其明显。 */
 :root {
   --bash-font-mono: 'JetBrains Mono', Roboto, 'Noto Sans SC', 'Source Han Sans SC',
     'PingFang SC', 'Microsoft YaHei', sans-serif;
-  /* 代码与终端共用一个字号，改一处两边一起变。 */
+  
   --bash-code-size: 0.86rem;
-  /* 全局动画时长与缓动，设置里选方案后由 applyAnimation 改写。 */
+  
   --bash-anim-dur: 220ms;
   --bash-anim-dur-fast: 132ms;
   --bash-anim-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* 对话框与提示条走 Vuetify 自带的过渡类，这里把它们接到全局动画变量上。 */
 @media (prefers-reduced-motion: no-preference) {
   html .dialog-transition-enter-active,
   html .dialog-bottom-transition-enter-active,
@@ -51,13 +49,10 @@ pre,
   font-family: var(--bash-font-mono);
 }
 
-/* 拖动分隔条时整页不选文字，拖出容器也不会带出一片选中。 */
 body.web-shared-resizing {
   user-select: none;
 }
 
-/* 滚动条按 Vuetify 的观感统一：细条、圆角，拇指取主题 on-surface 的半透明色，轨道透明。
-   Chromium 系走 ::-webkit-scrollbar；Firefox 不认这个伪元素，单独给它标准属性。 */
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;

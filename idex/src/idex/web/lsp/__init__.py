@@ -5,10 +5,7 @@
 # @FilePath: \idex\src\idex\web\lsp\__init__.py
 # @Description: 代码索引的 LSP 桥接实现：协议、服务器表、tsserver 桥、会话与管理器。
 
-"""代码索引的 LSP 桥接实现：协议、服务器表、tsserver 桥、会话与管理器。
-
-对外的再导出集中在 lsp_client，那边是唯一入口。
-"""
+"""对外的再导出集中在 lsp_client，那边是唯一入口。"""
 
 
 from .protocol import (

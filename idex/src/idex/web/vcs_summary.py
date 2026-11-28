@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\vcs_summary.py
 # @Description: 变更清单与状态指纹：把 git 与 svn 的结果合成页面要的形状。
 
-"""变更清单与状态指纹：把 git 与 svn 的结果合成页面要的形状。"""
-
 import hashlib
 import os
 import shutil
@@ -44,11 +42,7 @@ def changes_payload(ws):
 
 
 def changes_report(ws):
-    """工作副本的指纹、变更数、当前版本与这次变动的路径。
-
-    指纹变了才提醒页面；版本变了说明外面提交或更新过，日志与同步页要重读。
-    路径给页面只重读改动所在的那几层目录，不用把展开的目录全列一遍。
-    """
+    """工作副本的指纹、变更数、当前版本与变动路径；指纹变了才提醒页面，版本变了说明外面提交或更新过，日志与同步页要重读。"""
     # 普通目录没有版本控制可查：按目录项的名字、大小与修改时间做指纹，浏览页照样能收到变化。
     if ws.get("vcs") == "none":
         signature, count = dir_signature(ws["root"])

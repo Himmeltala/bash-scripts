@@ -6,8 +6,6 @@
 # @FilePath: \idex\tests\test_office_preview.py
 # @Description: Office 预览转换：缓存、指纹、错误映射与并发去重。
 
-"""Office 预览转换：缓存、指纹、错误映射与并发去重。"""
-
 import sys
 import tempfile
 import unittest

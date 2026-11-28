@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\vcs_cli.py
 # @Description: 跑 git 与 svn 命令的薄封装：超时与找不到命令都翻成接口错误。
 
-"""跑 git 与 svn 命令的薄封装：超时与找不到命令都翻成接口错误。"""
-
 import subprocess
 
 from web import ApiError

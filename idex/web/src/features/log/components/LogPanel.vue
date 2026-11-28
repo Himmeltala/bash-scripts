@@ -516,7 +516,6 @@ defineExpose({ load })
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.07);
   cursor: pointer;
 }
-/* 时间线画在整行左侧，行高跟着内容走，不占布局。 */
 .graph {
   position: absolute;
   top: 0;
@@ -542,7 +541,6 @@ defineExpose({ load })
 .revitem.active {
   background: rgba(var(--v-theme-primary), 0.14);
 }
-/* 本地还没有的提交沿左边描一道，扫列表时能看出从哪条开始是远端的。 */
 .revitem.incoming {
   box-shadow: inset 2px 0 0 rgb(var(--v-theme-modified));
 }
@@ -695,7 +693,6 @@ defineExpose({ load })
   padding: 0 6px 0 12px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
-/* 左边标题让位截断，右边两个切换钮和收起按钮按自身宽度占位。 */
 .head-left {
   flex: 1 1 auto;
   display: flex;
@@ -709,7 +706,6 @@ defineExpose({ load })
   align-items: center;
   gap: 4px;
 }
-/* 切换钮里这两个图标按钮不许被压小，否则图标会被裁掉；高度统一压到 24px。 */
 .files-mode :deep(.v-btn) {
   flex: 0 0 auto;
   height: 24px !important;

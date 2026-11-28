@@ -6,13 +6,7 @@
 # @FilePath: \idex\tests\fake_lsp.py
 # @Description: 测试用假语言服务器：按 LSP 帧回话，定义结果是固定的几条，供桥接层断言。
 
-"""测试用假语言服务器：按 LSP 帧回话，定义结果是固定的几条，供桥接层断言。
-
-环境变量：
-- FAKE_LSP_ROOT：定义结果的根目录，默认当前目录。
-- FAKE_LSP_IGNORE：设成 definition 就不回定义，用来测超时。
-- FAKE_LSP_RECORD：把收到的通知逐行记进这个文件，用来断言文档同步。
-"""
+"""环境变量：FAKE_LSP_ROOT 是定义结果根目录（默认当前目录）；FAKE_LSP_IGNORE=definition 时不回定义；FAKE_LSP_RECORD 逐行记录收到的通知。"""
 
 import json
 import os

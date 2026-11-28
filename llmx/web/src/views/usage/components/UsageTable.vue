@@ -239,7 +239,7 @@ function rowProps({ item }) {
 </template>
 
 <style scoped>
-/* 卡片跟着外层分配的高度走，表格在卡片内部滚动，合计行留在底部。 */
+
 .table-card {
   height: 100%;
   display: flex;
@@ -263,13 +263,11 @@ function rowProps({ item }) {
   min-height: 0;
 }
 
-/* 单元格左右留白收窄到 10px，十几列的表在 1920 宽的窗口里放得下，不用横向拖。 */
 .table-card :deep(.v-data-table th),
 .table-card :deep(.v-data-table td) {
   padding: 0 10px;
 }
 
-/* 单元格统一不折行、垂直居中，行高才不会有的两行、合计行一行。 */
 .table-card :deep(.v-data-table td) {
   vertical-align: middle;
   white-space: nowrap;
@@ -324,7 +322,6 @@ function rowProps({ item }) {
   color: rgb(var(--v-theme-success));
 }
 
-/* 合计行按普通数据行的行高与字号排，避免吸底后比上面的行高出一截。 */
 .total-row td {
   height: var(--v-table-row-height);
   padding: 0 10px;
@@ -333,7 +330,7 @@ function rowProps({ item }) {
   font-variant-numeric: tabular-nums;
   vertical-align: middle;
   white-space: nowrap;
-  /* Vuetify 的吸底背景选择器少了 wrapper 一层，不生效，这里自己补上。 */
+  /* Vuetify 吸底选择器少一层 wrapper。 */
   background: rgb(var(--v-theme-surface));
   box-shadow: inset 0 1px 0 rgba(var(--v-border-color), var(--v-border-opacity));
 }

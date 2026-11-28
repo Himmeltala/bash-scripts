@@ -5,8 +5,6 @@
 # @FilePath: \idex\src\idex\web\logs_store.py
 # @Description: 页面日志的持久化存储：追加写 JSON 行，按页读最新的若干条。
 
-"""页面日志的持久化存储：追加写 JSON 行，按页读最新的若干条。"""
-
 import json
 import threading
 import time

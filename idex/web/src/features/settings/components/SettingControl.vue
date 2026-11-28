@@ -122,7 +122,6 @@ function setLines(text) {
 .wide {
   width: 100%;
 }
-/* 字体串一行放不下时在框内横向滚动，不换行、不挤标题。 */
 .font {
   width: 360px;
   max-width: 46vw;

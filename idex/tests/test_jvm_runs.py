@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_jvm_runs.py
 # @Description: JVM 运行记录：错误摘取、历史上限与心跳判定。
 
-"""JVM 运行记录：错误摘取、历史上限与心跳判定。"""
-
 import sys
 import tempfile
 import unittest

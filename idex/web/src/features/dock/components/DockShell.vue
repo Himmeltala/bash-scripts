@@ -234,7 +234,7 @@ function resetDrag() {
 </script>
 
 <style scoped>
-/* Dock 是全局入口：悬停条、浮条与面板都压过对话框和菜单（Vuetify 叠加层约 2400–2500）。 */
+/* 高过 Vuetify 叠加层（约 2400–2500）。 */
 .dock-zone {
   position: fixed;
   left: 0;
@@ -275,14 +275,12 @@ function resetDrag() {
 }
 .dock-panel {
   position: fixed;
-  /* 顶栏是 1004，对话框与菜单约 2400–2500；面板与浮条一起放在最上层。 */
   z-index: 3090;
   display: flex;
   flex-direction: column;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.22);
 }
-/* 左右呼出时面板横着排：内容一栏，分隔条贴内侧那条边。 */
 .dock-panel-left,
 .dock-panel-right {
   flex-direction: row;
@@ -326,7 +324,6 @@ function resetDrag() {
   border-left: 1px solid rgba(var(--v-theme-on-surface), 0.16);
   border-radius: 10px 0 0 10px;
 }
-/* 四个方向各自的滑入滑出。 */
 .sheet-bottom-enter-active,
 .sheet-bottom-leave-active,
 .sheet-top-enter-active,

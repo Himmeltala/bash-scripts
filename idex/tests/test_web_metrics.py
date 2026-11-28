@@ -5,8 +5,6 @@
 # @FilePath: \idex\tests\test_web_metrics.py
 # @Description: 头部性能指标推送的回归：连上先给一份完整指标。
 
-"""头部性能指标推送的回归：连上先给一份完整指标。"""
-
 import http.client
 import json
 import sys

@@ -72,7 +72,6 @@ const items = computed(() => {
   font-size: 1.35rem;
 }
 
-/* 图标列占满卡片高度并贴顶，与右侧标题、数字的起点对齐。 */
 :deep(.v-card-item__prepend) {
   align-self: stretch;
   height: 100%;

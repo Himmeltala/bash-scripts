@@ -5,10 +5,7 @@
 # @FilePath: \idex\src\idex\web\tool_detect.py
 # @Description: 工具能力探测：从选中的目录找 Node 与 JVM 工程根。
 
-"""工具能力探测：从选中的目录找 Node 与 JVM 工程根。
-
-只读探测，退出码非零、超时、解析失败都只省略对应的一项，不向调用方抛异常。
-"""
+"""只读探测，退出码非零、超时、解析失败都只省略对应项，不向调用方抛异常。"""
 
 import hashlib
 import os

@@ -6,11 +6,7 @@
 # @FilePath: \idex\tests\fake_tsserver.py
 # @Description: 测试用假 tsserver：收一行一条 JSON，回 Content-Length 帧。
 
-"""测试用假 tsserver：收一行一条 JSON，回 Content-Length 帧。
-
-认 configure、open、exit，几种语言查询，以及 _vue:echo。
-定义、引用、重命名的形状照 tsserver 的返回给，文件路径由 FAKE_TS_FILE 指定。
-"""
+"""认 configure、open、exit、几种语言查询与 _vue:echo；定义、引用、重命名的形状照 tsserver 返回，文件路径由 FAKE_TS_FILE 指定。"""
 
 import json
 import os

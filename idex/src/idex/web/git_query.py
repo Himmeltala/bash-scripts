@@ -5,7 +5,6 @@
 # @FilePath: \idex\src\idex\web\git_query.py
 # @Description: Git 的查询：状态、差异、日志、提交详情与同步信息。
 
-"""Git 的查询：状态、差异、日志、提交详情与同步信息。"""
 from web import ApiError
 import os
 import re
@@ -131,11 +130,7 @@ def git_branches(root):
 
 
 def git_change_diff(root, rel, full=False, scope="head"):
-    """未提交的改动，scope 决定取哪一段。
-
-    staged 取暂存区对 HEAD，worktree 取工作区对暂存区；head 取工作区加暂存区
-    对 HEAD，口径跟 SVN 对 BASE 一致，也是缺省值。
-    """
+    """未提交的改动，scope 取 staged / worktree / head；head 口径与 SVN 对 BASE 一致，也是缺省值。"""
     # rel 相对工作区根；命令的 cwd 就是工作区，别用仓库根相对的 :/。
     if scope == "staged":
         args = ["diff", "--cached", "--", ":(literal)" + rel]
@@ -162,11 +157,7 @@ def clip_original(text):
 
 
 def git_original(root, rel, scope="worktree", rev=None):
-    """差异编辑器左栏要的原始版本：工作区对索引，已暂存与 head 对 HEAD。
-
-    未跟踪文件索引里没有内容，返回空文本；已跟踪却取不到时明确报错，
-    交给前端降级只读，不能把空文本当成整份新增。
-    """
+    """差异编辑器左栏的原始版本；未跟踪返回空文本，已跟踪却取不到时明确报错，不能把空文本当成整份新增。"""
     if rev:
         if rev.startswith("-") or not re.fullmatch(r"[0-9A-Za-z._/@^~-]+", rev):
             raise ApiError(400, "版本号不对：%s" % rev)
@@ -315,10 +306,8 @@ def git_log(root, limit, upstream="", skip=0, all_refs=False):
         revs = ["HEAD", "--branches", "--remotes", "--tags"]
     else:
         revs = ["HEAD", upstream] if tracking else ["HEAD"]
-    # --topo-order 保证子提交排在父提交前面，页面按列表顺序画连线不会错位。
-    # 不带 --name-status：列表不显示每条提交的文件，带上它每条都要做一次树比对与改名配对，
-    # 仓库大时这一项就要一秒多。选中哪条，再由 git_commit_detail 现取那条的路径。
-    # -- . 让登记的是仓库子目录时只列这个子目录的提交，跟 svn log 从子目录跑一致。
+    # --topo-order 保证子提交在前，列表顺序能直接画连线；不带 --name-status，大仓库每条树比对要一秒多，路径等选中再取。
+    # -- . 让仓库子目录工作区只列本目录提交，与 svn log 从子目录跑一致。
     log_args = [
         "log", "-n", str(limit), "--skip=%d" % skip,
         # --parents 让 git 按路径过滤改写父提交；只用 %P 拿到的是原始父提交，
@@ -394,10 +383,7 @@ def git_ref_exists(root, ref):
 
 
 def git_ref_labels(root):
-    """提交号到分支/标签的对应，顺便说明仓库有没有远端。
-
-    附注标签要取它指到的提交号：%(objectname) 是标签对象本身，*objectname 才是提交。
-    """
+    """提交号到分支/标签的对应，并说明仓库有没有远端；附注标签要取 *objectname 指向的提交。"""
     fmt = "%(objectname)%09%(*objectname)%09%(refname:short)%09%(refname)"
     rc, out, _ = git(
         ["for-each-ref", "--format=" + fmt, "refs/heads", "refs/remotes", "refs/tags"],
@@ -427,12 +413,7 @@ def git_ref_labels(root):
 
 
 def git_remote_sync(root, fetch=True):
-    """取日志前先同步一次远端，好让列表带上别人最新的提交。
-
-    只更新 .git 里的远端跟踪分支与对象，不动工作区、暂存区，也不合并。
-    远端连不上或超时就照旧列已有的记录，把原因带回页面。
-    fetch 为假时只读本地已有的远端跟踪分支，翻下一页时不必再连一次。
-    """
+    """取日志前同步远端，只更新远端跟踪分支与对象，不动工作区、暂存区；失败照旧列已有记录并带回原因。"""
     meta = {
         "upstream": "",
         "fetched": False,
@@ -545,11 +526,7 @@ def git_upstream(root):
 
 
 def parse_git_log(text):
-    """git log --format=LOG_FMT 的输出：每条提交一行 \\x1e 开头、\\x1f 分字段。
-
-    路径不在这里取：列表里每条提交都带 --name-status 太慢，页面也只显示选中那一条的
-    文件，所以 paths 先留空，选中时由 git_commit_detail 现取。
-    """
+    """git log --format=LOG_FMT 的输出：每条一行、\\x1e 开头、\\x1f 分字段；路径留空，选中时由 git_commit_detail 现取。"""
     entries = []
     for line in text.split("\n"):
         if not line.startswith("\x1e"):
@@ -611,10 +588,7 @@ def parse_git_status(out, prefix=""):
 
 
 def parse_name_status(text, prefix=""):
-    """--name-status -z 的输出：动作与路径都用 \\0 分隔，改名与复制是“动作 原路径 新路径”。
-
-    不加 -z 时 git 会把非 ASCII 路径加 C 风格引号，取出来的路径再拿去查差异就成了非法 pathspec。
-    """
+    """--name-status -z 的输出，动作与路径用 \\0 分隔；不加 -z 时非 ASCII 路径会被 C 风格引号包住，拿去查差异会成非法 pathspec。"""
     fields = text.split("\0")
     paths = []
     i = 0
