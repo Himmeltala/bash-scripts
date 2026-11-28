@@ -47,6 +47,7 @@ import { ClipboardAddon } from '@xterm/addon-clipboard'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
+import { copyText } from '@bash-scripts/web-shared'
 import { encodeInput } from '../lib/protocol'
 import { connectTerminal } from '../composables/useTerminalConnection'
 import { terminalOptions } from '../lib/options'
@@ -163,11 +164,19 @@ function buildTerminal() {
   term.onResize(({ cols, rows }) => props.session.conn?.resize(cols, rows))
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    const mod = event.ctrlKey || event.metaKey
+    const key = event.key.toLowerCase()
+    if (mod && key === 'f') {
       event.preventDefault()
       openFind()
       return false
     }
+    if (mod && !event.shiftKey && !event.altKey && key === 'c' && term.hasSelection()) {
+      copyText(term.getSelection())
+      return false
+    }
+    // 不拦着浏览器的粘贴默认动作，xterm 的 paste 事件会把它送进终端。
+    if (mod && !event.shiftKey && !event.altKey && key === 'v') return false
     if (event.key === 'Escape' && find.on) {
       closeFind()
       return false
