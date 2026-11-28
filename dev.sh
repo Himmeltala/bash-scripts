@@ -163,8 +163,18 @@ show_host=$(probe_host)
 printf '\n后端 http://%s:%s/\n前端 http://%s:%s/  改前端即时热更新，Ctrl+C 退出\n\n' \
   "$show_host" "$backend_port" "$show_host" "$vite_port"
 
+# 依赖更新后 Vite 的预构建缓存会过期（动态视图报 504，比如 Markdown 渲染）；
+# 锁文件比缓存新时强制重建一次，只多花几秒。
+vite_extra=()
+vite_meta="$web_dir/node_modules/.vite/deps/_metadata.json"
+if [[ -f "$web_dir/package-lock.json" ]] \
+  && { [[ ! -f "$vite_meta" ]] || [[ "$web_dir/package-lock.json" -nt "$vite_meta" ]]; }; then
+  vite_extra=(--force)
+fi
+
 # Vite 的输出直接可见；放进后台再等它，Ctrl+C 时 trap 才能把后端与它一起收掉。
 env "$origin_var=http://$(probe_host):$backend_port" \
-  npm --prefix "$web_dir" run dev -- --host "$dev_host" --port "$vite_port" --strictPort &
+  npm --prefix "$web_dir" run dev -- --host "$dev_host" --port "$vite_port" --strictPort \
+  "${vite_extra[@]}" &
 vite_pid=$!
 wait "$vite_pid"
