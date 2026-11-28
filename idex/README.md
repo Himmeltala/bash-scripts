@@ -36,7 +36,7 @@ idex web      同上
 - **JVM**：识别 Maven 与 Gradle 工程，扫描模块与目标；启动、停止、重启并看日志。
 - **代码索引**：Ctrl 点标识符跳定义；右键查找引用、重命名、复制标识符；Ctrl+P 快速打开，Ctrl+Shift+O 符号大纲，Ctrl+I 悬停，Ctrl+G 跳行。
 - **图片**：`png`、`jpg`、`jpeg`、`gif`、`webp`、`bmp`、`ico`、`svg`、`avif` 直接预览；`svg` 可切回源码。超过 512KB 的文本给下载入口。
-- **表格**：`xlsx`、`xlsm` 只读预览，支持多工作表、合并单元格与常用格式；超过 20MB 只提供下载。
+- **Office**：`doc`、`docx`、`xls`、`xlsx`、`xlsm`、`ppt`、`pptx`、`pdf` 以只读 PDF 预览；PDF 直接显示，其余由本机 LibreOffice 转换，首次几秒、之后走缓存。动画与切换效果不保留。缺 LibreOffice 时预览报错，装：`./install.sh --deps libreoffice`。
 
 搜索默认跳过 `.git`、`.svn`、`.hg`、`node_modules`、`__pycache__`、`dist`、`build`、`target`，名单在设置里改。
 

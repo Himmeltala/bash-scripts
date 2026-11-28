@@ -102,6 +102,7 @@ export const api = {
   stat: (ws, path = '') => call('GET', `/stat?ws=${encodeParam(ws)}&path=${encodeParam(path)}`),
   // 直接交给浏览器下；目录由后端现场压成 zip。
   downloadUrl: (ws, path) => `${PREFIX}/download?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,
+  previewUrl: (ws, path) => `${PREFIX}/preview?ws=${encodeParam(ws)}&path=${encodeParam(path)}`,
   save: (ws, path, text) => call('POST', '/save', { ws, path, text }),
   stage: (ws, paths) => call('POST', '/stage', { ws, paths }),
   unstage: (ws, paths) => call('POST', '/unstage', { ws, paths }),

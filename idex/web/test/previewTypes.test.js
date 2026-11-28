@@ -32,11 +32,15 @@ test('不认识的扩展名与没扩展名的不算预览', () => {
   }
 })
 
-test('Excel 表格按扩展名认，xls 与 csv 不算', () => {
-  assert.equal(previewKindOf('a.xlsx'), 'sheet')
-  assert.equal(previewKindOf('dir/b.XLSM'), 'sheet')
-  assert.equal(previewKindOf('a.xls'), '')
-  assert.equal(previewKindOf('a.csv'), '')
+test('Office 三件套按扩展名归到 office，旧格式不算', () => {
+  for (const name of [
+    'a.docx', 'a.doc', 'dir/报告.DOCX', 'a.xlsx', 'b.XLSM', 'c.xls', 'd.ppt', 'e.pptx', 'f.pdf',
+  ]) {
+    assert.equal(previewKindOf(name), 'office', name)
+  }
+  for (const name of ['a.csv', 'a.odt', 'a.ods', 'a.odp', 'a.txt']) {
+    assert.equal(previewKindOf(name), '', name)
+  }
 })
 
 test('只有图片当前能切源码，svg 单独认出来', () => {

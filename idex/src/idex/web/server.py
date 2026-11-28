@@ -312,6 +312,9 @@ READ_ROUTES = {
     "settings": lambda h, m, q, b: h._settings_payload() if m == "GET" else _NOT_HANDLED,
     "lsp/status": lambda h, m, q, b: h._lsp_status(),
     "download": lambda h, m, q, b: h._download(q, head=(m == "HEAD")),
+    "preview": lambda h, m, q, b: (
+        h._preview(q, head=(m == "HEAD")) if m in ("GET", "HEAD") else _NOT_HANDLED
+    ),
     "download-selection": lambda h, m, q, b: (
         h._browse_download_selection(q) if m == "GET" else _NOT_HANDLED
     ),
@@ -597,6 +600,7 @@ def _make_handler(args, static):
     Handler.store = Workspaces(args.state)
     Handler.groups = LayoutStore(Path(args.state).parent / "groups.json")
     Handler.settings = Settings(Path(args.state).parent / "settings.json")
+    Handler.office_cache = Path(args.state).parent / "previews"
     Handler.lsp = LspManager()
     Handler.api_prefix = args.api
     Handler.allow_write = args.allow_write

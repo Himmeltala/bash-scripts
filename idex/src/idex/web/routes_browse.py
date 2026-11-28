@@ -30,6 +30,7 @@ from browse_fs import (
     rename_entry,
     save_file,
 )
+from office_preview import preview_pdf
 from server_common import inside
 from stores import LayoutStore  # noqa: F401  只为了让类型提示与依赖关系看得出来
 
@@ -371,6 +372,25 @@ class BrowseRoutes:
         ws = self._ws(query)
         rel = (query.get("path") or [""])[0]
         return {"workspace": ws, "path": rel, **browse_file_info(ws["root"], rel)}
+
+    def _preview(self, query, head=False):
+        """Office 文件转成 PDF 内联下发；转换与缓存都在 office_preview 里。"""
+        ws = self._ws(query)
+        rel = (query.get("path") or [""])[0]
+        cache = getattr(self, "office_cache", None)
+        if cache is None:
+            raise ApiError(503, "预览缓存目录没有配置")
+        path = preview_pdf(ws["root"], rel, cache)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Length", str(path.stat().st_size))
+        self.send_header("Content-Disposition", 'inline; filename="preview.pdf"')
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if not head:
+            with open(path, "rb") as handle:
+                shutil.copyfileobj(handle, self.wfile)
+        return STREAMED
 
     def _download(self, query, head=False):
         ws = self._ws(query)

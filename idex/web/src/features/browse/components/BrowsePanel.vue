@@ -208,7 +208,7 @@
                 :is="viewerFor(tab)"
                 v-if="viewerFor(tab) && !sourceView.has(tab.path)"
                 :key="`preview:${tab.path}`"
-                :url="rawUrl(tab)"
+                :url="viewerUrl(tab)"
                 :name="tab.name"
                 :path="tab.path"
                 :size="tab.size"
@@ -782,7 +782,7 @@ import { useBrowseSearch } from '../composables/useBrowseSearch'
 import { useBrowseEditors } from '../composables/useBrowseEditors'
 import { useBrowseFiles } from '../composables/useBrowseFiles'
 import ImagePreview from '../../editor/components/previews/ImagePreview.vue'
-import SheetPreview from '../../editor/components/previews/SheetPreview.vue'
+import PdfPreview from '../../editor/components/previews/PdfPreview.vue'
 import { tabOf, updateTab } from '../lib/browseTabs'
 import { saveSession, sessionOf } from '../lib/browseSessions'
 import { filterPaths } from '../lib/fuzzyMatch'
@@ -829,7 +829,7 @@ const {
   onLoaded: (path) => diskSync.markSynced(path),
 })
 // 按扩展名挑预览器；加新类型在 previewTypes 里登记，再补一个组件挂进这张表。
-const VIEWERS = { image: ImagePreview, sheet: SheetPreview }
+const VIEWERS = { image: ImagePreview, office: PdfPreview }
 // 预览切回源码的页签；不改源码的类型一直走预览。
 const sourceView = reactive(new Set())
 // 状态栏的光标位置留在这一侧，代码索引那边只读它。
@@ -1187,6 +1187,12 @@ function pick(node) {
 }
 
 // 预览器拿到的是原始字节，走下载接口；文件换了大小就换地址，免得拿旧的那份。
+// 图片直接取原文件；Office 走后端转换后的 PDF。
+function viewerUrl(tab) {
+  if (previewKindOf(tab.path) === 'office') return api.previewUrl(props.ws.id, tab.path)
+  return rawUrl(tab)
+}
+
 function rawUrl(tab) {
   const base = api.downloadUrl(props.ws.id, tab.path)
   return tab.size ? `${base}&v=${tab.size}` : base
