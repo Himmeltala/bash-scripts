@@ -34,6 +34,7 @@ class LspManager:
         max_per_ws=2,
         rename_warm=1.0,
         bridge_command=None,
+        settings=None,
     ):
         override = commands or {}
         self.commands = {
@@ -45,6 +46,8 @@ class LspManager:
         self.rename_warm = rename_warm
         # 测试里可以关掉 Vue 的 tsserver 桥；None 表示按本机情况自己找。
         self.bridge_command = bridge_command
+        # 设置里关掉的语言服务器一个都不启动；每次现读，保存后立即生效。
+        self.settings = settings
         self.instances = {}
         self.starting = {}
         self.lock = threading.Lock()
@@ -74,6 +77,7 @@ class LspManager:
                     "command": label,
                     "supported": True,
                     "available": bool(available),
+                    "enabled": key not in self._disabled(),
                     "hint": entry["hint"],
                     "capabilities": entry.get("capabilities", {}),
                 }
@@ -214,12 +218,20 @@ class LspManager:
         key = self._ready(path)
         return key, self._instance(ws, key, root), os.path.join(root, path)
 
+    def _disabled(self):
+        if self.settings is None:
+            return ()
+        values = self.settings.values()
+        return tuple(values.get("lsp.disabled") or ())
+
     def _ready(self, path):
-        """这个文件能不能查：有对应的语言、服务器受支持且装好了。"""
+        """这个文件能不能查：有对应的语言、没在设置里关掉、服务器受支持且装好了。"""
         key = server_key(path)
         if not key:
             raise LspUnavailable("这种文件没有语言服务器：%s" % path)
         entry = SERVERS[key]
+        if key in self._disabled():
+            raise LspUnavailable("%s 语言服务器已在设置里关闭" % entry["title"])
         command = self.commands[key]
         if entry.get("uses_bridge") and not self._bridge_ready():
             raise LspUnavailable(entry["hint"])

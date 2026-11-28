@@ -23,6 +23,7 @@ export function useCodeIndex({
   reloadDir,
   flash,
   client = api,
+  disabledServers = () => new Set(),
 }) {
   // 查定义时的转圈，以及多个候选时的那张列表。
   const defining = ref(false)
@@ -60,18 +61,31 @@ export function useCodeIndex({
     const id = path ? handlerOf(path).server : null
     return id ? servers.value.find((item) => item.id === id) || null : null
   })
-  const serverReady = computed(() => !!(serverInfo.value && serverInfo.value.available))
+  const closedServers = computed(() => disabledServers())
+  const serverClosed = computed(
+    () => !!(serverInfo.value && closedServers.value.has(serverInfo.value.id)),
+  )
+  const serverReady = computed(
+    () => !!(serverInfo.value && serverInfo.value.available && !serverClosed.value),
+  )
   const serverLabel = computed(() => {
     if (!activePath.value) return ''
     const info = serverInfo.value
     if (!info) return '无代码索引'
+    if (serverClosed.value) return `${info.title} 已关闭`
     return info.available ? `${info.title} 索引就绪` : `${info.title} 未装`
   })
   const serverTitle = computed(() => {
     const info = serverInfo.value
     if (!info) return '这种文件没有语言服务器'
+    if (serverClosed.value) return '已在设置里关闭，切到对应文件时不会启动'
     return info.available ? info.command : info.hint
   })
+
+  function lspClosed(path) {
+    const id = path ? handlerOf(path).server : null
+    return !!(id && closedServers.value.has(id))
+  }
   const outlineRows = computed(() => {
     const q = outlineAsk.filter.trim().toLowerCase()
     if (!q) return outlineAsk.items
@@ -94,6 +108,10 @@ export function useCodeIndex({
     if (!path) return
     const editor = editorOf(path)
     if (!editor) return
+    if (lspClosed(path)) {
+      flash('该语言服务器已在设置里关闭')
+      return
+    }
     defining.value = true
     try {
       const data = await client.definition(wsId(), path, editor.text, line, character)
@@ -121,6 +139,10 @@ export function useCodeIndex({
   async function askLocations(action, item) {
     const editor = editorOf(item.path)
     if (!editor) return
+    if (lspClosed(item.path)) {
+      flash('该语言服务器已在设置里关闭')
+      return
+    }
     const title = SYMBOL_TITLES[action] || '定义'
     defining.value = true
     try {
@@ -167,6 +189,10 @@ export function useCodeIndex({
   async function previewRename() {
     const editor = editorOf(renameAsk.path)
     if (!editor) return
+    if (lspClosed(renameAsk.path)) {
+      renameAsk.error = '该语言服务器已在设置里关闭'
+      return
+    }
     const name = renameAsk.value.trim()
     if (!name) {
       renameAsk.error = '新名字不能为空'
@@ -192,6 +218,10 @@ export function useCodeIndex({
   async function applyRename() {
     const editor = editorOf(renameAsk.path)
     if (!editor) return
+    if (lspClosed(renameAsk.path)) {
+      renameAsk.error = '该语言服务器已在设置里关闭'
+      return
+    }
     // 有草稿的文件不能直接改盘，先让用户保存。
     const dirty = renameAsk.files
       .map((item) => item.path)
@@ -234,6 +264,10 @@ export function useCodeIndex({
     const editor = tab ? editorOf(tab.path) : null
     if (!tab || !editor || !editor.path) {
       flash('先打开一个文件再看大纲')
+      return
+    }
+    if (lspClosed(tab.path)) {
+      flash('该语言服务器已在设置里关闭')
       return
     }
     Object.assign(outlineAsk, {
@@ -326,6 +360,10 @@ export function useCodeIndex({
   async function openHover(path, line, character, word) {
     const editor = editorOf(path)
     if (!editor) return
+    if (lspClosed(path)) {
+      flash('该语言服务器已在设置里关闭')
+      return
+    }
     defining.value = true
     try {
       const data = await client.hover(wsId(), path, editor.text, line, character)

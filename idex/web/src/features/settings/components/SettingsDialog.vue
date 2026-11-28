@@ -145,10 +145,12 @@ const open = computed({
 
 const dirtySet = computed(() => new Set(settings.dirtyKeys))
 const searching = computed(() => !!query.value.trim() || onlyModified.value)
+// 有的设置只在专门的只读分类里给控件，不在列表与搜索里重复出现。
+const visibleSchema = computed(() => settings.schema.filter((item) => !item.hidden))
 
 // 导航分类来自登记表；每类带一个「有修改」的小点。
 const navGroups = computed(() =>
-  groupSettings(settings.schema).map((group) => ({
+  groupSettings(visibleSchema.value).map((group) => ({
     title: group.title,
     dirty: groupModified(group, dirtySet.value),
   })),
@@ -167,7 +169,7 @@ watch(
 
 // 搜索或「只看已修改」时跨分类平铺；否则只显示当前分类。
 const visibleGroups = computed(() => {
-  const list = filterSettings(settings.schema, query.value, {
+  const list = filterSettings(visibleSchema.value, query.value, {
     dirty: dirtySet.value,
     onlyModified: onlyModified.value,
   })

@@ -104,6 +104,16 @@ HEADER_METRIC_LABELS = {
 }
 HEADER_RUN_LABELS = {"start": "启动", "package": "打包", "install": "安装"}
 
+# 语言服务器：关掉的不启动；新增的服务器默认开启，所以存的是关闭名单。
+LSP_SERVER_LABELS = (
+    ("shell", "Shell"),
+    ("python", "Python"),
+    ("typescript", "JS / TS"),
+    ("vue", "Vue"),
+    ("java", "Java"),
+)
+LSP_SERVER_KEYS = tuple(key for key, _ in LSP_SERVER_LABELS)
+
 WEIGHT_LABELS = (("normal", "常规"), ("500", "中等"), ("bold", "加粗"))
 CURSOR_LABELS = (("block", "方块"), ("bar", "竖线"), ("underline", "下划线"))
 
@@ -114,7 +124,7 @@ class Setting:
     __slots__ = (
         "key", "type", "default", "label", "description", "group", "section", "order",
         "minimum", "maximum", "step", "decimals", "max_length", "max_items",
-        "zero_as_default", "choices", "tags", "renderer", "clean",
+        "zero_as_default", "choices", "tags", "renderer", "clean", "hidden",
     )
 
     def __init__(
@@ -138,6 +148,7 @@ class Setting:
         tags=(),
         renderer="",
         clean=None,
+        hidden=False,
     ):
         self.key = key
         self.type = type
@@ -158,6 +169,7 @@ class Setting:
         self.tags = tags
         self.renderer = renderer
         self.clean = clean
+        self.hidden = hidden
 
     def schema(self):
         """给前端的元数据；None 的字段不出现，省得页面判断。"""
@@ -185,6 +197,8 @@ class Setting:
             out["tags"] = list(self.tags)
         if self.renderer:
             out["renderer"] = self.renderer
+        if self.hidden:
+            out["hidden"] = True
         return out
 
 
@@ -201,6 +215,16 @@ def _clean_search_ignore(value):
         if len(names) >= SEARCH_IGNORE_MAX:
             break
     return names
+
+
+def _clean_lsp_disabled(value):
+    """只收登记过的服务器名，去重；存的都是关掉的。"""
+    out = []
+    for item in value if isinstance(value, (list, tuple)) else []:
+        key = str(item)
+        if key in LSP_SERVER_KEYS and key not in out:
+            out.append(key)
+    return out
 
 
 def _clean_shortcuts(value):
@@ -303,6 +327,11 @@ SETTINGS = (
     _setting("header.theme", "bool", True, "深浅色切换",
              description="顶栏右侧的明暗主题按钮。",
              group="顶栏", section="入口", order=102),
+    # 语言服务器：勾掉的不启动。
+    _setting("lsp.disabled", "multi_enum", [], "关闭的语言服务器",
+             description="关掉的不会启动，切到对应文件时不拉进程；改动保存后生效。",
+             group="语言服务器", order=105, choices=LSP_SERVER_LABELS, clean=_clean_lsp_disabled,
+             hidden=True),
     # 快捷键：整组一个控件，保存时整份校验。
     _setting("shortcuts", "json", dict(SHORTCUT_DEFAULTS), "快捷键",
              description="点一下再按新组合；Esc 取消，Backspace 清除。",

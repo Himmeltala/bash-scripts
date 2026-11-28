@@ -643,6 +643,28 @@ class LspManagers(unittest.TestCase):
         finally:
             manager.stop_all()
 
+    def test_disabled_server_is_not_started(self):
+        class StubSettings:
+            def values(self):
+                return {"lsp.disabled": ["python"]}
+
+        manager = lspmod.LspManager(
+            commands={"python": (sys.executable, str(FAKE))},
+            rename_warm=0,
+            bridge_command=(),
+            settings=StubSettings(),
+        )
+        try:
+            rows = {row["id"]: row for row in manager.status()}
+            self.assertFalse(rows["python"]["enabled"])
+            self.assertTrue(rows["java"]["enabled"])
+            with self.assertRaises(lspmod.LspUnavailable) as caught:
+                manager.definition("ws1", str(self.root), "target.py", "x\n", 0, 0)
+            self.assertIn("关闭", str(caught.exception))
+            self.assertEqual(manager.instances, {})
+        finally:
+            manager.stop_all()
+
     def test_rename_preview_and_apply(self):
         manager = lspmod.LspManager(commands={"python": (sys.executable, str(FAKE))}, rename_warm=0, bridge_command=())
         try:

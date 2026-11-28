@@ -595,7 +595,7 @@ def _make_handler(args, static):
     Handler.groups = LayoutStore(Path(args.state).parent / "groups.json")
     Handler.settings = Settings(Path(args.state).parent / "settings.json")
     Handler.office_cache = Path(args.state).parent / "previews"
-    Handler.lsp = LspManager()
+    Handler.lsp = LspManager(settings=Handler.settings)
     Handler.api_prefix = args.api
     Handler.allow_write = args.allow_write
     Handler.state_stream = StateStream(

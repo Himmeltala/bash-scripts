@@ -1217,6 +1217,17 @@ class SearchSettings(unittest.TestCase):
         self.assertEqual(gitmod.Settings(str(path)).values()["editor.theme"], "auto")
         self.assertTrue(gitmod.Settings(str(path)).values()["editor.minimap"])
 
+    def test_lsp_disabled_setting_filters_unknown(self):
+        path = self.base / "settings.json"
+        store = gitmod.Settings(str(path))
+        self.assertEqual(store.values()["lsp.disabled"], [])
+
+        # 只认登记过的服务器，去重；写坏的类型当没关。
+        store.update({"values": {"lsp.disabled": ["java", "unknown", "java", "python"]}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["lsp.disabled"], ["java", "python"])
+        store.update({"values": {"lsp.disabled": "java"}})
+        self.assertEqual(gitmod.Settings(str(path)).values()["lsp.disabled"], [])
+
     def test_terminal_settings_defaults_and_clamp(self):
         path = self.base / "settings.json"
         store = gitmod.Settings(str(path))

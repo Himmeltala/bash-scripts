@@ -793,6 +793,7 @@ import { toast } from '../../../utils/notice'
 import { dirName } from '../../../utils/format'
 import { diffMarks, hunkOriginal, parseDiffHunks } from '../../editor/core/diffLines'
 import { usePreferencesStore } from '../../../stores/preferences'
+import { useSettingsStore } from '../../../stores/settings'
 import { useEditorSettings, useShortcutBindings } from '../../settings/composables/useSettings'
 import { useSplitPane } from '@bash-scripts/web-shared'
 
@@ -875,11 +876,13 @@ const {
   openLocation: (loc) => openLocation(loc),
   reloadDir: (path) => treeRef.value?.reloadDir(dirName(path)),
   flash: (text) => flash(text),
+  disabledServers: () => new Set(settings.get('lsp.disabled') || []),
 })
 
 // 代码编辑器的补全与格式化适配器：拿当前工作区、当前草稿全文去问服务端。
 function capabilitiesOf(path) {
   const id = handlerOf(path).server
+  if (id && (settings.get('lsp.disabled') || []).includes(id)) return {}
   const info = id ? servers.value.find((item) => item.id === id) : null
   return (info && info.capabilities) || {}
 }
@@ -934,6 +937,10 @@ const {
   activePath,
   editorOf,
   onOpen: (loc) => openLocation(loc),
+  serverDisabled: (path) => {
+    const id = handlerOf(path).server
+    return !!(id && (settings.get('lsp.disabled') || []).includes(id))
+  },
 })
 
 const quickRows = computed(() => filterPaths(quickAsk.files, quickAsk.filter))
@@ -1011,6 +1018,7 @@ const { size: treeWidth, resizing, start: startSplit, reset: resetSplit } = useS
 })
 // 搜索：query 非空时左侧换成结果列表，模式在文件名与内容之间切换。
 const preferences = usePreferencesStore()
+const settings = useSettingsStore()
 const editorSettings = useEditorSettings()
 const shortcuts = useShortcutBindings()
 const { searchMode: mode } = storeToRefs(preferences)

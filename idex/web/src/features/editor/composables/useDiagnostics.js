@@ -10,7 +10,7 @@ import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { api } from '../../../utils/api.js'
 import { markersOf, statsOf } from '../core/diagnostics.js'
 
-export function useDiagnostics({ wsId, activePath, editorOf, onOpen }) {
+export function useDiagnostics({ wsId, activePath, editorOf, onOpen, serverDisabled = () => false }) {
   const problems = ref([])
   const problemsAsk = reactive({ on: false })
   const problemsLoading = ref(false)
@@ -35,6 +35,12 @@ export function useDiagnostics({ wsId, activePath, editorOf, onOpen }) {
       if (seq !== diagSeq || path !== activePath.value) return
       const editor = editorOf(path)
       if (!editor || !editor.path) return
+      // 设置里关掉的语言服务器不拉进程，也就不问诊断。
+      if (serverDisabled(path)) {
+        problems.value = []
+        problemsLoading.value = false
+        return
+      }
       problemsLoading.value = true
       try {
         const data = await api.diagnostics(wsId(), path, editor.text)
