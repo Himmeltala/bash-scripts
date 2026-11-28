@@ -132,7 +132,7 @@ const props = defineProps({
   selectionMenu: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['pick', 'action', 'select', 'clear-selection'])
+const emit = defineEmits(['pick', 'action', 'select', 'clear-selection', 'drag-start'])
 
 const DEFAULTS = {
   truncated: '这一层文件太多，只列了前面一部分。',
@@ -286,8 +286,9 @@ function parentOf(key) {
   return index < 0 ? '' : key.slice(0, index)
 }
 
-function onDragStart(node) {
+function onDragStart(node, event) {
   dragging.value = node
+  emit('drag-start', node, event)
 }
 
 function onDragEnd() {

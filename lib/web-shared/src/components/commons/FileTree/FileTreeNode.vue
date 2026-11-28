@@ -70,7 +70,7 @@
           @select="emit('select', $event)"
           @pick="emit('pick', $event)"
           @context="emit('context', $event)"
-          @drag-start="emit('drag-start', $event)"
+          @drag-start="(node, event) => emit('drag-start', node, event)"
           @drag-end="emit('drag-end')"
           @drop-on="emit('drop-on', $event)"
         >
@@ -144,9 +144,9 @@ function onDragStart(event) {
     event.preventDefault()
     return
   }
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', String(props.key))
-  emit('drag-start', props.node)
+  event.dataTransfer.effectAllowed = 'copyMove'
+  event.dataTransfer.setData('text/plain', String(key.value))
+  emit('drag-start', props.node, event)
 }
 
 function onDragEnd() {

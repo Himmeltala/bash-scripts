@@ -7,7 +7,7 @@
  * @Description: 单个终端的 xterm 宿主；切走后保留实例与 DOM，切回来重新挂上。
 -->
 <template>
-  <div ref="wrap" class="term-view" @mouseup="focusTerm">
+  <div ref="wrap" class="term-view" @mouseup="focusTerm" @dragover="onDragOver" @drop="onDrop">
     <div v-if="find.on" class="term-find">
       <v-text-field
         ref="findInput"
@@ -360,6 +360,33 @@ function scheduleFit() {
 
 function focusTerm() {
   if (props.active) props.session.term?.focus()
+}
+
+// 从资源管理器拖来的路径按 shell 参数补引号，空格与单引号都不会被拆开。
+function shellArg(path) {
+  if (/^[\w@%+=:,./-]+$/.test(path)) return path
+  return `'${path.replace(/'/g, "'\\''")}'`
+}
+
+function onDragOver(event) {
+  if (!event.dataTransfer?.types.includes('text/plain')) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+function onDrop(event) {
+  const text = event.dataTransfer?.getData('text/plain')
+  if (!text) return
+  event.preventDefault()
+  const args = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(shellArg)
+    .join(' ')
+  if (!args) return
+  props.session.term?.paste(`${args} `)
+  props.session.term?.focus()
 }
 
 onMounted(() => {

@@ -157,6 +157,7 @@
           @action="onTreeAction"
           @select="toggleNodeSelection"
           @clear-selection="clearSelection"
+          @drag-start="onTreeDragStart"
         />
       </aside>
 
@@ -1167,6 +1168,15 @@ function toggleNodeSelection(node) {
   const path = String((node && node.path) || '')
   if (!path) return
   selectedPaths.value = togglePath(selectedPaths.value, path)
+}
+
+// 拖出资源管理器时带上绝对路径；拖的是多选里的一项就带上全部选中项。
+function onTreeDragStart(node, event) {
+  const path = String((node && node.path) || '')
+  if (!path) return
+  const root = String(props.ws.root || '').replace(/\/+$/, '')
+  const paths = selectedPaths.value.includes(path) ? selectedPaths.value : [path]
+  event.dataTransfer?.setData('text/plain', paths.map((rel) => `${root}/${rel}`).join('\n'))
 }
 
 function clearSelection() {
