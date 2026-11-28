@@ -18,27 +18,3 @@ gradlex --rebuild       任务前加 clean
 gradlex --refresh       追加 --refresh-dependencies
 gradlex --reset         清掉当前命令的勾选
 ```
-
-| 命令 | 目标 | 任务 |
-| --- | --- | --- |
-| `run` | Spring Boot、application 或 web 模块 | `bootRun` / `run` / `appRun` / `tomcatRun` / `jettyRun` |
-| `build` | 同一批模块 | `bootJar` / `assemble` |
-
-纯库模块不进入清单。
-
-## Gradle 入口
-
-按顺序取 `GRADLEX_GRADLE`、最近的 `gradlew`、`PATH` 里的 `gradle`。强制用系统 Gradle：
-
-```bash
-GRADLEX_GRADLE=gradle gradlex run
-```
-
-## 退出码
-
-| 码 | 含义 |
-| --- | --- |
-| 0 | 成功 |
-| 1 | 执行失败，或没找到目标 |
-| 2 | 用法错误 |
-| 3 | 用户取消 |
