@@ -19,7 +19,7 @@
       class="pick"
     />
     <div class="preview">
-      <span class="dot" :class="{ moved }" />
+      <span class="track"><span class="dot" :class="{ moved }" /></span>
       <v-btn size="small" variant="text" @click="moved = !moved">播放</v-btn>
     </div>
   </div>
@@ -58,7 +58,15 @@ const preset = computed({
   align-items: center;
   gap: 10px;
 }
+.track {
+  position: relative;
+  width: 120px;
+  height: 18px;
+}
 .dot {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -66,6 +74,6 @@ const preset = computed({
   transition: transform var(--bash-anim-dur) var(--bash-anim-ease);
 }
 .dot.moved {
-  transform: translateX(120px);
+  transform: translateX(102px);
 }
 </style>
