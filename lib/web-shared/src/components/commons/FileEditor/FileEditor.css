@@ -19,8 +19,15 @@
   align-items: center;
   gap: 4px;
 }
+/* 与提交记录等页面的图标切换同高：别让 v-btn 的默认高度把文件头撑高。 */
 .views {
   flex: 0 0 auto;
+  height: 24px !important;
+  min-height: 0;
+}
+.views :deep(.v-btn) {
+  height: 24px !important;
+  min-height: 24px;
 }
 .edit-wrap {
   flex: 1 1 auto;

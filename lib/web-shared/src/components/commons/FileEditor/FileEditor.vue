@@ -18,14 +18,23 @@
         <v-btn-toggle
           v-if="modes.length > 1"
           v-model="mode"
-          density="compact"
+          density="default"
           variant="text"
-          divided
           mandatory
           class="views"
         >
-          <v-btn v-for="item in modes" :key="item.id" :value="item.id" size="small">
-            {{ item.title }}
+          <v-btn
+            v-for="item in modes"
+            :key="item.id"
+            :value="item.id"
+            :icon="!!item.icon"
+            :title="item.icon ? item.title : undefined"
+            size="x-small"
+            variant="text"
+            style="height: auto"
+          >
+            <v-icon v-if="item.icon">{{ item.icon }}</v-icon>
+            <template v-else>{{ item.title }}</template>
           </v-btn>
         </v-btn-toggle>
         <div v-if="dirty && !state.loading" class="actions">
@@ -92,6 +101,7 @@ import SaveLeaveDialog from './widgets/SaveLeaveDialog.vue'
 import EmptyState from '../../../layouts/commons/EmptyState.vue'
 import { useFileEditor } from './useFileEditor'
 import {
+  defaultModeOf,
   modesOf,
   resolveMode,
   usesEditorSlot,
@@ -131,7 +141,7 @@ const slotActive = computed(() => usesEditorSlot(path.value, !!slots.editor))
 watch(dirty, (on) => emit('dirty', on))
 
 // 文件类型处理器给出这类文件的渲染与编辑方式，具体组件按需加载。
-const mode = ref('source')
+const mode = ref('')
 const modes = computed(() => modesOf(path.value))
 const modeEntry = computed(() => modes.value.find((item) => item.id === mode.value) || null)
 const modeComp = shallowRef(null)
@@ -163,10 +173,14 @@ function locateWhenReady() {
 }
 
 // 换到没有这个视图的文件时回源码；同一会话里换文件不重置已选模式。
+// 第一次打开按类型给默认视图（Markdown 双栏）；之后同一会话换文件沿用当前视图。
+let modeInitialized = false
 watch(
   modes,
   (list) => {
-    mode.value = resolveMode(mode.value, list)
+    const preferred = modeInitialized ? mode.value : defaultModeOf(path.value) || mode.value
+    mode.value = resolveMode(preferred, list)
+    if (path.value) modeInitialized = true
   },
   { immediate: true },
 )
