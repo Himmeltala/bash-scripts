@@ -18,13 +18,14 @@ body,
   --bash-anim-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* 系统关掉动画时 Vuetify 会把对话框过渡时长归零，这里不受系统偏好管，统一跟设置里的动画方案走。 */
+/* 系统关掉动画时 Vuetify 把对话框的时长与起止状态都停掉，这里整套自己写，统一跟设置里的动画方案走。 */
 html .dialog-transition-enter-active,
 html .dialog-bottom-transition-enter-active,
 html .dialog-top-transition-enter-active,
 html .dialog-transition-leave-active,
 html .dialog-bottom-transition-leave-active,
 html .dialog-top-transition-leave-active {
+  transition-property: transform, opacity !important;
   transition-duration: var(--bash-anim-dur-fast) !important;
   transition-timing-function: var(--bash-anim-ease) !important;
 }
@@ -32,6 +33,23 @@ html .dialog-transition-enter-active,
 html .dialog-bottom-transition-enter-active,
 html .dialog-top-transition-enter-active {
   transition-duration: var(--bash-anim-dur) !important;
+}
+html .dialog-transition-enter-from,
+html .dialog-transition-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+html .dialog-transition-enter-to,
+html .dialog-transition-leave-from {
+  opacity: 1;
+}
+html .dialog-bottom-transition-enter-from,
+html .dialog-bottom-transition-leave-to {
+  transform: translateY(calc(50vh + 50%));
+}
+html .dialog-top-transition-enter-from,
+html .dialog-top-transition-leave-to {
+  transform: translateY(calc(-50vh - 50%));
 }
 html .v-snackbar-transition-enter-active,
 html .v-snackbar-transition-leave-active {
