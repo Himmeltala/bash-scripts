@@ -288,6 +288,7 @@ function resetDrag() {
   z-index: 3090;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.22);
 }
@@ -310,28 +311,24 @@ function resetDrag() {
   left: 0;
   right: 0;
   bottom: 0;
-  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.16);
   border-radius: 10px 10px 0 0;
 }
 .dock-panel-top {
   left: 0;
   right: 0;
   top: 0;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.16);
   border-radius: 0 0 10px 10px;
 }
 .dock-panel-left {
   left: 0;
   top: 0;
   bottom: 0;
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.16);
   border-radius: 0 10px 10px 0;
 }
 .dock-panel-right {
   right: 0;
   top: 0;
   bottom: 0;
-  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.16);
   border-radius: 10px 0 0 10px;
 }
 .sheet-bottom-enter-active,
