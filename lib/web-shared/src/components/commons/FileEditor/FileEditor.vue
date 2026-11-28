@@ -17,7 +17,8 @@
       <template #actions>
         <v-btn-toggle
           v-if="modes.length > 1"
-          v-model="mode"
+          :model-value="mode"
+          @update:model-value="chooseMode"
           density="default"
           variant="text"
           mandatory
@@ -102,6 +103,7 @@ import EmptyState from '../../../layouts/commons/EmptyState.vue'
 import { useFileEditor } from './useFileEditor'
 import {
   defaultModeOf,
+  handlerOf,
   modesOf,
   resolveMode,
   usesEditorSlot,
@@ -115,9 +117,11 @@ const props = defineProps({
   // 取数与落盘由调用方给：打开哪个文件、存到哪里，组件不认。
   loader: { type: Function, required: true },
   saver: { type: Function, required: true },
+  // 上次选过的视图；由调用方从业务层存储里取，交空就用类型默认。
+  initialMode: { type: String, default: '' },
 })
 
-const emit = defineEmits(['saved', 'dirty', 'edit'])
+const emit = defineEmits(['saved', 'dirty', 'edit', 'mode-change'])
 const slots = useSlots()
 
 const {
@@ -173,17 +177,31 @@ function locateWhenReady() {
 }
 
 // 换到没有这个视图的文件时回源码；同一会话里换文件不重置已选模式。
-// 第一次打开按类型给默认视图（Markdown 双栏）；之后同一会话换文件沿用当前视图。
-let modeInitialized = false
+// 换文件类型时优先用上次选过的视图，没有再用类型默认（Markdown 双栏）；
+// 同一种类型里换文件沿用当前视图，不来回跳。
+let lastHandler = ''
 watch(
-  modes,
-  (list) => {
-    const preferred = modeInitialized ? mode.value : defaultModeOf(path.value) || mode.value
-    mode.value = resolveMode(preferred, list)
-    if (path.value) modeInitialized = true
+  [modes, path],
+  ([list]) => {
+    const handler = handlerOf(path.value).id
+    if (!handler) return
+    if (handler !== lastHandler) {
+      lastHandler = handler
+      mode.value = resolveMode(props.initialMode || defaultModeOf(path.value), list)
+      return
+    }
+    mode.value = resolveMode(mode.value || defaultModeOf(path.value), list)
   },
   { immediate: true },
 )
+
+// 用户主动切视图才通知调用方记下来；程序里换文件不触发。
+function chooseMode(value) {
+  if (!value) return
+  if (!modes.value.some((item) => item.id === value)) return
+  mode.value = value
+  emit('mode-change', { mode: value, path: path.value })
+}
 
 // 插槽接管代码文件时不再加载内置代码视图。
 watch(

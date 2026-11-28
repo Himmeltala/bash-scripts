@@ -240,6 +240,8 @@
                   :size="tab.size"
                   :loader="loadFile"
                   :saver="saveFile"
+                  :initial-mode="preferences.markdownMode"
+                  @mode-change="rememberViewMode"
                   @saved="onSaved"
                   @dirty="(on) => setDirty(tab.path, on)"
                   @edit="onEdit"
@@ -1181,6 +1183,12 @@ watch(
   () => props.ws.id,
   () => clearSelection(),
 )
+
+// 视图偏好属于界面：统一走浏览器存储的单选工具，组件只给参数与事件。
+function rememberViewMode(payload) {
+  if (!payload || !payload.mode) return
+  preferences.markdownMode = payload.mode
+}
 
 function pick(node) {
   return show(node)

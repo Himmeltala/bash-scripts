@@ -22,9 +22,11 @@ export const usePreferencesStore = defineStore('preferences', () => {
   // 差异编辑器默认并排；两个页面各自记住自己的选择。
   const changesDiffInline = useStoredChoice('idex.changes-diff-inline', [false, true], false)
   const logDiffInline = useStoredChoice('idex.log-diff-inline', [false, true], false)
+  // Markdown 上次选的视图：源码、视图或双栏；下次打开直接用它。
+  const markdownMode = useStoredChoice('idex.markdown-mode', ['source', 'render', 'split'], 'split')
   // 从其他页签跳到资源管理器某个文件：{ path, line, seq }，消费后清空。
   const pendingOpen = ref(null)
   // 全局搜索快捷键带来的请求：{ mode, seq }，资源管理器消费后清空。
   const pendingSearch = ref(null)
-  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, pendingOpen, pendingSearch }
+  return { changesMode, diffScope, changesDiffInline, searchMode, activeTab, logFilesMode, logDiffScope, logDiffInline, markdownMode, pendingOpen, pendingSearch }
 })
