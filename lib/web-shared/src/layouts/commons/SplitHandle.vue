@@ -13,9 +13,7 @@
     :title="disabled ? '' : title"
     @pointerdown="down"
     @dblclick="dbl"
-  >
-    <span class="grip" />
-  </div>
+  />
 </template>
 
 <script setup>
@@ -40,47 +38,45 @@ function dbl() {
 
 <style scoped>
 .handle {
+  position: relative;
   flex: 0 0 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(var(--v-theme-on-surface), 0.04);
+  background: none;
+}
+.handle::after {
+  content: '';
+  position: absolute;
+  background: rgba(var(--v-theme-on-surface), 0.14);
+  transition: background var(--bash-anim-dur-fast, 120ms) ease;
 }
 .handle.x {
   cursor: col-resize;
-  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+.handle.x::after {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
 }
 .handle.y {
   flex-basis: 9px;
   cursor: row-resize;
-  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
-.handle .grip {
-  border-radius: 2px;
-  background: rgba(var(--v-theme-on-surface), 0.22);
+.handle.y::after {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
 }
-.handle.x .grip {
-  width: 3px;
-  height: 36px;
-}
-.handle.y .grip {
-  width: 36px;
-  height: 3px;
-}
-.handle:hover:not(.disabled),
-.handle.active {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-.handle:hover:not(.disabled) .grip,
-.handle.active .grip {
+.handle:hover:not(.disabled)::after,
+.handle.active::after {
   background: rgb(var(--v-theme-primary));
 }
 .handle.disabled {
   cursor: default;
 }
-.handle.disabled .grip {
+.handle.disabled::after {
   opacity: 0.45;
 }
 </style>
