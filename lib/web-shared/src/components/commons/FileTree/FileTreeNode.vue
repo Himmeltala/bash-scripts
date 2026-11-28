@@ -6,12 +6,9 @@
       :data-path="key"
       :data-type="node.type"
       :style="{ paddingLeft: 4 + depth * 18 + 'px' }"
-      :draggable="movable && dragReady"
+      :draggable="movable"
       @click="onRowClick"
       @contextmenu.prevent.stop="onContext"
-      @pointerdown="onPointerDown"
-      @pointerup="cancelHold"
-      @pointercancel="cancelHold"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragover="onDragOver"
@@ -123,24 +120,10 @@ const key = computed(() => props.keyOf(props.node))
 const isDir = computed(() => props.dirOf(props.node))
 const picked = computed(() => !!(props.selectable && props.selectedKeys && props.selectedKeys.has(String(key.value))))
 
-// 长按 350ms 才开启原生拖动，避免点选、右键时误触。
-const dragReady = ref(false)
 const dragOver = ref(false)
-let holdTimer = 0
-
-function onPointerDown(event) {
-  if (!props.movable || (event.button && event.button > 0)) return
-  cancelHold()
-  holdTimer = setTimeout(() => { dragReady.value = true }, 350)
-}
-
-function cancelHold() {
-  clearTimeout(holdTimer)
-  holdTimer = 0
-}
 
 function onDragStart(event) {
-  if (!props.movable || !dragReady.value) {
+  if (!props.movable) {
     event.preventDefault()
     return
   }
@@ -150,8 +133,6 @@ function onDragStart(event) {
 }
 
 function onDragEnd() {
-  dragReady.value = false
-  cancelHold()
   emit('drag-end')
 }
 
