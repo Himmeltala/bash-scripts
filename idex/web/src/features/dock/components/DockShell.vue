@@ -266,7 +266,6 @@ function resetDrag() {
   gap: 2px;
   padding: 5px 9px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 16px;
   background: rgba(var(--v-theme-surface), 0.86);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(16px);
@@ -311,25 +310,21 @@ function resetDrag() {
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: 10px 10px 0 0;
 }
 .dock-panel-top {
   left: 0;
   right: 0;
   top: 0;
-  border-radius: 0 0 10px 10px;
 }
 .dock-panel-left {
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: 0 10px 10px 0;
 }
 .dock-panel-right {
   right: 0;
   top: 0;
   bottom: 0;
-  border-radius: 10px 0 0 10px;
 }
 .sheet-bottom-enter-active,
 .sheet-bottom-leave-active,
