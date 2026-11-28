@@ -64,7 +64,7 @@
             @click="dock.setPlacement(activeView?.id, side.value)"
           />
           <v-btn
-            icon="mdi-chevron-down"
+            :icon="collapseIcon"
             size="x-small"
             variant="text"
             title="收起面板"
@@ -131,6 +131,16 @@ const placement = computed(() =>
 )
 // 左右呼出时拖宽度，上下呼出时拖高度。
 const horizontal = computed(() => placement.value === 'left' || placement.value === 'right')
+// 收起按钮朝面板贴边的那一侧收，方向跟着呼出方向变。
+const collapseIcon = computed(
+  () =>
+    ({
+      bottom: 'mdi-chevron-down',
+      top: 'mdi-chevron-up',
+      left: 'mdi-chevron-left',
+      right: 'mdi-chevron-right',
+    })[placement.value] || 'mdi-chevron-down',
+)
 const panelStyle = computed(() =>
   horizontal.value
     ? { width: `${Math.min(dock.width, Math.round(window.innerWidth * 0.9))}px` }
