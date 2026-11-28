@@ -32,6 +32,16 @@ cd bash-scripts
 
 装完重开 shell。重复执行 `install.sh` 会先卸载再安装；源码放在 `~/.local/share/bash-scripts`，可执行文件软链到 `~/.local/bin`，必要时往 `~/.bashrc` 写 PATH。`BASH_SCRIPTS_INSTALL_DIR`、`BASH_SCRIPTS_BIN_DIR` 可改这两个位置。
 
+可选依赖单独装，不在正常安装里：
+
+```bash
+./install.sh --list-deps
+./install.sh --deps libreoffice     # 例如 Office 预览用的 LibreOffice
+./install.sh --deps all
+```
+
+管道方式：`curl -fsSL https://cdn.jsdelivr.net/gh/Himmeltala/bash-scripts@main/install.sh | bash -s -- --deps libreoffice`。新增依赖的写法见 `install/README.md`。
+
 ## 卸载
 
 ```bash
@@ -53,4 +63,4 @@ DEV_HOST=0.0.0.0 ./dev.sh idex       # 同一网络可访问
 
 ## 外部依赖
 
-`mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`，Node 引擎需要 `node` 与 `npm`，JVM 引擎需要 `mvnx` 或 `gradlex`；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。
+`mvnx` 需要 Maven 或 `./mvnw`；`gradlex` 需要 Gradle 或 `gradlew`；`idex` 需要 `svn` 或 `git`，Node 引擎需要 `node` 与 `npm`，JVM 引擎需要 `mvnx` 或 `gradlex`，Office 预览需要 `libreoffice`（writer/calc/impress）；`llmx` 读 DeepSeek Harness 日志需要 `zstd`；`netx` 采集需要 `bpftrace` 与 root；`zipx` 需要 `zip` 与 `unzip`；`portx` 需要 `ss` 或 `lsof`。

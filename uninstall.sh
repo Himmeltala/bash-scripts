@@ -2,6 +2,7 @@
 # bash-scripts 卸载脚本：清软链、源码目录与带标记的 PATH 设置，不碰链接目录里别人的文件。
 # 安装时若系统配置已经给了 PATH，脚本不会往 .bashrc 写东西，这里也就没有可摘的。
 # 支持 --keep-path 保留 PATH 设置、--dry-run 只预演不删。
+# 刻意保持单文件：管道安装/卸载时没有源码目录，可能还需离线执行，不能依赖 install/lib。
 
 set -euo pipefail
 
