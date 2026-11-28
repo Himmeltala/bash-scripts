@@ -18,21 +18,20 @@ body,
   --bash-anim-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  html .dialog-transition-enter-active,
-  html .dialog-bottom-transition-enter-active,
-  html .dialog-top-transition-enter-active,
-  html .dialog-transition-leave-active,
-  html .dialog-bottom-transition-leave-active,
-  html .dialog-top-transition-leave-active {
-    transition-duration: var(--bash-anim-dur-fast) !important;
-    transition-timing-function: var(--bash-anim-ease) !important;
-  }
-  html .dialog-transition-enter-active,
-  html .dialog-bottom-transition-enter-active,
-  html .dialog-top-transition-enter-active {
-    transition-duration: var(--bash-anim-dur) !important;
-  }
+/* 系统关掉动画时 Vuetify 会把对话框过渡时长归零，这里不受系统偏好管，统一跟设置里的动画方案走。 */
+html .dialog-transition-enter-active,
+html .dialog-bottom-transition-enter-active,
+html .dialog-top-transition-enter-active,
+html .dialog-transition-leave-active,
+html .dialog-bottom-transition-leave-active,
+html .dialog-top-transition-leave-active {
+  transition-duration: var(--bash-anim-dur-fast) !important;
+  transition-timing-function: var(--bash-anim-ease) !important;
+}
+html .dialog-transition-enter-active,
+html .dialog-bottom-transition-enter-active,
+html .dialog-top-transition-enter-active {
+  transition-duration: var(--bash-anim-dur) !important;
 }
 html .v-snackbar-transition-enter-active,
 html .v-snackbar-transition-leave-active {
