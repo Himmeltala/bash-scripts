@@ -1,10 +1,10 @@
 # llmx
 
-统计 Claude Code、opencode、DeepSeek Harness 的 token 用量，按 DeepSeek 与 mimo 官方价折算成人民币。命令行出表，也可以开网页看板。
+统计 Claude Code、opencode、DeepSeek Harness 的 token 用量与费用，按 DeepSeek 与 mimo 官方价折算成人民币。命令行出表，也可开网页看板。
 
 ## 安装
 
-在仓库根目录执行 `./install.sh`。需要 Python 3.11 以上；读 DeepSeek Harness 日志还需要 `zstd`。
+仓库根目录执行 `./install.sh`。需要 Python 3.11 以上；读 DeepSeek Harness 日志需要 `zstd`。
 
 ## 用法
 
@@ -36,12 +36,12 @@ llmx [选项] [命令]
 不带参数且连着终端时打开菜单；输出接管道时按 `daily` 出表。
 
 ```
-llmx --all                不限日期
-llmx api --all            按接口地址看
+llmx --all
+llmx api --all
 llmx -s dsh --since 2026-10-01
-llmx --json               给脚本读
-llmx --watch 2 --days 1   只看今天，每 2 秒刷新
-llmx web --open           打开网页看板
+llmx --json
+llmx --watch 2 --days 1
+llmx web --open
 ```
 
 ## 网页看板
@@ -49,26 +49,26 @@ llmx web --open           打开网页看板
 ```
 llmx web                      默认 8000，绑所有网卡
 llmx web --port 8770          换端口
-llmx web --host 127.0.0.1     只给本机用
+llmx web --host 127.0.0.1     只给本机
 llmx web --open               自动开浏览器
 llmx web --json               只打一行地址，给脚本起服务
 llmx web --allow-write        放开配置读写与会话清理
 ```
 
-页面含筛选、合计卡片、图表与明细表，左侧菜单可管理配置与价格。筛选条件写在地址里，可直接收藏。配置档、`CLAUDE.md` 与会话操作只给本机看，写操作也只认本机。
+页面含筛选、合计卡片、图表与明细表，左侧菜单管理配置与价格；筛选条件写在地址里，可直接收藏。配置档、`CLAUDE.md` 与会话操作只给本机看，写操作也只认本机。
 
-## 计费规则
+## 计费
 
-高峰是北京时间周一至周五 9:00-12:00、14:00-18:00，其余时段与法定节假日按空闲价（高峰价的一半）。节假日要自己写进配置。
+高峰为北京时间周一至周五 9:00-12:00、14:00-18:00，其余时段与法定节假日按空闲价。节假日写进配置。
 
 | 项目 | 单价 |
 | --- | --- |
 | 输入（缓存未命中） | miss 价 |
 | 输入（缓存命中） | hit 价 |
-| 缓存写入 | 按 miss 价 |
+| 缓存写入 | miss 价 |
 | 输出 | output 价，含思考 token |
 
-默认定价（元 / 百万 token）：
+默认价（元 / 百万 token）：
 
 | 模型 | 空闲 命中/未命中/输出 | 高峰 命中/未命中/输出 |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ llmx web --allow-write        放开配置读写与会话清理
 | mimo-v2.6-pro | 0.025 / 3 / 6 | 同空闲 |
 | mimo-v2.6-pro-ultraspeed | 0.25 / 30 / 60 | 同空闲 |
 
-模型名带 `free` 的记为免费；费用按当前价格表重算。查不到价格的模型费用显示 `--`。
+模型名带 `free` 记为免费；费用按当前价格表重算。查不到价格的模型显示 `--`。
 
 ## 数据来源
 
@@ -88,11 +88,11 @@ llmx web --allow-write        放开配置读写与会话清理
 | opencode | `$XDG_DATA_HOME/opencode/opencode.db` |
 | DeepSeek Harness | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd` |
 
-可用 `LLMX_CLAUDE_DIR`、`LLMX_OPENCODE_DIR`、`LLMX_DSH_SESSIONS` 覆盖位置。DSH 的标题生成与上下文压缩、网页搜索与抓取不计费。
+`LLMX_CLAUDE_DIR`、`LLMX_OPENCODE_DIR`、`LLMX_DSH_SESSIONS` 可覆盖位置。DSH 的标题生成与上下文压缩、网页搜索与抓取不计费。
 
 ## 配置
 
-配置默认读 `~/.cache/llmx/config.toml`，也可用 `--config` 指定。改完下一轮出数就按新价算，不用重启。
+默认读 `~/.cache/llmx/config.toml`，`--config` 可指定。改完下一轮出数生效。
 
 ```toml
 [models."deepseek-flash"]
@@ -109,4 +109,4 @@ weekdays = [0, 1, 2, 3, 4]
 holidays = ["2026-10-01"]
 ```
 
-`weekdays` 的 0 是周一。网页「价格与配置」页可整份读写这份文件。
+`weekdays` 的 0 是周一。网页「价格与配置」页可整份读写。

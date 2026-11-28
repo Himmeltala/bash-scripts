@@ -28,4 +28,4 @@ import '@bash-scripts/web-shared/style.css'
 
 ## 目录
 
-`components`、`composables`、`utils`、`styles` 各分两层：`commons` 与具体工具无关，`services` 是这几个工具共用的工作区与服务件。配色、业务词汇与状态常量留在各工程。
+`components`、`composables`、`utils`、`styles` 各分两层：`commons` 与具体工具无关，`services` 是几个工具共用的工作区与服务件。配色、业务词汇与状态常量留在各工程。

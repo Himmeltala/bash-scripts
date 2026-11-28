@@ -22,7 +22,7 @@ source lib/shell-shared/commons/base.sh
 source lib/shell-shared/services/web-command.sh
 ```
 
-`SHELL_TOOL` 必须先设，`base.sh` 用它拼 `CACHE_DIR` 与错误前缀。按工具需要加载对应模块，完整顺序见各工具的 `*-core.sh`。
+`SHELL_TOOL` 必须先设，`base.sh` 用它拼 `CACHE_DIR` 与错误前缀。按需加载对应模块，完整顺序见各工具的 `*-core.sh`。
 
 ## 测试
 
