@@ -122,13 +122,6 @@ const { dark, toggle: flipTheme } = useThemeToggle({
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .nav-drawer,
-  .v-main {
-    transition: none;
-  }
-}
-
 .title {
   font-weight: 700;
 }
